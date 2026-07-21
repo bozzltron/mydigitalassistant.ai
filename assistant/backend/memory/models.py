@@ -1,0 +1,57 @@
+from pydantic import BaseModel, Field
+
+
+class Frame(BaseModel):
+    id: int | None = None
+    name: str
+    type: str
+    confidence: float = 0.5
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class Slot(BaseModel):
+    id: int | None = None
+    frame_id: int
+    key: str
+    value: str
+    confidence: float = 0.5
+    source_episode_id: int | None = None
+    updated_at: str | None = None
+
+
+class Association(BaseModel):
+    id: int | None = None
+    from_frame_id: int
+    to_frame_id: int
+    relation_type: str
+    confidence: float = 0.5
+    created_at: str | None = None
+
+
+class Episode(BaseModel):
+    id: int | None = None
+    user_id: int
+    session_id: str
+    role: str
+    content: str
+    frame_ids: list[int] = Field(default_factory=list)
+    timestamp: str | None = None
+
+
+class Conflict(BaseModel):
+    id: int | None = None
+    frame_id: int
+    slot_key: str
+    existing_value: str | None
+    new_value: str | None
+    resolved_value: str | None
+    status: str = "pending"
+    created_at: str | None = None
+    resolved_at: str | None = None
+
+
+class User(BaseModel):
+    id: int | None = None
+    name: str
+    created_at: str | None = None

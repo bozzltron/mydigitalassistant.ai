@@ -1,0 +1,29 @@
+# Package-level overrides for the /assistant/ Python project.
+# Most rules live in the root .gitignore; this file adds project-specific
+# paths that should never be committed.
+
+# Built/installed artifacts
+.venv/
+build/
+dist/
+*.egg-info/
+
+# Test artifacts
+.pytest_cache/
+.ruff_cache/
+.coverage
+
+# Local databases (the agent's brain — never commit)
+assistant.db
+assistant.db-journal
+assistant.db-wal
+assistant.db-shm
+
+# Local env
+.env
+.env.local
+.env.*.local
+
+# Test scratch
+.pytest_tmp/
+htmlcov/

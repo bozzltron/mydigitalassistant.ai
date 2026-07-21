@@ -1,0 +1,499 @@
+import argparse
+import os
+import sys
+from typing import Any
+
+import httpx
+from rich.console import Console
+from rich.panel import Panel
+from rich.prompt import Prompt
+from rich.table import Table
+
+from assistant.backend.config import settings
+
+console = Console()
+DEFAULT_BACKEND = f"http://{settings.backend_host}:{settings.backend_port}"
+
+
+class BackendClient:
+    """Thin HTTP client for the FastAPI backend."""
+
+    def __init__(self, base_url: str = DEFAULT_BACKEND):
+        self.base_url = base_url.rstrip("/")
+        self.client = httpx.Client(base_url=self.base_url, timeout=120.0)
+
+    def close(self) -> None:
+        self.client.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args: Any) -> None:
+        self.close()
+
+    def health(self) -> dict:
+        r = self.client.get("/health")
+        r.raise_for_status()
+        return r.json()
+
+    def create_user(self, name: str) -> dict:
+        r = self.client.post("/users", params={"name": name})
+        r.raise_for_status()
+        return r.json()
+
+    def list_users(self) -> list[dict]:
+        r = self.client.get("/users")
+        r.raise_for_status()
+        return r.json()
+
+    def list_frames(self, type: str | None = None) -> list[dict]:
+        r = self.client.get("/memory/frames", params={"type": type} if type else {})
+        r.raise_for_status()
+        return r.json()
+
+    def get_frame(self, frame_id: int) -> dict:
+        r = self.client.get(f"/memory/frames/{frame_id}")
+        r.raise_for_status()
+        return r.json()
+
+    def get_frame_by_name(self, name: str) -> dict | None:
+        r = self.client.get(f"/memory/frames/by-name/{name}")
+        if r.status_code == 404:
+            return None
+        r.raise_for_status()
+        return r.json()
+
+    def get_frame_slots(self, frame_id: int) -> list[dict]:
+        r = self.client.get(f"/memory/frames/{frame_id}/slots")
+        r.raise_for_status()
+        return r.json()
+
+    def list_conflicts(self, status: str | None = None) -> list[dict]:
+        r = self.client.get("/memory/conflicts", params={"status": status} if status else {})
+        r.raise_for_status()
+        return r.json()
+
+    def resolve_conflict(self, conflict_id: int, value: str) -> dict:
+        r = self.client.post(
+            f"/memory/conflicts/{conflict_id}/resolve", params={"value": value}
+        )
+        r.raise_for_status()
+        return r.json()
+
+    def chat(
+        self, user_id: int, message: str, session_id: str | None = None
+    ) -> dict:
+        r = self.client.post(
+            "/chat",
+            json={"user_id": user_id, "message": message, "session_id": session_id},
+        )
+        r.raise_for_status()
+        return r.json()
+
+    def get_user_episodes(self, user_id: int, limit: int = 50) -> list[dict]:
+        r = self.client.get(f"/users/{user_id}/episodes", params={"limit": limit})
+        r.raise_for_status()
+        return r.json()
+
+    def db_backup(self) -> dict:
+        r = self.client.post("/db/backup")
+        r.raise_for_status()
+        return r.json()
+
+    def db_restore(self, backup_filename: str) -> dict:
+        r = self.client.post("/db/restore", params={"backup_filename": backup_filename})
+        r.raise_for_status()
+        return r.json()
+
+    def list_backups(self) -> dict:
+        r = self.client.get("/db/backups")
+        r.raise_for_status()
+        return r.json()
+
+
+def _memory_used(response: dict) -> bool:
+    """Return True if the response contains meaningful memory context."""
+    context = response.get("memory_context") or ""
+    return bool(context) and "(no memory frames yet)" not in context
+
+
+def cmd_chat(args: argparse.Namespace, client: BackendClient) -> None:
+    """Interactive chat REPL."""
+    user_id = args.user
+
+    if user_id is None:
+        users = client.list_users()
+        if not users:
+            console.print(
+                "[red]No users exist. Create one with: assistant users add <name>[/red]"
+            )
+            sys.exit(1)
+        user_id = users[0]["id"]
+        console.print(
+            f"[dim]Using user: {users[0]['name']} (id={user_id}). Use -u to specify.[/dim]"
+        )
+
+    session_id: str | None = None
+    console.print(
+        Panel(
+            f"[bold]Cognitive Digital Assistant[/bold]\n"
+            f"User ID: {user_id} | Backend: {client.base_url}\n"
+            f"Type 'exit' or Ctrl+D to quit.",
+            border_style="blue",
+        )
+    )
+
+    while True:
+        try:
+            message = Prompt.ask("\n[bold cyan]You[/bold cyan]")
+        except (EOFError, KeyboardInterrupt):
+            console.print("\n[dim]Goodbye.[/dim]")
+            break
+
+        text = message.strip()
+        if text.lower() in {"exit", "quit", "/exit", "/quit"}:
+            console.print("[dim]Goodbye.[/dim]")
+            break
+        if not text:
+            continue
+
+        try:
+            response = client.chat(user_id=user_id, message=message, session_id=session_id)
+        except httpx.HTTPError as e:
+            console.print(f"[red]Error: {e}[/red]")
+            continue
+
+        session_id = response["session_id"]
+
+        console.print(f"\n[bold green]Assistant[/bold green]: {response['response']}")
+
+        if _memory_used(response):
+            console.print(
+                f"  [dim italic]↳ recalled memory ({response['task_type']})[/dim italic]"
+            )
+
+        if args.trace:
+            console.print(
+                Panel(
+                    f"[bold]Task type:[/bold] {response['task_type']}\n"
+                    f"[bold]Session:[/bold] {response['session_id']}\n\n"
+                    f"[bold]Memory context:[/bold]\n{response['memory_context']}",
+                    title="Trace",
+                    border_style="yellow",
+                )
+            )
+
+
+def cmd_memory_list(args: argparse.Namespace, client: BackendClient) -> None:
+    """List all frames in memory."""
+    frames = client.list_frames(type=args.type)
+    if not frames:
+        console.print("[dim]No frames in memory yet.[/dim]")
+        return
+
+    table = Table(title="Memory Frames")
+    table.add_column("ID", style="cyan")
+    table.add_column("Name", style="bold")
+    table.add_column("Type")
+    table.add_column("Confidence", justify="right")
+    table.add_column("Updated")
+
+    for f in frames:
+        conf = f["confidence"]
+        conf_color = "green" if conf >= 0.7 else "yellow" if conf >= 0.4 else "red"
+        updated = f["updated_at"][:19] if f["updated_at"] else ""
+        table.add_row(
+            str(f["id"]),
+            f["name"],
+            f["type"],
+            f"[{conf_color}]{conf:.2f}[/{conf_color}]",
+            updated,
+        )
+    console.print(table)
+
+
+def cmd_memory_show(args: argparse.Namespace, client: BackendClient) -> None:
+    """Show a frame's slots, associations, and history."""
+    frame = None
+    try:
+        frame_id = int(args.frame)
+        frame = client.get_frame(frame_id)
+    except ValueError:
+        frame = client.get_frame_by_name(args.frame)
+
+    if not frame:
+        console.print(f"[red]No frame found: {args.frame}[/red]")
+        sys.exit(1)
+
+    slots = client.get_frame_slots(frame["id"])
+
+    updated = frame["updated_at"][:19] if frame["updated_at"] else "never"
+    console.print(
+        Panel(
+            f"[bold]{frame['name']}[/bold] ({frame['type']})\n"
+            f"ID: {frame['id']} | Confidence: {frame['confidence']:.2f} | "
+            f"Updated: {updated}",
+            title="Frame",
+        )
+    )
+
+    if slots:
+        slot_table = Table(title="Slots")
+        slot_table.add_column("Key", style="bold")
+        slot_table.add_column("Value")
+        slot_table.add_column("Confidence", justify="right")
+        for s in slots:
+            conf = s["confidence"]
+            conf_color = "green" if conf >= 0.7 else "yellow" if conf >= 0.4 else "red"
+            slot_table.add_row(
+                s["key"], s["value"], f"[{conf_color}]{conf:.2f}[/{conf_color}]"
+            )
+        console.print(slot_table)
+    else:
+        console.print("[dim]No slots.[/dim]")
+
+
+def cmd_memory_conflicts(args: argparse.Namespace, client: BackendClient) -> None:
+    """List conflicts."""
+    conflicts = client.list_conflicts(status=args.status)
+    if not conflicts:
+        console.print("[dim]No conflicts.[/dim]")
+        return
+
+    table = Table(title="Conflicts")
+    table.add_column("ID", style="cyan")
+    table.add_column("Frame", style="bold")
+    table.add_column("Slot")
+    table.add_column("Existing")
+    table.add_column("New")
+    table.add_column("Status")
+    table.add_column("Created")
+
+    status_colors = {
+        "pending": "yellow",
+        "auto_resolved": "green",
+        "manual_override": "blue",
+    }
+    for c in conflicts:
+        status_color = status_colors.get(c["status"], "white")
+        created = c["created_at"][:19] if c["created_at"] else ""
+        table.add_row(
+            str(c["id"]),
+            str(c["frame_id"]),
+            c["slot_key"],
+            str(c.get("existing_value", ""))[:30],
+            str(c.get("new_value", ""))[:30],
+            f"[{status_color}]{c['status']}[/{status_color}]",
+            created,
+        )
+    console.print(table)
+
+
+def cmd_memory_resolve(args: argparse.Namespace, client: BackendClient) -> None:
+    """Manually resolve a conflict."""
+    try:
+        result = client.resolve_conflict(args.conflict_id, args.value)
+        console.print(f"[green]Conflict {args.conflict_id} resolved.[/green]")
+        console.print(f"  Slot value: {result['slot']['value']}")
+    except httpx.HTTPError as e:
+        console.print(f"[red]Failed to resolve: {e}[/red]")
+        sys.exit(1)
+
+
+def cmd_users_add(args: argparse.Namespace, client: BackendClient) -> None:
+    """Add a new user."""
+    try:
+        user = client.create_user(args.name)
+        console.print(f"[green]User created: {user['name']} (id={user['id']})[/green]")
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 409:
+            console.print(f"[yellow]User '{args.name}' already exists.[/yellow]")
+        else:
+            console.print(f"[red]Failed: {e}[/red]")
+            sys.exit(1)
+
+
+def cmd_users_list(args: argparse.Namespace, client: BackendClient) -> None:
+    """List all users."""
+    users = client.list_users()
+    if not users:
+        console.print("[dim]No users. Create one with: assistant users add <name>[/dim]")
+        return
+
+    table = Table(title="Household Members")
+    table.add_column("ID", style="cyan")
+    table.add_column("Name", style="bold")
+    table.add_column("Created")
+    for u in users:
+        created = u["created_at"][:19] if u["created_at"] else ""
+        table.add_row(str(u["id"]), u["name"], created)
+    console.print(table)
+
+
+def cmd_db_backup(args: argparse.Namespace, client: BackendClient) -> None:
+    """Create a backup via the backend API."""
+    try:
+        result = client.db_backup()
+        console.print("[green]Backup created[/green]")
+        console.print(f"  Filename: {result['backup_filename']}")
+        console.print(f"  Path (in container): {result['backup_path']}")
+        console.print(f"  Size: {result['backup_size_bytes']:,} bytes")
+        console.print("[dim]To retrieve the backup file:[/dim]")
+        console.print(f"  docker cp assistant-backend:{result['backup_path']} ./")
+    except httpx.HTTPError as e:
+        console.print(f"[red]Backup failed: {e}[/red]")
+        sys.exit(1)
+
+
+def cmd_db_restore(args: argparse.Namespace, client: BackendClient) -> None:
+    """Restore from a backup file via the backend API."""
+    try:
+        backups = client.list_backups().get("backups", [])
+        matching = [b for b in backups if b["filename"] == args.file]
+        if not matching:
+            console.print(f"[red]Backup not found: {args.file}[/red]")
+            console.print("[yellow]Available backups:[/yellow]")
+            for b in backups:
+                console.print(f"  {b['filename']} ({b['size_bytes']:,} bytes)")
+            sys.exit(1)
+
+        if not args.yes:
+            console.print(f"[yellow]This will overwrite the current DB with: {args.file}[/yellow]")
+            confirm = Prompt.ask("Continue?", choices=["y", "n"], default="n")
+            if confirm != "y":
+                console.print("[dim]Cancelled.[/dim]")
+                return
+
+        result = client.db_restore(args.file)
+        console.print(f"[green]Restored from {result['restored_from']}[/green]")
+        console.print("[yellow]Restart the backend for changes to take effect.[/yellow]")
+    except httpx.HTTPError as e:
+        console.print(f"[red]Restore failed: {e}[/red]")
+        sys.exit(1)
+
+
+def cmd_db_list(args: argparse.Namespace, client: BackendClient) -> None:
+    """List available backups."""
+    try:
+        result = client.list_backups()
+        backups = result.get("backups", [])
+        if not backups:
+            console.print("[dim]No backups yet. Run: assistant db backup[/dim]")
+            return
+
+        table = Table(title="Available Backups")
+        table.add_column("Filename", style="bold")
+        table.add_column("Size", justify="right")
+        table.add_column("Created")
+        for b in backups:
+            table.add_row(
+                b["filename"],
+                f"{b['size_bytes']:,} bytes",
+                b["created_at"][:19],
+            )
+        console.print(table)
+    except httpx.HTTPError as e:
+        console.print(f"[red]Failed to list backups: {e}[/red]")
+        sys.exit(1)
+
+
+def cmd_status(args: argparse.Namespace, client: BackendClient) -> None:
+    """Check backend status."""
+    try:
+        health = client.health()
+        console.print(
+            Panel(
+                f"[green]Backend OK[/green]\n"
+                f"  URL: {client.base_url}\n"
+                f"  Ollama: {'reachable' if health['ollama_reachable'] else 'NOT REACHABLE'}\n"
+                f"  Chat model: {health['chat_model']}\n"
+                f"  Utility model: {health['utility_model']}",
+                title="Status",
+            )
+        )
+    except httpx.HTTPError as e:
+        console.print(f"[red]Backend not reachable at {client.base_url}: {e}[/red]")
+        sys.exit(1)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        prog="assistant", description="Cognitive digital assistant CLI"
+    )
+    parser.add_argument(
+        "--backend",
+        default=os.environ.get("ASSISTANT_BACKEND", DEFAULT_BACKEND),
+        help=f"Backend URL (default: {DEFAULT_BACKEND})",
+    )
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    # chat
+    p_chat = subparsers.add_parser("chat", help="Interactive chat with the assistant")
+    p_chat.add_argument("-u", "--user", type=int, help="User ID (default: first user)")
+    p_chat.add_argument(
+        "--trace", action="store_true", help="Show memory context + task type per turn"
+    )
+    p_chat.set_defaults(func=cmd_chat)
+
+    # memory
+    p_memory = subparsers.add_parser("memory", help="Memory introspection")
+    mem_sub = p_memory.add_subparsers(dest="memory_command", required=True)
+
+    p_mem_list = mem_sub.add_parser("list", help="List all frames")
+    p_mem_list.add_argument("--type", help="Filter by type (entity|concept|event|household)")
+    p_mem_list.set_defaults(func=cmd_memory_list)
+
+    p_mem_show = mem_sub.add_parser("show", help="Show a frame's details")
+    p_mem_show.add_argument("frame", help="Frame name or ID")
+    p_mem_show.set_defaults(func=cmd_memory_show)
+
+    p_mem_conflicts = mem_sub.add_parser("conflicts", help="List conflicts")
+    p_mem_conflicts.add_argument(
+        "--status", choices=["pending", "auto_resolved", "manual_override"]
+    )
+    p_mem_conflicts.set_defaults(func=cmd_memory_conflicts)
+
+    p_mem_resolve = mem_sub.add_parser("resolve", help="Manually resolve a conflict")
+    p_mem_resolve.add_argument("conflict_id", type=int)
+    p_mem_resolve.add_argument("value", help="The value to set")
+    p_mem_resolve.set_defaults(func=cmd_memory_resolve)
+
+    # users
+    p_users = subparsers.add_parser("users", help="User management")
+    users_sub = p_users.add_subparsers(dest="users_command", required=True)
+
+    p_users_add = users_sub.add_parser("add", help="Add a new user")
+    p_users_add.add_argument("name")
+    p_users_add.set_defaults(func=cmd_users_add)
+
+    p_users_list = users_sub.add_parser("list", help="List all users")
+    p_users_list.set_defaults(func=cmd_users_list)
+
+    # db
+    p_db = subparsers.add_parser("db", help="Database backup/restore")
+    db_sub = p_db.add_subparsers(dest="db_command", required=True)
+
+    p_db_backup = db_sub.add_parser("backup", help="Backup the DB to a file")
+    p_db_backup.add_argument("-o", "--output", help="Output file path")
+    p_db_backup.set_defaults(func=cmd_db_backup)
+
+    p_db_restore = db_sub.add_parser("restore", help="Restore DB from a file (DESTRUCTIVE)")
+    p_db_restore.add_argument("file", help="Backup file to restore from")
+    p_db_restore.add_argument("-y", "--yes", action="store_true", help="Skip confirmation")
+    p_db_restore.set_defaults(func=cmd_db_restore)
+
+    p_db_list = db_sub.add_parser("list", help="List available backup files")
+    p_db_list.set_defaults(func=cmd_db_list)
+
+    # status
+    p_status = subparsers.add_parser("status", help="Check backend status")
+    p_status.set_defaults(func=cmd_status)
+
+    args = parser.parse_args()
+
+    with BackendClient(args.backend) as client:
+        args.func(args, client)
+
+
+if __name__ == "__main__":
+    main()

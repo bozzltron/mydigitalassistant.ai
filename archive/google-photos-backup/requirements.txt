@@ -1,0 +1,17 @@
+# Google Photos Backup - Requirements
+
+# Core dependencies for organizer
+Pillow>=10.0.0  # Image processing and EXIF manipulation
+exifread>=3.0.0  # Read EXIF data
+tqdm>=4.66.0  # Progress bars
+pyyaml>=6.0  # Configuration files
+
+# Optional but recommended
+python-dateutil>=2.8.0  # Date parsing
+hashlib  # Built-in, for duplicate detection
+
+# Google Exit Script dependencies
+google-auth-oauthlib>=1.0.0  # OAuth 2.0 authentication
+google-api-python-client>=2.0.0  # Google API client
+requests>=2.31.0  # HTTP requests for downloads
+tqdm>=4.66.0  # Progress bars (also used by organizer)

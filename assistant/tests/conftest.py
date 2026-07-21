@@ -1,0 +1,151 @@
+import hashlib
+import json
+import random
+from pathlib import Path
+
+import pytest
+import pytest_asyncio
+
+from assistant.backend.db.schema import init_db
+from assistant.backend.memory.store import MemoryStore
+from assistant.backend.pipeline.llm_client import ChatResponse, EmbeddingResponse, OllamaClient
+
+
+@pytest_asyncio.fixture
+async def store(tmp_path: Path) -> MemoryStore:
+    db_path = str(tmp_path / "test.db")
+    await init_db(db_path)
+    return MemoryStore(db_path)
+
+
+@pytest.fixture
+def stub_llm() -> "StubLLMClient":
+    return StubLLMClient()
+
+
+def deterministic_embedding(text: str, dim: int = 768) -> list[float]:
+    """Return a deterministic embedding for integration tests.
+
+    Guitar/household-related text clusters at [1, 0, 0, ...] so retrieval can
+    find shared frames without calling a real embedding model.
+    """
+    lower = text.lower()
+    keywords = ("guitar", "fender", "stratocaster", "strings", "household", "my guitar")
+    if any(k in lower for k in keywords):
+        return [1.0] + [0.0] * (dim - 1)
+    sha = hashlib.sha256(text.encode()).digest()
+    seed = int.from_bytes(sha[:8], "big")
+    rng = random.Random(seed)
+    return [rng.uniform(-1.0, 1.0) for _ in range(dim)]
+
+
+class StubLLMClient(OllamaClient):
+    """Deterministic Ollama stub for end-to-end tests.
+
+    Mocks at the LLM boundary: classify, extract and embed all return
+    controllable, deterministic outputs. No network calls.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._next_extraction_result: list[dict] | None = None
+        self._next_association_result: list[dict] | None = None
+
+    def set_extraction_result(
+        self,
+        slots: list[dict] | None = None,
+        associations: list[dict] | None = None,
+    ) -> None:
+        """Override the next extraction response."""
+        self._next_extraction_result = slots
+        self._next_association_result = associations
+
+    async def chat(
+        self,
+        messages,
+        model: str | None = None,
+        temperature: float = 0.7,
+        format: str | None = None,
+        stream: bool = False,
+    ) -> ChatResponse:
+        system = messages[0].content
+        user = messages[1].content if len(messages) > 1 else ""
+        system_lower = system.lower()
+        user_lower = user.lower()
+
+        if "classify" in system_lower:
+            if any(
+                k in user_lower
+                for k in ("remember", "what do you know", "tell me about what you")
+            ):
+                task = "introspective"
+            else:
+                task = "functional"
+            return ChatResponse(
+                content=f'{{"task_type": "{task}"}}',
+                model=self.utility_model,
+                done=True,
+            )
+
+        if "extract" in system_lower:
+            slots: list[dict] = []
+            associations: list[dict] = []
+            if (
+                self._next_extraction_result is not None
+                or self._next_association_result is not None
+            ):
+                slots = self._next_extraction_result or []
+                associations = self._next_association_result or []
+                self._next_extraction_result = None
+                self._next_association_result = None
+            else:
+                content = self._extraction_response(user_lower)
+                return ChatResponse(content=content, model=self.utility_model, done=True)
+            return ChatResponse(
+                content=json.dumps({"slots": slots, "associations": associations}),
+                model=self.utility_model,
+                done=True,
+            )
+
+        return ChatResponse(
+            content="Got it — tell me more.",
+            model=self.chat_model,
+            done=True,
+        )
+
+    @staticmethod
+    def _extraction_response(user_lower: str) -> str:
+        if any(
+            k in user_lower for k in ("remember", "what do you know", "what do you remember")
+        ):
+            slots: list[dict] = []
+        elif any(k in user_lower for k in ("guitar", "fender", "stratocaster", "strings")):
+            slots = [
+                {
+                    "frame_name": "fender_stratocaster",
+                    "frame_type": "entity",
+                    "key": "brand",
+                    "value": "Fender",
+                },
+                {
+                    "frame_name": "fender_stratocaster",
+                    "frame_type": "entity",
+                    "key": "model",
+                    "value": "Stratocaster",
+                },
+                {
+                    "frame_name": "fender_stratocaster",
+                    "frame_type": "entity",
+                    "key": "strings",
+                    "value": "6",
+                },
+            ]
+        else:
+            slots = []
+        return json.dumps({"slots": slots, "associations": []})
+
+    async def embed(self, text: str, model: str | None = None) -> EmbeddingResponse:
+        return EmbeddingResponse(
+            embedding=deterministic_embedding(text),
+            model=self.embedding_model,
+        )
