@@ -6,8 +6,7 @@ Learning happens in a memory layer (frames, slots, associations, episodic memory
 LLM weights stay frozen. Runs 100% locally via Ollama. Safe for household use incl. kids.
 
 ## Repository layout
-- `/assistant/` — the cognitive assistant (new, active development). See `/assistant/AGENTS.md`.
-- `/archive/`  — previous Open WebUI / Docker orchestration setup. Reference only. Do not modify.
+- `/assistant/` — the cognitive assistant. See `/assistant/AGENTS.md` for the cognitive architecture and memory model.
 
 ## Security constraints (HARD RULES — violate these and the project's purpose is broken)
 - No outbound network calls except to Ollama on 127.0.0.1:11434.
