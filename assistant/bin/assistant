@@ -6,15 +6,18 @@
 
 set -euo pipefail
 
-# Find the repo root (parent of bin/)
+# Find the repo root (parent of assistant/)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(dirname "$SCRIPT_DIR")"
-COMPOSE_DIR="$REPO_ROOT/assistant"
+REPO_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
+COMPOSE_DIR="$REPO_ROOT"
 
 # Ensure the backend is running
-if ! docker compose -f "$COMPOSE_DIR/docker-compose.yml" ps assistant 2>/dev/null | grep -q "running"; then
+BACKEND_STATUS=$(docker compose -f "$COMPOSE_DIR/docker-compose.yml" ps assistant 2>&1)
+if echo "$BACKEND_STATUS" | grep -q "Up"; then
+    echo "Backend already running."
+else
     echo "Backend not running. Starting it..."
-    docker compose -f "$COMPOSE_DIR/docker-compose.yml" up -d assistant
+    docker compose -f "$COMPOSE_DIR/docker-compose.yml" up -d --remove-orphans assistant
     sleep 3
 fi
 

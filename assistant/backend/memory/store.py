@@ -203,14 +203,14 @@ class MemoryStore:
 
     # Embeddings
     async def store_frame_embedding(self, frame_id: int, embedding: list[float]) -> None:
-        """Store or update the embedding for a frame as a JSON array."""
+        """Store embedding as sqlite-vec vector."""
         async with self._connect() as db:
             await db.execute(
                 """
                 INSERT INTO frame_embeddings (frame_id, embedding, updated_at)
-                VALUES (?, ?, datetime('now'))
+                VALUES (?, vec_float32(?), datetime('now'))
                 ON CONFLICT(frame_id) DO UPDATE SET
-                    embedding = excluded.embedding,
+                    embedding = vec_float32(excluded.embedding),
                     updated_at = excluded.updated_at
                 """,
                 (frame_id, json.dumps(embedding)),
@@ -235,6 +235,48 @@ class MemoryStore:
                 "SELECT frame_id, embedding FROM frame_embeddings ORDER BY frame_id"
             )
             return [(frame_id, json.loads(embedding)) for frame_id, embedding in rows]
+
+    async def search_similar_frames(
+        self,
+        embedding: list[float],
+        user_id: int,
+        limit: int = 10,
+        min_distance: float = 0.7,
+    ) -> list[tuple[Frame, list[Slot], float]]:
+        """Search frames by vector similarity using sqlite-vec vec_distance().
+
+        Returns list of (frame, slots, distance) tuples ordered by similarity.
+        Distance is 0.0 to 1.0+; lower is more similar.
+        """
+        async with self._connect() as db:
+            # Use vec_distance for cosine-like similarity on normalized vectors
+            rows = await db.execute_fetchall(
+                """
+                SELECT f.id, f.name, f.type, f.confidence, f.created_at, f.updated_at,
+                       vec_distance(embedding, ?) as distance
+                FROM frame_embeddings fe
+                JOIN frames f ON fe.frame_id = f.id
+                WHERE vec_distance(embedding, ?) <= ?
+                ORDER BY distance ASC
+                LIMIT ?
+                """,
+                (json.dumps(embedding), json.dumps(embedding), min_distance, limit),
+            )
+            
+            results: list[tuple[Frame, list[Slot], float]] = []
+            for row in rows:
+                frame = Frame(
+                    id=row[0],
+                    name=row[1],
+                    type=row[2],
+                    confidence=row[3],
+                    created_at=row[4],
+                    updated_at=row[5],
+                )
+                slots = await self.get_slots_for_frame(frame.id)
+                results.append((frame, slots, 1.0 - row[6]))  # convert distance to similarity
+            
+            return results
 
     async def clear_frame_embedding(self, frame_id: int) -> None:
         """Remove embedding for a frame."""

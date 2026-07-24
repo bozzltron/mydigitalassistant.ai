@@ -90,6 +90,51 @@ async def health():
         "ollama_reachable": ollama_ok,
         "chat_model": settings.chat_model,
         "utility_model": settings.utility_model,
+     }
+
+
+# Search
+@app.get("/search")
+async def search_frames(
+    q: str,
+    limit: int = 10,
+    min_similarity: float = 0.3,
+    store: MemoryStore = _Depends(get_store),
+    llm_client: OllamaClient = _Depends(get_orchestrator.llm_client),
+):
+    """Search frames by similarity.
+
+    Returns frames whose embeddings are similar to the query.
+    Results include frame details, slots, and similarity score.
+    """
+    if not q.strip():
+        raise HTTPException(status_code=400, detail="Query cannot be empty")
+
+    # Embed the query
+    query_response = await llm_client.embed(q)
+    
+    # Search using sqlite-vec
+    results = await store.search_similar_frames(
+        embedding=query_response.embedding,
+        user_id=0,   # not user-specific in this endpoint
+        limit=limit,
+        min_distance=1.0 - min_similarity,
+     )
+    
+    return {
+        "query": q,
+        "results": [
+            {
+                "frame_id": frame.id,
+                "name": frame.name,
+                "type": frame.type,
+                "confidence": frame.confidence,
+                "slots": [{"key": s.key, "value": s.value, "confidence": s.confidence} for s in slots],
+                "similarity": round(similarity, 3),
+            }
+            for frame, slots, similarity in results
+        ],
+        "total_found": len(results),
     }
 
 

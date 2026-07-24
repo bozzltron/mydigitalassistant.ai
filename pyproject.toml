@@ -1,0 +1,57 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "assistant"
+version = "0.1.0"
+description = "Privacy-first cognitive digital assistant with frame/slot memory"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "httpx>=0.27",
+    "pydantic>=2.6",
+    "pydantic-settings>=2.2",
+    "rich>=13.7",
+    "numpy>=1.26",
+    "sqlite-vec>=0.1.0",
+    "aiosqlite>=0.20",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.3",
+]
+
+[project.scripts]
+assistant = "assistant.cli.app:main"
+assistant-verify-security = "assistant.scripts.verify_security:main"
+
+[tool.setuptools]
+packages = [
+    "assistant",
+    "assistant.backend",
+    "assistant.backend.api",
+    "assistant.backend.db",
+    "assistant.backend.memory",
+    "assistant.backend.pipeline",
+    "assistant.cli",
+    "assistant.scripts",
+]
+package-dir = { assistant = "assistant" }
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "N"]
+ignore = ["B008"]

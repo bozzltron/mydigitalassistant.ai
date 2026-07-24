@@ -390,10 +390,124 @@ def cmd_db_list(args: argparse.Namespace, client: BackendClient) -> None:
                 b["filename"],
                 f"{b['size_bytes']:,} bytes",
                 b["created_at"][:19],
-            )
+             )
         console.print(table)
     except httpx.HTTPError as e:
         console.print(f"[red]Failed to list backups: {e}[/red]")
+        sys.exit(1)
+
+
+def cmd_db_upgrade(args: argparse.Namespace, client: BackendClient) -> None:
+    """Upgrade database schema."""
+    try:
+        from assistant.backend.db.schema import init_db
+        from assistant.backend.config import settings
+        
+        console.print(f"[bold]Upgrading schema at {settings.database_path}...[/bold]")
+        asyncio.run(init_db(settings.database_path))
+        console.print("[green]✓ Schema upgraded successfully[/green]")
+    except Exception as e:
+        console.print(f"[red]Upgrade failed: {e}[/red]")
+        sys.exit(1)
+
+
+def cmd_db_migrate(args: argparse.Namespace, client: BackendClient) -> None:
+     """Migrate embeddings to vec_float32 format."""
+     try:
+        import json
+        from assistant.backend.config import settings
+        
+        console.print(f"[bold]Migrating embeddings to vec_float32...[/bold]")
+        
+        async def migrate():
+            import aiosqlite
+            
+            db = await aiosqlite.connect(settings.database_path)
+            await db.enable_load_extension(True)
+            
+            try:
+                await db.load_extension("vec0")
+                console.print("[green]✓ sqlite-vec loaded[/green]")
+            except Exception as e:
+                console.print(f"[red]✗ sqlite-vec not available: {e}[/red]")
+                await db.close()
+                raise
+            
+            async with db.execute("SELECT COUNT(*) FROM frame_embeddings") as cursor:
+                count = (await cursor.fetchone())[0]
+            
+            if count == 0:
+                console.print("[yellow]No embeddings to migrate[/yellow]")
+                await db.close()
+                return
+            
+            async with db.execute("SELECT frame_id, embedding FROM frame_embeddings") as cursor:
+                rows = await cursor.fetchall()
+            
+            migrated = 0
+            for frame_id, embedding_json in rows:
+                try:
+                    embedding = json.loads(embedding_json)
+                    await db.execute(
+                          "UPDATE frame_embeddings SET embedding = vec_float32(?) WHERE frame_id = ?",
+                          (json.dumps(embedding), frame_id),
+                      )
+                    migrated += 1
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            
+            await db.commit()
+            await db.close()
+            
+            console.print(f"[green]✓ Migrated {migrated}/{count} embeddings to vec_float32[/green]")
+        
+        asyncio.run(migrate())
+     except Exception as e:
+        console.print(f"[red]Migration failed: {e}[/red]")
+        sys.exit(1)
+
+
+def cmd_db_status(args: argparse.Namespace, client: BackendClient) -> None:
+     """Show database status."""
+     try:
+        from assistant.backend.config import settings
+        from pathlib import Path
+        
+        db_path = Path(settings.database_path)
+        
+        table = Table(title="Database Status")
+        table.add_column("Metric", style="cyan")
+        table.add_column("Value", style="green")
+        
+        if db_path.exists():
+            table.add_row("Path", str(db_path))
+            table.add_row("Size", f"{db_path.stat().st_size:,} bytes")
+        else:
+            table.add_row("Status", "Not found")
+            return
+        
+         # Check if vec extension is available
+        import aiosqlite
+        
+        async def check_vec():
+            db = await aiosqlite.connect(db_path)
+            try:
+                await db.enable_load_extension(True)
+                await db.load_extension("vec0")
+                await db.close()
+                return True
+            except Exception:
+                await db.close()
+                return False
+        
+        if asyncio.run(check_vec()):
+            table.add_row("Vector Search", "[green]Available[/green]")
+        else:
+            table.add_row("Vector Search", "[yellow]Not available[/yellow]")
+        
+        console.print(table)
+     except Exception as e:
+        console.print(f"[red]Failed to check status: {e}[/red]")
         sys.exit(1)
 
 
@@ -470,8 +584,14 @@ def main() -> None:
     p_users_list.set_defaults(func=cmd_users_list)
 
     # db
-    p_db = subparsers.add_parser("db", help="Database backup/restore")
+    p_db = subparsers.add_parser("db", help="Database maintenance")
     db_sub = p_db.add_subparsers(dest="db_command", required=True)
+
+    p_db_upgrade = db_sub.add_parser("upgrade", help="Upgrade schema to latest version")
+    p_db_upgrade.set_defaults(func=cmd_db_upgrade)
+
+    p_db_migrate = db_sub.add_parser("migrate", help="Migrate embeddings to vec_float32")
+    p_db_migrate.set_defaults(func=cmd_db_migrate)
 
     p_db_backup = db_sub.add_parser("backup", help="Backup the DB to a file")
     p_db_backup.add_argument("-o", "--output", help="Output file path")
@@ -484,6 +604,9 @@ def main() -> None:
 
     p_db_list = db_sub.add_parser("list", help="List available backup files")
     p_db_list.set_defaults(func=cmd_db_list)
+
+    p_db_status = db_sub.add_parser("status", help="Show database status")
+    p_db_status.set_defaults(func=cmd_db_status)
 
     # status
     p_status = subparsers.add_parser("status", help="Check backend status")

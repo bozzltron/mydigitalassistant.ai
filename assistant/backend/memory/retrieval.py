@@ -109,56 +109,62 @@ class Retriever:
         query: str,
         user_id: int,
         session_id: str | None = None,
-    ) -> MemoryContext:
+     ) -> MemoryContext:
         """Retrieve relevant memory for a query.
 
         Returns MemoryContext with retrieved frames and recent episodes.
+        Uses sqlite-vec vec_distance() for efficient similarity search.
         """
-        # 1. Embed query
+         # 1. Embed query
         query_response = await self.llm_client.embed(query)
         query_embedding = query_response.embedding
 
-        # 2. Cosine similarity vs all frame embeddings
-        all_embeddings = await self.store.get_all_frame_embeddings()
-        if not all_embeddings:
-            # No frames in memory yet — just return empty context
+         # 2. Vector similarity search via sqlite-vec
+        all_results = await self.store.search_similar_frames(
+            embedding=query_embedding,
+            user_id=user_id,
+            limit=self.top_k_direct * 2,  # fetch more to account for graph neighbors
+            min_distance=0.7,
+         )
+
+        if not all_results:
+             # No frames in memory yet — just return empty context
             recent = await self.store.get_episodes_for_user(user_id, limit=5)
             empty = MemoryContext(
                 query=query,
                 retrieved_frames=[],
                 recent_episodes=recent,
                 formatted="(no memory frames yet)",
-            )
+             )
             empty.formatted = format_memory_context(empty)
             return empty
 
-        scored: list[tuple[int, float, str]] = []
-        for frame_id, emb in all_embeddings:
-            sim = cosine_similarity(query_embedding, emb)
-            if sim >= self.min_relevance:
-                scored.append((frame_id, sim, "direct_match"))
-
-        # Sort by similarity, take top-k
+         # 3. Filter by distance threshold and sort by similarity
+        scored: list[tuple[int, float, str]] = [
+            (frame_id, 1.0 - distance, "direct_match")
+            for frame_id, _, _, _, _, _, distance in all_results
+            if 1.0 - distance >= self.min_relevance
+        ]
         scored.sort(key=lambda x: x[1], reverse=True)
         top_direct = scored[: self.top_k_direct]
 
-        # 3. Graph-walk from top-k frames
+         # 4. Graph-walk from top-k frames
         seen_frame_ids = {fid for fid, _, _ in top_direct}
         graph_neighbors: list[tuple[int, float, str]] = []
         for frame_id, _sim, _ in top_direct:
             neighbors = await self._graph_walk(
                 frame_id, query_embedding, self.graph_hops, self.graph_decay
-            )
+             )
             for neighbor_id, neighbor_sim, source in neighbors:
                 if neighbor_id not in seen_frame_ids:
                     seen_frame_ids.add(neighbor_id)
                     graph_neighbors.append((neighbor_id, neighbor_sim, source))
 
-        # Combine and sort
+         # Combine and sort
         all_relevant = top_direct + graph_neighbors
         all_relevant.sort(key=lambda x: x[1], reverse=True)
 
-        # 4. Assemble RetrievedFrame objects
+         # 5. Assemble RetrievedFrame objects
         retrieved_frames: list[RetrievedFrame] = []
         for frame_id, relevance, source in all_relevant:
             frame = await self.store.get_frame(frame_id)
@@ -173,19 +179,19 @@ class Retriever:
                     associations=assocs,
                     relevance=relevance,
                     source=source,
-                )
-            )
+                 )
+             )
 
-        # 5. Recent episodes for the user
+         # 6. Recent episodes for the user
         recent_episodes = await self.store.get_episodes_for_user(user_id, limit=10)
 
-        # Build and return context
+         # Build and return context
         context = MemoryContext(
             query=query,
             retrieved_frames=retrieved_frames,
             recent_episodes=recent_episodes,
             formatted="",
-        )
+         )
         context.formatted = format_memory_context(context)
         return context
 

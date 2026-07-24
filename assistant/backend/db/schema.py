@@ -99,14 +99,16 @@ CREATE INDEX IF NOT EXISTS idx_slot_history_slot ON slot_history(slot_id);
 CREATE INDEX IF NOT EXISTS idx_conflicts_frame ON conflicts(frame_id);
 CREATE INDEX IF NOT EXISTS idx_conflicts_status ON conflicts(status);
 
--- Frame embeddings (via nomic-embed-text, stored as JSON array)
+-- Frame embeddings (via nomic-embed-text, stored as sqlite-vec vectors)
 CREATE TABLE IF NOT EXISTS frame_embeddings (
     frame_id INTEGER PRIMARY KEY,
-    embedding TEXT NOT NULL,
+    embedding vec_float32 NOT NULL,
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (frame_id) REFERENCES frames(id) ON DELETE CASCADE
 );
 
+-- Index for efficient vector search
+CREATE INDEX IF NOT EXISTS idx_frame_embeddings_embedding ON frame_embeddings(embedding);
 CREATE INDEX IF NOT EXISTS idx_frame_embeddings_frame ON frame_embeddings(frame_id);
 """
 
@@ -116,12 +118,14 @@ async def init_db(db_path: str) -> None:
     async with aiosqlite.connect(db_path) as db:
         await db.execute("PRAGMA foreign_keys = ON")
         await db.execute("PRAGMA journal_mode = WAL")
-        await db.executescript(SCHEMA_SQL)
-
+        
+        # Load sqlite-vec extension first (before schema)
+        await db.enable_load_extension(True)
         try:
-            await db.enable_load_extension(True)
             await db.load_extension("vec0")
-        except Exception as exc:  # pragma: no cover - extension may be missing
+        except Exception as exc:
             logger.warning("sqlite-vec extension not loaded: %s", exc)
-
+            logger.warning("Vector search will not be available")
+        
+        await db.executescript(SCHEMA_SQL)
         await db.commit()
