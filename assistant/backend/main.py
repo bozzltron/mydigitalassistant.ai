@@ -107,7 +107,7 @@ async def search_frames(
     limit: int = 10,
     min_similarity: float = 0.3,
     store: MemoryStore = _Depends(get_store),
-    llm_client: OllamaClient = _Depends(get_orchestrator.llm_client),
+    orch: Orchestrator = _Depends(get_orchestrator),
 ):
     """Search frames by similarity.
 
@@ -118,7 +118,7 @@ async def search_frames(
         raise HTTPException(status_code=400, detail="Query cannot be empty")
 
     # Embed the query
-    query_response = await llm_client.embed(q)
+    query_response = await orch.llm_client.embed(q)
     
     # Search using sqlite-vec
     results = await store.search_similar_frames(

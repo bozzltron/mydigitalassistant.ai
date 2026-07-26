@@ -25,7 +25,7 @@ Runs 100% locally via Ollama. Safe for household use incl. kids.
 - Run backend: `./assistant/bin/assistant chat`
 - Run CLI: ` ./assistant/bin/assistant chat`
 - Run tests: `docker run -it --rm -v $(pwd):/app -w /app assistant pytest assistant/tests/`
-- Lint: `docker run -it --rm -v $(pwd):/app -w /app assistant ruff check /assistant`
+- Lint: `docker run -it --rm -v $(pwd):/app -w /app assistant ruff check .`
 
 ## Code style
 - Python 3.11+. Type hints required on all public functions.

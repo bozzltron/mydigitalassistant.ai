@@ -19,7 +19,10 @@ RUN pip install --no-cache-dir --upgrade pip \
         "rich>=13.7" \
         "numpy>=1.26" \
         "aiosqlite>=0.20" \
-        "sqlite-vec>=0.1.0"
+        "sqlite-vec>=0.1.0" \
+        "ruff==0.7.0" \
+        "pytest>=7.1.2" \
+        "pytest-asyncio>=0.23"
 
 FROM python:3.11-slim AS runtime
 
@@ -43,6 +46,9 @@ RUN pip install --no-cache-dir --no-index --find-links /wheels \
         numpy \
         aiosqlite \
         sqlite-vec \
+        ruff \
+        pytest \
+        pytest-asyncio \
     && rm -rf /wheels
 
 COPY --chown=assistant:assistant backend/ /app/backend/
@@ -65,3 +71,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -f http://127.0.0.1:8000/health || exit 1
 
 CMD ["uvicorn", "assistant.backend.main:app", "--host", "127.0.0.1", "--port", "8000"]
+

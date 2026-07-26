@@ -73,7 +73,7 @@ class MemoryStore:
             ]
 
     # Frames
-async def create_frame(self, name: str, type: str, confidence: float = 0.5, essential: int = 0) -> Frame:
+    async def create_frame(self, name: str, type: str, confidence: float = 0.5, essential: int = 0) -> Frame:
         async with self._connect() as db:
             cursor = await db.execute(
                  "INSERT INTO frames (name, type, confidence, essential) VALUES (?, ?, ?, ?)",
