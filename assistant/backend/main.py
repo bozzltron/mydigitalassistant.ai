@@ -97,7 +97,7 @@ async def health():
         "ollama_reachable": ollama_ok,
         "chat_model": settings.chat_model,
         "utility_model": settings.utility_model,
-     }
+    }
 
 
 # Search
