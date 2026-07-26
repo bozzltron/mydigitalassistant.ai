@@ -2,15 +2,27 @@
 
 ## Architecture
 FastAPI backend + CLI client. Ollama for LLM inference (two models: 7b for chat,
-3b for extraction/routing). SQLite + sqlite-vec for storage.
+3b for extraction/routing). SQLite + sqlite-vec for local memory storage.
+Web search for retrieval-only; learned facts stored locally in memory frames/slots.
+
+## Web Search
+- Uses SearXNG (privacy-friendly meta-search engine) for external retrieval.
+- Search results are **retrieval-only** unless explicitly worth learning.
+- The LLM decides which facts to retain from search results.
+- Configurable: `SEARCH_ENABLED=true` in `.env` to enable web search.
+- Default: `SEARCH_ENABLED=true` for useful assistant functionality.
+- All search queries go to local SearXNG instance (not cloud APIs).
 
 ## The cognitive loop
 1. Task Router classifies input: functional (goal-directed) vs introspective (reflective).
    Heuristic first; LLM fallback (3b model) only for ambiguous cases.
-2. Retrieval: embed query → sqlite-vec similarity → graph-walk associations → memory context.
-3. LLM call (7b): system prompt injects structured memory context + task-type guidance.
-4. Response to user.
-5. Async extraction (3b model, fire-and-forget): extract frames/slots/associations as JSON → upsert with confidence → auto-resolve conflicts → log to slot_history.
+2. For functional queries requiring external info: fetch via search engine (SearXNG).
+3. Retrieve: embed query → sqlite-vec similarity → graph-walk associations → memory context.
+4. LLM call (7b): system prompt injects structured memory context + task-type guidance.
+5. Response to user.
+6. Async extraction (3b model, fire-and-forget): extract frames/slots/associations as JSON → upsert with confidence → auto-resolve conflicts → log to slot_history.
+
+
 
 ## Memory model
 - Frames: entities/concepts/events with confidence.
@@ -54,4 +66,5 @@ FastAPI backend + CLI client. Ollama for LLM inference (two models: 7b for chat,
 - Don't run extraction synchronously in the chat request — it's async, fire-and-forget.
 - Don't make a second blocking LLM call for task routing when heuristics suffice.
 - Don't bind FastAPI to anything but 127.0.0.1.
-- Don't add web search or voice I/O — those are future phases, out of scope now.
+- Don't add cloud LLM APIs (OpenAI, Anthropic, Google, etc.) — all inference via local Ollama.
+- Don't skip SearXNG localhost binding when using search.

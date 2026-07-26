@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS frames (
     name TEXT UNIQUE NOT NULL,
     type TEXT NOT NULL,
     confidence REAL NOT NULL DEFAULT 0.5,
+    essential INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -29,6 +30,7 @@ CREATE TABLE IF NOT EXISTS slots (
     key TEXT NOT NULL,
     value TEXT NOT NULL,
     confidence REAL NOT NULL DEFAULT 0.5,
+    essential INTEGER NOT NULL DEFAULT 0,
     source_episode_id INTEGER,
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE(frame_id, key),
@@ -57,6 +59,7 @@ CREATE TABLE IF NOT EXISTS associations (
     to_frame_id INTEGER NOT NULL,
     relation_type TEXT NOT NULL,
     confidence REAL NOT NULL DEFAULT 0.5,
+    essential INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE(from_frame_id, to_frame_id, relation_type),
     FOREIGN KEY (from_frame_id) REFERENCES frames(id) ON DELETE CASCADE,

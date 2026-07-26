@@ -16,6 +16,7 @@ from assistant.backend.memory.store import MemoryStore
 from assistant.backend.pipeline.llm_client import OllamaClient
 from assistant.backend.pipeline.orchestrator import ChatRequest, ChatResponse, Orchestrator
 from assistant.backend.pipeline.orchestrator import OrchestratorDeps as _OrchestratorDeps
+from assistant.backend.pipeline.search import WebSearchTool
 
 logger = logging.getLogger(__name__)
 
@@ -40,11 +41,16 @@ async def lifespan(app: FastAPI):
         embedding_model=settings.embedding_model,
     )
     retriever = Retriever(store=store, llm_client=llm_client)
+    search_tool = WebSearchTool(
+        base_url=settings.search_base_url,
+        enabled=True,    # Always enabled - core requirement
+    )
     orchestrator = Orchestrator(
         deps=_OrchestratorDeps(
             store=store,
             retriever=retriever,
             llm_client=llm_client,
+            search_tool=search_tool,
         )
     )
 
@@ -53,11 +59,12 @@ async def lifespan(app: FastAPI):
     _state["retriever"] = retriever
     _state["orchestrator"] = orchestrator
 
-    logger.info("Assistant started. DB: %s, Ollama: %s", db_path, settings.ollama_url)
+    logger.info("Assistant started. DB: %s, Ollama: %s, Search: enabled")
 
     yield
 
     await llm_client.close()
+    await search_tool.close()
     _state.clear()
 
 

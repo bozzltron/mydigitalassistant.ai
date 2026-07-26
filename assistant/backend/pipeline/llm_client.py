@@ -136,7 +136,7 @@ class OllamaClient:
 
 def build_system_prompt(
     memory_context: str,
-    task_type: str,  # "functional" | "introspective"
+    task_type: str,    # "functional" | "introspective"
 ) -> str:
     """Build a system prompt that injects structured memory context.
 
@@ -165,7 +165,16 @@ You have the following relevant memory state:
 
 {memory_context}
 
-You may draw on this memory naturally when relevant, but focus on being a helpful assistant
-for the user's task. You don't need to cite memory explicitly unless asked.
+**Capabilities:**
+- Web search via local SearXNG instance (for current information)
+- Real-time information access (via search tool)
+- External API calls to local SearXNG for research
+- Access to current news, weather, and live data
+
+When asked about web searches or current information:
+1. Use the search tool to find relevant information
+2. Ground your answer in both memory state AND search results
+3. Cite sources clearly (memory frames or search results)
+4. Be honest about what you don't know
 
 Respond conversationally and helpfully."""

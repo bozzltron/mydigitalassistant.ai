@@ -17,8 +17,7 @@ INTROSPECTIVE_PATTERNS = [
     r"\bwhat do you (know|remember|think|recall)\b",
     r"\bdo you (know|remember|recall|have)\b",
     r"\bcan you (remember|recall)\b",
-    r"\btell me about "
-    r"(what you (know|remember|learned)|our (previous|past) (conversations?|talks?))\b",
+    r"\btell me about (what you (know|remember|learned)|our (previous|past|earlier) (conversations?|talks?))\b",
     r"\bwhat have (we|you|i) (talked|discussed|said|learned)\b",
     r"\bdo you (still )?remember\b",
     r"\bhave you (heard of|learned about|seen)\b",
@@ -27,6 +26,12 @@ INTROSPECTIVE_PATTERNS = [
     r"\bour (previous|earlier|past) (conversation|chat|discussion)\b",
     r"\bremember when\b",
     r"\bwhat (else )?do you know about\b",
+    r"\btell me (more )?about the? (article|story|thing|fact|subject|topic|matter)\b",
+    r"\bwhat do you recall (about|regarding) \b",
+    r"\bwhat was (discussed|said|mentioned) about\b",
+    r"\b(pick )?up (with|on|on) that\b",
+    r"\bit was (on|about|related to) \w+\b",
+    r"\bthat (was|is) (about|on|related to) \w+\b",
 ]
 
 # Compiled regex patterns

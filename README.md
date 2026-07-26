@@ -14,6 +14,7 @@ ACT-R/SOAR's functional/introspective task distinction).
 - **Error correction** — contradictions are auto-resolved with full audit trail
 - **Multi-user** — per-user private episodic memory + shared household knowledge
 - **100% local** — Ollama for inference, local embeddings, SQLite for storage
+- **Web search** — privacy-first retrieval via local SearXNG instance
 - **No cloud calls** — never leaks data to tech giants; safe for kids
 
 ## Quick Start
@@ -41,7 +42,8 @@ See `/assistant/AGENTS.md` for the cognitive architecture and memory model detai
 ## Security
 
 See `SECURITY.md` (in /assistant/) for the local-only guarantee and threat model.
-All inference is local via Ollama. No outbound network calls except to localhost Ollama.
+All inference is local via Ollama. Web search only via local SearXNG instance.
+No outbound network calls to cloud providers.
 
 ## License
 

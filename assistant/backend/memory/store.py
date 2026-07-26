@@ -73,11 +73,11 @@ class MemoryStore:
             ]
 
     # Frames
-    async def create_frame(self, name: str, type: str, confidence: float = 0.5) -> Frame:
+async def create_frame(self, name: str, type: str, confidence: float = 0.5, essential: int = 0) -> Frame:
         async with self._connect() as db:
             cursor = await db.execute(
-                "INSERT INTO frames (name, type, confidence) VALUES (?, ?, ?)",
-                (name, type, confidence),
+                 "INSERT INTO frames (name, type, confidence, essential) VALUES (?, ?, ?, ?)",
+                 (name, type, confidence, essential),
             )
             await db.commit()
             return await self._get_frame_row(db, cursor.lastrowid)
@@ -85,9 +85,9 @@ class MemoryStore:
     async def get_frame(self, frame_id: int) -> Frame | None:
         async with self._connect() as db:
             row = await db.execute_fetchall(
-                "SELECT id, name, type, confidence, created_at, updated_at "
-                "FROM frames WHERE id = ?",
-                (frame_id,),
+                 "SELECT id, name, type, confidence, essential, created_at, updated_at "
+                 "FROM frames WHERE id = ?",
+                 (frame_id,),
             )
             if not row:
                 return None
@@ -96,9 +96,9 @@ class MemoryStore:
     async def get_frame_by_name(self, name: str) -> Frame | None:
         async with self._connect() as db:
             row = await db.execute_fetchall(
-                "SELECT id, name, type, confidence, created_at, updated_at "
-                "FROM frames WHERE name = ?",
-                (name,),
+                 "SELECT id, name, type, confidence, essential, created_at, updated_at "
+                 "FROM frames WHERE name = ?",
+                 (name,),
             )
             if not row:
                 return None
@@ -108,19 +108,21 @@ class MemoryStore:
         async with self._connect() as db:
             if type:
                 rows = await db.execute_fetchall(
-                    "SELECT id, name, type, confidence, created_at, updated_at "
-                    "FROM frames WHERE type = ? ORDER BY id",
-                    (type,),
-                )
+                     "SELECT id, name, type, confidence, essential, created_at, updated_at "
+                     "FROM frames WHERE type = ? ORDER BY id",
+                     (type,),
+                 )
             else:
                 rows = await db.execute_fetchall(
-                    "SELECT id, name, type, confidence, created_at, updated_at "
-                    "FROM frames ORDER BY id"
-                )
-            return [Frame(**self._frame_dict(row)) for row in rows]
-
+                     "SELECT id, name, type, confidence, essential, created_at, updated_at "
+                     "FROM frames ORDER BY id"
+                 )
+            return [
+                Frame(**self._frame_dict(row))
+                for row in rows
+            ]
     async def update_frame(self, frame_id: int, **kwargs) -> Frame:
-        allowed = {"name", "type", "confidence"}
+        allowed = {"name", "type", "confidence", "essential"}
         updates = {k: v for k, v in kwargs.items() if k in allowed}
         if not updates:
             raise ValueError("No valid fields to update")
@@ -294,32 +296,32 @@ class MemoryStore:
         key: str,
         value: str,
         source_episode_id: int | None = None,
-    ) -> tuple[Slot, Conflict | None]:
+        essential: int = 0,
+      ) -> tuple[Slot, Conflict | None]:
         async with self._connect() as db:
             existing = await db.execute_fetchall(
-                "SELECT id, value, confidence FROM slots "
+                "SELECT id, value, confidence, essential FROM slots "
                 "WHERE frame_id = ? AND key = ?",
                 (frame_id, key),
             )
-
             if not existing:
                 cursor = await db.execute(
-                    "INSERT INTO slots (frame_id, key, value, confidence, source_episode_id) "
-                    "VALUES (?, ?, ?, ?, ?)",
-                    (frame_id, key, value, initial_confidence(), source_episode_id),
+                      "INSERT INTO slots (frame_id, key, value, confidence, essential, source_episode_id) "
+                      "VALUES (?, ?, ?, ?, ?, ?)",
+                      (frame_id, key, value, initial_confidence(), essential, source_episode_id),
                 )
                 await db.commit()
                 slot = await self._get_slot_row(db, cursor.lastrowid)
                 return slot, None
 
-            slot_id, existing_value, existing_confidence = existing[0]
+            slot_id, existing_value, existing_confidence, existing_essential = existing[0]
 
             if existing_value == value:
                 new_conf = bump_confidence(existing_confidence)
                 await db.execute(
-                    "UPDATE slots SET confidence = ?, updated_at = datetime('now') "
-                    "WHERE id = ?",
-                    (new_conf, slot_id),
+                      "UPDATE slots SET confidence = ?, essential = ?, updated_at = datetime('now') "
+                      "WHERE id = ?",
+                      (new_conf, existing_essential, slot_id),
                 )
                 await db.commit()
                 slot = await self._get_slot_row(db, slot_id)
@@ -330,9 +332,9 @@ class MemoryStore:
 
             if decision.resolution == ConflictResolution.NEW_WINS:
                 await db.execute(
-                    "UPDATE slots SET value = ?, confidence = ?, source_episode_id = ?, "
-                    "updated_at = datetime('now') WHERE id = ?",
-                    (value, initial_confidence(), source_episode_id, slot_id),
+                      "UPDATE slots SET value = ?, confidence = ?, essential = ?, source_episode_id = ?, "
+                      "updated_at = datetime('now') WHERE id = ?",
+                      (value, initial_confidence(), existing_essential, source_episode_id, slot_id),
                 )
                 await db.execute(
                     """
@@ -374,9 +376,9 @@ class MemoryStore:
     async def get_slot(self, frame_id: int, key: str) -> Slot | None:
         async with self._connect() as db:
             row = await db.execute_fetchall(
-                "SELECT id, frame_id, key, value, confidence, source_episode_id, updated_at "
-                "FROM slots WHERE frame_id = ? AND key = ?",
-                (frame_id, key),
+                  "SELECT id, frame_id, key, value, confidence, essential, source_episode_id, updated_at "
+                  "FROM slots WHERE frame_id = ? AND key = ?",
+                  (frame_id, key),
             )
             if not row:
                 return None
@@ -385,9 +387,9 @@ class MemoryStore:
     async def get_slots_for_frame(self, frame_id: int) -> list[Slot]:
         async with self._connect() as db:
             rows = await db.execute_fetchall(
-                "SELECT id, frame_id, key, value, confidence, source_episode_id, updated_at "
-                "FROM slots WHERE frame_id = ? ORDER BY key",
-                (frame_id,),
+                  "SELECT id, frame_id, key, value, confidence, essential, source_episode_id, updated_at "
+                  "FROM slots WHERE frame_id = ? ORDER BY id",
+                  (frame_id,),
             )
             return [Slot(**self._slot_dict(row)) for row in rows]
 
@@ -421,29 +423,21 @@ class MemoryStore:
         to_frame_id: int,
         relation_type: str,
         confidence: float = 0.5,
-    ) -> Association:
+        essential: int = 0,
+      ) -> Association:
         async with self._connect() as db:
             cursor = await db.execute(
-                "INSERT INTO associations (from_frame_id, to_frame_id, relation_type, confidence) "
-                "VALUES (?, ?, ?, ?)",
-                (from_frame_id, to_frame_id, relation_type, confidence),
+                  "INSERT INTO associations (from_frame_id, to_frame_id, relation_type, confidence, essential) "
+                   "VALUES (?, ?, ?, ?, ?)",
+                   (from_frame_id, to_frame_id, relation_type, confidence, essential),
             )
             await db.commit()
             return await self._get_association_row(db, cursor.lastrowid)
 
-    async def get_associations_from(self, frame_id: int) -> list[Association]:
-        async with self._connect() as db:
-            rows = await db.execute_fetchall(
-                "SELECT id, from_frame_id, to_frame_id, relation_type, confidence, created_at "
-                "FROM associations WHERE from_frame_id = ? ORDER BY id",
-                (frame_id,),
-            )
-            return [Association(**self._association_dict(row)) for row in rows]
-
     async def get_associations_to(self, frame_id: int) -> list[Association]:
         async with self._connect() as db:
             rows = await db.execute_fetchall(
-                "SELECT id, from_frame_id, to_frame_id, relation_type, confidence, created_at "
+                "SELECT id, from_frame_id, to_frame_id, relation_type, confidence, essential, created_at "
                 "FROM associations WHERE to_frame_id = ? ORDER BY id",
                 (frame_id,),
             )
@@ -453,7 +447,7 @@ class MemoryStore:
         async with self._connect() as db:
             rows = await db.execute_fetchall(
                 """
-                SELECT id, from_frame_id, to_frame_id, relation_type, confidence, created_at
+                SELECT id, from_frame_id, to_frame_id, relation_type, confidence, essential, created_at
                 FROM associations
                 WHERE from_frame_id = ? OR to_frame_id = ?
                 ORDER BY id
@@ -587,13 +581,44 @@ class MemoryStore:
     # Helpers
     async def _get_frame_row(self, db: aiosqlite.Connection, frame_id: int) -> Frame:
         row = await db.execute_fetchall(
-            "SELECT id, name, type, confidence, created_at, updated_at "
-            "FROM frames WHERE id = ?",
-            (frame_id,),
+              "SELECT id, name, type, confidence, essential, created_at, updated_at "
+              "FROM frames WHERE id = ?",
+              (frame_id,),
         )
         if not row:
             raise ValueError(f"Frame {frame_id} not found")
         return Frame(**self._frame_dict(row[0]))
+
+    async def _get_slot_row(self, db: aiosqlite.Connection, slot_id: int) -> Slot:
+        row = await db.execute_fetchall(
+              "SELECT id, frame_id, key, value, confidence, essential, source_episode_id, updated_at "
+              "FROM slots WHERE id = ?",
+              (slot_id,),
+        )
+        if not row:
+            raise ValueError(f"Slot {slot_id} not found")
+        return Slot(**self._slot_dict(row[0]))
+
+    async def _get_association_row(self, db: aiosqlite.Connection, association_id: int) -> Association:
+        row = await db.execute_fetchall(
+              "SELECT id, from_frame_id, to_frame_id, relation_type, confidence, essential, created_at "
+              "FROM associations WHERE id = ?",
+              (association_id,),
+        )
+        if not row:
+            raise ValueError(f"Association {association_id} not found")
+        return Association(**self._association_dict(row[0]))
+
+    async def _get_conflict_row(self, db: aiosqlite.Connection, conflict_id: int) -> Conflict:
+        row = await db.execute_fetchall(
+            "SELECT id, frame_id, slot_key, existing_value, new_value, "
+            "resolved_value, status, created_at, resolved_at "
+            "FROM conflicts WHERE id = ?",
+            (conflict_id,),
+        )
+        if not row:
+            raise ValueError(f"Conflict {conflict_id} not found")
+        return Conflict(**self._conflict_dict(row[0]))
 
     @staticmethod
     def _frame_dict(row: tuple) -> dict:
@@ -602,19 +627,10 @@ class MemoryStore:
             "name": row[1],
             "type": row[2],
             "confidence": row[3],
-            "created_at": row[4],
-            "updated_at": row[5],
+            "essential": row[4],
+            "created_at": row[5],
+            "updated_at": row[6],
         }
-
-    async def _get_slot_row(self, db: aiosqlite.Connection, slot_id: int) -> Slot:
-        row = await db.execute_fetchall(
-            "SELECT id, frame_id, key, value, confidence, source_episode_id, updated_at "
-            "FROM slots WHERE id = ?",
-            (slot_id,),
-        )
-        if not row:
-            raise ValueError(f"Slot {slot_id} not found")
-        return Slot(**self._slot_dict(row[0]))
 
     @staticmethod
     def _slot_dict(row: tuple) -> dict:
@@ -624,19 +640,10 @@ class MemoryStore:
             "key": row[2],
             "value": row[3],
             "confidence": row[4],
-            "source_episode_id": row[5],
-            "updated_at": row[6],
+            "essential": row[5],
+            "source_episode_id": row[6],
+            "updated_at": row[7],
         }
-
-    async def _get_association_row(self, db: aiosqlite.Connection, assoc_id: int) -> Association:
-        row = await db.execute_fetchall(
-            "SELECT id, from_frame_id, to_frame_id, relation_type, confidence, created_at "
-            "FROM associations WHERE id = ?",
-            (assoc_id,),
-        )
-        if not row:
-            raise ValueError(f"Association {assoc_id} not found")
-        return Association(**self._association_dict(row[0]))
 
     @staticmethod
     def _association_dict(row: tuple) -> dict:
@@ -646,18 +653,9 @@ class MemoryStore:
             "to_frame_id": row[2],
             "relation_type": row[3],
             "confidence": row[4],
-            "created_at": row[5],
+            "essential": row[5],
+            "created_at": row[6],
         }
-
-    async def _get_episode_row(self, db: aiosqlite.Connection, episode_id: int) -> Episode:
-        row = await db.execute_fetchall(
-            "SELECT id, user_id, session_id, role, content, frame_ids, timestamp "
-            "FROM episodes WHERE id = ?",
-            (episode_id,),
-        )
-        if not row:
-            raise ValueError(f"Episode {episode_id} not found")
-        return Episode(**self._episode_dict(row[0]))
 
     @staticmethod
     def _episode_dict(row: tuple) -> dict:

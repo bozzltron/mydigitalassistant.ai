@@ -8,7 +8,8 @@ data to external servers. All inference happens locally via Ollama.
 ## What's enforced
 
 - FastAPI binds to `127.0.0.1` only — never accessible from the network
-- All HTTP calls limited to Ollama at `http://127.0.0.1:11434`
+- All HTTP calls to Ollama at `http://127.0.0.1:11434`
+- Web search only via local SearXNG at `http://127.0.0.1:8080` (configurable in `.env`)
 - No telemetry, analytics, or phone-home code
 - No cloud LLM APIs (OpenAI, Anthropic, Google, etc.)
 - SQLite DB stored locally; backups via `assistant db backup`
@@ -25,6 +26,7 @@ This is a **single-household deployment**, not a multi-tenant SaaS.
 - Telemetry / tracking (no analytics code)
 - Accidental secret commits (`.env` is gitignored, checked in CI)
 - Misconfigured Ollama endpoints (defaults and verification require localhost)
+- Misconfigured search endpoints (SearXNG must be localhost)
 
 ### Not protected against (out of scope for hobby project)
 
@@ -58,6 +60,7 @@ This checks:
 
 - No external API URLs in source code (OpenAI, Anthropic, Google, etc.)
 - Ollama URL defaults to localhost
+- SearXNG URL defaults to localhost (if search is enabled)
 - No telemetry/analytics code
 - No insecure bind addresses (`0.0.0.0`)
 - `.env` is gitignored
@@ -75,6 +78,9 @@ grep -R "api.openai.com\|api.anthropic.com\|googleapis.com" backend/ cli/ || tru
 
 # Confirm FastAPI is not bound to 0.0.0.0
 grep -R "0.0.0.0" backend/ cli/ || true
+
+# Confirm SearXNG is configured for localhost (if search is enabled)
+grep -R "SEARXNG_URL" .env* backend/ cli/ || true
 
 # Confirm .env is gitignored
 grep "\.env" .gitignore ../.gitignore

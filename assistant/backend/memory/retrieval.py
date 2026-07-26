@@ -64,9 +64,8 @@ def format_memory_context(context: "MemoryContext") -> str:
                 lines.append(f"  relations: {assoc_str}")
     if context.recent_episodes:
         lines.append("\n## Recent conversation (this user)")
-        for ep in context.recent_episodes[-5:]:  # last 5
-            preview = ep.content[:100] + "..." if len(ep.content) > 100 else ep.content
-            lines.append(f"  [{ep.role}] {preview}")
+        for ep in context.recent_episodes[-5:]:   # last 5
+            lines.append(f"   [{ep.role}] {ep.content}")
     return "\n".join(lines) if lines else "(no relevant memory found)"
 
 

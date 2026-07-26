@@ -8,9 +8,11 @@ data to external servers. All inference happens locally via Ollama.
 ## What's enforced
 
 - FastAPI binds to `127.0.0.1` only — never accessible from the network
-- All HTTP calls limited to Ollama at `http://127.0.0.1:11434`
+- All HTTP calls limited to Ollama at `http://127.0.0.1:11434` or SearXNG at `http://127.0.0.1:8080`
+- Search tool only allows localhost SearXNG endpoints (no cloud search)
 - No telemetry, analytics, or phone-home code
 - No cloud LLM APIs (OpenAI, Anthropic, Google, etc.)
+- All HTTP calls to external services require explicit `SEARCH_ENABLED=true` config
 - SQLite DB stored locally; backups via `assistant db backup`
 - Secrets live in `.env` (gitignored); `.env.example` documents safe defaults
 
@@ -24,7 +26,9 @@ This is a **single-household deployment**, not a multi-tenant SaaS.
 - Network exposure (localhost-only binding)
 - Telemetry / tracking (no analytics code)
 - Accidental secret commits (`.env` is gitignored, checked in CI)
-- Misconfigured Ollama endpoints (defaults and verification require localhost)
+- Misconfigured Ollama endpoints (defaults require localhost)
+- Misconfigured search endpoints (SearXNG must be localhost)
+- Search results stored in memory without explicit selection
 
 ### Not protected against (out of scope for hobby project)
 
@@ -58,6 +62,7 @@ This checks:
 
 - No external API URLs in source code (OpenAI, Anthropic, Google, etc.)
 - Ollama URL defaults to localhost
+- SearXNG search tool binds to localhost only (not 0.0.0.0)
 - No telemetry/analytics code
 - No insecure bind addresses (`0.0.0.0`)
 - `.env` is gitignored

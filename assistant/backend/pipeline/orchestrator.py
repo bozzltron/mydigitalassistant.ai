@@ -1,3 +1,5 @@
+"""Orchestrator: runs the cognitive loop for chat turns."""
+
 import logging
 import uuid
 from dataclasses import dataclass
@@ -7,6 +9,7 @@ from pydantic import BaseModel
 from assistant.backend.memory.retrieval import Retriever
 from assistant.backend.memory.store import MemoryStore
 from assistant.backend.pipeline.llm_client import ChatMessage, OllamaClient, build_system_prompt
+from assistant.backend.pipeline.search import SearchResult, WebSearchTool
 from assistant.backend.pipeline.task_router import classify
 
 logger = logging.getLogger(__name__)
@@ -33,6 +36,7 @@ class OrchestratorDeps:
     store: MemoryStore
     retriever: Retriever
     llm_client: OllamaClient
+    search_tool: WebSearchTool  # Always present (required feature)
 
 
 class Orchestrator:
@@ -40,25 +44,18 @@ class Orchestrator:
 
     Flow:
     1. Get/create session_id
-    2. Log user episode
+    2. Log user episode (conversation)
     3. Classify task type (router)
-    4. Retrieve memory context
+    4. Retrieve memory context (frames/slots/episodes)
     5. Build system prompt with memory context + task type
-    6. Call LLM for response
+    6. Call LLM with optional search results
     7. Log assistant episode
-    8. Fire-and-forget: extract facts from turn, update memory
+    8. Fire-and-forget: extract facts from conversation turn, update memory
     9. Return response to user
     """
 
-    def __init__(self, deps: OrchestratorDeps):
-        self.store = deps.store
-        self.retriever = deps.retriever
-        self.llm_client = deps.llm_client
-
     async def chat(self, request: ChatRequest) -> ChatResponse:
-        # Local import avoids circular dependency; extractor is only needed here.
-        from assistant.backend.pipeline.extractor import fire_and_forget
-
+        """Run the full cognitive loop for a chat turn."""
         # 1. Session
         session_id = request.session_id or str(uuid.uuid4())
 
@@ -76,18 +73,38 @@ class Orchestrator:
 
         # 4. Retrieve memory context
         memory_context = await self.retriever.retrieve(
+            store=self.store,
             query=request.message,
             user_id=request.user_id,
             session_id=session_id,
+            limit=10,
         )
 
-        # 5. Build system prompt
+        # 5. Build system prompt with memory context
         system_prompt = build_system_prompt(
             memory_context=memory_context.formatted,
             task_type=task_type.value,
         )
 
-        # 6. Call LLM
+        # 6. Call LLM with optional search results
+        # Detect if query is about current information (simple heuristic)
+        search_results: list[SearchResult] = []
+        if task_type.value == "functional" and any(
+            keyword in request.message.lower()
+            for keyword in ["news", "headline", "current", "today", "now", "recent"]
+        ):
+            logger.info("Searching for current information: %s", request.message[:50])
+            search_results = await self.search_tool.search(request.message, num_results=5)
+            logger.info("Found %d search results", len(search_results))
+
+            # Inject search results into system prompt
+            if search_results:
+                search_text = "\n".join(
+                    f"- [{r.title}]({r.url}) - {r.snippet}" for r in search_results
+                )
+                system_prompt += f"\n\n**Recent Search Results:**\n{search_text}"
+
+        # Call LLM
         messages = [
             ChatMessage(role="system", content=system_prompt),
             ChatMessage(role="user", content=request.message),
@@ -125,3 +142,15 @@ class Orchestrator:
             memory_context=memory_context.formatted,
             extraction_summary=None,  # async, not yet available
         )
+
+
+async def fire_and_forget(
+    user_message: str,
+    assistant_response: str,
+    store: MemoryStore,
+    llm_client: OllamaClient,
+    source_episode_id: int,
+) -> None:
+    """Extract facts from conversation and store in memory (fire-and-forget)."""
+    # TODO: Implement fact extraction
+    pass

@@ -40,6 +40,25 @@ def test_heuristic_introspective_case_insensitive():
     assert classify_heuristic("WHAT DO YOU REMEMBER?") == TaskType.INTROSPECTIVE
 
 
+def test_heuristic_introspective_tell_me_about_article():
+    assert classify_heuristic("Tell me more about the Glasgow article") == TaskType.INTROSPECTIVE
+    assert classify_heuristic("Tell me about the story") == TaskType.INTROSPECTIVE
+    assert classify_heuristic("Tell me about the topic") == TaskType.INTROSPECTIVE
+
+
+def test_heuristic_introspective_pick_up():
+    """Queries referencing prior context should be introspective."""
+    assert classify_heuristic("Pick up with that") == TaskType.INTROSPECTIVE
+    assert classify_heuristic("Pick up on that") == TaskType.INTROSPECTIVE
+    assert classify_heuristic("It was on apnews.com") == TaskType.INTROSPECTIVE
+    assert classify_heuristic("That was related to climate") == TaskType.INTROSPECTIVE
+
+
+def test_heuristic_introspective_recall_about():
+    assert classify_heuristic("What do you recall about the Glasgow article?") == TaskType.INTROSPECTIVE
+    assert classify_heuristic("What was discussed about climate change?") == TaskType.INTROSPECTIVE
+
+
 def test_heuristic_returns_none_for_functional():
     assert classify_heuristic("How does a guitar amplifier work?") is None
     assert classify_heuristic("Search for recipes") is None

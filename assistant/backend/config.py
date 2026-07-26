@@ -20,5 +20,9 @@ class Settings(BaseSettings):
 
     conflict_auto_resolve: bool = True
 
+    # Web search settings (always enabled - core requirement)
+    search_base_url: str = "http://127.0.0.1:8080"    # SearXNG default
+    search_timeout: float = 30.0
+
 
 settings = Settings()

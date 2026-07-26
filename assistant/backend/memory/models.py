@@ -6,6 +6,7 @@ class Frame(BaseModel):
     name: str
     type: str
     confidence: float = 0.5
+    essential: int = 0
     created_at: str | None = None
     updated_at: str | None = None
 
@@ -16,6 +17,7 @@ class Slot(BaseModel):
     key: str
     value: str
     confidence: float = 0.5
+    essential: int = 0
     source_episode_id: int | None = None
     updated_at: str | None = None
 
@@ -26,6 +28,7 @@ class Association(BaseModel):
     to_frame_id: int
     relation_type: str
     confidence: float = 0.5
+    essential: int = 0
     created_at: str | None = None
 
 

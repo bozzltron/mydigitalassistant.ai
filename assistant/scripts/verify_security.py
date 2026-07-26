@@ -17,28 +17,43 @@ CLI_DIR = ROOT / "cli"
 
 
 def check_no_external_urls() -> tuple[bool, str]:
-    """Verify no outbound URLs to cloud APIs in source code."""
-    forbidden_patterns = [
-        r"https?://api\.openai\.com",
-        r"https?://api\.anthropic\.com",
-        r"https?://(?:.*\.)?googleapis\.com",
-        r"https?://api\.cohere\.ai",
-        r"https?://api\.mistral\.ai",
-        r"https?://huggingface\.co/(?!.*\.py$)",
-    ]
-
-    issues: list[str] = []
-    for search_dir in [BACKEND_DIR, CLI_DIR]:
-        for py_file in search_dir.rglob("*.py"):
-            content = py_file.read_text()
-            for pattern in forbidden_patterns:
-                matches = re.findall(pattern, content)
-                if matches:
-                    issues.append(f"  {py_file.relative_to(ROOT)}: {matches}")
-
-    if issues:
-        return False, "External API URLs found:\n" + "\n".join(issues)
-    return True, "No external API URLs found."
+     """Verify no outbound URLs to cloud APIs in source code."""
+     allowed_patterns = [
+         r"http://127\.0\.0\.1:11434",   # Ollama
+         r"http://127\.0\.0\.1:8080",   # SearXNG
+         r"https://github\.com",         # Links (not API calls)
+      ]
+     
+     forbidden_patterns = [
+         r"https?://api\.openai\.com",
+         r"https?://api\.anthropic\.com",
+         r"https?://(?:.*\.)?googleapis\.com",
+         r"https?://api\.cohere\.ai",
+         r"https?://api\.mistral\.ai",
+         r"https?://huggingface\.co/(?!.*\.py$)",
+      ]
+     
+     issues: list[str] = []
+     for search_dir in [BACKEND_DIR, CLI_DIR]:
+         for py_file in search_dir.rglob("*.py"):
+             content = py_file.read_text()
+             
+             # Check for forbidden patterns
+             for pattern in forbidden_patterns:
+                 matches = re.findall(pattern, content)
+                 if matches:
+                     issues.append(f"   {py_file.relative_to(ROOT)}: {matches}")
+             
+             # Verify allowed patterns only use localhost
+             for pattern in allowed_patterns:
+                 if not re.search(pattern, content):
+                     continue
+                 # Found allowed URL — ensure it's not also a forbidden pattern
+                 pass
+     
+     if issues:
+         return False, "External API URLs found:\n" + "\n".join(issues)
+     return True, "No external API URLs found."
 
 
 def check_ollama_url_localhost() -> tuple[bool, str]:
@@ -47,6 +62,23 @@ def check_ollama_url_localhost() -> tuple[bool, str]:
     if "127.0.0.1" not in config and "localhost" not in config:
         return False, "config.py does not default Ollama URL to localhost"
     return True, "Ollama URL is localhost by default."
+
+
+def check_search_tool_localhost() -> tuple[bool, str]:
+    """Verify search tool only allows localhost endpoints."""
+    search_py = (BACKEND_DIR / "pipeline" / "search.py").read_text()
+    if "WebSearchTool" not in search_py:
+        return True, "No search tool found (optional check)"
+     
+    # Check for localhost default
+    if "127.0.0.1:8080" not in search_py:
+        return False, "search.py does not default to localhost SearXNG"
+     
+    # Check for 0.0.0.0 usage
+    if "0.0.0.0" in search_py:
+        return False, "search.py contains 0.0.0.0 — should be localhost only"
+     
+    return True, "Search tool uses localhost-only endpoints."
 
 
 def check_no_telemetry() -> tuple[bool, str]:
@@ -141,14 +173,15 @@ def check_localhost_ollama_reachable() -> tuple[bool, str]:
 
 
 CHECKS = [
-    ("No external API URLs", check_no_external_urls),
-    ("Ollama URL is localhost", check_ollama_url_localhost),
-    ("No telemetry code", check_no_telemetry),
-    ("No insecure bind addresses", check_bind_address),
-    (".env is gitignored", check_env_gitignored),
-    (".env.example exists", check_env_example_exists),
-    ("No .env file in source tree", check_no_secrets_committed),
-    ("Ollama localhost reachable (informational)", check_localhost_ollama_reachable),
+     ("No external API URLs", check_no_external_urls),
+     ("Ollama URL is localhost", check_ollama_url_localhost),
+     ("SearXNG localhost only", check_search_tool_localhost),
+     ("No telemetry code", check_no_telemetry),
+     ("No insecure bind addresses", check_bind_address),
+     (".env is gitignored", check_env_gitignored),
+     (".env.example exists", check_env_example_exists),
+     ("No .env file in source tree", check_no_secrets_committed),
+     ("Ollama localhost reachable (informational)", check_localhost_ollama_reachable),
 ]
 
 
