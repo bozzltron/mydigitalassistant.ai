@@ -97,7 +97,7 @@ def test_format_memory_context_with_frames_and_episodes():
 
 
 def test_format_memory_context_preserves_full_episode_content():
-     """Episodes should NOT be truncated - the LLM needs full content."""
+    """Episodes should NOT be truncated - the LLM needs full content."""
     ep = Episode(
         id=1,
         user_id=1,
@@ -105,7 +105,7 @@ def test_format_memory_context_preserves_full_episode_content():
         role="user",
         content="This is a long conversation about the Glasgow climate summit where world leaders discussed carbon emissions and renewable energy targets for 2030.",
         frame_ids=[],
-      )
+    )
     ctx = MemoryContext(query="test", retrieved_frames=[], recent_episodes=[ep], formatted="")
     formatted = format_memory_context(ctx)
     assert "climate summit" in formatted
@@ -115,7 +115,7 @@ def test_format_memory_context_preserves_full_episode_content():
 
 @pytest.mark.asyncio
 def test_format_memory_context_preserves_long_episodes():
-     """Long episodes should be preserved in full, not truncated."""
+    """Long episodes should be preserved in full, not truncated."""
     ep = Episode(
         id=1,
         user_id=1,
@@ -123,7 +123,7 @@ def test_format_memory_context_preserves_long_episodes():
         role="user",
         content="x" * 150,
         frame_ids=[],
-       )
+    )
     ctx = MemoryContext(query="test", retrieved_frames=[], recent_episodes=[ep], formatted="")
     formatted = format_memory_context(ctx)
     assert "x" * 10 in formatted  # should contain the full content
