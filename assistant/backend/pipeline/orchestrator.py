@@ -1,16 +1,16 @@
 """Orchestrator: runs the cognitive loop for chat turns."""
 
+import asyncio
 import logging
 import uuid
 from dataclasses import dataclass
-
-from pydantic import BaseModel
 
 from assistant.backend.memory.retrieval import Retriever
 from assistant.backend.memory.store import MemoryStore
 from assistant.backend.pipeline.llm_client import ChatMessage, OllamaClient, build_system_prompt
 from assistant.backend.pipeline.search import SearchResult, WebSearchTool
 from assistant.backend.pipeline.task_router import classify
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +54,12 @@ class Orchestrator:
     9. Return response to user
     """
 
+    def __init__(self, deps: OrchestratorDeps):
+        self.store = deps.store
+        self.retriever = deps.retriever
+        self.llm_client = deps.llm_client
+        self.search_tool = deps.search_tool
+
     async def chat(self, request: ChatRequest) -> ChatResponse:
         """Run the full cognitive loop for a chat turn."""
         # 1. Session
@@ -73,11 +79,9 @@ class Orchestrator:
 
         # 4. Retrieve memory context
         memory_context = await self.retriever.retrieve(
-            store=self.store,
             query=request.message,
             user_id=request.user_id,
             session_id=session_id,
-            limit=10,
         )
 
         # 5. Build system prompt with memory context
@@ -121,12 +125,14 @@ class Orchestrator:
         )
 
         # 8. Fire-and-forget extraction
-        extraction_task = fire_and_forget(
-            user_message=request.message,
-            assistant_response=llm_response.content,
-            store=self.store,
-            llm_client=self.llm_client,
-            source_episode_id=user_episode.id,
+        extraction_task = asyncio.create_task(
+            fire_and_forget(
+                user_message=request.message,
+                assistant_response=llm_response.content,
+                store=self.store,
+                llm_client=self.llm_client,
+                source_episode_id=user_episode.id,
+            )
         )
         extraction_task.add_done_callback(
             lambda t: logger.error("Extraction failed: %s", t.exception())
@@ -152,5 +158,12 @@ async def fire_and_forget(
     source_episode_id: int,
 ) -> None:
     """Extract facts from conversation and store in memory (fire-and-forget)."""
-    # TODO: Implement fact extraction
-    pass
+    from assistant.backend.pipeline.extractor import extract_and_apply
+
+    await extract_and_apply(
+        user_message,
+        assistant_response,
+        store,
+        llm_client,
+        source_episode_id=source_episode_id,
+    )

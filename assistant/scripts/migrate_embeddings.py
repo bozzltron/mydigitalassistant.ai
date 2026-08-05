@@ -12,7 +12,7 @@ import aiosqlite
 
 
 async def migrate_embeddings(db_path: str) -> int:
-    """Migrate frame_embeddings from JSON to vec_float32 format.
+    """Migrate frame_embeddings from JSON to vec_f32 format.
     
     Returns number of frames migrated.
     """
@@ -20,7 +20,8 @@ async def migrate_embeddings(db_path: str) -> int:
     await db.enable_load_extension(True)
     
     try:
-        await db.load_extension("vec0")
+        import sqlite_vec
+        await db.load_extension(sqlite_vec.loadable_path())
         print("✓ sqlite-vec extension loaded")
     except Exception as e:
         print(f"✗ Failed to load sqlite-vec: {e}")
@@ -38,7 +39,7 @@ async def migrate_embeddings(db_path: str) -> int:
         try:
             embedding = json.loads(embedding_json)
             await db.execute(
-                "UPDATE frame_embeddings SET embedding = vec_float32(?) WHERE frame_id = ?",
+                "UPDATE frame_embeddings SET embedding = vec_f32(?) WHERE frame_id = ?",
                 (json.dumps(embedding), frame_id),
             )
             migrated += 1
@@ -59,7 +60,7 @@ def main():
     
     print(f"⚡ Migrating {db_path} to sqlite-vec...")
     migrated = asyncio.run(migrate_embeddings(str(db_path)))
-    print(f"✓ Migrated {migrated} frame embeddings to vec_float32")
+    print(f"✓ Migrated {migrated} frame embeddings to vec_f32")
 
 
 if __name__ == "__main__":

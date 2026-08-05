@@ -1,7 +1,6 @@
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
 from assistant.backend.memory.models import (
     Association,
     Episode,

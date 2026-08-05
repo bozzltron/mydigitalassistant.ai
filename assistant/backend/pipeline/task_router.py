@@ -26,7 +26,7 @@ INTROSPECTIVE_PATTERNS = [
     r"\bour (previous|earlier|past) (conversation|chat|discussion)\b",
     r"\bremember when\b",
     r"\bwhat (else )?do you know about\b",
-    r"\btell me (more )?about the? (article|story|thing|fact|subject|topic|matter)\b",
+    r"\btell me (more )?about the? (?:[\w'-]+ )?(article|story|thing|fact|subject|topic|matter)\b",
     r"\bwhat do you recall (about|regarding) \b",
     r"\bwhat was (discussed|said|mentioned) about\b",
     r"\b(pick )?up (with|on|on) that\b",

@@ -4,6 +4,24 @@ import aiosqlite
 
 logger = logging.getLogger(__name__)
 
+
+async def _load_sqlite_vec(db):
+    """Load the sqlite-vec extension on a connection.
+
+    Uses sqlite_vec.loadable_path() which works across platforms and
+    handles ABI compatibility internally.
+    """
+    try:
+        import sqlite_vec
+
+        await db.enable_load_extension(True)
+        await db.load_extension(sqlite_vec.loadable_path())
+        logger.debug("sqlite-vec extension loaded")
+    except ImportError:
+        logger.warning("sqlite-vec package not installed — vector search unavailable")
+    except Exception as exc:
+        logger.warning("sqlite-vec extension not loaded: %s — vector search unavailable", exc)
+
 SCHEMA_SQL = """
 -- Users (household members)
 CREATE TABLE IF NOT EXISTS users (
@@ -105,7 +123,7 @@ CREATE INDEX IF NOT EXISTS idx_conflicts_status ON conflicts(status);
 -- Frame embeddings (via nomic-embed-text, stored as sqlite-vec vectors)
 CREATE TABLE IF NOT EXISTS frame_embeddings (
     frame_id INTEGER PRIMARY KEY,
-    embedding vec_float32 NOT NULL,
+    embedding vec_f32 NOT NULL,
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (frame_id) REFERENCES frames(id) ON DELETE CASCADE
 );
@@ -121,14 +139,8 @@ async def init_db(db_path: str) -> None:
     async with aiosqlite.connect(db_path) as db:
         await db.execute("PRAGMA foreign_keys = ON")
         await db.execute("PRAGMA journal_mode = WAL")
-        
-        # Load sqlite-vec extension first (before schema)
-        await db.enable_load_extension(True)
-        try:
-            await db.load_extension("vec0")
-        except Exception as exc:
-            logger.warning("sqlite-vec extension not loaded: %s", exc)
-            logger.warning("Vector search will not be available")
-        
+
+        await _load_sqlite_vec(db)
+
         await db.executescript(SCHEMA_SQL)
         await db.commit()

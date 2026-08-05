@@ -1,13 +1,12 @@
 import pytest
-from fastapi.testclient import TestClient
-
 from assistant.backend.main import _state, app, get_orchestrator, get_store
 from assistant.backend.memory.retrieval import Retriever
 from assistant.backend.pipeline.orchestrator import Orchestrator, OrchestratorDeps
+from fastapi.testclient import TestClient
 
 
 @pytest.fixture
-async def client(store, stub_llm):
+async def client(store, stub_llm, stub_search):
     """FastAPI TestClient with test dependencies wired in."""
     retriever = Retriever(store=store, llm_client=stub_llm)
     orchestrator = Orchestrator(
@@ -15,6 +14,7 @@ async def client(store, stub_llm):
             store=store,
             retriever=retriever,
             llm_client=stub_llm,
+            search_tool=stub_search,
         )
     )
 

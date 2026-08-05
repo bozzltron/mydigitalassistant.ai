@@ -2,7 +2,6 @@ import json
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-
 from assistant.backend.pipeline.extractor import (
     ExtractedAssociation,
     ExtractedSlot,
@@ -226,7 +225,8 @@ async def test_extract_and_apply_handles_extraction_exception(store):
 
 @pytest.mark.asyncio
 async def test_apply_extraction_with_source_episode_id(store):
-    episode = await store.create_episode(1, "s1", "user", "test", frame_ids=[])
+    user = await store.create_user("alice")
+    episode = await store.create_episode(user.id, "s1", "user", "test", frame_ids=[])
     extraction = ExtractionResult(
         slots=[ExtractedSlot(frame_name="guitar", frame_type="entity", key="strings", value="6")],
         associations=[],

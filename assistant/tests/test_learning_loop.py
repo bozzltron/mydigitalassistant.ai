@@ -1,7 +1,6 @@
 from unittest.mock import AsyncMock
 
 import pytest
-
 from assistant.backend.db.schema import init_db
 from assistant.backend.memory.retrieval import Retriever
 from assistant.backend.memory.store import MemoryStore

@@ -5,9 +5,6 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import Depends as _Depends
-from fastapi import FastAPI, HTTPException
-
 from assistant.backend.config import settings
 from assistant.backend.db.schema import init_db
 from assistant.backend.memory.models import Conflict, Episode, Frame, Slot, User
@@ -17,6 +14,8 @@ from assistant.backend.pipeline.llm_client import OllamaClient
 from assistant.backend.pipeline.orchestrator import ChatRequest, ChatResponse, Orchestrator
 from assistant.backend.pipeline.orchestrator import OrchestratorDeps as _OrchestratorDeps
 from assistant.backend.pipeline.search import WebSearchTool
+from fastapi import Depends as _Depends
+from fastapi import FastAPI, HTTPException
 
 logger = logging.getLogger(__name__)
 

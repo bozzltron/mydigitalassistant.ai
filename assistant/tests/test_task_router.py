@@ -1,7 +1,6 @@
 from unittest.mock import AsyncMock
 
 import pytest
-
 from assistant.backend.pipeline.task_router import (
     TaskType,
     classify,

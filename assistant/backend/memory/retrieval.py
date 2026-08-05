@@ -64,7 +64,7 @@ def format_memory_context(context: "MemoryContext") -> str:
                 lines.append(f"  relations: {assoc_str}")
     if context.recent_episodes:
         lines.append("\n## Recent conversation (this user)")
-        for ep in context.recent_episodes[-5:]:   # last 5
+        for ep in context.recent_episodes[:10]:   # most recent 10
             lines.append(f"   [{ep.role}] {ep.content}")
     return "\n".join(lines) if lines else "(no relevant memory found)"
 
@@ -112,7 +112,7 @@ class Retriever:
         """Retrieve relevant memory for a query.
 
         Returns MemoryContext with retrieved frames and recent episodes.
-        Uses sqlite-vec vec_distance() for efficient similarity search.
+        Uses sqlite-vec vec_distance_cosine() for efficient similarity search.
         """
          # 1. Embed query
         query_response = await self.llm_client.embed(query)
@@ -128,7 +128,7 @@ class Retriever:
 
         if not all_results:
              # No frames in memory yet — just return empty context
-            recent = await self.store.get_episodes_for_user(user_id, limit=5)
+            recent = await self.store.get_episodes_for_user(user_id, limit=10)
             empty = MemoryContext(
                 query=query,
                 retrieved_frames=[],
@@ -140,9 +140,9 @@ class Retriever:
 
          # 3. Filter by distance threshold and sort by similarity
         scored: list[tuple[int, float, str]] = [
-            (frame_id, 1.0 - distance, "direct_match")
-            for frame_id, _, _, _, _, _, distance in all_results
-            if 1.0 - distance >= self.min_relevance
+            (frame.id, similarity, "direct_match")
+            for frame, _slots, similarity in all_results
+            if similarity >= self.min_relevance
         ]
         scored.sort(key=lambda x: x[1], reverse=True)
         top_direct = scored[: self.top_k_direct]

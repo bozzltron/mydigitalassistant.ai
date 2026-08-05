@@ -1,5 +1,4 @@
 import pytest
-
 from assistant.backend.db.schema import init_db
 
 

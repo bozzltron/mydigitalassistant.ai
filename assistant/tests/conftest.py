@@ -5,10 +5,10 @@ from pathlib import Path
 
 import pytest
 import pytest_asyncio
-
 from assistant.backend.db.schema import init_db
 from assistant.backend.memory.store import MemoryStore
 from assistant.backend.pipeline.llm_client import ChatResponse, EmbeddingResponse, OllamaClient
+from assistant.backend.pipeline.search import WebSearchTool
 
 
 @pytest_asyncio.fixture
@@ -21,6 +21,11 @@ async def store(tmp_path: Path) -> MemoryStore:
 @pytest.fixture
 def stub_llm() -> "StubLLMClient":
     return StubLLMClient()
+
+
+@pytest.fixture
+def stub_search() -> WebSearchTool:
+    return WebSearchTool(enabled=False)
 
 
 def deterministic_embedding(text: str, dim: int = 768) -> list[float]:
@@ -104,6 +109,15 @@ class StubLLMClient(OllamaClient):
             return ChatResponse(
                 content=json.dumps({"slots": slots, "associations": associations}),
                 model=self.utility_model,
+                done=True,
+            )
+
+        if (
+            "search" in user_lower or "apnews" in user_lower or "headline" in user_lower
+        ) and "Recent Search Results" not in system:
+            return ChatResponse(
+                content="I don't have that capability right now — web search is unavailable.",
+                model=self.chat_model,
                 done=True,
             )
 

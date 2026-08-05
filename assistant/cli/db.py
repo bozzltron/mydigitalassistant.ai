@@ -4,12 +4,10 @@ import asyncio
 import sys
 from pathlib import Path
 
-from rich.console import Console
-from rich.table import Table
-
 from assistant.backend.config import settings
 from assistant.backend.db.schema import init_db
-from assistant.backend.memory.store import MemoryStore
+from rich.console import Console
+from rich.table import Table
 
 console = Console()
 
@@ -30,20 +28,22 @@ async def upgrade_db():
 
 
 async def migrate_embeddings():
-    """Migrate frame embeddings from JSON to vec_float32."""
+    """Migrate frame embeddings from JSON to vec_f32."""
     db_path = settings.database_path
     
     console.print(f"⚡ Migrating frame embeddings to sqlite-vec at [cyan]{db_path}[/cyan]")
     
     try:
         import json
+
         import aiosqlite
+        import sqlite_vec
         
         db = await aiosqlite.connect(db_path)
         await db.enable_load_extension(True)
         
         try:
-            await db.load_extension("vec0")
+            await db.load_extension(sqlite_vec.loadable_path())
             console.print("✓ sqlite-vec extension loaded")
         except Exception as e:
             console.print(f"✗ sqlite-vec not available: {e}")
@@ -68,7 +68,7 @@ async def migrate_embeddings():
             try:
                 embedding = json.loads(embedding_json)
                 await db.execute(
-                     "UPDATE frame_embeddings SET embedding = vec_float32(?) WHERE frame_id = ?",
+                     "UPDATE frame_embeddings SET embedding = vec_f32(?) WHERE frame_id = ?",
                      (json.dumps(embedding), frame_id),
                  )
                 migrated += 1
@@ -78,7 +78,7 @@ async def migrate_embeddings():
         await db.commit()
         await db.close()
         
-        console.print(f"✓ Migrated {migrated}/{count} embeddings to vec_float32")
+        console.print(f"✓ Migrated {migrated}/{count} embeddings to vec_f32")
         return True
         
     except Exception as e:

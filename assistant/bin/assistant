@@ -1,26 +1,43 @@
-#!/usr/bin/env bash
-# Wrapper to run the assistant CLI in Docker.
-# Usage: ./bin/assistant <command> [args...]
-# Example: ./bin/assistant chat
-# Example: ./bin/assistant memory list
+#!/bin/bash
+
+# Run the assistant natively: starts the FastAPI backend, then runs the CLI.
+# Usage: ./assistant/bin/assistant <command> [args...]
+# Example: ./assistant/bin/assistant chat
 
 set -euo pipefail
 
-# Find the repo root (parent of assistant/)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
-COMPOSE_DIR="$REPO_ROOT"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-# Ensure the backend is running
-BACKEND_STATUS=$(docker compose -f "$COMPOSE_DIR/docker-compose.yml" ps assistant 2>&1)
-if echo "$BACKEND_STATUS" | grep -q "Up"; then
-    echo "Backend already running."
+if [[ -x "$REPO_ROOT/venv/bin/python" ]]; then
+    PY="$REPO_ROOT/venv/bin/python"
 else
-    echo "Backend not running. Starting it..."
-    docker compose -f "$COMPOSE_DIR/docker-compose.yml" up -d --remove-orphans assistant
-    sleep 3
+    PY=python3
 fi
 
-# Run the CLI command in the cli container with TTY for interactive chat
-docker compose -f "$COMPOSE_DIR/docker-compose.yml" \
-    --profile cli run --rm cli "$@"
+BACKEND_HOST="${BACKEND_HOST:-127.0.0.1}"
+BACKEND_PORT="${BACKEND_PORT:-8000}"
+
+echo "Starting backend server on ${BACKEND_HOST}:${BACKEND_PORT}..."
+"$PY" -m uvicorn assistant.backend.main:app --host "$BACKEND_HOST" --port "$BACKEND_PORT" &
+BACKEND_PID=$!
+
+cleanup() {
+    kill "$BACKEND_PID" 2>/dev/null || true
+}
+trap cleanup EXIT
+
+# Wait for the backend to become healthy
+for _ in $(seq 1 30); do
+    if curl -sf -m 2 "http://${BACKEND_HOST}:${BACKEND_PORT}/health" >/dev/null 2>&1; then
+        break
+    fi
+    if ! kill -0 "$BACKEND_PID" 2>/dev/null; then
+        echo "Backend failed to start." >&2
+        exit 1
+    fi
+    sleep 1
+done
+
+echo "Starting CLI..."
+"$PY" -m assistant.cli.app "$@"

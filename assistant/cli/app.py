@@ -1,18 +1,23 @@
 import argparse
+import asyncio
 import os
 import sys
 from typing import Any
 
 import httpx
+from assistant.backend.config import settings
 from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Prompt
 from rich.table import Table
 
-from assistant.backend.config import settings
-
 console = Console()
-DEFAULT_BACKEND = f"http://{settings.backend_host}:{settings.backend_port}"
+# Get backend URL from environment or use default
+BACKEND_URL_ENV = os.environ.get("ASSISTANT_BACKEND")
+if BACKEND_URL_ENV:
+    DEFAULT_BACKEND = BACKEND_URL_ENV
+else:
+    DEFAULT_BACKEND = f"http://{settings.backend_host}:{settings.backend_port}"
 
 
 class BackendClient:
@@ -400,8 +405,8 @@ def cmd_db_list(args: argparse.Namespace, client: BackendClient) -> None:
 def cmd_db_upgrade(args: argparse.Namespace, client: BackendClient) -> None:
     """Upgrade database schema."""
     try:
-        from assistant.backend.db.schema import init_db
         from assistant.backend.config import settings
+        from assistant.backend.db.schema import init_db
         
         console.print(f"[bold]Upgrading schema at {settings.database_path}...[/bold]")
         asyncio.run(init_db(settings.database_path))
@@ -412,21 +417,23 @@ def cmd_db_upgrade(args: argparse.Namespace, client: BackendClient) -> None:
 
 
 def cmd_db_migrate(args: argparse.Namespace, client: BackendClient) -> None:
-     """Migrate embeddings to vec_float32 format."""
+     """Migrate embeddings to vec_f32 format."""
      try:
         import json
+
         from assistant.backend.config import settings
         
-        console.print(f"[bold]Migrating embeddings to vec_float32...[/bold]")
+        console.print("[bold]Migrating embeddings to vec_f32...[/bold]")
         
         async def migrate():
             import aiosqlite
+            import sqlite_vec
             
             db = await aiosqlite.connect(settings.database_path)
             await db.enable_load_extension(True)
             
             try:
-                await db.load_extension("vec0")
+                await db.load_extension(sqlite_vec.loadable_path())
                 console.print("[green]✓ sqlite-vec loaded[/green]")
             except Exception as e:
                 console.print(f"[red]✗ sqlite-vec not available: {e}[/red]")
@@ -449,7 +456,7 @@ def cmd_db_migrate(args: argparse.Namespace, client: BackendClient) -> None:
                 try:
                     embedding = json.loads(embedding_json)
                     await db.execute(
-                          "UPDATE frame_embeddings SET embedding = vec_float32(?) WHERE frame_id = ?",
+                          "UPDATE frame_embeddings SET embedding = vec_f32(?) WHERE frame_id = ?",
                           (json.dumps(embedding), frame_id),
                       )
                     migrated += 1
@@ -459,7 +466,7 @@ def cmd_db_migrate(args: argparse.Namespace, client: BackendClient) -> None:
             await db.commit()
             await db.close()
             
-            console.print(f"[green]✓ Migrated {migrated}/{count} embeddings to vec_float32[/green]")
+            console.print(f"[green]✓ Migrated {migrated}/{count} embeddings to vec_f32[/green]")
         
         asyncio.run(migrate())
      except Exception as e:
@@ -470,8 +477,9 @@ def cmd_db_migrate(args: argparse.Namespace, client: BackendClient) -> None:
 def cmd_db_status(args: argparse.Namespace, client: BackendClient) -> None:
      """Show database status."""
      try:
-        from assistant.backend.config import settings
         from pathlib import Path
+
+        from assistant.backend.config import settings
         
         db_path = Path(settings.database_path)
         
@@ -490,10 +498,11 @@ def cmd_db_status(args: argparse.Namespace, client: BackendClient) -> None:
         import aiosqlite
         
         async def check_vec():
+            import sqlite_vec
             db = await aiosqlite.connect(db_path)
             try:
                 await db.enable_load_extension(True)
-                await db.load_extension("vec0")
+                await db.load_extension(sqlite_vec.loadable_path())
                 await db.close()
                 return True
             except Exception:
@@ -590,7 +599,7 @@ def main() -> None:
     p_db_upgrade = db_sub.add_parser("upgrade", help="Upgrade schema to latest version")
     p_db_upgrade.set_defaults(func=cmd_db_upgrade)
 
-    p_db_migrate = db_sub.add_parser("migrate", help="Migrate embeddings to vec_float32")
+    p_db_migrate = db_sub.add_parser("migrate", help="Migrate embeddings to vec_f32")
     p_db_migrate.set_defaults(func=cmd_db_migrate)
 
     p_db_backup = db_sub.add_parser("backup", help="Backup the DB to a file")

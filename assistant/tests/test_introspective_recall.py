@@ -1,17 +1,13 @@
 """Integration test for introspective memory recall - Glasgow scenario."""
 
-import pytest
 import pytest_asyncio
-
 from assistant.backend.memory.store import MemoryStore
-from assistant.backend.pipeline.llm_client import OllamaClient, build_system_prompt
-from assistant.backend.pipeline.task_router import classify, TaskType
 from assistant.backend.pipeline.orchestrator import ChatRequest, Orchestrator, OrchestratorDeps
 from assistant.tests.conftest import StubLLMClient
 
 
 @pytest_asyncio.fixture
-async def introspective_test_env(tmp_path):
+async def introspective_test_env(tmp_path, stub_search):
     """Set up environment for introspective recall test."""
     db_path = str(tmp_path / "test.db")
     from assistant.backend.db.schema import init_db
@@ -77,7 +73,7 @@ async def introspective_test_env(tmp_path):
     # Create retriever and orchestrator
     from assistant.backend.memory.retrieval import Retriever
     retriever = Retriever(store=store, llm_client=llm_client)
-    orchestrator = Orchestrator(deps=OrchestratorDeps(store=store, retriever=retriever, llm_client=llm_client))
+    orchestrator = Orchestrator(deps=OrchestratorDeps(store=store, retriever=retriever, llm_client=llm_client, search_tool=stub_search))
     
     return store, llm_client, user.id, orchestrator
 

@@ -3,7 +3,6 @@ from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
-
 from assistant.cli.app import (
     BackendClient,
     cmd_chat,

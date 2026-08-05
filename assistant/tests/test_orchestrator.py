@@ -1,17 +1,17 @@
 import pytest
-
 from assistant.backend.memory.retrieval import Retriever
 from assistant.backend.pipeline.orchestrator import ChatRequest, Orchestrator, OrchestratorDeps
 
 
 @pytest.fixture
-async def orchestrator(store, stub_llm):
+async def orchestrator(store, stub_llm, stub_search):
     retriever = Retriever(store=store, llm_client=stub_llm)
     return Orchestrator(
         deps=OrchestratorDeps(
             store=store,
             retriever=retriever,
             llm_client=stub_llm,
+            search_tool=stub_search,
         )
     )
 

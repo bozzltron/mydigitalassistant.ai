@@ -1,5 +1,4 @@
 import pytest
-
 from assistant.backend.memory.confidence import MAX_CONFIDENCE
 from assistant.backend.memory.store import MemoryStore
 

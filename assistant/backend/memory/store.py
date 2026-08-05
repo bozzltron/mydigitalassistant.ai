@@ -1,7 +1,8 @@
 import json
+from contextlib import asynccontextmanager
 
 import aiosqlite
-
+from assistant.backend.db.schema import _load_sqlite_vec
 from assistant.backend.memory.confidence import (
     ConflictResolution,
     bump_confidence,
@@ -22,8 +23,16 @@ class MemoryStore:
     def __init__(self, db_path: str):
         self.db_path = db_path
 
-    def _connect(self) -> aiosqlite.Connection:
-        return aiosqlite.connect(self.db_path)
+    @asynccontextmanager
+    async def _connect(self):
+        """Open a DB connection with sqlite-vec extension loaded."""
+        db = await aiosqlite.connect(self.db_path)
+        await db.execute("PRAGMA foreign_keys = ON")
+        await _load_sqlite_vec(db)
+        try:
+            yield db
+        finally:
+            await db.close()
 
     # Users
     async def create_user(self, name: str) -> User:
@@ -210,9 +219,9 @@ class MemoryStore:
             await db.execute(
                 """
                 INSERT INTO frame_embeddings (frame_id, embedding, updated_at)
-                VALUES (?, vec_float32(?), datetime('now'))
+                VALUES (?, vec_f32(?), datetime('now'))
                 ON CONFLICT(frame_id) DO UPDATE SET
-                    embedding = vec_float32(excluded.embedding),
+                    embedding = vec_f32(excluded.embedding),
                     updated_at = excluded.updated_at
                 """,
                 (frame_id, json.dumps(embedding)),
@@ -223,7 +232,7 @@ class MemoryStore:
         """Retrieve embedding for a frame."""
         async with self._connect() as db:
             row = await db.execute_fetchall(
-                "SELECT embedding FROM frame_embeddings WHERE frame_id = ?",
+                "SELECT vec_to_json(embedding) FROM frame_embeddings WHERE frame_id = ?",
                 (frame_id,),
             )
             if not row:
@@ -234,7 +243,7 @@ class MemoryStore:
         """Get all (frame_id, embedding) pairs for similarity search."""
         async with self._connect() as db:
             rows = await db.execute_fetchall(
-                "SELECT frame_id, embedding FROM frame_embeddings ORDER BY frame_id"
+                "SELECT frame_id, vec_to_json(embedding) FROM frame_embeddings ORDER BY frame_id"
             )
             return [(frame_id, json.loads(embedding)) for frame_id, embedding in rows]
 
@@ -245,20 +254,20 @@ class MemoryStore:
         limit: int = 10,
         min_distance: float = 0.7,
     ) -> list[tuple[Frame, list[Slot], float]]:
-        """Search frames by vector similarity using sqlite-vec vec_distance().
+        """Search frames by vector similarity using sqlite-vec vec_distance_cosine.
 
         Returns list of (frame, slots, distance) tuples ordered by similarity.
         Distance is 0.0 to 1.0+; lower is more similar.
         """
         async with self._connect() as db:
-            # Use vec_distance for cosine-like similarity on normalized vectors
+            # Use vec_distance_cosine for cosine similarity
             rows = await db.execute_fetchall(
                 """
                 SELECT f.id, f.name, f.type, f.confidence, f.created_at, f.updated_at,
-                       vec_distance(embedding, ?) as distance
+                       vec_distance_cosine(embedding, ?) as distance
                 FROM frame_embeddings fe
                 JOIN frames f ON fe.frame_id = f.id
-                WHERE vec_distance(embedding, ?) <= ?
+                WHERE vec_distance_cosine(embedding, ?) <= ?
                 ORDER BY distance ASC
                 LIMIT ?
                 """,
@@ -443,6 +452,16 @@ class MemoryStore:
             )
             return [Association(**self._association_dict(row)) for row in rows]
 
+    async def get_associations_from(self, frame_id: int) -> list[Association]:
+        async with self._connect() as db:
+            rows = await db.execute_fetchall(
+                "SELECT id, from_frame_id, to_frame_id, relation_type, confidence, "
+                "essential, created_at FROM associations WHERE from_frame_id = ? "
+                "ORDER BY id",
+                (frame_id,),
+            )
+            return [Association(**self._association_dict(row)) for row in rows]
+
     async def get_all_associations_for_frame(self, frame_id: int) -> list[Association]:
         async with self._connect() as db:
             rows = await db.execute_fetchall(
@@ -473,7 +492,15 @@ class MemoryStore:
                 (user_id, session_id, role, content, json.dumps(frame_ids)),
             )
             await db.commit()
-            return await self._get_episode_row(db, cursor.lastrowid)
+            # Fetch the inserted row directly using the lastrowid
+            row = await db.execute_fetchall(
+                "SELECT id, user_id, session_id, role, content, frame_ids, timestamp "
+                "FROM episodes WHERE id = ?",
+                (cursor.lastrowid,),
+            )
+            if not row:
+                raise ValueError("Failed to retrieve created episode")
+            return Episode(**self._episode_dict(row[0]))
 
     async def get_episodes_for_user(self, user_id: int, limit: int = 50) -> list[Episode]:
         async with self._connect() as db:

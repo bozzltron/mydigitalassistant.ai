@@ -1,6 +1,5 @@
 import aiosqlite
 import pytest
-
 from assistant.backend.memory.confidence import bump_confidence, initial_confidence
 from assistant.backend.memory.store import MemoryStore
 
