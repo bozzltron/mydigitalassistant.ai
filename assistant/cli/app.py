@@ -5,11 +5,12 @@ import sys
 from typing import Any
 
 import httpx
-from assistant.backend.config import settings
 from rich.console import Console
 from rich.panel import Panel
 from rich.prompt import Prompt
 from rich.table import Table
+
+from assistant.backend.config import settings
 
 console = Console()
 # Get backend URL from environment or use default
@@ -70,6 +71,16 @@ class BackendClient:
 
     def get_frame_slots(self, frame_id: int) -> list[dict]:
         r = self.client.get(f"/memory/frames/{frame_id}/slots")
+        r.raise_for_status()
+        return r.json()
+
+    def forget_frame(self, frame_id: int) -> dict:
+        r = self.client.post(f"/memory/frames/{frame_id}/forget")
+        r.raise_for_status()
+        return r.json()
+
+    def forget_slot(self, slot_id: int) -> dict:
+        r = self.client.post(f"/memory/slots/{slot_id}/forget")
         r.raise_for_status()
         return r.json()
 
@@ -162,6 +173,8 @@ def cmd_chat(args: argparse.Namespace, client: BackendClient) -> None:
         if not text:
             continue
 
+        console.print(f"[bold yellow]{text}[/bold yellow]")
+
         try:
             response = client.chat(user_id=user_id, message=message, session_id=session_id)
         except httpx.HTTPError as e:
@@ -170,7 +183,7 @@ def cmd_chat(args: argparse.Namespace, client: BackendClient) -> None:
 
         session_id = response["session_id"]
 
-        console.print(f"\n[bold green]Assistant[/bold green]: {response['response']}")
+        console.print(f"[bold green]Assistant[/bold green]: {response['response']}")
 
         if _memory_used(response):
             console.print(
@@ -200,18 +213,26 @@ def cmd_memory_list(args: argparse.Namespace, client: BackendClient) -> None:
     table.add_column("ID", style="cyan")
     table.add_column("Name", style="bold")
     table.add_column("Type")
-    table.add_column("Confidence", justify="right")
+    table.add_column("Conf", justify="right")
+    table.add_column("Pri", justify="right")
+    table.add_column("Ess", justify="center")
     table.add_column("Updated")
 
     for f in frames:
         conf = f["confidence"]
+        pri = f["priority"]
+        ess = f["essential"]
         conf_color = "green" if conf >= 0.7 else "yellow" if conf >= 0.4 else "red"
+        pri_color = "green" if pri > 0 else "dim"
+        ess_str = "[yellow]★[/yellow]" if ess else ""
         updated = f["updated_at"][:19] if f["updated_at"] else ""
         table.add_row(
             str(f["id"]),
             f["name"],
             f["type"],
             f"[{conf_color}]{conf:.2f}[/{conf_color}]",
+            f"[{pri_color}]{pri:.2f}[/{pri_color}]",
+            ess_str,
             updated,
         )
     console.print(table)
@@ -244,14 +265,30 @@ def cmd_memory_show(args: argparse.Namespace, client: BackendClient) -> None:
 
     if slots:
         slot_table = Table(title="Slots")
+        slot_table.add_column("ID", style="dim")
         slot_table.add_column("Key", style="bold")
         slot_table.add_column("Value")
-        slot_table.add_column("Confidence", justify="right")
+        slot_table.add_column("Conf", justify="right")
+        slot_table.add_column("Priority", justify="right")
+        slot_table.add_column("Source", style="dim")
+        slot_table.add_column("URL", style="dim")
         for s in slots:
             conf = s["confidence"]
+            pri = s["priority"]
             conf_color = "green" if conf >= 0.7 else "yellow" if conf >= 0.4 else "red"
+            pri_color = "green" if pri > 0 else "dim"
+            source = s.get("source_type", "") or ""
+            url = s.get("source_url", "") or ""
+            reliability = s.get("source_reliability")
+            rel_str = f" (rel: {reliability:.2f})" if reliability else ""
             slot_table.add_row(
-                s["key"], s["value"], f"[{conf_color}]{conf:.2f}[/{conf_color}]"
+                f"[dim]{s['id']}[/dim]",
+                s["key"],
+                s["value"],
+                f"[{conf_color}]{conf:.2f}[/{conf_color}]",
+                f"[{pri_color}]{pri:.2f}[/{pri_color}]",
+                f"[dim]{source}{rel_str}[/dim]",
+                f"[dim]{url}[/dim]" if url else "[dim]-[/dim]",
             )
         console.print(slot_table)
     else:
@@ -302,6 +339,38 @@ def cmd_memory_resolve(args: argparse.Namespace, client: BackendClient) -> None:
         console.print(f"  Slot value: {result['slot']['value']}")
     except httpx.HTTPError as e:
         console.print(f"[red]Failed to resolve: {e}[/red]")
+        sys.exit(1)
+
+
+def cmd_memory_forget(args: argparse.Namespace, client: BackendClient) -> None:
+    """Soft-delete a frame by name or ID."""
+    try:
+        result = client.forget_frame(args.frame)
+        console.print(f"[green]Forgotten: {result['frame']['name']} (priority set to 0).[/green]")
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 404:
+            console.print(f"[red]Frame not found: {args.frame}[/red]")
+        elif e.response.status_code == 409:
+            console.print(f"[yellow]Cannot forget essential frame: {args.frame}[/yellow]")
+        else:
+            console.print(f"[red]Failed: {e}[/red]")
+        sys.exit(1)
+
+
+def cmd_memory_forget_slot(args: argparse.Namespace, client: BackendClient) -> None:
+    """Soft-delete a slot by ID."""
+    try:
+        result = client.forget_slot(args.slot_id)
+        console.print(
+            f"[green]Slot forgotten: {result['slot']['key']} = {result['slot']['value']}[/green]"
+        )
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 404:
+            console.print(f"[red]Slot not found: {args.slot_id}[/red]")
+        elif e.response.status_code == 409:
+            console.print("[yellow]Cannot forget essential slot.[/yellow]")
+        else:
+            console.print(f"[red]Failed: {e}[/red]")
         sys.exit(1)
 
 
@@ -580,6 +649,16 @@ def main() -> None:
     p_mem_resolve.add_argument("conflict_id", type=int)
     p_mem_resolve.add_argument("value", help="The value to set")
     p_mem_resolve.set_defaults(func=cmd_memory_resolve)
+
+    p_mem_forget = mem_sub.add_parser("forget", help="Soft-delete a frame (sets priority to 0)")
+    p_mem_forget.add_argument("frame", help="Frame name or ID")
+    p_mem_forget.set_defaults(func=cmd_memory_forget)
+
+    p_mem_forget_slot = mem_sub.add_parser(
+        "forget-slot", help="Soft-delete a slot (sets priority to 0)"
+    )
+    p_mem_forget_slot.add_argument("slot_id", type=int, help="Slot ID to forget")
+    p_mem_forget_slot.set_defaults(func=cmd_memory_forget_slot)
 
     # users
     p_users = subparsers.add_parser("users", help="User management")

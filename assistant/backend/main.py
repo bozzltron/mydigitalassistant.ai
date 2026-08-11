@@ -5,6 +5,10 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 
+from fastapi import Depends as _Depends
+from fastapi import FastAPI, HTTPException
+from fastapi.staticfiles import StaticFiles
+
 from assistant.backend.config import settings
 from assistant.backend.db.schema import init_db
 from assistant.backend.memory.models import Conflict, Episode, Frame, Slot, User
@@ -14,8 +18,6 @@ from assistant.backend.pipeline.llm_client import OllamaClient
 from assistant.backend.pipeline.orchestrator import ChatRequest, ChatResponse, Orchestrator
 from assistant.backend.pipeline.orchestrator import OrchestratorDeps as _OrchestratorDeps
 from assistant.backend.pipeline.search import WebSearchTool
-from fastapi import Depends as _Depends
-from fastapi import FastAPI, HTTPException
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +39,7 @@ async def lifespan(app: FastAPI):
         base_url=settings.ollama_url,
         chat_model=settings.chat_model,
         utility_model=settings.utility_model,
+        reasoning_model=settings.reasoning_model,
         embedding_model=settings.embedding_model,
     )
     retriever = Retriever(store=store, llm_client=llm_client)
@@ -76,6 +79,11 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Mount static files for the web UI
+_static_path = Path(__file__).parent / "static"
+_static_path.mkdir(exist_ok=True)
+app.mount("/static", StaticFiles(directory=str(_static_path)), name="static")
+
 
 def get_store() -> MemoryStore:
     return _state["store"]
@@ -83,6 +91,17 @@ def get_store() -> MemoryStore:
 
 def get_orchestrator() -> Orchestrator:
     return _state["orchestrator"]
+
+
+# Web UI
+@app.get("/chat-ui")
+async def chat_ui():
+    """Serve the web chat interface."""
+    from fastapi.responses import FileResponse
+    index_path = Path(__file__).parent / "static" / "chat.html"
+    if index_path.exists():
+        return FileResponse(str(index_path))
+    raise HTTPException(status_code=404, detail="chat.html not found")
 
 
 # Health
@@ -96,6 +115,7 @@ async def health():
         "ollama_reachable": ollama_ok,
         "chat_model": settings.chat_model,
         "utility_model": settings.utility_model,
+        "reasoning_model": settings.reasoning_model,
     }
 
 
@@ -135,7 +155,10 @@ async def search_frames(
                 "name": frame.name,
                 "type": frame.type,
                 "confidence": frame.confidence,
-                "slots": [{"key": s.key, "value": s.value, "confidence": s.confidence} for s in slots],
+                "slots": [
+                    {"key": s.key, "value": s.value, "confidence": s.confidence}
+                    for s in slots
+                ],
                 "similarity": round(similarity, 3),
             }
             for frame, slots, similarity in results
@@ -151,6 +174,37 @@ async def chat(
 ):
     """Send a message to the assistant. Returns the response with trace info."""
     return await orch.chat(request)
+
+
+# Voice transcription
+@app.post("/transcribe")
+async def transcribe(file: bytes = None):
+    """Transcribe an audio blob using local Whisper.
+
+    Accepts raw audio bytes (webm/wav) in the request body.
+    Returns {"text": "transcribed content"}.
+    """
+    if file is None:
+        raise HTTPException(status_code=400, detail="No audio data provided")
+
+    import asyncio
+    import tempfile
+    from pathlib import Path
+
+    from assistant.backend.pipeline.whisper import transcribe_audio
+
+    with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as tmp:
+        tmp.write(file)
+        tmp_path = Path(tmp.name)
+
+    try:
+        text = await asyncio.to_thread(transcribe_audio, tmp_path)
+        return {"text": text.strip()}
+    except Exception as e:
+        logger.error("Transcription failed: %s", e)
+        raise HTTPException(status_code=500, detail=f"Transcription failed: {e}") from e
+    finally:
+        tmp_path.unlink(missing_ok=True)
 
 
 # Users
@@ -216,6 +270,46 @@ async def resolve_conflict(
     """Manually resolve a conflict by setting the slot to a specific value."""
     slot = await store.manual_override_conflict(conflict_id, value)
     return {"status": "resolved", "slot": slot}
+
+
+@app.post("/memory/frames/{frame_id}/forget")
+async def forget_frame(
+    frame_id: int, store: MemoryStore = _Depends(get_store)
+):
+    """Soft-delete a frame by setting priority to 0.
+
+    Essential frames cannot be forgotten. Use 'list frames' to see which frames are forgotten.
+    """
+    frame = await store.get_frame(frame_id)
+    if not frame:
+        raise HTTPException(status_code=404, detail="Frame not found")
+    if frame.essential:
+        raise HTTPException(
+            status_code=409,
+            detail="Essential frames cannot be forgotten. Remove essential flag first.",
+        )
+    forgotten = await store.forget_frame(frame_id)
+    return {"status": "forgotten", "frame": forgotten}
+
+
+@app.post("/memory/slots/{slot_id}/forget")
+async def forget_slot(
+    slot_id: int, store: MemoryStore = _Depends(get_store)
+):
+    """Soft-delete a slot by setting priority to 0.
+
+    Essential slots cannot be forgotten.
+    """
+    slot = await store.get_slot_by_id(slot_id)
+    if not slot:
+        raise HTTPException(status_code=404, detail="Slot not found")
+    if slot.essential:
+        raise HTTPException(
+            status_code=409,
+            detail="Essential slots cannot be forgotten.",
+        )
+    forgotten = await store.forget_slot(slot_id)
+    return {"status": "forgotten", "slot": forgotten}
 
 
 # Episodes (for debugging / inspection)

@@ -52,7 +52,7 @@ Web search for retrieval-only; learned facts stored locally in memory frames/slo
 - `backend/pipeline/task_router.py` — functional/introspective classification.
 - `backend/pipeline/extractor.py` — async fact extraction (JSON output from LLM).
 - `backend/pipeline/llm_client.py` — Ollama client (chat + embeddings).
-- `backend/api/routes.py` — FastAPI endpoints.
+- `backend/main.py` — FastAPI app with all endpoints.
 - `cli/app.py` — CLI entry point.
 
 ## Testing

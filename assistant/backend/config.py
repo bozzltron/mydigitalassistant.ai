@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     ollama_url: str = "http://127.0.0.1:11434"
     chat_model: str = "qwen2.5:7b"
     utility_model: str = "qwen2.5:3b"
+    reasoning_model: str = "qwen2.5:7b"
     embedding_model: str = "nomic-embed-text"
 
     backend_host: str = "127.0.0.1"
@@ -23,6 +24,10 @@ class Settings(BaseSettings):
     # Web search settings (always enabled - core requirement)
     search_base_url: str = "http://127.0.0.1:8080"    # SearXNG default
     search_timeout: float = 30.0
+
+    # Voice transcription (optional - requires faster-whisper)
+    whisper_model: str = "base"
+    whisper_device: str = "cpu"
 
 
 settings = Settings()

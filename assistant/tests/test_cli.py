@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
+
 from assistant.cli.app import (
     BackendClient,
     cmd_chat,
@@ -31,6 +32,8 @@ def test_cmd_memory_list_calls_client_with_no_filter():
             "name": "guitar",
             "type": "entity",
             "confidence": 0.8,
+            "priority": 0.5,
+            "essential": 0,
             "updated_at": "2026-01-01T00:00:00",
         },
     ]

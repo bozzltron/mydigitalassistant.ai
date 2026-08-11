@@ -1,8 +1,13 @@
 import pytest
+
 from assistant.backend.memory.confidence import (
     MAX_CONFIDENCE,
     bump_confidence,
+    bump_priority,
+    forget_priority,
     initial_confidence,
+    initial_priority,
+    max_priority,
     resolve_conflict,
 )
 
@@ -47,3 +52,24 @@ def test_resolve_conflict_explicit_none_confidence():
     assert decision.winning_value == "old"
     assert decision.losing_value == "new"
     assert "existing_confidence" in decision.reason
+
+
+def test_initial_priority():
+    assert initial_priority() == 0.5
+
+
+def test_bump_priority_increases():
+    assert bump_priority(0.5) == 0.7
+
+
+def test_bump_priority_bounded():
+    assert bump_priority(0.9) == 1.0
+    assert bump_priority(1.0) == 1.0
+
+
+def test_max_priority():
+    assert max_priority() == 1.0
+
+
+def test_forget_priority():
+    assert forget_priority() == 0.0

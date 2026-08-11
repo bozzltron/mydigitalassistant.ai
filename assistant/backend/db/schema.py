@@ -37,8 +37,14 @@ CREATE TABLE IF NOT EXISTS frames (
     type TEXT NOT NULL,
     confidence REAL NOT NULL DEFAULT 0.5,
     essential INTEGER NOT NULL DEFAULT 0,
+    priority REAL NOT NULL DEFAULT 0.5,
+    owner_user_id INTEGER,
+    source_type TEXT,
+    source_url TEXT,
+    source_reliability REAL,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE SET NULL
 );
 
 -- Slots (key/value pairs on a frame)
@@ -49,6 +55,10 @@ CREATE TABLE IF NOT EXISTS slots (
     value TEXT NOT NULL,
     confidence REAL NOT NULL DEFAULT 0.5,
     essential INTEGER NOT NULL DEFAULT 0,
+    priority REAL NOT NULL DEFAULT 0.5,
+    source_type TEXT,
+    source_url TEXT,
+    source_reliability REAL,
     source_episode_id INTEGER,
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE(frame_id, key),
@@ -78,6 +88,10 @@ CREATE TABLE IF NOT EXISTS associations (
     relation_type TEXT NOT NULL,
     confidence REAL NOT NULL DEFAULT 0.5,
     essential INTEGER NOT NULL DEFAULT 0,
+    priority REAL NOT NULL DEFAULT 0.5,
+    source_type TEXT,
+    source_url TEXT,
+    source_reliability REAL,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE(from_frame_id, to_frame_id, relation_type),
     FOREIGN KEY (from_frame_id) REFERENCES frames(id) ON DELETE CASCADE,
@@ -119,6 +133,7 @@ CREATE INDEX IF NOT EXISTS idx_episodes_session ON episodes(session_id);
 CREATE INDEX IF NOT EXISTS idx_slot_history_slot ON slot_history(slot_id);
 CREATE INDEX IF NOT EXISTS idx_conflicts_frame ON conflicts(frame_id);
 CREATE INDEX IF NOT EXISTS idx_conflicts_status ON conflicts(status);
+CREATE INDEX IF NOT EXISTS idx_frames_owner ON frames(owner_user_id);
 
 -- Frame embeddings (via nomic-embed-text, stored as sqlite-vec vectors)
 CREATE TABLE IF NOT EXISTS frame_embeddings (

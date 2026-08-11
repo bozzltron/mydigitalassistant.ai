@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 import pytest_asyncio
+
 from assistant.backend.db.schema import init_db
 from assistant.backend.memory.store import MemoryStore
 from assistant.backend.pipeline.llm_client import ChatResponse, EmbeddingResponse, OllamaClient
@@ -55,6 +56,7 @@ class StubLLMClient(OllamaClient):
         super().__init__()
         self._next_extraction_result: list[dict] | None = None
         self._next_association_result: list[dict] | None = None
+        self.system_prompts: list[str] = []
 
     def set_extraction_result(
         self,
@@ -74,6 +76,7 @@ class StubLLMClient(OllamaClient):
         stream: bool = False,
     ) -> ChatResponse:
         system = messages[0].content
+        self.system_prompts.append(system)
         user = messages[1].content if len(messages) > 1 else ""
         system_lower = system.lower()
         user_lower = user.lower()
@@ -84,6 +87,17 @@ class StubLLMClient(OllamaClient):
                 for k in ("remember", "what do you know", "tell me about what you")
             ):
                 task = "introspective"
+            elif any(k in user_lower for k in (
+                "actually", "that's wrong", "you got it wrong",
+                "i meant", "correction", "not right",
+            )):
+                task = "correction"
+            elif any(
+                user_lower.startswith(f"{vb} ") or f" {vb}" in user_lower
+                for vb in ("search for", "search", "look up", "look it up",
+                           "google", "find", "find out")
+            ):
+                task = "search"
             else:
                 task = "functional"
             return ChatResponse(

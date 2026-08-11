@@ -1,6 +1,5 @@
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
 from assistant.backend.memory.models import (
     Association,
     Episode,
@@ -11,38 +10,9 @@ from assistant.backend.memory.retrieval import (
     MemoryContext,
     RetrievedFrame,
     Retriever,
-    cosine_similarity,
     format_memory_context,
     frame_to_text,
 )
-
-
-def test_cosine_similarity_identical():
-    a = [1.0, 0.0, 0.0]
-    b = [1.0, 0.0, 0.0]
-    assert cosine_similarity(a, b) == pytest.approx(1.0)
-
-
-def test_cosine_similarity_orthogonal():
-    a = [1.0, 0.0, 0.0]
-    b = [0.0, 1.0, 0.0]
-    assert cosine_similarity(a, b) == pytest.approx(0.0)
-
-
-def test_cosine_similarity_opposite():
-    a = [1.0, 0.0, 0.0]
-    b = [-1.0, 0.0, 0.0]
-    assert cosine_similarity(a, b) == pytest.approx(-1.0)
-
-
-def test_cosine_similarity_empty():
-    assert cosine_similarity([], [1.0]) == 0.0
-    assert cosine_similarity([1.0], []) == 0.0
-    assert cosine_similarity([], []) == 0.0
-
-
-def test_cosine_similarity_different_lengths():
-    assert cosine_similarity([1.0, 0.0], [1.0, 0.0, 0.0]) == 0.0
 
 
 def test_frame_to_text():
@@ -102,7 +72,10 @@ def test_format_memory_context_preserves_full_episode_content():
         user_id=1,
         session_id="s1",
         role="user",
-        content="This is a long conversation about the Glasgow climate summit where world leaders discussed carbon emissions and renewable energy targets for 2030.",
+        content=(
+            "This is a long conversation about the Glasgow climate summit "
+            "where world leaders discussed carbon emissions and renewable energy targets for 2030."
+        ),
         frame_ids=[],
     )
     ctx = MemoryContext(query="test", retrieved_frames=[], recent_episodes=[ep], formatted="")
@@ -112,7 +85,6 @@ def test_format_memory_context_preserves_full_episode_content():
     assert "..." not in formatted
 
 
-@pytest.mark.asyncio
 def test_format_memory_context_preserves_long_episodes():
     """Long episodes should be preserved in full, not truncated."""
     ep = Episode(
@@ -146,7 +118,6 @@ def test_format_memory_context_truncates_many_frames():
     assert count == 5
 
 
-@pytest.mark.asyncio
 async def test_retrieve_with_no_frames(store):
     """Empty memory should return context with no frames."""
     mock_llm = AsyncMock()
@@ -160,7 +131,6 @@ async def test_retrieve_with_no_frames(store):
     assert "no" in ctx.formatted.lower()
 
 
-@pytest.mark.asyncio
 async def test_retrieve_finds_relevant_frame(store):
     """A query should find a frame with similar embedding."""
     f1 = await store.create_frame("guitar", "entity")
@@ -182,7 +152,6 @@ async def test_retrieve_finds_relevant_frame(store):
     assert ctx.retrieved_frames[0].frame.name == "guitar"
 
 
-@pytest.mark.asyncio
 async def test_retrieve_graph_walk_finds_neighbors(store):
     """Graph walk should find associated frames via 1-2 hop traversal."""
     f1 = await store.create_frame("guitar", "entity")
@@ -209,7 +178,6 @@ async def test_retrieve_graph_walk_finds_neighbors(store):
     assert "music" in frame_names
 
 
-@pytest.mark.asyncio
 async def test_retrieve_includes_recent_episodes(store):
     """Retrieval should include recent episodes for the user."""
     user = await store.create_user("alice")
@@ -230,7 +198,6 @@ async def test_retrieve_includes_recent_episodes(store):
     assert any("guitar" in ep.content for ep in ctx.recent_episodes)
 
 
-@pytest.mark.asyncio
 async def test_graph_walk_in_isolation(store):
     f1 = await store.create_frame("a", "entity")
     f2 = await store.create_frame("b", "entity")
@@ -238,14 +205,13 @@ async def test_graph_walk_in_isolation(store):
 
     mock_llm = AsyncMock()
     retriever = Retriever(store, mock_llm, min_relevance=0.1, graph_decay=1.0)
-    neighbors = await retriever._graph_walk(f1.id, [1.0, 0.0], 2, 1.0)
+    neighbors = await retriever._graph_walk(f1.id, [1.0, 0.0], 2, 1.0, user_id=1)
 
     assert len(neighbors) == 1
     assert neighbors[0][0] == f2.id
     assert neighbors[0][2] == "graph_hop_1"
 
 
-@pytest.mark.asyncio
 async def test_graph_walk_prevents_cycles(store):
     f1 = await store.create_frame("a", "entity")
     f2 = await store.create_frame("b", "entity")
@@ -254,21 +220,20 @@ async def test_graph_walk_prevents_cycles(store):
 
     mock_llm = AsyncMock()
     retriever = Retriever(store, mock_llm, min_relevance=0.1)
-    neighbors = await retriever._graph_walk(f1.id, [1.0, 0.0], 5, 1.0)
+    neighbors = await retriever._graph_walk(f1.id, [1.0, 0.0], 5, 1.0, user_id=1)
 
     assert len(neighbors) == 1
     assert neighbors[0][0] != f1.id
 
 
-@pytest.mark.asyncio
 async def test_graph_walk_stops_at_max_hops(store):
     frames = [await store.create_frame(f"f{i}", "entity") for i in range(5)]
     for i in range(len(frames) - 1):
         await store.create_association(frames[i].id, frames[i + 1].id, "next", confidence=1.0)
 
     mock_llm = AsyncMock()
-    retriever = Retriever(store, mock_llm, min_relevance=0.1, graph_decay=1.0)
-    neighbors = await retriever._graph_walk(frames[0].id, [1.0, 0.0], 2, 1.0)
+    retriever = Retriever(store, mock_llm, min_relevance=0.01, graph_decay=1.0)
+    neighbors = await retriever._graph_walk(frames[0].id, [1.0, 0.0], 2, 1.0, user_id=1)
 
     reached = {n[0] for n in neighbors}
     assert frames[1].id in reached
@@ -276,7 +241,6 @@ async def test_graph_walk_stops_at_max_hops(store):
     assert frames[3].id not in reached
 
 
-@pytest.mark.asyncio
 async def test_min_relevance_boundary(store):
     f1 = await store.create_frame("guitar", "entity")
     await store.store_frame_embedding(f1.id, [1.0, 0.0, 0.0])
@@ -291,7 +255,6 @@ async def test_min_relevance_boundary(store):
     assert len(ctx.retrieved_frames) == 1
 
 
-@pytest.mark.asyncio
 async def test_embed_frame(store):
     frame = await store.create_frame("guitar", "entity")
     await store.upsert_slot(frame.id, "strings", "6")

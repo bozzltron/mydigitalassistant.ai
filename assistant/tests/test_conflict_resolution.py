@@ -1,9 +1,7 @@
-import pytest
 from assistant.backend.memory.confidence import MAX_CONFIDENCE
 from assistant.backend.memory.store import MemoryStore
 
 
-@pytest.mark.asyncio
 async def test_contradiction_then_auto_and_manual_resolution(store: MemoryStore):
     frame = await store.create_frame("guitar", "entity")
 
@@ -53,3 +51,26 @@ async def test_contradiction_then_auto_and_manual_resolution(store: MemoryStore)
 
     final_history = await store.get_slot_history(slot.id)
     assert any(h["reason"] == "manual_override" for h in final_history)
+
+
+async def test_learn_false_then_correct_then_recall(store: MemoryStore):
+    """Smoke test: learn wrong fact, correct it, recall truth."""
+    frame = await store.create_frame("capybara", "entity")
+
+    slot, _ = await store.upsert_slot(frame.id, "size", "small")
+    assert slot.value == "small"
+
+    slot, conflict = await store.upsert_slot(frame.id, "size", "large")
+    assert slot.value == "large"
+    assert conflict is not None
+
+    await store.manual_override_conflict(conflict.id, "medium")
+
+    corrected_slot = await store.get_slot(frame.id, "size")
+    assert corrected_slot.value == "medium"
+
+    history = await store.get_slot_history(corrected_slot.id)
+    override_events = [h for h in history if h["reason"] == "manual_override"]
+    assert len(override_events) == 1
+    assert override_events[0]["old_value"] == "large"
+    assert override_events[0]["new_value"] == "medium"

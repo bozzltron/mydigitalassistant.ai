@@ -1,18 +1,22 @@
 import json
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
 from assistant.backend.pipeline.extractor import (
+    CorrectionResult,
     ExtractedAssociation,
     ExtractedSlot,
     ExtractionResult,
+    apply_correction,
     apply_extraction,
+    apply_search_extraction,
     extract_and_apply,
+    extract_correction,
     extract_facts,
+    extract_facts_from_search,
+    validate_correction,
 )
 
 
-@pytest.mark.asyncio
 async def test_extract_facts_parses_valid_json():
     mock_llm = AsyncMock()
     mock_llm.utility_model = "qwen2.5:3b"
@@ -39,7 +43,6 @@ async def test_extract_facts_parses_valid_json():
     assert len(result.associations) == 1
 
 
-@pytest.mark.asyncio
 async def test_extract_facts_handles_empty_extraction():
     mock_llm = AsyncMock()
     mock_llm.utility_model = "qwen2.5:3b"
@@ -50,7 +53,6 @@ async def test_extract_facts_handles_empty_extraction():
     assert result.associations == []
 
 
-@pytest.mark.asyncio
 async def test_extract_facts_retries_on_invalid_json():
     mock_llm = AsyncMock()
     mock_llm.utility_model = "qwen2.5:3b"
@@ -64,7 +66,6 @@ async def test_extract_facts_retries_on_invalid_json():
     assert mock_llm.chat.call_count == 2
 
 
-@pytest.mark.asyncio
 async def test_extract_facts_returns_empty_after_retry_failure():
     mock_llm = AsyncMock()
     mock_llm.utility_model = "qwen2.5:3b"
@@ -79,7 +80,6 @@ async def test_extract_facts_returns_empty_after_retry_failure():
     assert mock_llm.chat.call_count == 2
 
 
-@pytest.mark.asyncio
 async def test_apply_extraction_creates_frames_and_slots(store):
     extraction = ExtractionResult(
         slots=[
@@ -104,7 +104,6 @@ async def test_apply_extraction_creates_frames_and_slots(store):
     assert slot_dict["type"] == "electric"
 
 
-@pytest.mark.asyncio
 async def test_apply_extraction_creates_associations(store):
     extraction = ExtractionResult(
         slots=[
@@ -127,7 +126,6 @@ async def test_apply_extraction_creates_associations(store):
     assert assocs[0].to_frame_id == music.id
 
 
-@pytest.mark.asyncio
 async def test_apply_extraction_reuses_existing_frame(store):
     """If frame already exists, don't create a duplicate."""
     existing = await store.create_frame("guitar", "entity")
@@ -143,7 +141,6 @@ async def test_apply_extraction_reuses_existing_frame(store):
     assert all_guitars[0].id == existing.id
 
 
-@pytest.mark.asyncio
 async def test_apply_extraction_skips_self_loops(store):
     extraction = ExtractionResult(
         slots=[ExtractedSlot(frame_name="guitar", frame_type="entity", key="strings", value="6")],
@@ -157,7 +154,6 @@ async def test_apply_extraction_skips_self_loops(store):
     assert summary["associations_created"] == 0
 
 
-@pytest.mark.asyncio
 async def test_apply_extraction_handles_duplicate_association(store):
     """Re-applying the same association shouldn't fail."""
     extraction = ExtractionResult(
@@ -174,7 +170,6 @@ async def test_apply_extraction_handles_duplicate_association(store):
     assert summary["associations_created"] == 0
 
 
-@pytest.mark.asyncio
 async def test_apply_extraction_records_conflicts(store):
     """If a slot value contradicts existing, conflict is recorded."""
     e1 = ExtractionResult(
@@ -193,7 +188,6 @@ async def test_apply_extraction_records_conflicts(store):
     assert conflicts[0].status == "auto_resolved"
 
 
-@pytest.mark.asyncio
 async def test_extract_and_apply_full_pipeline(store):
     mock_llm = AsyncMock()
     mock_llm.utility_model = "qwen2.5:3b"
@@ -213,7 +207,6 @@ async def test_extract_and_apply_full_pipeline(store):
     assert frame is not None
 
 
-@pytest.mark.asyncio
 async def test_extract_and_apply_handles_extraction_exception(store):
     mock_llm = AsyncMock()
     mock_llm.utility_model = "qwen2.5:3b"
@@ -223,7 +216,6 @@ async def test_extract_and_apply_handles_extraction_exception(store):
     assert result == {}
 
 
-@pytest.mark.asyncio
 async def test_apply_extraction_with_source_episode_id(store):
     user = await store.create_user("alice")
     episode = await store.create_episode(user.id, "s1", "user", "test", frame_ids=[])
@@ -237,7 +229,6 @@ async def test_apply_extraction_with_source_episode_id(store):
     assert slot.source_episode_id == episode.id
 
 
-@pytest.mark.asyncio
 async def test_apply_extraction_infers_frame_type_from_association_only(store):
     extraction = ExtractionResult(
         slots=[],
@@ -252,3 +243,328 @@ async def test_apply_extraction_infers_frame_type_from_association_only(store):
     music = await store.get_frame_by_name("music")
     assert guitar.type == "entity"
     assert music.type == "entity"
+
+
+async def test_extract_facts_from_search_parses_results():
+    mock_llm = AsyncMock()
+    mock_llm.utility_model = "qwen2.5:3b"
+    mock_llm.chat.return_value.content = json.dumps(
+        {
+            "slots": [
+                {
+                    "frame_name": "capybara",
+                    "frame_type": "entity",
+                    "key": "scientific_name",
+                    "value": "Hydrochoerus hydrochaeris",
+                },
+                {
+                    "frame_name": "capybara",
+                    "frame_type": "entity",
+                    "key": "size",
+                    "value": "large rodent",
+                },
+            ],
+            "associations": [],
+        }
+    )
+
+    search_results = [
+        MagicMock(
+            url="https://en.wikipedia.org/wiki/Capybara",
+            snippet="The capybara is a large rodent.",
+            title="Capybara - Wikipedia",
+        ),
+        MagicMock(
+            url="https://nationalgeographic.com/capybara",
+            snippet="Capybaras are from South America.",
+            title="Capybara - Nat Geo",
+        ),
+    ]
+
+    result = await extract_facts_from_search("What is a capybara?", search_results, mock_llm)
+
+    assert len(result.slots) == 2
+    assert result.slots[0].frame_name == "capybara"
+    assert result.slots[0].value == "Hydrochoerus hydrochaeris"
+
+
+async def test_extract_facts_from_search_empty_results():
+    mock_llm = AsyncMock()
+    result = await extract_facts_from_search("query", [], mock_llm)
+    assert result.slots == []
+    assert result.associations == []
+
+
+async def test_apply_search_extraction_deduplicates_by_content(store):
+    search_results = [
+        MagicMock(
+            url="https://example.com/a",
+            snippet="Capybara is a large rodent.",
+            title="A",
+        ),
+        MagicMock(
+            url="https://example.com/b",
+            snippet="Capybara is a large rodent.",
+            title="B",
+        ),
+    ]
+
+    mock_llm = AsyncMock()
+    mock_llm.utility_model = "qwen2.5:3b"
+    mock_llm.chat.return_value.content = json.dumps(
+        {
+            "slots": [
+                {
+                    "frame_name": "capybara",
+                    "frame_type": "entity",
+                    "key": "size",
+                    "value": "large rodent",
+                },
+            ],
+            "associations": [],
+        }
+    )
+
+    extraction = await extract_facts_from_search("What is a capybara?", search_results, mock_llm)
+    await apply_search_extraction(extraction, search_results, store)
+
+    frame = await store.get_frame_by_name("capybara")
+    assert frame is not None
+    slots = await store.get_slots_for_frame(frame.id)
+    assert len(slots) == 1
+
+
+async def test_apply_search_extraction_sets_source_type_and_url(store):
+    search_results = [
+        MagicMock(
+            url="https://en.wikipedia.org/wiki/Capybara",
+            snippet="The capybara is the largest living rodent.",
+            title="Capybara",
+        ),
+    ]
+
+    mock_llm = AsyncMock()
+    mock_llm.utility_model = "qwen2.5:3b"
+    mock_llm.chat.return_value.content = json.dumps(
+        {
+            "slots": [
+                {
+                    "frame_name": "capybara",
+                    "frame_type": "entity",
+                    "key": "description",
+                    "value": "largest living rodent",
+                },
+            ],
+            "associations": [],
+        }
+    )
+
+    extraction = await extract_facts_from_search("What is a capybara?", search_results, mock_llm)
+    await apply_search_extraction(extraction, search_results, store)
+
+    frame = await store.get_frame_by_name("capybara")
+    assert frame is not None
+    slots = await store.get_slots_for_frame(frame.id)
+    assert any(s.key == "description" and s.value == "largest living rodent" for s in slots)
+    assert slots[0].source_url == "https://en.wikipedia.org/wiki/Capybara"
+    assert slots[0].source_type == "search"
+
+
+async def test_validate_correction_corroborated_by_search(store):
+    """When search results contain the new value, validation marks it corroborated."""
+    from unittest.mock import AsyncMock
+
+    frame = await store.create_frame("guitar", "entity")
+    await store.upsert_slot(frame.id, "strings", "6")
+
+    mock_search = AsyncMock()
+    mock_search.search.return_value = [
+        MagicMock(url="https://example.com/strings", snippet="12-string guitars are common"),
+    ]
+
+    correction = CorrectionResult(
+        frame_name="guitar", slot_key="strings", new_value="12"
+    )
+    validation = await validate_correction(
+        correction=correction,
+        current_value="6",
+        store=store,
+        search_tool=mock_search,
+        llm_client=AsyncMock(),
+    )
+
+    assert validation.corroborated is True
+    assert validation.contradicted is False
+    assert "12" in validation.summary
+
+
+async def test_validate_correction_contradicted_by_search(store):
+    """When search results support the old value, validation rejects the correction."""
+    from unittest.mock import AsyncMock
+
+    frame = await store.create_frame("guitar", "entity")
+    await store.upsert_slot(frame.id, "strings", "6")
+
+    mock_search = AsyncMock()
+    mock_search.search.return_value = [
+        MagicMock(url="https://example.com/strings", snippet="Most guitars have 6 strings"),
+    ]
+
+    correction = CorrectionResult(
+        frame_name="guitar", slot_key="strings", new_value="12"
+    )
+    validation = await validate_correction(
+        correction=correction,
+        current_value="6",
+        store=store,
+        search_tool=mock_search,
+        llm_client=AsyncMock(),
+    )
+
+    assert validation.corroborated is False
+    assert validation.contradicted is True
+    assert "6" in validation.summary
+    assert "12" in validation.summary
+
+
+async def test_validate_correction_inconclusive_when_search_empty(store):
+    """When no search results are available, correction is accepted without corroboration."""
+    from unittest.mock import AsyncMock
+
+    frame = await store.create_frame("guitar", "entity")
+    await store.upsert_slot(frame.id, "strings", "6")
+
+    mock_search = AsyncMock()
+    mock_search.search.return_value = []
+
+    correction = CorrectionResult(
+        frame_name="guitar", slot_key="strings", new_value="12"
+    )
+    validation = await validate_correction(
+        correction=correction,
+        current_value="6",
+        store=store,
+        search_tool=mock_search,
+        llm_client=AsyncMock(),
+    )
+
+    assert validation.corroborated is False
+    assert validation.contradicted is False
+    assert "no third-party sources" in validation.summary.lower()
+
+
+async def test_validate_correction_invalid_correction(store):
+    """Validation handles incomplete correction results gracefully."""
+    from unittest.mock import AsyncMock
+
+    mock_search = AsyncMock()
+    validation = await validate_correction(
+        correction=CorrectionResult(),
+        current_value=None,
+        store=store,
+        search_tool=mock_search,
+        llm_client=AsyncMock(),
+    )
+
+    assert validation.corroborated is False
+    assert validation.contradicted is False
+    assert "invalid" in validation.summary.lower()
+
+
+async def test_extract_correction_parses_valid_input():
+
+    mock_llm = AsyncMock()
+    mock_llm.utility_model = "qwen2.5:3b"
+    mock_llm.chat.return_value.content = json.dumps({
+        "frame_name": "guitar",
+        "slot_key": "strings",
+        "new_value": "12",
+    })
+
+    result = await extract_correction(
+        "Actually the guitar has 12 strings, not 6",
+        mock_llm,
+    )
+
+    assert result is not None
+    assert result.frame_name == "guitar"
+    assert result.slot_key == "strings"
+    assert result.new_value == "12"
+
+
+async def test_extract_correction_returns_none_for_nulls():
+
+    mock_llm = AsyncMock()
+    mock_llm.utility_model = "qwen2.5:3b"
+    mock_llm.chat.return_value.content = json.dumps({
+        "frame_name": None,
+        "slot_key": None,
+        "new_value": None,
+    })
+
+    result = await extract_correction("That's wrong", mock_llm)
+    assert result is None
+
+
+async def test_extract_correction_retries_then_returns_none():
+    from unittest.mock import MagicMock
+
+    mock_llm = AsyncMock()
+    mock_llm.utility_model = "qwen2.5:3b"
+    mock_llm.chat.side_effect = [
+        MagicMock(content="not json"),
+        MagicMock(content="still not json"),
+    ]
+
+    result = await extract_correction("That's wrong", mock_llm)
+    assert result is None
+    assert mock_llm.chat.call_count == 2
+
+
+async def test_apply_correction_updates_existing_slot(store):
+    frame = await store.create_frame("guitar", "entity")
+    await store.upsert_slot(frame.id, "strings", "6")
+
+    from assistant.backend.pipeline.extractor import CorrectionResult
+    summary = await apply_correction(
+        CorrectionResult(frame_name="guitar", slot_key="strings", new_value="12"),
+        store,
+    )
+
+    assert summary["slots_corrected"] == 1
+    updated = await store.get_slot(frame.id, "strings")
+    assert updated.value == "12"
+
+
+async def test_apply_correction_creates_frame_if_missing(store):
+    from assistant.backend.pipeline.extractor import CorrectionResult
+    summary = await apply_correction(
+        CorrectionResult(frame_name="novel", slot_key="genre", new_value="sci-fi"),
+        store,
+    )
+
+    assert summary["slots_corrected"] == 1
+    frame = await store.get_frame_by_name("novel")
+    assert frame is not None
+    slot = await store.get_slot(frame.id, "genre")
+    assert slot.value == "sci-fi"
+
+
+async def test_apply_correction_noops_on_null_fields(store):
+    from assistant.backend.pipeline.extractor import CorrectionResult
+    summary = await apply_correction(CorrectionResult(), store)
+    assert summary["slots_corrected"] == 0
+
+
+async def test_apply_correction_sets_high_reliability(store):
+    frame = await store.create_frame("guitar", "entity")
+    await store.upsert_slot(frame.id, "strings", "6")
+
+    from assistant.backend.pipeline.extractor import CorrectionResult
+    await apply_correction(
+        CorrectionResult(frame_name="guitar", slot_key="strings", new_value="12"),
+        store,
+    )
+
+    slot = await store.get_slot(frame.id, "strings")
+    assert slot.source_type == "user_correction"

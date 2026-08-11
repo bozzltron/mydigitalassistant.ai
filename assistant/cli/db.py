@@ -4,10 +4,11 @@ import asyncio
 import sys
 from pathlib import Path
 
-from assistant.backend.config import settings
-from assistant.backend.db.schema import init_db
 from rich.console import Console
 from rich.table import Table
+
+from assistant.backend.config import settings
+from assistant.backend.db.schema import init_db
 
 console = Console()
 

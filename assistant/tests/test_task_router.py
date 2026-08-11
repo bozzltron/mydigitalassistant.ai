@@ -1,6 +1,7 @@
 from unittest.mock import AsyncMock
 
 import pytest
+
 from assistant.backend.pipeline.task_router import (
     TaskType,
     classify,
@@ -54,7 +55,10 @@ def test_heuristic_introspective_pick_up():
 
 
 def test_heuristic_introspective_recall_about():
-    assert classify_heuristic("What do you recall about the Glasgow article?") == TaskType.INTROSPECTIVE
+    assert (
+        classify_heuristic("What do you recall about the Glasgow article?")
+        == TaskType.INTROSPECTIVE
+    )
     assert classify_heuristic("What was discussed about climate change?") == TaskType.INTROSPECTIVE
 
 
@@ -64,7 +68,6 @@ def test_heuristic_returns_none_for_functional():
     assert classify_heuristic("Set a reminder for tomorrow") is None
 
 
-@pytest.mark.asyncio
 async def test_llm_classify_introspective():
     mock_llm = AsyncMock()
     mock_llm.chat.return_value.content = '{"task_type": "introspective"}'
@@ -74,7 +77,6 @@ async def test_llm_classify_introspective():
     assert result == TaskType.INTROSPECTIVE
 
 
-@pytest.mark.asyncio
 async def test_llm_classify_functional():
     mock_llm = AsyncMock()
     mock_llm.chat.return_value.content = '{"task_type": "functional"}'
@@ -84,7 +86,6 @@ async def test_llm_classify_functional():
     assert result == TaskType.FUNCTIONAL
 
 
-@pytest.mark.asyncio
 async def test_llm_classify_malformed_falls_back_to_functional():
     mock_llm = AsyncMock()
     mock_llm.chat.return_value.content = "not json"
@@ -94,7 +95,6 @@ async def test_llm_classify_malformed_falls_back_to_functional():
     assert result == TaskType.FUNCTIONAL
 
 
-@pytest.mark.asyncio
 async def test_classify_uses_heuristic_first():
     """If heuristic matches, LLM should NOT be called."""
     mock_llm = AsyncMock()
@@ -103,7 +103,6 @@ async def test_classify_uses_heuristic_first():
     mock_llm.chat.assert_not_called()
 
 
-@pytest.mark.asyncio
 async def test_classify_falls_back_to_llm_when_ambiguous():
     """If heuristic doesn't match, LLM should be called."""
     mock_llm = AsyncMock()
@@ -115,7 +114,6 @@ async def test_classify_falls_back_to_llm_when_ambiguous():
     mock_llm.chat.assert_called_once()
 
 
-@pytest.mark.asyncio
 async def test_classify_no_llm_fallback_defaults_to_functional():
     """When use_llm_fallback=False, ambiguous -> functional."""
     mock_llm = AsyncMock()
@@ -124,7 +122,6 @@ async def test_classify_no_llm_fallback_defaults_to_functional():
     mock_llm.chat.assert_not_called()
 
 
-@pytest.mark.asyncio
 async def test_classify_handles_llm_exception_by_falling_back_to_functional():
     mock_llm = AsyncMock()
     mock_llm.utility_model = "qwen2.5:3b"

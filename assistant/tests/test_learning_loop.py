@@ -1,13 +1,11 @@
 from unittest.mock import AsyncMock
 
-import pytest
 from assistant.backend.db.schema import init_db
 from assistant.backend.memory.retrieval import Retriever
 from assistant.backend.memory.store import MemoryStore
 from assistant.backend.pipeline.llm_client import EmbeddingResponse
 
 
-@pytest.mark.asyncio
 async def test_learn_fact_then_recall_in_future_session(tmp_path):
     db_path = str(tmp_path / "test.db")
     await init_db(db_path)

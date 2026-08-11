@@ -1,7 +1,7 @@
 #!/bin/bash
 
-# Run the assistant natively: starts the FastAPI backend, then runs the CLI.
-# Usage: ./assistant/bin/assistant <command> [args...]
+# Run the assistant CLI against the backend already running in docker compose.
+# Usage: ./assistant/bin/assistant <cli-command> [args...]
 # Example: ./assistant/bin/assistant chat
 
 set -euo pipefail
@@ -9,35 +9,5 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-if [[ -x "$REPO_ROOT/venv/bin/python" ]]; then
-    PY="$REPO_ROOT/venv/bin/python"
-else
-    PY=python3
-fi
-
-BACKEND_HOST="${BACKEND_HOST:-127.0.0.1}"
-BACKEND_PORT="${BACKEND_PORT:-8000}"
-
-echo "Starting backend server on ${BACKEND_HOST}:${BACKEND_PORT}..."
-"$PY" -m uvicorn assistant.backend.main:app --host "$BACKEND_HOST" --port "$BACKEND_PORT" &
-BACKEND_PID=$!
-
-cleanup() {
-    kill "$BACKEND_PID" 2>/dev/null || true
-}
-trap cleanup EXIT
-
-# Wait for the backend to become healthy
-for _ in $(seq 1 30); do
-    if curl -sf -m 2 "http://${BACKEND_HOST}:${BACKEND_PORT}/health" >/dev/null 2>&1; then
-        break
-    fi
-    if ! kill -0 "$BACKEND_PID" 2>/dev/null; then
-        echo "Backend failed to start." >&2
-        exit 1
-    fi
-    sleep 1
-done
-
-echo "Starting CLI..."
-"$PY" -m assistant.cli.app "$@"
+docker compose -f "$REPO_ROOT/docker-compose.yml" exec -T assistant \
+    python -m assistant.cli.app "$@"

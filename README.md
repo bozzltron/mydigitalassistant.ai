@@ -41,7 +41,7 @@ See `/assistant/AGENTS.md` for the cognitive architecture and memory model detai
 
 ## Security
 
-See `SECURITY.md` (in /assistant/) for the local-only guarantee and threat model.
+See `SECURITY.md` for the local-only guarantee and threat model.
 All inference is local via Ollama. Web search only via local SearXNG instance.
 No outbound network calls to cloud providers.
 

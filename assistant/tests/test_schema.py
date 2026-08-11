@@ -1,8 +1,6 @@
-import pytest
 from assistant.backend.db.schema import init_db
 
 
-@pytest.mark.asyncio
 async def test_init_db_creates_tables(tmp_path):
     db_path = str(tmp_path / "test.db")
     await init_db(db_path)
@@ -27,7 +25,6 @@ async def test_init_db_creates_tables(tmp_path):
         assert expected.issubset(tables)
 
 
-@pytest.mark.asyncio
 async def test_init_db_idempotent(tmp_path):
     db_path = str(tmp_path / "test.db")
     await init_db(db_path)

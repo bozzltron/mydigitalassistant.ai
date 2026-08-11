@@ -15,8 +15,8 @@ frame/slot memory model. Runs 100% locally via Ollama.
   ```
 
 ### Start the backend
+Docker compose files are at the repo root. Run from the repo root:
 ```bash
-cd assistant
 docker compose up -d
 ```
 
@@ -25,17 +25,17 @@ The CLI runs in a Docker container — no host Python needed.
 
 **Option A: shell wrapper (recommended)**
 ```bash
-./bin/assistant status
-./bin/assistant users add alice
-./bin/assistant chat
-./bin/assistant memory list
-./bin/assistant db backup
+./assistant/bin/assistant status
+./assistant/bin/assistant users add alice
+./assistant/bin/assistant chat
+./assistant/bin/assistant memory list
+./assistant/bin/assistant db backup
 ```
 
 **Option B: docker compose directly**
 ```bash
-docker compose --profile cli run --rm cli status
-docker compose --profile cli run --rm cli chat
+docker compose exec assistant python -m assistant.cli.app status
+docker compose exec assistant python -m assistant.cli.app chat
 ```
 
 ### Verify
@@ -45,14 +45,13 @@ curl http://127.0.0.1:8000/health
 
 ### Run tests
 ```bash
-docker compose -f docker-compose.dev.yml run --rm test
+docker run -it --rm -v $(pwd):/app -w /app assistant pytest assistant/tests/
 ```
 
 ### Security verification
 ```bash
-docker compose run --rm cli security
+docker compose exec assistant python scripts/verify_security.py
 ```
-(Or, if you have the project installed locally: `assistant-verify-security`)
 
 ## Development
 
@@ -60,10 +59,14 @@ If you do have Python installed locally, you can install the package for
 development:
 
 ```bash
-pip install -e ".[dev]"
-pytest tests/ -v
-ruff check .
+pip install -e "./assistant[dev]"
+pytest assistant/tests/ -v
+ruff check assistant/
 ```
 
 The DB lives in the `assistant-data` Docker volume. Use `assistant db backup`
 to create a backup and `assistant db restore <backup-file>` to restore it.
+
+## Architecture
+
+See `AGENTS.md` (in this directory) for the cognitive architecture and memory model details.

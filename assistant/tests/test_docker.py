@@ -9,20 +9,21 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).parent.parent
-DOCKERFILE = ROOT / "Dockerfile"
-COMPOSE = ROOT / "docker-compose.yml"
-COMPOSE_DEV = ROOT / "docker-compose.dev.yml"
-DOCKERIGNORE = ROOT / ".dockerignore"
+REPO = ROOT.parent
+DOCKERFILE = REPO / "Dockerfile"
+COMPOSE = REPO / "docker-compose.yml"
+COMPOSE_DEV = REPO / "docker-compose.dev.yml"
+DOCKERIGNORE = REPO / ".dockerignore"
 
 
 def test_dockerfile_exists():
     assert DOCKERFILE.exists()
 
 
-def test_dockerfile_binds_to_localhost():
+def test_dockerfile_binds_via_env_var():
     content = DOCKERFILE.read_text()
-    assert "127.0.0.1" in content
-    assert "0.0.0.0" not in content
+    assert "BACKEND_HOST" in content
+    assert "${BACKEND_HOST}" in content or "$BACKEND_HOST" in content
 
 
 def test_dockerfile_uses_non_root_user():

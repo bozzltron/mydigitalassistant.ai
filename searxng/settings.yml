@@ -1,0 +1,16 @@
+# SearXNG Settings for MyDigitalAssistant
+# https://docs.searxng.org/admin/settings/
+
+use_default_settings: true
+
+server:
+  secret_key: "zABvJWSxJOVoKpjP2MfqFL43WMmKvk9"
+  image_proxy: true
+
+search:
+  formats:
+    - html
+    - json
+
+logger:
+  log_level: WARNING

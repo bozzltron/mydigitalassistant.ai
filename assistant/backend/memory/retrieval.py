@@ -1,4 +1,3 @@
-import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -26,18 +25,6 @@ class MemoryContext:
     formatted: str  # ready-to-inject text for LLM system prompt
 
 
-def cosine_similarity(a: list[float], b: list[float]) -> float:
-    """Compute cosine similarity between two vectors. Returns 0.0 if either is empty."""
-    if not a or not b or len(a) != len(b):
-        return 0.0
-    dot = sum(x * y for x, y in zip(a, b, strict=True))
-    norm_a = math.sqrt(sum(x * x for x in a))
-    norm_b = math.sqrt(sum(x * x for x in b))
-    if norm_a == 0 or norm_b == 0:
-        return 0.0
-    return dot / (norm_a * norm_b)
-
-
 def frame_to_text(frame: Frame, slots: list[Slot]) -> str:
     """Convert a frame + its slots to embeddable text."""
     parts = [f"{frame.type}: {frame.name}"]
@@ -51,20 +38,33 @@ def format_memory_context(context: "MemoryContext") -> str:
     lines: list[str] = []
     if context.retrieved_frames:
         lines.append("## Relevant memory")
-        for rf in context.retrieved_frames[:5]:  # top 5 frames
+        for rf in context.retrieved_frames[:5]:
             lines.append(
                 f"\n### {rf.frame.name} ({rf.frame.type}) [relevance: {rf.relevance:.2f}]"
             )
             for slot in rf.slots:
-                lines.append(f"  - {slot.key} = {slot.value} (conf: {slot.confidence:.2f})")
+                source_note = ""
+                if slot.source_url:
+                    if "//" in slot.source_url:
+                        domain = slot.source_url.split("/")[2]
+                    else:
+                        domain = slot.source_url
+                    source_note = f", src: {slot.source_type or 'unknown'} ({domain})"
+                    if slot.source_reliability:
+                        source_note += f", reliability: {slot.source_reliability:.2f}"
+                slot_line = (
+                    f"  - {slot.key} = {slot.value} "
+                    f"(conf: {slot.confidence:.2f}{source_note})"
+                )
+                lines.append(slot_line)
             if rf.associations:
                 assoc_str = ", ".join(
                     f"{a.relation_type}\u2192frame:{a.to_frame_id}" for a in rf.associations[:3]
                 )
                 lines.append(f"  relations: {assoc_str}")
     if context.recent_episodes:
-        lines.append("\n## Recent conversation (this user)")
-        for ep in context.recent_episodes[:10]:   # most recent 10
+        lines.append("\n## Recent conversation (this session)")
+        for ep in context.recent_episodes[-10:]:
             lines.append(f"   [{ep.role}] {ep.content}")
     return "\n".join(lines) if lines else "(no relevant memory found)"
 
@@ -138,9 +138,9 @@ class Retriever:
             empty.formatted = format_memory_context(empty)
             return empty
 
-         # 3. Filter by distance threshold and sort by similarity
+         # 3. Filter by distance threshold and sort by similarity × confidence × priority
         scored: list[tuple[int, float, str]] = [
-            (frame.id, similarity, "direct_match")
+            (frame.id, similarity * frame.confidence * frame.priority, "direct_match")
             for frame, _slots, similarity in all_results
             if similarity >= self.min_relevance
         ]
@@ -152,7 +152,7 @@ class Retriever:
         graph_neighbors: list[tuple[int, float, str]] = []
         for frame_id, _sim, _ in top_direct:
             neighbors = await self._graph_walk(
-                frame_id, query_embedding, self.graph_hops, self.graph_decay
+                frame_id, query_embedding, self.graph_hops, self.graph_decay, user_id
              )
             for neighbor_id, neighbor_sim, source in neighbors:
                 if neighbor_id not in seen_frame_ids:
@@ -181,8 +181,16 @@ class Retriever:
                  )
              )
 
-         # 6. Recent episodes for the user
-        recent_episodes = await self.store.get_episodes_for_user(user_id, limit=10)
+         # 6. Recent episodes — prefer session-scoped when session_id is provided
+        if session_id:
+            session_episodes = await self.store.get_episodes_for_session(session_id)
+            if len(session_episodes) >= 2:
+                recent_episodes = session_episodes
+            else:
+                user_episodes = await self.store.get_episodes_for_user(user_id, limit=20)
+                recent_episodes = session_episodes + user_episodes
+        else:
+            recent_episodes = await self.store.get_episodes_for_user(user_id, limit=10)
 
          # Build and return context
         context = MemoryContext(
@@ -200,14 +208,17 @@ class Retriever:
         query_embedding: list[float],
         max_hops: int,
         decay: float,
+        user_id: int,
     ) -> list[tuple[int, float, str]]:
         """Walk the association graph from start_frame_id, up to max_hops.
 
         Returns (frame_id, relevance, source) tuples.
+        Filters to frames owned by user_id or shared (owner_user_id IS NULL).
+        Applies frame.confidence × frame.priority to relevance score.
         """
         results: list[tuple[int, float, str]] = []
         visited: set[int] = {start_frame_id}
-        frontier: list[tuple[int, float]] = [(start_frame_id, 1.0)]  # (frame_id, current_relevance)
+        frontier: list[tuple[int, float]] = [(start_frame_id, 1.0)]
 
         for hop in range(max_hops):
             next_frontier: list[tuple[int, float]] = []
@@ -222,11 +233,22 @@ class Retriever:
                     if neighbor_id in visited:
                         continue
                     visited.add(neighbor_id)
-                    # Decay relevance by hop distance + association confidence
-                    new_relevance = relevance * decay * assoc.confidence
-                    if new_relevance >= self.min_relevance:
-                        results.append((neighbor_id, new_relevance, f"graph_hop_{hop + 1}"))
-                        next_frontier.append((neighbor_id, new_relevance))
+                    neighbor = await self.store.get_frame(neighbor_id)
+                    if neighbor is None:
+                        continue
+                    if neighbor.owner_user_id not in (None, user_id):
+                        continue
+                    score = (
+                        relevance
+                        * decay
+                        * assoc.confidence
+                        * assoc.priority
+                        * neighbor.confidence
+                        * neighbor.priority
+                    )
+                    if score >= self.min_relevance:
+                        results.append((neighbor_id, score, f"graph_hop_{hop + 1}"))
+                        next_frontier.append((neighbor_id, score))
             frontier = next_frontier
             if not frontier:
                 break

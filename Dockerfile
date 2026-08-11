@@ -20,8 +20,9 @@ RUN pip install --no-cache-dir --upgrade pip \
         "numpy>=1.26" \
         "aiosqlite>=0.20" \
         "sqlite-vec>=0.1.0" \
-        "ruff==0.7.0" \
-        "pytest>=7.1.2" \
+        "faster-whisper>=1.0" \
+        "ruff>=0.7.0" \
+        "pytest>=8.0" \
         "pytest-asyncio>=0.23"
 
 FROM python:3.11-slim AS runtime
@@ -33,6 +34,7 @@ WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /wheels /wheels
@@ -46,14 +48,13 @@ RUN pip install --no-cache-dir --no-index --find-links /wheels \
         numpy \
         aiosqlite \
         sqlite-vec \
+        faster-whisper \
         ruff \
         pytest \
         pytest-asyncio \
     && rm -rf /wheels
 
-COPY --chown=assistant:assistant backend/ /app/backend/
-COPY --chown=assistant:assistant cli/ /app/cli/
-COPY --chown=assistant:assistant pyproject.toml /app/
+COPY --chown=assistant:assistant assistant/ /app/assistant/
 
 RUN mkdir -p /app/data && chown -R assistant:assistant /app
 
@@ -63,12 +64,14 @@ ENV DATABASE_PATH=/app/data/assistant.db \
     BACKEND_HOST=127.0.0.1 \
     BACKEND_PORT=8000 \
     OLLAMA_URL=http://host.docker.internal:11434 \
-    PYTHONUNBUFFERED=1
+    WHISPER_MODEL=base \
+    WHISPER_DEVICE=cpu \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/app
 
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -f http://127.0.0.1:8000/health || exit 1
 
-CMD ["uvicorn", "assistant.backend.main:app", "--host", "127.0.0.1", "--port", "8000"]
-
+CMD ["uvicorn", "assistant.backend.main:app", "--host", "${BACKEND_HOST}", "--port", "8000"]

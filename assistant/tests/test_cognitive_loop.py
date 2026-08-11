@@ -1,6 +1,5 @@
 import json
 
-import pytest
 from assistant.backend.db.schema import init_db
 from assistant.backend.memory.retrieval import Retriever
 from assistant.backend.memory.store import MemoryStore
@@ -9,7 +8,6 @@ from assistant.backend.pipeline.llm_client import ChatMessage, build_system_prom
 from assistant.backend.pipeline.task_router import TaskType, classify
 
 
-@pytest.mark.asyncio
 async def test_full_cognitive_loop_learns_then_recalls(tmp_path, stub_llm):
     db_path = str(tmp_path / "test.db")
     await init_db(db_path)

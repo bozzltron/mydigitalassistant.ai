@@ -9,13 +9,17 @@ services:
       - OLLAMA_URL=http://host.docker.internal:11434
       - CHAT_MODEL=qwen2.5:7b
       - UTILITY_MODEL=qwen2.5:3b
+      - REASONING_MODEL=qwen2.5:7b
       - EMBEDDING_MODEL=nomic-embed-text
       - BACKEND_HOST=0.0.0.0
+      - SEARCH_BASE_URL=http://searxng:8080
+      - WHISPER_MODEL=base
+      - WHISPER_DEVICE=cpu
     volumes:
       - assistant-data:/app/data
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    command: ["uvicorn", "assistant.backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    command: ["sh", "-c", "uvicorn assistant.backend.main:app --host ${BACKEND_HOST} --port 8000"]
     restart: unless-stopped
 
   cli:
@@ -32,6 +36,17 @@ services:
     restart: "no"
     profiles:
       - cli
+
+  searxng:
+    image: searxng/searxng:latest
+    container_name: searxng
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      - SEARXNG_BASE_URL=http://localhost:8080
+    volumes:
+      - ./searxng:/etc/searxng:ro
+    restart: unless-stopped
 
 volumes:
   assistant-data:

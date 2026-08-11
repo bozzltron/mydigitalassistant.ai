@@ -1,8 +1,9 @@
 import pytest
+from fastapi.testclient import TestClient
+
 from assistant.backend.main import _state, app, get_orchestrator, get_store
 from assistant.backend.memory.retrieval import Retriever
 from assistant.backend.pipeline.orchestrator import Orchestrator, OrchestratorDeps
-from fastapi.testclient import TestClient
 
 
 @pytest.fixture
@@ -236,3 +237,26 @@ def test_restore_path_traversal_blocked(client, store):
     """Restore should refuse files outside the data directory."""
     r = client.post("/db/restore", params={"backup_filename": "../../../etc/passwd"})
     assert r.status_code == 400
+
+
+def test_health_includes_reasoning_model(client):
+    """Health endpoint should include reasoning_model."""
+    r = client.get("/health")
+    assert r.status_code == 200
+    data = r.json()
+    assert "reasoning_model" in data
+
+
+def test_chat_ui_returns_html(client):
+    """GET /chat-ui should serve the web chat interface."""
+    r = client.get("/chat-ui")
+    assert r.status_code == 200
+    assert "text/html" in r.headers.get("content-type", "")
+    assert "Cognitive Assistant" in r.text
+
+
+def test_static_files_served(client):
+    """Static files including marked.min.js should be served."""
+    r = client.get("/static/marked.min.js")
+    assert r.status_code == 200
+    assert "application/javascript" in r.headers.get("content-type", "")

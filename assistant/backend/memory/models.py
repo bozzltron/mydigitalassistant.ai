@@ -7,6 +7,11 @@ class Frame(BaseModel):
     type: str
     confidence: float = 0.5
     essential: int = 0
+    priority: float = 0.5
+    owner_user_id: int | None = None
+    source_type: str | None = None
+    source_url: str | None = None
+    source_reliability: float | None = None
     created_at: str | None = None
     updated_at: str | None = None
 
@@ -18,6 +23,10 @@ class Slot(BaseModel):
     value: str
     confidence: float = 0.5
     essential: int = 0
+    priority: float = 0.5
+    source_type: str | None = None
+    source_url: str | None = None
+    source_reliability: float | None = None
     source_episode_id: int | None = None
     updated_at: str | None = None
 
@@ -29,6 +38,10 @@ class Association(BaseModel):
     relation_type: str
     confidence: float = 0.5
     essential: int = 0
+    priority: float = 0.5
+    source_type: str | None = None
+    source_url: str | None = None
+    source_reliability: float | None = None
     created_at: str | None = None
 
 

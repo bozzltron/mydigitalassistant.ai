@@ -1,10 +1,10 @@
 import aiosqlite
 import pytest
+
 from assistant.backend.memory.confidence import bump_confidence, initial_confidence
 from assistant.backend.memory.store import MemoryStore
 
 
-@pytest.mark.asyncio
 async def test_create_and_get_user(store: MemoryStore):
     user = await store.create_user("Alice")
     assert user.name == "Alice"
@@ -13,7 +13,6 @@ async def test_create_and_get_user(store: MemoryStore):
     assert got.name == "Alice"
 
 
-@pytest.mark.asyncio
 async def test_get_user_by_name(store: MemoryStore):
     await store.create_user("Bob")
     got = await store.get_user_by_name("Bob")
@@ -21,7 +20,6 @@ async def test_get_user_by_name(store: MemoryStore):
     assert got.name == "Bob"
 
 
-@pytest.mark.asyncio
 async def test_list_users(store: MemoryStore):
     alice = await store.create_user("Alice")
     bob = await store.create_user("Bob")
@@ -29,14 +27,12 @@ async def test_list_users(store: MemoryStore):
     assert [u.id for u in users] == [alice.id, bob.id]
 
 
-@pytest.mark.asyncio
 async def test_unique_user_name(store: MemoryStore):
     await store.create_user("Carol")
     with pytest.raises(aiosqlite.IntegrityError):
         await store.create_user("Carol")
 
 
-@pytest.mark.asyncio
 async def test_create_and_get_frame(store: MemoryStore):
     frame = await store.create_frame("Mars", "entity")
     assert frame.name == "Mars"
@@ -46,7 +42,6 @@ async def test_create_and_get_frame(store: MemoryStore):
     assert got.name == "Mars"
 
 
-@pytest.mark.asyncio
 async def test_update_frame(store: MemoryStore):
     frame = await store.create_frame("Mars", "entity", confidence=0.5)
     updated = await store.update_frame(frame.id, name="Mars 2.0", type="event", confidence=0.9)
@@ -58,7 +53,6 @@ async def test_update_frame(store: MemoryStore):
     assert got.name == "Mars 2.0"
 
 
-@pytest.mark.asyncio
 async def test_get_frame_by_name(store: MemoryStore):
     await store.create_frame("Earth", "entity")
     got = await store.get_frame_by_name("Earth")
@@ -66,7 +60,6 @@ async def test_get_frame_by_name(store: MemoryStore):
     assert got.type == "entity"
 
 
-@pytest.mark.asyncio
 async def test_list_frames_filtered_by_type(store: MemoryStore):
     await store.create_frame("Sun", "entity")
     await store.create_frame("Eclipse", "event")
@@ -75,7 +68,6 @@ async def test_list_frames_filtered_by_type(store: MemoryStore):
     assert entities[0].name == "Sun"
 
 
-@pytest.mark.asyncio
 async def test_upsert_slot_new(store: MemoryStore):
     frame = await store.create_frame("Daisy", "entity")
     slot, conflict = await store.upsert_slot(frame.id, "color", "white")
@@ -84,7 +76,6 @@ async def test_upsert_slot_new(store: MemoryStore):
     assert conflict is None
 
 
-@pytest.mark.asyncio
 async def test_get_slot(store: MemoryStore):
     frame = await store.create_frame("Daisy", "entity")
     await store.upsert_slot(frame.id, "color", "white")
@@ -94,7 +85,6 @@ async def test_get_slot(store: MemoryStore):
     assert await store.get_slot(frame.id, "missing") is None
 
 
-@pytest.mark.asyncio
 async def test_upsert_slot_repeat_bumps_confidence(store: MemoryStore):
     frame = await store.create_frame("Daisy", "entity")
     await store.upsert_slot(frame.id, "color", "white")
@@ -103,7 +93,6 @@ async def test_upsert_slot_repeat_bumps_confidence(store: MemoryStore):
     assert conflict is None
 
 
-@pytest.mark.asyncio
 async def test_upsert_slot_conflict_new_wins(store: MemoryStore):
     frame = await store.create_frame("Daisy", "entity")
     await store.upsert_slot(frame.id, "color", "white")
@@ -113,7 +102,6 @@ async def test_upsert_slot_conflict_new_wins(store: MemoryStore):
     assert conflict.status == "auto_resolved"
 
 
-@pytest.mark.asyncio
 async def test_upsert_slot_conflict_existing_wins(store: MemoryStore):
     frame = await store.create_frame("Daisy", "entity")
     slot1, _ = await store.upsert_slot(frame.id, "color", "white")
@@ -126,7 +114,6 @@ async def test_upsert_slot_conflict_existing_wins(store: MemoryStore):
     assert conflict.status == "pending"
 
 
-@pytest.mark.asyncio
 async def test_slot_history_preserved_on_conflict(store: MemoryStore):
     frame = await store.create_frame("Daisy", "entity")
     slot, _ = await store.upsert_slot(frame.id, "color", "white")
@@ -138,7 +125,6 @@ async def test_slot_history_preserved_on_conflict(store: MemoryStore):
     assert history[0]["reason"] == "conflict_resolved"
 
 
-@pytest.mark.asyncio
 async def test_create_and_get_association(store: MemoryStore):
     f1 = await store.create_frame("Sun", "entity")
     f2 = await store.create_frame("Earth", "entity")
@@ -148,7 +134,6 @@ async def test_create_and_get_association(store: MemoryStore):
     assert assoc.relation_type == "orbits"
 
 
-@pytest.mark.asyncio
 async def test_get_associations_directional(store: MemoryStore):
     f1 = await store.create_frame("Sun", "entity")
     f2 = await store.create_frame("Earth", "entity")
@@ -165,7 +150,6 @@ async def test_get_associations_directional(store: MemoryStore):
     assert await store.get_associations_to(f1.id) == []
 
 
-@pytest.mark.asyncio
 async def test_get_all_associations_both_directions(store: MemoryStore):
     f1 = await store.create_frame("Sun", "entity")
     f2 = await store.create_frame("Earth", "entity")
@@ -175,7 +159,6 @@ async def test_get_all_associations_both_directions(store: MemoryStore):
     assert all_assocs[0].from_frame_id == f1.id
 
 
-@pytest.mark.asyncio
 async def test_create_episode_with_frame_ids(store: MemoryStore):
     user = await store.create_user("Alice")
     frame = await store.create_frame("Planets", "concept")
@@ -186,7 +169,6 @@ async def test_create_episode_with_frame_ids(store: MemoryStore):
     assert ep.frame_ids == [frame.id]
 
 
-@pytest.mark.asyncio
 async def test_get_episodes_for_user_isolated(store: MemoryStore):
     a = await store.create_user("A")
     b = await store.create_user("B")
@@ -197,7 +179,6 @@ async def test_get_episodes_for_user_isolated(store: MemoryStore):
     assert a_eps[0].content == "hi"
 
 
-@pytest.mark.asyncio
 async def test_get_episodes_for_session(store: MemoryStore):
     user = await store.create_user("Alice")
     await store.create_episode(user.id, "session-x", "user", "hello", frame_ids=[])
@@ -208,7 +189,6 @@ async def test_get_episodes_for_session(store: MemoryStore):
     assert all(ep.session_id == "session-x" for ep in eps)
 
 
-@pytest.mark.asyncio
 async def test_get_episodes_for_frame(store: MemoryStore):
     user = await store.create_user("Alice")
     frame = await store.create_frame("Mars", "entity")
@@ -218,7 +198,6 @@ async def test_get_episodes_for_frame(store: MemoryStore):
     assert eps[0].content == "Mars is red"
 
 
-@pytest.mark.asyncio
 async def test_merge_frames_moves_slots_and_associations(store: MemoryStore):
     primary = await store.create_frame("Mars", "entity")
     secondary = await store.create_frame("The Red Planet", "entity")
@@ -239,7 +218,6 @@ async def test_merge_frames_moves_slots_and_associations(store: MemoryStore):
     assert await store.get_frame(secondary.id) is None
 
 
-@pytest.mark.asyncio
 async def test_merge_frames_logs_history(store: MemoryStore):
     primary = await store.create_frame("Mars", "entity")
     secondary = await store.create_frame("The Red Planet", "entity")
@@ -249,7 +227,6 @@ async def test_merge_frames_logs_history(store: MemoryStore):
     assert any(h["reason"] == "merge" for h in history)
 
 
-@pytest.mark.asyncio
 async def test_upsert_slot_with_source_episode_id(store: MemoryStore):
     user = await store.create_user("Alice")
     episode = await store.create_episode(user.id, "s1", "user", "test", frame_ids=[])
@@ -261,7 +238,6 @@ async def test_upsert_slot_with_source_episode_id(store: MemoryStore):
     assert slot.source_episode_id == episode.id
 
 
-@pytest.mark.asyncio
 async def test_frame_embedding_crud(store: MemoryStore):
     frame = await store.create_frame("Guitar", "entity")
     embedding = [1.0, 0.0, 0.0]
@@ -279,7 +255,6 @@ async def test_frame_embedding_crud(store: MemoryStore):
     assert await store.get_frame_embedding(frame.id) is None
 
 
-@pytest.mark.asyncio
 async def test_get_conflicts_and_get_conflicts_for_frame(store: MemoryStore):
     frame = await store.create_frame("Daisy", "entity")
     await store.upsert_slot(frame.id, "color", "white")
@@ -297,7 +272,6 @@ async def test_get_conflicts_and_get_conflicts_for_frame(store: MemoryStore):
     assert pending == []
 
 
-@pytest.mark.asyncio
 async def test_manual_override_conflict(store: MemoryStore):
     frame = await store.create_frame("Daisy", "entity")
     await store.upsert_slot(frame.id, "color", "white")
@@ -306,3 +280,105 @@ async def test_manual_override_conflict(store: MemoryStore):
     assert slot.value == "pink"
     history = await store.get_slot_history(slot.id)
     assert any(h["reason"] == "manual_override" for h in history)
+
+
+async def test_set_frame_priority(store: MemoryStore):
+    frame = await store.create_frame("Daisy", "entity")
+    assert frame.priority == 0.5
+    updated = await store.set_frame_priority(frame.id, 0.8)
+    assert updated.priority == 0.8
+
+
+async def test_forget_frame_soft_deletes(store: MemoryStore):
+    frame = await store.create_frame("Daisy", "entity")
+    assert frame.priority == 0.5
+    updated = await store.forget_frame(frame.id)
+    assert updated.priority == 0.0
+
+
+async def test_forget_frame_preserves_essential(store: MemoryStore):
+    frame = await store.create_frame("Daisy", "entity", essential=1)
+    updated = await store.forget_frame(frame.id)
+    assert updated.priority == 0.5
+
+
+async def test_set_slot_priority(store: MemoryStore):
+    frame = await store.create_frame("Daisy", "entity")
+    slot, _ = await store.upsert_slot(frame.id, "color", "white")
+    assert slot.priority == 0.5
+    updated = await store.set_slot_priority(slot.id, 0.9)
+    assert updated.priority == 0.9
+
+
+async def test_forget_slot_soft_deletes(store: MemoryStore):
+    frame = await store.create_frame("Daisy", "entity")
+    slot, _ = await store.upsert_slot(frame.id, "color", "white")
+    updated = await store.forget_slot(slot.id)
+    assert updated.priority == 0.0
+
+
+async def test_create_frame_with_owner_and_source(store: MemoryStore):
+    user = await store.create_user("alice")
+    frame = await store.create_frame(
+        "apples",
+        "food",
+        priority=0.8,
+        owner_user_id=user.id,
+        source_type="search",
+        source_url="https://example.com/apples",
+        source_reliability=0.7,
+    )
+    assert frame.owner_user_id == user.id
+    assert frame.priority == 0.8
+    assert frame.source_type == "search"
+    assert frame.source_url == "https://example.com/apples"
+    assert frame.source_reliability == 0.7
+
+
+async def test_upsert_slot_with_source(store: MemoryStore):
+    frame = await store.create_frame("apples", "food")
+    slot, _ = await store.upsert_slot(
+        frame.id,
+        "color",
+        "red",
+        source_type="search",
+        source_url="https://example.com/red-apples",
+        source_reliability=0.8,
+    )
+    assert slot.source_type == "search"
+    assert slot.source_url == "https://example.com/red-apples"
+    assert slot.source_reliability == 0.8
+
+
+async def test_create_association_with_source(store: MemoryStore):
+    f1 = await store.create_frame("a", "entity")
+    f2 = await store.create_frame("b", "entity")
+    assoc = await store.create_association(
+        f1.id,
+        f2.id,
+        "related",
+        priority=0.9,
+        source_type="user",
+        source_reliability=1.0,
+    )
+    assert assoc.priority == 0.9
+    assert assoc.source_type == "user"
+    assert assoc.source_reliability == 1.0
+
+
+async def test_list_frames_filters_by_owner(store: MemoryStore):
+    alice = await store.create_user("alice")
+    bob = await store.create_user("bob")
+    f1 = await store.create_frame("private_alice", "secret", owner_user_id=alice.id)
+    f2 = await store.create_frame("private_bob", "secret", owner_user_id=bob.id)
+    f3 = await store.create_frame("shared", "shared")
+
+    alice_frames = await store.list_frames(owner_user_id=alice.id)
+    assert f1 in alice_frames
+    assert f2 not in alice_frames
+    assert f3 in alice_frames
+
+    bob_frames = await store.list_frames(owner_user_id=bob.id)
+    assert f1 not in bob_frames
+    assert f2 in bob_frames
+    assert f3 in bob_frames
