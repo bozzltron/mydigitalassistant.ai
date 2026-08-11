@@ -666,14 +666,7 @@
       div.appendChild(metaEl);
     }
 
-    if (meta.citations && meta.citations.length > 0) {
-      const srcDiv = document.createElement('div');
-      srcDiv.className = 'msg-sources';
-      srcDiv.innerHTML = `<span class="sources-header">Sources:</span><ul class="sources-list">${
-        meta.citations.map(u => `<li><a href="${u}" target="_blank" rel="noopener">${u}</a></li>`).join('')
-      }</ul>`;
-      div.appendChild(srcDiv);
-    }
+
 
     messagesEl.appendChild(div);
     scrollBottom();
@@ -690,9 +683,13 @@
     if (meta.task_type) traceTaskType.textContent = meta.task_type;
     if (meta.memory_context) traceMemory.textContent = meta.memory_context.slice(0, 500) + (meta.memory_context.length > 500 ? '...' : '');
     if (meta.citations) {
-      traceCitations.textContent = meta.citations.length > 0
-        ? meta.citations.join('\n')
-        : 'none';
+      if (meta.citations.length > 0) {
+        traceCitations.innerHTML = `<span class="sources-header">Sources:</span><ul class="sources-list">${
+          meta.citations.map(u => `<li><a href="${u}" target="_blank" rel="noopener">${u}</a></li>`).join('')
+        }</ul>`;
+      } else {
+        traceCitations.textContent = 'none';
+      }
     }
 
     return div;
