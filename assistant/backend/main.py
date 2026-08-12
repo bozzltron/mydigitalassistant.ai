@@ -200,7 +200,7 @@ async def transcribe(file: UploadFile = None):
         tmp_path = Path(tmp.name)
 
     try:
-        text = await asyncio.to_thread(transcribe_audio, tmp_path)
+        text = await transcribe_audio(tmp_path)
         return {"text": text.strip()}
     except Exception as e:
         logger.error("Transcription failed: %s", e)
