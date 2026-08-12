@@ -88,25 +88,31 @@ Rules:
 Respond with ONLY the JSON object, no commentary."""
 
 
-CORRECTION_EXTRACTION_PROMPT = """You parse a user correction about a stored fact.
+CORRECTION_EXTRACTION_PROMPT = """Parse a user correction message.
 
-The user is saying that something stored in memory is wrong.
-Extract:
-- The frame_name (the entity/concept being corrected) — use snake_case
-- The slot key that is wrong
-- The correct new value
+The user is pointing out that something in memory is wrong. Extract the correction:
 
-Output a JSON object with this exact schema:
-{
-  "frame_name": "guitar",
-  "slot_key": "strings",
-  "new_value": "12"
-}
+1. frame_name: Identify the entity/concept being corrected (e.g. "guitar", "meeting", "alice").
+   Use snake_case. If the user refers to something implicitly ("it's not 6, it's 12" referring
+   to a guitar they mentioned), infer the frame from context.
 
-If the correction does not specify a particular frame name, return nulls.
-If the correction is vague (e.g. "that's wrong" without specifying what), return nulls.
+2. slot_key: The specific attribute/field that is wrong. If the user says "the guitar has 12 strings
+   not 6", the slot_key is "strings". If they don't specify which field, infer from what they're
+   correcting.
 
-Respond with ONLY the JSON object, no commentary."""
+3. new_value: The correct value the user is providing.
+
+Rules:
+- Return nulls if the user doesn't identify what is wrong (e.g. just says "that's wrong"
+  without specifying what).
+- If the correction is about something you didn't mention, still parse it — the user knows
+  what they told you.
+- Be specific: "12" is better than "twelve". Prefer the user's exact wording for values.
+
+Output ONLY valid JSON with this schema:
+{"frame_name": "...", "slot_key": "...", "new_value": "..."}
+
+Use null for any field you cannot determine."""
 
 
 async def extract_facts(

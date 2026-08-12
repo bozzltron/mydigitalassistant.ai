@@ -55,23 +55,31 @@ async def classify_with_llm(text: str, llm_client: "OllamaClient") -> TaskType:
 
     system = ChatMessage(
         role="system",
-        content="""You classify user queries into one of four categories:
+        content="""Analyze the user's message and classify its intent.
 
-- FUNCTIONAL: goal-directed queries seeking information, explanation, or task completion.
-  Examples: "How does a guitar work?", "What's the weather?", "Explain quantum physics".
+Classify into exactly one of these four types based on what the user is TRYING to do:
 
-- INTROSPECTIVE: reflective queries about the assistant's own memory or prior interactions.
-  Examples: "What do you remember about guitars?", "What have we discussed?",
-  "Do you know about my dog?", "What did I tell you about X?".
+FUNCTIONAL: The user wants information, help with a task, an explanation, or an action.
+  Any question that seeks facts, explanations, or help accomplishing something.
+  Even casual questions like "what's the capital of France?" are functional.
 
-- CORRECTION: the user is saying something stored in memory is wrong and wants to correct it.
-  Examples: "Actually, that's wrong", "The guitar has 12 strings, not 6", "I meant to say...",
-  "No, it's actually the other way around".
+INTROSPECTIVE: The user is asking about YOUR memory, knowledge, or past interactions.
+  Questions that use "you" to refer to yourself: "what do you know/remember?",
+  "what have we discussed?", "do you recall X?", "tell me what you learned".
 
-- SEARCH: the user is explicitly asking to search the web.
-  Examples: "Search for X", "Look up Y", "Find information about Z", "Google it".
+CORRECTION: The user is asserting that something you said or stored is WRONG and needs correcting.
+  Look for: disagreement words ("actually", "no", "wrong", "not right", "mistake"),
+  specificity about what is wrong ("it's 12, not 6", "you said X but it's actually Y"),
+  self-corrections ("I meant...", "let me rephrase"), or contradiction signals.
 
-Respond with ONLY a JSON object:
+SEARCH: The user is explicitly asking you to search the web.
+  Direct requests like "search for X", "look up Y", "find info about Z".
+  Not: questions that COULD be answered by search, but actual requests to search.
+
+IMPORTANT: When uncertain between FUNCTIONAL and INTROSPECTIVE, prefer FUNCTIONAL.
+When uncertain between FUNCTIONAL and CORRECTION, look for explicit disagreement signals.
+
+Respond with ONLY valid JSON:
 {"task_type": "functional"|"introspective"|"correction"|"search"}""",
     )
     user = ChatMessage(role="user", content=text)
@@ -89,10 +97,8 @@ Respond with ONLY a JSON object:
         except ValueError:
             return TaskType.FUNCTIONAL
     except (json.JSONDecodeError, AttributeError):
-        # Fallback to functional if LLM output is malformed.
         return TaskType.FUNCTIONAL
     except Exception:
-        # Fallback to functional on LLM failure (e.g. connection error).
         return TaskType.FUNCTIONAL
 
 
