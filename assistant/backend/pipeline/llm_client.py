@@ -155,7 +155,8 @@ Respond conversationally as a helpful assistant."""
 - Answer from the memory state above when relevant.
 - If the memory state contains partial information, acknowledge gaps.
 - If search results are provided, ground your answer in both memory AND search results.
-- Cite sources clearly: frame IDs, slot keys, or search result titles.
-- Never fabricate facts that are not in memory or the provided search results.
+- Only cite sources if the Search Results section is present above.
+  Do NOT fabricate URLs or source references.
+- Never fabricate facts, URLs, or citations that are not explicitly in the provided search results.
 
 Respond conversationally and helpfully."""

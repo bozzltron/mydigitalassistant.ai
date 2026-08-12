@@ -243,15 +243,12 @@ class Orchestrator:
                     "and offer to try again later or answer from memory only."
                 )
 
-        # Collect citations from search results and slot source URLs
+        # Collect citations from search results only (not from memory slots).
+        # Memory source_urls may not be verifiable - only cite from search.
         citations: list[str] = []
         for result in search_results:
             if result.url:
                 citations.append(result.url)
-        for rf in memory_context.retrieved_frames:
-            for slot in rf.slots:
-                if slot.source_url and slot.source_url not in citations:
-                    citations.append(slot.source_url)
 
         # Build conversation history: up to 6 prior turns from this session
         history_messages: list[ChatMessage] = []

@@ -229,7 +229,7 @@
 
     /* Trace panel */
     #trace-panel {
-      width: 340px;
+      width: 420px;
       border-left: 1px solid var(--border);
       background: var(--surface);
       display: flex;
@@ -580,6 +580,41 @@
       color: var(--text-dim);
       padding: 0.3rem 0;
     }
+
+    /* Inline og:image in message body */
+    .msg-images {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-top: 0.6rem;
+    }
+
+    .msg-images a {
+      display: block;
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      max-width: 200px;
+      text-decoration: none;
+    }
+
+    .msg-images img {
+      width: 100%;
+      height: 120px;
+      object-fit: cover;
+      display: block;
+      background: var(--surface2);
+    }
+
+    .msg-images .img-site {
+      padding: 0.3rem 0.5rem;
+      font-size: 0.65rem;
+      color: var(--text-dim);
+      background: var(--surface2);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
   </style>
 </head>
 <body>
@@ -830,7 +865,22 @@
       div.appendChild(metaEl);
     }
 
-
+    // Render inline og:images in assistant message
+    if (role === 'assistant' && meta.ogData) {
+      const urlsWithImages = Object.entries(meta.ogData).filter(([, d]) => d && d.image);
+      if (urlsWithImages.length > 0) {
+        const imgsDiv = document.createElement('div');
+        imgsDiv.className = 'msg-images';
+        imgsDiv.innerHTML = urlsWithImages.map(([url, data]) => {
+          const siteName = data.site_name || new URL(url).hostname;
+          return `<a href="${url}" target="_blank" rel="noopener">
+            <img src="${data.image}" alt="" loading="lazy" onerror="this.parentElement.remove()"/>
+            <div class="img-site">${siteName}</div>
+          </a>`;
+        }).join('');
+        div.appendChild(imgsDiv);
+      }
+    }
 
     messagesEl.appendChild(div);
     scrollBottom();
@@ -846,19 +896,16 @@
     // Update trace panel
     if (meta.task_type) traceTaskType.textContent = meta.task_type;
     if (meta.memory_context) traceMemory.textContent = meta.memory_context.slice(0, 500) + (meta.memory_context.length > 500 ? '...' : '');
-    if (meta.citations) {
-      if (meta.citations.length > 0) {
-        // Store citations in state for link preview fetching
-        if (role === 'assistant') {
-          state.lastCitations = meta.citations;
-        }
-        // Render placeholder cards immediately
-        traceCitations.innerHTML = `<span class="sources-header">Sources:</span><div class="preview-cards" id="preview-cards-container"></div>`;
-        // Fetch previews lazily
-        fetchLinkPreviews(meta.citations, 'preview-cards-container');
-      } else {
-        traceCitations.textContent = 'none';
+
+    // Citations in trace panel — only when present
+    if (meta.citations && meta.citations.length > 0) {
+      if (role === 'assistant') {
+        state.lastCitations = meta.citations;
       }
+      traceCitations.innerHTML = `<span class="sources-header">Sources:</span><div class="preview-cards" id="preview-cards-container"></div>`;
+      fetchLinkPreviews(meta.citations, 'preview-cards-container');
+    } else {
+      traceCitations.textContent = '-';
     }
 
     return div;
@@ -1036,10 +1083,31 @@
       state.sessionId = resp.session_id;
       localStorage.setItem('session_id', resp.session_id);
 
+      // Pre-fetch OG previews for inline images (up to 4)
+      const citations = resp.citations || [];
+      const ogData = {};
+      if (citations.length > 0) {
+        const toFetch = citations.slice(0, 4);
+        await Promise.all(toFetch.map(async (url) => {
+          if (state.ogCache[url]) {
+            ogData[url] = state.ogCache[url];
+          } else {
+            try {
+              const r = await api(`/og-preview?url=${encodeURIComponent(url)}`);
+              if (r.found) {
+                state.ogCache[url] = { title: r.title, description: r.description, image: r.image, site_name: r.site_name };
+                ogData[url] = state.ogCache[url];
+              }
+            } catch (_) {}
+          }
+        }));
+      }
+
       addMessage('assistant', resp.response, {
         task_type: resp.task_type,
         memory_context: resp.memory_context,
-        citations: resp.citations || [],
+        citations: citations,
+        ogData: ogData,
       });
 
       // Voice mode: start listening again after response (TTS will trigger it if enabled)
