@@ -58,7 +58,7 @@ RUN pip install --no-cache-dir --no-index --find-links /wheels \
 
 COPY --chown=assistant:assistant assistant/ /app/assistant/
 
-RUN mkdir -p /app/data /app/.cache/whisper && chown -R assistant:assistant /app
+RUN mkdir -p /app/data /app/.cache/whisper /home/assistant && chown -R assistant:assistant /app
 
 USER assistant
 
@@ -68,6 +68,7 @@ ENV DATABASE_PATH=/app/data/assistant.db \
     OLLAMA_URL=http://host.docker.internal:11434 \
     WHISPER_MODEL=base \
     WHISPER_DEVICE=cpu \
+    HF_HOME=/app/.cache/huggingface \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app
 
