@@ -816,9 +816,20 @@
     currentUtterance = u;
     u.onend = u.onerror = () => {
       stopSpeakingBtn.style.display = 'none';
+      // Voice mode: start listening again after TTS finishes
+      if (state.voiceMode && !state.isRecording) {
+        startListeningForVoice();
+      }
     };
     stopSpeakingBtn.style.display = 'inline-block';
     speechSynthesis.speak(u);
+  }
+
+  // Start listening for voice input (in voice mode)
+  function startListeningForVoice() {
+    if (state.isRecording) return;
+    stopSpeaking(); // stop any current TTS
+    startRecording();
   }
 
   function stopSpeaking() {
@@ -858,9 +869,9 @@
         citations: resp.citations || [],
       });
 
-      // Voice mode: keep listening after response
+      // Voice mode: start listening again after response (TTS will trigger it if enabled)
       if (state.voiceMode && !state.isRecording) {
-        setTimeout(startRecording, 800);
+        startListeningForVoice();
       }
     } catch (err) {
       addMessage('assistant', `Error: ${err.message}`);
@@ -871,11 +882,24 @@
 
   // ---- Voice input (MediaRecorder + /transcribe) ----
   let mediaStream = null;
+  let audioContext = null;
+  let analyser = null;
+  let silenceTimeout = null;
+  const SILENCE_THRESHOLD = 0.1;  // audio level below this is silence
+  const SILENCE_DURATION = 1500;   // ms of silence before auto-stop
 
   async function startRecording() {
     if (state.isRecording) return;
     try {
       mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      // Set up audio analysis for silence detection
+      audioContext = new AudioContext();
+      analyser = audioContext.createAnalyser();
+      analyser.fftSize = 256;
+      const source = audioContext.createMediaStreamSource(mediaStream);
+      source.connect(analyser);
+
       state.mediaRecorder = new MediaRecorder(mediaStream, { mimeType: 'audio/webm' });
       state.audioChunks = [];
 
@@ -896,6 +920,9 @@
       state.isRecording = true;
       micBtn.classList.add('recording');
 
+      // Start monitoring audio levels
+      monitorAudioLevels();
+
       // Auto-stop after 30 seconds max
       state._recordingTimeout = setTimeout(() => {
         if (state.isRecording) stopRecording();
@@ -903,6 +930,44 @@
     } catch (e) {
       console.warn('Failed to start recording:', e);
       alert('Microphone access denied or not available.');
+    }
+  }
+
+  function monitorAudioLevels() {
+    if (!state.isRecording || !analyser) return;
+
+    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+    analyser.getByteFrequencyData(dataArray);
+
+    // Calculate average volume
+    let sum = 0;
+    for (let i = 0; i < dataArray.length; i++) {
+      sum += dataArray[i];
+    }
+    const average = sum / dataArray.length / 255;
+
+    if (average < SILENCE_THRESHOLD) {
+      // Silent - start or continue silence timer
+      if (!silenceTimeout) {
+        silenceTimeout = setTimeout(() => {
+          if (state.isRecording && !state.voiceMode) {
+            stopRecording();
+          } else if (state.isRecording) {
+            stopRecording();
+          }
+        }, SILENCE_DURATION);
+      }
+    } else {
+      // Sound detected - cancel silence timer
+      if (silenceTimeout) {
+        clearTimeout(silenceTimeout);
+        silenceTimeout = null;
+      }
+    }
+
+    // Continue monitoring if still recording
+    if (state.isRecording) {
+      requestAnimationFrame(monitorAudioLevels);
     }
   }
 
