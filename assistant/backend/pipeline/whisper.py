@@ -31,7 +31,7 @@ def _load_model() -> WhisperModel:
     _model = WhisperModel(
         settings.whisper_model,
         device=settings.whisper_device,
-        download_root=Path.home() / ".cache" / "whisper",
+        download_root=Path("/app/.cache/whisper"),
     )
     logger.info("Whisper model loaded.")
     return _model

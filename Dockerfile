@@ -58,7 +58,7 @@ RUN pip install --no-cache-dir --no-index --find-links /wheels \
 
 COPY --chown=assistant:assistant assistant/ /app/assistant/
 
-RUN mkdir -p /app/data && chown -R assistant:assistant /app
+RUN mkdir -p /app/data /app/.cache/whisper && chown -R assistant:assistant /app
 
 USER assistant
 
