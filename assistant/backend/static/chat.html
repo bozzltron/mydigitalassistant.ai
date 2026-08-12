@@ -743,6 +743,7 @@
 
   // ---- TTS ----
   let currentUtterance = null;
+  let speakGeneration = 0;
 
   function populateVoices() {
     const voices = speechSynthesis.getVoices();
@@ -793,6 +794,9 @@
 
   function speak(text) {
     if (!window.speechSynthesis) return;
+    // Increment a "speak generation" counter so stale onend/onerror
+    // callbacks from a cancelled utterance don't restart recording.
+    const gen = ++speakGeneration;
     speechSynthesis.cancel();
     const s = getSettings();
     const voices = speechSynthesis.getVoices();
@@ -814,8 +818,12 @@
     u.rate = 1.1;
     u.pitch = 1.0;
     currentUtterance = u;
+    const myGen = gen;
     u.onend = u.onerror = () => {
       stopSpeakingBtn.style.display = 'none';
+      // Only react if this is still the current speak generation
+      // (prevents cancelled TTS from restarting recording)
+      if (myGen !== speakGeneration) return;
       // Voice mode: start listening again after TTS finishes
       if (state.voiceMode && !state.isRecording) {
         startListeningForVoice();
@@ -950,11 +958,7 @@
       // Silent - start or continue silence timer
       if (!silenceTimeout) {
         silenceTimeout = setTimeout(() => {
-          if (state.isRecording && !state.voiceMode) {
-            stopRecording();
-          } else if (state.isRecording) {
-            stopRecording();
-          }
+          if (state.isRecording) stopRecording();
         }, SILENCE_DURATION);
       }
     } else {
@@ -974,10 +978,19 @@
   function stopRecording() {
     if (!state.isRecording || !state.mediaRecorder) return;
     clearTimeout(state._recordingTimeout);
+    if (silenceTimeout) {
+      clearTimeout(silenceTimeout);
+      silenceTimeout = null;
+    }
     state.mediaRecorder.stop();
     if (mediaStream) {
       mediaStream.getTracks().forEach(t => t.stop());
       mediaStream = null;
+    }
+    if (audioContext) {
+      audioContext.close().catch(() => {});
+      audioContext = null;
+      analyser = null;
     }
     state.isRecording = false;
     micBtn.classList.remove('recording');
@@ -1026,6 +1039,8 @@
   function exitVoiceMode() {
     state.voiceMode = false;
     saveSettings({ voiceMode: false });
+    speakGeneration++;  // invalidate any pending TTS onend listener
+    stopSpeaking();
     stopRecording();
     voiceOverlay.classList.remove('active');
   }

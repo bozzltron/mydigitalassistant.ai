@@ -187,7 +187,6 @@ async def transcribe(file: UploadFile = None):
     if file is None:
         raise HTTPException(status_code=400, detail="No audio data provided")
 
-    import asyncio
     import tempfile
     from pathlib import Path
 
