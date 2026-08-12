@@ -208,6 +208,33 @@ async def transcribe(file: UploadFile = None):
         tmp_path.unlink(missing_ok=True)
 
 
+# Link preview
+@app.get("/og-preview")
+async def get_og_preview(url: str):
+    """Fetch Open Graph metadata for a URL.
+
+    Returns a PreviewCard with og:title, og:description, og:image, og:site_name.
+    Results are cached in-memory for 1 hour.
+    SSRF-protected: blocks private/internal hosts.
+    """
+    from assistant.backend.pipeline.og_preview import fetch_og_preview
+
+    if not url:
+        raise HTTPException(status_code=400, detail="url query param required")
+
+    card = await fetch_og_preview(url)
+    if card is None:
+        return {"url": url, "found": False}
+    return {
+        "url": card.url,
+        "found": True,
+        "title": card.title,
+        "description": card.description,
+        "image": card.image,
+        "site_name": card.site_name,
+    }
+
+
 # Users
 @app.post("/users", response_model=User)
 async def create_user(name: str, store: MemoryStore = _Depends(get_store)):
