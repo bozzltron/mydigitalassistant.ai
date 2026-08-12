@@ -42,6 +42,70 @@ class Plan:
 
 # Relevance threshold below which a frame is considered "not relevant"
 _MIN_CITATION_RELEVANCE = 0.3
+
+_NON_INFO_PATTERNS = [
+    r"^(hi|hello|hey|howdy|hiya|greetings|good morning|good afternoon|good evening)[!.?]*$",
+    r"^(thanks|thank you|thx|ty)[!.?]*$",
+    r"^(okay|ok|yes|yeah|yep|sure|please|yes please)[!.?]*$",
+    r"^(no|nope|nah)[!.?]*$",
+    r"^(bye|goodbye|see you|later|ttyl)[!.?]*$",
+    r"^(wow|oh|uh-huh|hm|mhm|aha)[!.?]*$",
+    r"^(nice|cool|awesome|great|good|perfect)[!.?]*$",
+    r"^(?:what )?do you think[?!.]*$",
+    r"^tell me a (joke|story|fact)[!.?]*$",
+    r"^how are you[?!.]*$",
+    r"^how('s| is) it going[?!.]*$",
+    r"^what'?s up[?!.]*$",
+    r"^(?:i )?(?:just|sorry|apologies?)",
+]
+
+
+def _is_non_info_seeking(query: str) -> bool:
+    """Return True if query is unlikely to need web search.
+
+    Uses structural heuristics (length, question words) to avoid
+    hardcoding specific vocabulary.
+    """
+    import re
+    q = query.strip()
+    words = q.split()
+    word_count = len(words)
+    q_lower = q.lower()
+
+    if word_count <= 1:
+        return True
+
+    if word_count <= 3 and not _has_question_word(q_lower):
+        return True
+
+    if word_count <= 5 and not _has_info_seeking_indicator(q_lower):
+        return True
+
+    for pattern in _NON_INFO_PATTERNS:
+        if re.match(pattern, q, re.IGNORECASE):
+            return True
+
+    return False
+
+
+_QUESTION_WORDS = {"what", "which", "who", "whom", "whose", "where", "when", "why", "how"}
+_INFO_SEEKING_PREFIXES = {"tell me", "explain", "what is", "what are", "how do", "how does",
+                          "how did", "why do", "why does", "why did", "can you", "could you",
+                          "would you", "is there", "are there", "show me", "find me",
+                          "search for", "look up", "give me", "i want", "i need",
+                          "i'm looking", "looking for", "find out", "learn about"}
+
+
+def _has_question_word(text: str) -> bool:
+    words = set(text.replace("?", " ").replace("!", " ").split())
+    return bool(words & _QUESTION_WORDS)
+
+
+def _has_info_seeking_indicator(text: str) -> bool:
+    for prefix in _INFO_SEEKING_PREFIXES:
+        if text.startswith(prefix) or f" {prefix}" in text:
+            return True
+    return False
 # Minimum average frame confidence for HIGH sufficiency
 _HIGH_CONFIDENCE_THRESHOLD = 0.6
 # Minimum number of relevant frames for PARTIAL sufficiency
@@ -111,6 +175,11 @@ def classify_intent(
         )
 
     if sufficiency == MemorySufficiency.NONE:
+        if _is_non_info_seeking(query):
+            return Plan(
+                action=Action.ANSWER,
+                sufficiency=MemorySufficiency.NONE,
+            )
         return Plan(
             action=Action.SEARCH,
             sufficiency=MemorySufficiency.NONE,

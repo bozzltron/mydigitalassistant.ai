@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 
 from fastapi import Depends as _Depends
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.staticfiles import StaticFiles
 
 from assistant.backend.config import settings
@@ -178,10 +178,10 @@ async def chat(
 
 # Voice transcription
 @app.post("/transcribe")
-async def transcribe(file: bytes = None):
+async def transcribe(file: UploadFile = None):
     """Transcribe an audio blob using local Whisper.
 
-    Accepts raw audio bytes (webm/wav) in the request body.
+    Accepts multipart form upload with 'file' field.
     Returns {"text": "transcribed content"}.
     """
     if file is None:
@@ -193,8 +193,10 @@ async def transcribe(file: bytes = None):
 
     from assistant.backend.pipeline.whisper import transcribe_audio
 
-    with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as tmp:
-        tmp.write(file)
+    suffix = Path(file.filename).suffix if file.filename else ".webm"
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        content = await file.read()
+        tmp.write(content)
         tmp_path = Path(tmp.name)
 
     try:

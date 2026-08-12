@@ -97,6 +97,24 @@ class TestClassifyIntent:
         assert plan.action == Action.SEARCH
         assert plan.search_needed is True
 
+    def test_greeting_no_memory_no_search(self):
+        memory = make_memory([])
+        plan = classify_intent("Hello", "functional", memory)
+        assert plan.action == Action.ANSWER
+        assert plan.search_needed is False
+
+    def test_thanks_no_memory_no_search(self):
+        memory = make_memory([])
+        plan = classify_intent("Thanks!", "functional", memory)
+        assert plan.action == Action.ANSWER
+        assert plan.search_needed is False
+
+    def test_ok_no_memory_no_search(self):
+        memory = make_memory([])
+        plan = classify_intent("Okay", "functional", memory)
+        assert plan.action == Action.ANSWER
+        assert plan.search_needed is False
+
     def test_search_task_type_triggers_search(self):
         memory = make_memory([])
         plan = classify_intent("search for capybaras", "search", memory)

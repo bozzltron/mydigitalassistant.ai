@@ -503,6 +503,9 @@
     <button id="voice-mode-btn" class="voice-btn" title="Voice conversation mode">
       &#127908; Voice
     </button>
+    <button id="stop-speaking-btn" class="voice-btn" title="Stop speaking" style="display:none;">
+      &#9209; Stop
+    </button>
     <button class="settings-btn" id="settings-toggle" title="Settings">&#9881;</button>
   </div>
 </header>
@@ -623,6 +626,7 @@
   const voiceStopBtn = $('#voice-stop');
   const voiceCancelBtn = $('#voice-cancel');
   const voiceModeBtn = $('#voice-mode-btn');
+  const stopSpeakingBtn = $('#stop-speaking-btn');
   const settingsPanel = $('#settings-panel');
   const settingsToggle = $('#settings-toggle');
   const settingsClose = $('#settings-close');
@@ -749,16 +753,41 @@
       return;
     }
     const settings = getSettings();
+
+    // Prefer known good voices (order matters)
+    const preferredNames = [
+      'Samantha',        // macOS US English
+      'Google US English',
+      'Microsoft Aria',   // Windows
+      'Alex',            // macOS US English male
+      'Karen',           // macOS Australian English
+      'Victoria',        // macOS UK English
+      'Moira',           // macOS Irish English
+    ];
+
+    let defaultIndex = -1;
+    if (!settings.voiceUri) {
+      // Try to find a preferred voice
+      for (let i = 0; i < localVoices.length; i++) {
+        const name = localVoices[i].name;
+        if (preferredNames.some(p => name.includes(p))) {
+          defaultIndex = i;
+          break;
+        }
+      }
+      if (defaultIndex === -1) defaultIndex = 0;
+    }
+
     localVoices.forEach((v, i) => {
       const opt = document.createElement('option');
       opt.value = v.voiceURI;
       opt.textContent = `${v.name} (${v.lang})`;
-      if (v.voiceURI === settings.voiceUri) opt.selected = true;
+      if (settings.voiceUri && v.voiceURI === settings.voiceUri) opt.selected = true;
+      if (!settings.voiceUri && i === defaultIndex) opt.selected = true;
       voiceSelect.appendChild(opt);
     });
-    if (!settings.voiceUri && localVoices.length > 0) {
-      voiceSelect.selectedIndex = 0;
-      saveSettings({ voiceUri: localVoices[0].voiceURI });
+    if (!settings.voiceUri && defaultIndex >= 0) {
+      saveSettings({ voiceUri: localVoices[defaultIndex].voiceURI });
     }
   }
 
@@ -770,13 +799,32 @@
     const voice = voices.find(v => v.voiceURI === s.voiceUri) || voices[0];
     if (!voice) return;
 
-    const plain = text.replace(/[#*`_\[\]]/g, '').replace(/\n+/g, ' ').trim();
+    // Strip markdown links, URLs, and formatting
+    let plain = text
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')  // [text](url) -> text
+      .replace(/https?:\/\/\S+/g, '')              // URLs
+      .replace(/www\.\S+/g, '')                    // www URLs
+      .replace(/[#*`_\[\]]/g, '')                 // markdown chars
+      .replace(/\n+/g, ' ')
+      .trim();
+    if (!plain) return;
+
     const u = new SpeechSynthesisUtterance(plain);
     u.voice = voice;
     u.rate = 1.1;
     u.pitch = 1.0;
     currentUtterance = u;
+    u.onend = u.onerror = () => {
+      stopSpeakingBtn.style.display = 'none';
+    };
+    stopSpeakingBtn.style.display = 'inline-block';
     speechSynthesis.speak(u);
+  }
+
+  function stopSpeaking() {
+    if (window.speechSynthesis) {
+      speechSynthesis.cancel();
+    }
   }
 
   // ---- Chat ----
@@ -974,6 +1022,8 @@
         enterVoiceMode();
       }
     });
+
+    stopSpeakingBtn.addEventListener('click', stopSpeaking);
 
     voiceStopBtn.addEventListener('click', exitVoiceMode);
     voiceCancelBtn.addEventListener('click', () => {
