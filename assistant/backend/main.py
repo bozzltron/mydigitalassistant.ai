@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 
 from assistant.backend.config import settings
 from assistant.backend.db.schema import init_db
-from assistant.backend.memory.models import Conflict, Episode, Frame, Slot, User
+from assistant.backend.memory.models import Association, Conflict, Episode, Frame, Slot, User
 from assistant.backend.memory.retrieval import Retriever
 from assistant.backend.memory.store import MemoryStore
 from assistant.backend.pipeline.llm_client import OllamaClient
@@ -102,6 +102,27 @@ async def chat_ui():
     if index_path.exists():
         return FileResponse(str(index_path))
     raise HTTPException(status_code=404, detail="chat.html not found")
+
+
+@app.get("/assistant/name")
+async def get_assistant_name(store: MemoryStore = _Depends(get_store)):
+    """Return the assistant's own name, from the identity_name frame if set."""
+    name_frame = await store.get_frame_by_name("identity_name")
+    if name_frame:
+        slot = await store.get_slot(name_frame.id, "full_name")
+        if slot:
+            return {"name": slot.value}
+    return {"name": "Cognitive Assistant"}
+
+
+@app.get("/brain-ui")
+async def brain_ui():
+    """Serve the brain visualization interface."""
+    from fastapi.responses import FileResponse
+    index_path = Path(__file__).parent / "static" / "brain.html"
+    if index_path.exists():
+        return FileResponse(str(index_path))
+    raise HTTPException(status_code=404, detail="brain.html not found")
 
 
 # Health
@@ -284,6 +305,18 @@ async def get_frame_by_name(name: str, store: MemoryStore = _Depends(get_store))
     if not frame:
         raise HTTPException(status_code=404, detail=f"No frame named '{name}'")
     return frame
+
+
+@app.get("/memory/associations", response_model=list[Association])
+async def list_associations(store: MemoryStore = _Depends(get_store)):
+    """List all associations (edges) for the brain graph."""
+    return await store.get_all_associations()
+
+
+@app.get("/memory/frames/{frame_id}/associations", response_model=list[Association])
+async def get_frame_associations(frame_id: int, store: MemoryStore = _Depends(get_store)):
+    """Get all associations (incoming + outgoing) for a specific frame."""
+    return await store.get_all_associations_for_frame(frame_id)
 
 
 @app.get("/memory/conflicts", response_model=list[Conflict])

@@ -65,4 +65,9 @@ async def test_full_cognitive_loop_learns_then_recalls(tmp_path, stub_llm):
     # No new facts should be extracted from an introspective recall query.
     json.loads(stub_llm._extraction_response(turn2_user.lower()))
     summary = await extract_and_apply(turn2_user, response2.content, store, stub_llm)
-    assert summary == {"slots_applied": 0, "associations_created": 0, "conflicts_created": 0}
+    assert summary == {
+        "slots_applied": 0,
+        "associations_created": 0,
+        "conflicts_created": 0,
+        "frame_ids": [],
+    }

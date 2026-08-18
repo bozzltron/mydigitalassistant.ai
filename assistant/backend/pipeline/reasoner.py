@@ -226,6 +226,12 @@ def format_plan_for_prompt(plan: Plan) -> str:
             "Ground your answer ONLY in the retrieved memory. "
             "Cite specific frames and episodes."
         )
+        # Special case: if identity_name frame is in retrieved frames, use it
+        # This is already boosted to relevance=1.0 by the retriever
+        lines.append(
+            "IMPORTANT: If the retrieved memory includes a frame named 'identity_name' "
+            "with a 'full_name' slot, your name is that value. State it clearly."
+        )
     elif plan.action == Action.CORRECT:
         lines.append(
             "[CORRECTION] The user is correcting a stored fact. "

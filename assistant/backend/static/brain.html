@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Brain Observatory</title>
+  <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap');
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #06070d;
+      --surface: #0d1117;
+      --border: #1e2433;
+      --text: #e6edf3;
+      --text-dim: #7d8590;
+      --accent: #58a6ff;
+      --accent2: #3fb950;
+      --error: #f47070;
+      --font: 'Space Mono', 'Courier New', monospace;
+      --person: #f78166;
+      --concept: #d2a8ff;
+      --event: #79c0ff;
+      --household: #7ee787;
+      --entity: #ffa657;
+    }
+
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0.75rem 1.25rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+      z-index: 10;
+    }
+
+    header h1 {
+      font-size: 0.9rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--accent);
+    }
+
+    .header-controls {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .refresh-btn {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      padding: 0.35rem 0.75rem;
+      border-radius: 4px;
+      cursor: pointer;
+      font-family: var(--font);
+      font-size: 0.7rem;
+      transition: all 0.2s;
+    }
+
+    .refresh-btn:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .status {
+      font-size: 0.65rem;
+      color: var(--text-dim);
+    }
+
+    .legend {
+      display: flex;
+      gap: 1rem;
+      font-size: 0.6rem;
+      color: var(--text-dim);
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+    }
+
+    .legend-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+    }
+
+    #canvas-container {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+    }
+
+    #brain-canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+
+    .tooltip {
+      position: absolute;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.75rem;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.15s;
+      max-width: 280px;
+      z-index: 20;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    }
+
+    .tooltip.visible { opacity: 1; }
+
+    .tooltip-name {
+      font-size: 0.85rem;
+      font-weight: 700;
+      margin-bottom: 0.25rem;
+    }
+
+    .tooltip-type {
+      font-size: 0.6rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      opacity: 0.6;
+      margin-bottom: 0.5rem;
+    }
+
+    .tooltip-meta {
+      font-size: 0.65rem;
+      color: var(--text-dim);
+      margin-bottom: 0.5rem;
+    }
+
+    .tooltip-slots {
+      border-top: 1px solid var(--border);
+      padding-top: 0.5rem;
+      margin-top: 0.25rem;
+    }
+
+    .tooltip-slot {
+      font-size: 0.7rem;
+      margin-bottom: 0.25rem;
+    }
+
+    .tooltip-slot-key { color: var(--accent); }
+    .tooltip-slot-val { color: var(--text); }
+
+    .empty-state {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+      color: var(--text-dim);
+      font-size: 0.8rem;
+    }
+
+    .empty-state h2 {
+      font-size: 1.2rem;
+      margin-bottom: 0.5rem;
+      color: var(--accent);
+    }
+
+    .node {
+      cursor: pointer;
+    }
+
+    .node circle {
+      transition: r 0.2s;
+    }
+
+    .node:hover circle {
+      filter: brightness(1.3);
+    }
+
+    .link {
+      stroke-opacity: 0.3;
+      transition: stroke-opacity 0.2s;
+    }
+
+    .link:hover {
+      stroke-opacity: 0.8;
+    }
+
+    nav {
+      position: absolute;
+      bottom: 1rem;
+      right: 1rem;
+      z-index: 10;
+    }
+
+    nav a {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+      padding: 0.4rem 0.8rem;
+      border-radius: 4px;
+      text-decoration: none;
+      font-size: 0.65rem;
+      transition: all 0.2s;
+    }
+
+    nav a:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .conflict-pulse {
+      animation: conflictPulse 1.5s ease-in-out infinite;
+    }
+
+    @keyframes conflictPulse {
+      0%, 100% { opacity: 0.3; }
+      50% { opacity: 0.8; }
+    }
+
+    .stats-bar {
+      position: absolute;
+      bottom: 1rem;
+      left: 1rem;
+      font-size: 0.6rem;
+      color: var(--text-dim);
+      z-index: 10;
+      display: flex;
+      gap: 1.5rem;
+    }
+
+    .stat-value {
+      color: var(--accent);
+      font-weight: 700;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1 id="agent-name">Brain Observatory</h1>
+    <div class="header-controls">
+      <div class="legend">
+        <div class="legend-item"><div class="legend-dot" style="background:var(--person)"></div>person</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--concept)"></div>concept</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--event)"></div>event</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--household)"></div>household</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--entity)"></div>entity</div>
+      </div>
+      <div class="status" id="status">Loading...</div>
+      <button class="refresh-btn" onclick="loadData()">Refresh</button>
+    </div>
+  </header>
+
+  <div id="canvas-container">
+    <svg id="brain-canvas"></svg>
+    <div class="tooltip" id="tooltip"></div>
+    <div class="stats-bar" id="stats-bar"></div>
+    <nav>
+      <a href="/chat-ui">Back to Chat</a>
+    </nav>
+    <div class="empty-state" id="empty-state" style="display:none">
+      <h2>No memories yet</h2>
+      <p>Start chatting to build your brain</p>
+    </div>
+  </div>
+
+  <script>
+    const TYPE_COLORS = {
+      person: '#f78166',
+      concept: '#d2a8ff',
+      event: '#79c0ff',
+      household: '#7ee787',
+      entity: '#ffa657',
+    };
+
+    const width = () => document.getElementById('canvas-container').clientWidth;
+    const height = () => document.getElementById('canvas-container').clientHeight;
+
+    let svg, g, simulation, nodes = [], links = [];
+
+    function initCanvas() {
+      const container = document.getElementById('canvas-container');
+      svg = d3.select('#brain-canvas')
+        .attr('width', width())
+        .attr('height', height());
+
+      const defs = svg.append('defs');
+
+      const glow = defs.append('filter').attr('id', 'glow');
+      glow.append('feGaussianBlur').attr('stdDeviation', '3').attr('result', 'coloredBlur');
+      const feMerge = glow.append('feMerge');
+      feMerge.append('feMergeNode').attr('in', 'coloredBlur');
+      feMerge.append('feMergeNode').attr('in', 'SourceGraphic');
+
+      const strongGlow = defs.append('filter').attr('id', 'strongGlow');
+      strongGlow.append('feGaussianBlur').attr('stdDeviation', '6').attr('result', 'coloredBlur');
+      const feMerge2 = strongGlow.append('feMerge');
+      feMerge2.append('feMergeNode').attr('in', 'coloredBlur');
+      feMerge2.append('feMergeNode').attr('in', 'SourceGraphic');
+
+      svg.append('rect')
+        .attr('width', '100%')
+        .attr('height', '100%')
+        .attr('fill', 'var(--bg)');
+
+      const stars = svg.append('g').attr('class', 'stars');
+      for (let i = 0; i < 200; i++) {
+        stars.append('circle')
+          .attr('cx', Math.random() * width())
+          .attr('cy', Math.random() * height())
+          .attr('r', Math.random() * 0.8 + 0.2)
+          .attr('fill', 'white')
+          .attr('opacity', Math.random() * 0.4 + 0.1);
+      }
+
+      g = svg.append('g').attr('class', 'graph');
+
+      const zoom = d3.zoom()
+        .scaleExtent([0.1, 4])
+        .on('zoom', (event) => {
+          g.attr('transform', event.transform);
+        });
+
+      svg.call(zoom);
+    }
+
+    async function loadData() {
+      document.getElementById('status').textContent = 'Loading...';
+      document.getElementById('empty-state').style.display = 'none';
+
+      try {
+        const [framesRes, assocRes, conflictsRes] = await Promise.all([
+          fetch('/memory/frames'),
+          fetch('/memory/associations'),
+          fetch('/memory/conflicts'),
+        ]);
+
+        const frames = await framesRes.json();
+        const associations = await assocRes.json();
+        const conflicts = await conflictsRes.json();
+
+        const conflictKeys = new Set(
+          conflicts
+            .filter(c => c.status === 'pending')
+            .map(c => `${c.frame_id}-${c.slot_key}`)
+        );
+
+        nodes = frames.map(f => ({
+          ...f,
+          type: f.type || 'entity',
+          hasConflict: f.slots?.some(s => conflictKeys.has(`${f.id}-${s.key}`)) || false
+        }));
+
+        links = associations.map(a => ({
+          ...a,
+          source: a.from_frame_id,
+          target: a.to_frame_id
+        }));
+
+        if (nodes.length === 0) {
+          document.getElementById('empty-state').style.display = 'block';
+          document.getElementById('status').textContent = 'No memories';
+          document.getElementById('stats-bar').innerHTML = '';
+          g.selectAll('*').remove();
+          return;
+        }
+
+        renderGraph();
+        updateStats();
+        document.getElementById('status').textContent = 'Live';
+      } catch (err) {
+        console.error('Failed to load brain data:', err);
+        document.getElementById('status').textContent = 'Error loading data';
+      }
+    }
+
+    function renderGraph() {
+      g.selectAll('*').remove();
+
+      if (simulation) simulation.stop();
+
+      simulation = d3.forceSimulation(nodes)
+        .force('link', d3.forceLink(links).id(d => d.id).distance(100).strength(0.3))
+        .force('charge', d3.forceManyBody().strength(-200))
+        .force('center', d3.forceCenter(width() / 2, height() / 2))
+        .force('collision', d3.forceCollide().radius(d => nodeRadius(d) + 8));
+
+      const link = g.append('g')
+        .selectAll('line')
+        .data(links)
+        .join('line')
+        .attr('class', 'link')
+        .attr('stroke', '#3b4b63')
+        .attr('stroke-width', d => Math.max(0.5, d.confidence || 0.5));
+
+      link.append('title')
+        .text(d => `${d.relation_type} (${Math.round((d.confidence || 0.5) * 100)}%)`);
+
+      const node = g.append('g')
+        .selectAll('g')
+        .data(nodes)
+        .join('g')
+        .attr('class', 'node')
+        .call(d3.drag()
+          .on('start', dragstarted)
+          .on('drag', dragged)
+          .on('end', dragended));
+
+      node.append('circle')
+        .attr('r', d => nodeRadius(d))
+        .attr('fill', d => TYPE_COLORS[d.type] || TYPE_COLORS.entity)
+        .attr('filter', d => d.hasConflict ? 'url(#strongGlow)' : 'url(#glow)')
+        .attr('class', d => d.hasConflict ? 'conflict-pulse' : '');
+
+      node.append('title')
+        .text(d => `${d.name} (${d.type})\nConfidence: ${Math.round((d.confidence || 0.5) * 100)}%`);
+
+      simulation.on('tick', () => {
+        link
+          .attr('x1', d => d.source.x)
+          .attr('y1', d => d.source.y)
+          .attr('x2', d => d.target.x)
+          .attr('y2', d => d.target.y);
+
+        node.attr('transform', d => `translate(${d.x},${d.y})`);
+      });
+
+      node.on('mouseover', (event, d) => showTooltip(event, d))
+        .on('mouseout', hideTooltip)
+        .on('click', (event, d) => showTooltip(event, d));
+
+      async function fetchSlots(d) {
+        if (!d.slots) {
+          const res = await fetch(`/memory/frames/${d.id}/slots`);
+          d.slots = await res.json();
+        }
+        return d;
+      }
+
+      function showTooltip(event, d) {
+        const tooltip = document.getElementById('tooltip');
+        const conf = Math.round((d.confidence || 0.5) * 100);
+        const pri = Math.round((d.priority || 0.5) * 100);
+
+        fetchSlots(d).then(() => {
+          const slotsHtml = (d.slots || []).slice(0, 5).map(s => `
+            <div class="tooltip-slot">
+              <span class="tooltip-slot-key">${s.key}:</span>
+              <span class="tooltip-slot-val">${s.value}</span>
+            </div>
+          `).join('');
+
+          tooltip.innerHTML = `
+            <div class="tooltip-name" style="color:${TYPE_COLORS[d.type] || TYPE_COLORS.entity}">${d.name}</div>
+            <div class="tooltip-type">${d.type}</div>
+            <div class="tooltip-meta">
+              confidence: ${conf}% &nbsp;|&nbsp; priority: ${pri}%
+              ${d.essential ? '&nbsp;|&nbsp; <span style="color:var(--warning)">essential</span>' : ''}
+              ${d.hasConflict ? '&nbsp;|&nbsp; <span style="color:var(--error)">conflict</span>' : ''}
+            </div>
+            ${d.slots?.length ? `<div class="tooltip-slots">${slotsHtml}${d.slots.length > 5 ? `<div style="color:var(--text-dim)">+${d.slots.length - 5} more</div>` : ''}</div>` : ''}
+          `;
+          tooltip.classList.add('visible');
+        });
+
+        const rect = document.getElementById('canvas-container').getBoundingClientRect();
+        let tx = event.clientX - rect.left + 15;
+        let ty = event.clientY - rect.top - 10;
+        if (tx + 280 > rect.width) tx = event.clientX - rect.left - 295;
+        tooltip.style.left = tx + 'px';
+        tooltip.style.top = ty + 'px';
+      }
+
+      function hideTooltip() {
+        document.getElementById('tooltip').classList.remove('visible');
+      }
+
+      function dragstarted(event, d) {
+        if (!event.active) simulation.alphaTarget(0.3).restart();
+        d.fx = d.x;
+        d.fy = d.y;
+      }
+
+      function dragged(event, d) {
+        d.fx = event.x;
+        d.fy = event.y;
+      }
+
+      function dragended(event, d) {
+        if (!event.active) simulation.alphaTarget(0);
+        d.fx = null;
+        d.fy = null;
+      }
+    }
+
+    function nodeRadius(d) {
+      const base = 4;
+      const conf = d.confidence || 0.5;
+      return base + conf * 8;
+    }
+
+    function updateStats() {
+      const types = {};
+      nodes.forEach(n => { types[n.type] = (types[n.type] || 0) + 1; });
+      const typeStr = Object.entries(types).map(([t, c]) => `${c} ${t}`).join(' · ');
+
+      document.getElementById('stats-bar').innerHTML = `
+        <span><span class="stat-value">${nodes.length}</span> nodes</span>
+        <span><span class="stat-value">${links.length}</span> edges</span>
+        ${typeStr ? `<span>${typeStr}</span>` : ''}
+      `;
+    }
+
+    window.addEventListener('resize', () => {
+      svg.attr('width', width()).attr('height', height());
+      if (simulation) {
+        simulation.force('center', d3.forceCenter(width() / 2, height() / 2));
+        simulation.alpha(0.3).restart();
+      }
+    });
+
+    initCanvas();
+
+    // Load agent name
+    try {
+      const { name } = await fetch('/assistant/name').then(r => r.json());
+      document.getElementById('agent-name').textContent = name;
+    } catch (_) {}
+
+    loadData();
+
+    setInterval(loadData, 30000);
+  </script>
+</body>
+</html>

@@ -620,16 +620,17 @@
 <body>
 
 <header>
-  <h1>Cognitive Assistant</h1>
+  <h1 id="agent-name">Cognitive Assistant</h1>
   <div class="header-right">
     <span class="user-badge" id="user-badge">Loading...</span>
     <button id="voice-mode-btn" class="voice-btn" title="Voice conversation mode">
-      &#127908; Voice
+      Voice
     </button>
     <button id="stop-speaking-btn" class="voice-btn" title="Stop speaking" style="display:none;">
-      &#9209; Stop
+      Stop
     </button>
     <button class="settings-btn" id="settings-toggle" title="Settings">&#9881;</button>
+    <a href="/brain-ui" class="nav-link" title="Brain Observatory" style="color:var(--text-dim);text-decoration:none;font-size:0.8rem;padding:0.35rem 0.75rem;border:1px solid var(--border);border-radius:6px;">Brain</a>
   </div>
 </header>
 
@@ -637,7 +638,7 @@
   <div id="chat-area">
     <div id="messages">
       <div class="welcome" id="welcome">
-        <div class="welcome-icon">&#129504;</div>
+        <div class="welcome-icon">&#9658;</div>
         <h2>Ready to chat</h2>
         <p>Type a message below or click Voice to start hands-free.</p>
       </div>
@@ -645,7 +646,7 @@
 
     <div id="input-row">
       <textarea id="msg-input" rows="1" placeholder="Type a message..."></textarea>
-      <button id="mic-btn" title="Voice input">&#127908;</button>
+      <button id="mic-btn" title="Voice input"></button>
       <button id="send-btn">Send</button>
     </div>
   </div>
@@ -1280,6 +1281,12 @@
 
   // ---- Init ----
   async function init() {
+    // Load agent name
+    try {
+      const { name } = await api('/assistant/name');
+      document.getElementById('agent-name').textContent = name;
+    } catch (_) {}
+
     // Load users
     try {
       const users = await api('/users');

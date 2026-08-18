@@ -382,3 +382,43 @@ async def test_list_frames_filters_by_owner(store: MemoryStore):
     assert f1 not in bob_frames
     assert f2 in bob_frames
     assert f3 in bob_frames
+
+
+async def test_get_all_frame_embeddings_returns_all(store: MemoryStore):
+    f1 = await store.create_frame("guitar", "entity")
+    f2 = await store.create_frame("music", "concept")
+    await store.store_frame_embedding(f1.id, [1.0] + [0.0] * 767)
+    await store.store_frame_embedding(f2.id, [0.5] * 768)
+
+    all_embs = await store.get_all_frame_embeddings()
+    assert len(all_embs) == 2
+    frame_ids = {emb[0] for emb in all_embs}
+    assert f1.id in frame_ids
+    assert f2.id in frame_ids
+
+
+async def test_embed_frames_skips_missing_frames(store: MemoryStore, stub_llm):
+    valid = await store.create_frame("guitar", "entity")
+
+    async def embed_fn(text: str) -> list[float]:
+        resp = await stub_llm.embed(text)
+        return resp.embedding
+
+    await store.embed_frames([valid.id, 9999, 8888], embed_fn)
+
+    emb = await store.get_frame_embedding(valid.id)
+    assert emb is not None
+
+
+async def test_merge_associations_are_preserved_for_primary(store: MemoryStore):
+    p = await store.create_frame("primary", "entity")
+    s = await store.create_frame("secondary", "entity")
+    unrelated = await store.create_frame("other", "entity")
+
+    await store.create_association(p.id, unrelated.id, "related")
+    await store.create_association(s.id, unrelated.id, "also_related")
+
+    await store.merge_frames(p.id, s.id)
+
+    primary_assocs = await store.get_all_associations_for_frame(p.id)
+    assert len(primary_assocs) == 2

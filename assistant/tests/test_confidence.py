@@ -73,3 +73,78 @@ def test_max_priority():
 
 def test_forget_priority():
     assert forget_priority() == 0.0
+
+
+def test_resolve_conflict_source_reliability_wins_over_confidence():
+    """source_reliability takes precedence over confidence in conflict resolution."""
+    decision = resolve_conflict(
+        "old",
+        "new",
+        existing_confidence=0.9,
+        new_confidence=0.9,
+        existing_source_reliability=0.8,
+        new_source_reliability=1.0,
+    )
+    assert decision.winning_value == "new"
+    assert decision.losing_value == "old"
+    assert "source_reliability" in decision.reason
+
+
+def test_resolve_conflict_source_reliability_existing_wins():
+    """Higher source_reliability on existing value wins despite lower confidence."""
+    decision = resolve_conflict(
+        "old",
+        "new",
+        existing_confidence=0.3,
+        new_confidence=0.9,
+        existing_source_reliability=1.0,
+        new_source_reliability=0.5,
+    )
+    assert decision.winning_value == "old"
+    assert decision.losing_value == "new"
+
+
+def test_resolve_conflict_equal_reliability_falls_back_to_confidence():
+    """When source_reliability is equal, confidence determines winner."""
+    decision = resolve_conflict(
+        "old",
+        "new",
+        existing_confidence=0.5,
+        new_confidence=0.8,
+        existing_source_reliability=0.7,
+        new_source_reliability=0.7,
+    )
+    assert decision.winning_value == "new"
+    assert decision.losing_value == "old"
+    assert "confidence" in decision.reason
+
+
+def test_resolve_conflict_equal_reliability_equal_confidence_favors_new():
+    """When reliability and confidence are equal, recency bias gives new the win."""
+    decision = resolve_conflict(
+        "old",
+        "new",
+        existing_confidence=0.5,
+        new_confidence=0.5,
+        existing_source_reliability=0.5,
+        new_source_reliability=0.5,
+    )
+    assert decision.winning_value == "new"
+    assert decision.losing_value == "old"
+    assert "recency" in decision.reason.lower()
+
+
+def test_resolve_conflict_priority_wins_over_recency():
+    """Priority wins over recency when reliability and confidence are equal."""
+    decision = resolve_conflict(
+        "old",
+        "new",
+        existing_confidence=0.5,
+        new_confidence=0.5,
+        existing_source_reliability=0.5,
+        new_source_reliability=0.5,
+        existing_priority=0.8,
+        new_priority=0.3,
+    )
+    assert decision.winning_value == "old"
+    assert decision.losing_value == "new"

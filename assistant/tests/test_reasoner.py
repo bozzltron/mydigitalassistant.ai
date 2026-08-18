@@ -201,3 +201,28 @@ class TestFormatPlanForPrompt:
         )
         text = format_plan_for_prompt(plan)
         assert "[CORRECTION]" in text
+
+    def test_introspect_identity_name_includes_instruction(self):
+        """INTROSPECT plan must instruct LLM to state identity from identity_name frame."""
+        identity_frame = Frame(id=1, name="identity_name", type="entity", confidence=0.5)
+        identity_slot = Slot(id=1, frame_id=1, key="full_name", value="Elysia", confidence=0.5)
+        from assistant.backend.memory.retrieval import RetrievedFrame
+
+        rf = RetrievedFrame(
+            frame=identity_frame,
+            slots=[identity_slot],
+            associations=[],
+            relevance=1.0,
+            source="identity_boost",
+        )
+        memory = MemoryContext(
+            query="what is your name?",
+            retrieved_frames=[rf],
+            recent_episodes=[],
+            formatted="[test memory]",
+        )
+        plan = classify_intent("what is your name?", "introspective", memory)
+        assert plan.action == Action.INTROSPECT
+        text = format_plan_for_prompt(plan)
+        assert "identity_name" in text
+        assert "full_name" in text

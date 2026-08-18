@@ -231,6 +231,17 @@ class Orchestrator:
                     search_extraction_summary.get("associations_created", 0),
                 )
 
+                if search_extraction_summary.get("frame_ids"):
+
+                    async def get_embedding(text: str) -> list[float]:
+                        resp = await self.llm_client.embed(text)
+                        return resp.embedding
+
+                    await self.store.embed_frames(
+                        search_extraction_summary["frame_ids"],
+                        get_embedding,
+                    )
+
                 if search_extraction_summary.get("slots_applied", 0) > 0:
                     system_prompt += (
                         f"\n\n**Learned from search:** "
@@ -320,10 +331,12 @@ async def fire_and_forget(
     """Extract facts from conversation and store in memory (fire-and-forget)."""
     from assistant.backend.pipeline.extractor import extract_and_apply
 
-    await extract_and_apply(
+    result = await extract_and_apply(
         user_message,
         assistant_response,
         store,
         llm_client,
         source_episode_id=source_episode_id,
     )
+    if result.get("frame_ids"):
+        await store.update_episode_frame_ids(source_episode_id, result["frame_ids"])

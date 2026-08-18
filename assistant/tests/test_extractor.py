@@ -568,3 +568,118 @@ async def test_apply_correction_sets_high_reliability(store):
 
     slot = await store.get_slot(frame.id, "strings")
     assert slot.source_type == "user_correction"
+
+
+async def test_apply_extraction_returns_frame_ids(store):
+    """apply_extraction should return the frame_ids it created/looked up."""
+    from assistant.backend.pipeline.extractor import ExtractionResult, ExtractedSlot
+    extraction = ExtractionResult(
+        slots=[
+            ExtractedSlot(frame_name="guitar", frame_type="entity", key="strings", value="6"),
+            ExtractedSlot(frame_name="music", frame_type="concept", key="genre", value="rock"),
+        ],
+        associations=[
+            {"from_frame": "guitar", "to_frame": "music", "relation_type": "related_to"},
+        ],
+    )
+    summary = await apply_extraction(extraction, store)
+    assert "frame_ids" in summary
+    assert len(summary["frame_ids"]) == 2
+    assert all(isinstance(fid, int) for fid in summary["frame_ids"])
+
+
+async def test_apply_search_extraction_returns_frame_ids(store):
+    """apply_search_extraction should return the frame_ids it created."""
+    from assistant.backend.pipeline.extractor import ExtractionResult, ExtractedSlot
+    from assistant.backend.pipeline.search import SearchResult
+    extraction = ExtractionResult(
+        slots=[
+            ExtractedSlot(
+                frame_name="nikola_tesla",
+                frame_type="concept",
+                key="born_on",
+                value="10 July 1856",
+            ),
+        ],
+        associations=[],
+    )
+    search_results = [
+        SearchResult(
+            title="Nikola Tesla",
+            url="https://example.com",
+            snippet="Born July 10 1856.",
+            engine="test",
+        ),
+    ]
+    summary = await apply_search_extraction(extraction, search_results, store)
+    assert "frame_ids" in summary
+    assert len(summary["frame_ids"]) == 1
+
+
+async def test_extract_and_apply_embeds_frames(store, stub_llm):
+    """extract_and_apply should generate embeddings for newly created frames."""
+    from assistant.backend.pipeline.extractor import extract_and_apply
+    stub_llm.set_extraction_result(
+        slots=[{"frame_name": "piano", "frame_type": "entity", "key": "keys", "value": "88"}],
+        associations=[],
+    )
+    result = await extract_and_apply(
+        "I have a piano with 88 keys",
+        "Nice!",
+        store,
+        stub_llm,
+    )
+    assert "frame_ids" in result
+    assert len(result["frame_ids"]) == 1
+    frame_id = result["frame_ids"][0]
+    emb = await store.get_frame_embedding(frame_id)
+    assert emb is not None
+    assert len(emb) == 768
+
+
+async def test_extract_and_apply_returns_frame_ids_even_when_empty(store, stub_llm):
+    """extract_and_apply returns frame_ids=[] when nothing is extracted."""
+    from assistant.backend.pipeline.extractor import extract_and_apply
+    stub_llm.set_extraction_result(slots=[], associations=[])
+    result = await extract_and_apply(
+        "Hello",
+        "Hi!",
+        store,
+        stub_llm,
+    )
+    assert result["frame_ids"] == []
+
+
+async def test_store_embed_frames_generates_and_stores(store, stub_llm):
+    """store.embed_frames should generate and persist embeddings for given frame IDs."""
+    f1 = await store.create_frame("guitar", "entity")
+    f2 = await store.create_frame("music", "concept")
+    await store.upsert_slot(f1.id, "strings", "6")
+    await store.upsert_slot(f2.id, "genre", "rock")
+
+    async def get_embedding(text: str) -> list[float]:
+        resp = await stub_llm.embed(text)
+        return resp.embedding
+
+    await store.embed_frames([f1.id, f2.id], get_embedding)
+
+    emb1 = await store.get_frame_embedding(f1.id)
+    emb2 = await store.get_frame_embedding(f2.id)
+    assert emb1 is not None
+    assert emb2 is not None
+    assert len(emb1) == 768
+    assert len(emb2) == 768
+
+
+async def test_store_update_episode_frame_ids(store):
+    """store.update_episode_frame_ids should update the frame_ids JSON field."""
+    user = await store.create_user("alice")
+    episode = await store.create_episode(user.id, "sess1", "user", "Hello", frame_ids=[])
+    assert episode.frame_ids == []
+
+    await store.update_episode_frame_ids(episode.id, [1, 2, 3])
+
+    updated = await store.get_episodes_for_session("sess1")
+    assert len(updated) == 1
+    assert updated[0].frame_ids == [1, 2, 3]
+

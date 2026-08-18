@@ -40,6 +40,7 @@ EXTRACTION_PROMPT = """You extract structured knowledge from a conversation turn
 Given the user message and assistant response, identify:
 - Concrete facts about entities, concepts, events, or household items.
 - Relationships between them.
+- Facts about the ASSISTANT ITSELF: the agent's name, identity, or description.
 
 Output a JSON object with this exact schema:
 {
@@ -56,6 +57,14 @@ Rules:
 - frame_type is one of: entity, concept, event, household.
 - Use snake_case for frame_name (e.g. "fender_stratocaster").
 - Don't extract transient conversational content ("hello", "thanks").
+- AGENT IDENTITY: If the conversation states the assistant's name or identity, use
+  frame_name "identity_name" and key "full_name". Examples:
+  - "my name is Ada" -> {"frame_name": "identity_name", "frame_type": "entity",
+    "key": "full_name", "value": "Ada"}
+  - "we chose the name Claude" -> {"frame_name": "identity_name", "frame_type": "entity",
+    "key": "full_name", "value": "Claude"}
+  - "you said your name was Hermes" -> {"frame_name": "identity_name", "frame_type":
+    "entity", "key": "full_name", "value": "Hermes"}
 - If no facts to extract, return {"slots": [], "associations": []}.
 
 Respond with ONLY the JSON object, no commentary."""
@@ -270,6 +279,7 @@ async def apply_extraction(
         "slots_applied": slots_applied,
         "associations_created": assocs_created,
         "conflicts_created": conflicts_created,
+        "frame_ids": list(frame_ids.values()),
     }
 
 
@@ -390,6 +400,7 @@ async def apply_search_extraction(
         "slots_applied": slots_applied,
         "associations_created": assocs_created,
         "conflicts_created": conflicts_created,
+        "frame_ids": list(frame_ids.values()),
     }
 
 
@@ -400,12 +411,25 @@ async def extract_and_apply(
     llm_client: "OllamaClient",
     source_episode_id: int | None = None,
 ) -> dict:
-    """Full extraction pipeline: extract facts + apply to memory store."""
+    """Full extraction pipeline: extract facts + apply to memory store + embed frames."""
     try:
         extraction = await extract_facts(user_message, assistant_response, llm_client)
         if not extraction.slots and not extraction.associations:
-            return {"slots_applied": 0, "associations_created": 0, "conflicts_created": 0}
-        return await apply_extraction(extraction, store, source_episode_id)
+            return {
+                "slots_applied": 0,
+                "associations_created": 0,
+                "conflicts_created": 0,
+                "frame_ids": [],
+            }
+        result = await apply_extraction(extraction, store, source_episode_id)
+        if result.get("frame_ids"):
+
+            async def get_embedding(text: str) -> list[float]:
+                resp = await llm_client.embed(text)
+                return resp.embedding
+
+            await store.embed_frames(result["frame_ids"], get_embedding)
+        return result
     except Exception as e:
         logger.error("extract_and_apply failed: %s", e)
         return {}

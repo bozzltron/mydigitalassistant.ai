@@ -13,6 +13,7 @@ from assistant.backend.memory.retrieval import (
     format_memory_context,
     frame_to_text,
 )
+from assistant.backend.pipeline.llm_client import EmbeddingResponse
 
 
 def test_frame_to_text():
@@ -267,3 +268,86 @@ async def test_embed_frame(store):
     assert embedding == [0.9, 0.1, 0.0]
     stored = await store.get_frame_embedding(frame.id)
     assert stored == [0.9, 0.1, 0.0]
+
+
+class TestIsIdentityQuery:
+    @staticmethod
+    def patterns():
+        return [
+            ("What is your name?", True),
+            ("what's your name", True),
+            ("who are you", True),
+            ("what should I call you", True),
+            ("how did you get your name", True),
+            ("tell me your identity", True),
+            ("what do you know about your name", True),
+            ("what is your name and who are you", True),
+            ("I love your name", True),
+            ("the weather today", False),
+            ("search for guitars", False),
+            ("remember what I said", False),
+        ]
+
+    def test_positive_cases(self):
+        for query, expected in self.patterns():
+            if expected:
+                assert Retriever._is_identity_query(query), f"Expected True for: {query}"
+
+    def test_negative_cases(self):
+        for query, expected in self.patterns():
+            if not expected:
+                assert not Retriever._is_identity_query(query), f"Expected False for: {query}"
+
+    def test_case_insensitive(self):
+        assert Retriever._is_identity_query("WHAT IS YOUR NAME?")
+        assert Retriever._is_identity_query("Who Are You")
+        assert Retriever._is_identity_query("What's YOUR name?")
+
+
+async def test_retrieve_identity_query_boosts_identity_frame(store):
+    """Identity queries must ensure identity_name frame is retrieved at relevance 1.0."""
+    identity_frame = await store.create_frame("identity_name", "entity")
+    await store.upsert_slot(identity_frame.id, "full_name", "Elysia")
+    await store.store_frame_embedding(identity_frame.id, [0.5] + [0.5] + [0.0] * 766)
+
+    unrelated = await store.create_frame("guitar", "entity")
+    await store.store_frame_embedding(unrelated.id, [1.0] + [0.0] * 767)
+
+    mock_llm = AsyncMock()
+    mock_llm.embed.return_value = EmbeddingResponse(
+        embedding=[0.9] + [0.1] * 767,
+        model="nomic-embed-text",
+    )
+
+    retriever = Retriever(store, mock_llm, min_relevance=0.1)
+    user = await store.create_user("alice")
+    ctx = await retriever.retrieve("What is your name?", user.id)
+
+    identity_frames = [rf for rf in ctx.retrieved_frames if rf.frame.name == "identity_name"]
+    assert len(identity_frames) == 1
+    assert identity_frames[0].relevance == 1.0
+    full_name_slot = next(
+        s for s in identity_frames[0].slots if s.key == "full_name"
+    )
+    assert full_name_slot.value == "Elysia"
+
+
+async def test_retrieve_identity_query_does_not_duplicate_if_already_retrieved(store):
+    """If identity_name is already in top results, boost its relevance to 1.0."""
+    identity_frame = await store.create_frame("identity_name", "entity")
+    await store.upsert_slot(identity_frame.id, "full_name", "Elysia")
+    await store.store_frame_embedding(identity_frame.id, [0.9] + [0.1] * 767)
+
+    mock_llm = AsyncMock()
+    mock_llm.embed.return_value = EmbeddingResponse(
+        embedding=[0.9] + [0.1] * 767,
+        model="nomic-embed-text",
+    )
+
+    retriever = Retriever(store, mock_llm, min_relevance=0.1)
+    user = await store.create_user("alice")
+    ctx = await retriever.retrieve("What is your name?", user.id)
+
+    identity_frames = [rf for rf in ctx.retrieved_frames if rf.frame.name == "identity_name"]
+    assert len(identity_frames) == 1
+    assert identity_frames[0].relevance == 1.0

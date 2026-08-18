@@ -103,6 +103,29 @@ class Retriever:
         await self.store.store_frame_embedding(frame.id, response.embedding)
         return response.embedding
 
+    # Patterns that indicate a self-identity / name query
+    _AGENT_IDENTITY_PATTERNS = (
+        r"\byour name\b",
+        r"\byour name is\b",
+        r"\bwhat('s| is) your name\b",
+        r"\bwho are you\b",
+        r"\bhow did you get your name\b",
+        r"\bwhat should i call you\b",
+        r"\byour identity\b",
+        r"\bcall you\b",
+    )
+    _AGENT_IDENTITY_RE = None  # compiled lazily
+
+    @staticmethod
+    def _is_identity_query(query: str) -> bool:
+        import re
+        if Retriever._AGENT_IDENTITY_RE is None:
+            Retriever._AGENT_IDENTITY_RE = re.compile(
+                "|".join(Retriever._AGENT_IDENTITY_PATTERNS),
+                re.IGNORECASE,
+            )
+        return bool(Retriever._AGENT_IDENTITY_RE.search(query))
+
     async def retrieve(
         self,
         query: str,
@@ -113,6 +136,7 @@ class Retriever:
 
         Returns MemoryContext with retrieved frames and recent episodes.
         Uses sqlite-vec vec_distance_cosine() for efficient similarity search.
+        For self-identity queries, always includes the identity_name frame.
         """
          # 1. Embed query
         query_response = await self.llm_client.embed(query)
@@ -159,13 +183,9 @@ class Retriever:
                     seen_frame_ids.add(neighbor_id)
                     graph_neighbors.append((neighbor_id, neighbor_sim, source))
 
-         # Combine and sort
-        all_relevant = top_direct + graph_neighbors
-        all_relevant.sort(key=lambda x: x[1], reverse=True)
-
          # 5. Assemble RetrievedFrame objects
         retrieved_frames: list[RetrievedFrame] = []
-        for frame_id, relevance, source in all_relevant:
+        for frame_id, relevance, source in top_direct + graph_neighbors:
             frame = await self.store.get_frame(frame_id)
             if frame is None:
                 continue
@@ -180,6 +200,30 @@ class Retriever:
                     source=source,
                  )
              )
+
+         # 5b. For self-identity queries, always include identity_name frame at top relevance
+        if self._is_identity_query(query):
+            identity_frame = await self.store.get_frame_by_name("identity_name")
+            if identity_frame:
+                existing_ids = {rf.frame.id for rf in retrieved_frames}
+                if identity_frame.id not in existing_ids:
+                    slots = await self.store.get_slots_for_frame(identity_frame.id)
+                    assocs = await self.store.get_all_associations_for_frame(identity_frame.id)
+                    retrieved_frames.insert(
+                        0,
+                        RetrievedFrame(
+                            frame=identity_frame,
+                            slots=slots,
+                            associations=assocs,
+                            relevance=1.0,
+                            source="identity_boost",
+                        ),
+                    )
+                else:
+                    for rf in retrieved_frames:
+                        if rf.frame.id == identity_frame.id:
+                            rf.relevance = max(rf.relevance, 1.0)
+                            break
 
          # 6. Recent episodes — prefer session-scoped when session_id is provided
         if session_id:

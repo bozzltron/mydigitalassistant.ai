@@ -543,6 +543,45 @@ def cmd_db_migrate(args: argparse.Namespace, client: BackendClient) -> None:
         sys.exit(1)
 
 
+def cmd_db_backfill_embeddings(args: argparse.Namespace, client: BackendClient) -> None:
+    """Generate and store embeddings for all existing frames."""
+    try:
+        from assistant.backend.config import settings
+        from assistant.backend.memory.store import MemoryStore
+        from assistant.backend.pipeline.llm_client import OllamaClient
+
+        async def backfill():
+            store = MemoryStore(settings.database_path)
+            llm_client = OllamaClient(
+                base_url=settings.ollama_url,
+                chat_model=settings.chat_model,
+                utility_model=settings.utility_model,
+                reasoning_model=settings.reasoning_model,
+                embedding_model=settings.embedding_model,
+            )
+            try:
+                frames = await store.list_frames()
+                if not frames:
+                    console.print("[yellow]No frames found to embed[/yellow]")
+                    return
+                frame_ids = [f.id for f in frames if f.id is not None]
+                console.print(f"[bold]Embedding {len(frame_ids)} frames...[/bold]")
+
+                async def get_embedding(text: str) -> list[float]:
+                    resp = await llm_client.embed(text)
+                    return resp.embedding
+
+                await store.embed_frames(frame_ids, get_embedding)
+                console.print(f"[green]✓ Embedded {len(frame_ids)} frames[/green]")
+            finally:
+                await llm_client.close()
+
+        asyncio.run(backfill())
+    except Exception as e:
+        console.print(f"[red]Backfill failed: {e}[/red]")
+        sys.exit(1)
+
+
 def cmd_db_status(args: argparse.Namespace, client: BackendClient) -> None:
      """Show database status."""
      try:
@@ -695,6 +734,11 @@ def main() -> None:
 
     p_db_status = db_sub.add_parser("status", help="Show database status")
     p_db_status.set_defaults(func=cmd_db_status)
+
+    p_db_embed = db_sub.add_parser(
+        "backfill-embeddings", help="Generate embeddings for all existing frames"
+    )
+    p_db_embed.set_defaults(func=cmd_db_backfill_embeddings)
 
     # status
     p_status = subparsers.add_parser("status", help="Check backend status")

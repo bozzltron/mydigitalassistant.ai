@@ -316,6 +316,32 @@ class MemoryStore:
             )
             await db.commit()
 
+    async def embed_frames(
+        self,
+        frame_ids: list[int],
+        embed_fn,  # async callable: (text) -> list[float]
+    ) -> None:
+        """Generate and store embeddings for a list of frames. Skips frames that fail."""
+        for frame_id in frame_ids:
+            try:
+                frame = await self.get_frame(frame_id)
+                if not frame:
+                    continue
+                slots = await self.get_slots_for_frame(frame_id)
+                text = self._frame_to_embed_text(frame, slots)
+                embedding = await embed_fn(text)
+                await self.store_frame_embedding(frame_id, embedding)
+            except Exception:
+                continue
+
+    @staticmethod
+    def _frame_to_embed_text(frame: Frame, slots: list[Slot]) -> str:
+        """Build embeddable text from a frame and its slots."""
+        parts = [f"{frame.type}: {frame.name}"]
+        for slot in slots:
+            parts.append(f"  {slot.key} = {slot.value}")
+        return "\n".join(parts)
+
     async def get_frame_embedding(self, frame_id: int) -> list[float] | None:
         """Retrieve embedding for a frame."""
         async with self._connect() as db:
@@ -649,6 +675,16 @@ class MemoryStore:
             )
             return [Association(**self._association_dict(row)) for row in rows]
 
+    async def get_all_associations(self) -> list[Association]:
+        async with self._connect() as db:
+            rows = await db.execute_fetchall(
+                """SELECT id, from_frame_id, to_frame_id, relation_type, confidence,
+                          essential, priority, source_type, source_url, source_reliability,
+                          created_at
+                   FROM associations ORDER BY id"""
+            )
+            return [Association(**self._association_dict(row)) for row in rows]
+
     # Episodes
     async def create_episode(
         self,
@@ -706,6 +742,15 @@ class MemoryStore:
                 for row in rows
                 if frame_id in self._episode_dict(row)["frame_ids"]
             ]
+
+    async def update_episode_frame_ids(self, episode_id: int, frame_ids: list[int]) -> None:
+        """Update the frame_ids for an episode after extraction completes."""
+        async with self._connect() as db:
+            await db.execute(
+                "UPDATE episodes SET frame_ids = ? WHERE id = ?",
+                (json.dumps(frame_ids), episode_id),
+            )
+            await db.commit()
 
     # Conflicts
     async def get_conflicts(self, status: str | None = None) -> list[Conflict]:
