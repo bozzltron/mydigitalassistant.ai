@@ -504,6 +504,32 @@ def cmd_db_restore_encrypted(args: argparse.Namespace, client: BackendClient) ->
         sys.exit(1)
 
 
+def cmd_db_migrate_encrypted(args: argparse.Namespace, client: BackendClient) -> None:
+    """Migrate an unencrypted DB to encrypted (requires DB_KEY set in .env)."""
+    try:
+        import asyncio
+
+        from assistant.backend.memory.backup import migrate_to_encrypted
+
+        console.print(
+            f"[yellow]Migrating {args.file} to encrypted format...[/yellow]\n"
+            "The current assistant.db will be moved to assistant.db.unencrypted."
+        )
+        result = asyncio.run(migrate_to_encrypted(args.file))
+        console.print("[green]Migration complete![/green]")
+        console.print(f"  New encrypted DB: {result['new_encrypted_db']}")
+        console.print(f"  Old DB moved to: {result['old_db_moved_to']}")
+        console.print(f"  Tables migrated: {result['tables_migrated']}")
+        console.print("[yellow]Restart the backend to use the new encrypted DB.[/yellow]")
+    except ValueError as e:
+        console.print(f"[red]{e}[/red]")
+        console.print("[yellow]Set DB_KEY in .env first, then run again.[/yellow]")
+        sys.exit(1)
+    except Exception as e:
+        console.print(f"[red]Migration failed: {e}[/red]")
+        sys.exit(1)
+
+
 def cmd_db_list(args: argparse.Namespace, client: BackendClient) -> None:
     """List available backups."""
     try:
@@ -797,6 +823,16 @@ def main() -> None:
         "backfill-embeddings", help="Generate embeddings for all existing frames"
     )
     p_db_embed.set_defaults(func=cmd_db_backfill_embeddings)
+
+    p_db_migrate_enc = db_sub.add_parser(
+        "migrate-encrypted",
+        help="Migrate an unencrypted DB to encrypted (requires DB_KEY set in .env)",
+    )
+    p_db_migrate_enc.add_argument(
+        "file",
+        help="Path to the existing unencrypted SQLite database file",
+    )
+    p_db_migrate_enc.set_defaults(func=cmd_db_migrate_encrypted)
 
     p_db_backup_enc = db_sub.add_parser(
         "backup-encrypted", help="Create AES-256-GCM encrypted backup (requires DB_KEY)"
