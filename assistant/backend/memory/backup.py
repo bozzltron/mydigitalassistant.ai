@@ -188,7 +188,7 @@ async def restore_encrypted_backup(src_path: str | Path) -> dict:
         from assistant.backend.db.schema import init_db
 
         await init_db(db_path)
-        await _import_tables(db_path, tables)
+        _import_tables_sync(db_path, tables)
         Path(backup_db_path).unlink()
     except Exception:
         if Path(backup_db_path).exists():
@@ -228,6 +228,85 @@ async def _export_tables_unencrypted(db_path: str) -> dict:
 
     conn.close()
     return tables
+
+
+async def _export_tables_encrypted_with_key(db_path: str) -> dict:
+    """Export all tables from an encrypted SQLite database using the current DB_KEY.
+
+    Uses aiosqlite with apply_db_key to decrypt and read the database.
+    Safe for encrypted-to-encrypted migration when source and target share the same key.
+    """
+    db = await aiosqlite.connect(db_path)
+    apply_db_key(db)
+    await db.execute("PRAGMA foreign_keys = OFF")
+    tables: dict[str, list[dict]] = {}
+
+    async with db:
+        cursor = await db.execute_fetchall(
+            "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name",
+        )
+        table_names = [r[0] for r in cursor]
+
+        for tname in table_names:
+            if tname in ("sqlite_sequence", "sqlite_stat1", "sqlite_stat4"):
+                continue
+            rows = await db.execute_fetchall(f"SELECT * FROM {tname}")
+            cols = [
+                desc[1] for desc in await db.execute_fetchall(f"PRAGMA table_info({tname})")
+            ]
+            tables[tname] = [dict(zip(cols, row, strict=True)) for row in rows]
+
+    return tables
+
+
+async def migrate_from_encrypted(encrypted_src: str | Path) -> dict:
+    """Migrate an encrypted SQLite database to a new encrypted database.
+
+    Reads all data from an encrypted source (using the current DB_KEY),
+    then creates a fresh encrypted database at settings.database_path and
+    imports all data. The source file is moved to <db_path>.encrypted.backup.
+
+    Use this when migrating between encryption keys or when the source
+    encrypted DB cannot be read as unencrypted.
+
+    Args:
+        encrypted_src: Path to the existing encrypted SQLite file.
+
+    Returns:
+        dict with migration stats.
+    """
+    if not settings.db_key:
+        raise ValueError("DB_KEY is not set. Set it in .env first.")
+
+    src_path = Path(encrypted_src)
+    if not src_path.exists():
+        raise FileNotFoundError(f"Source database not found: {src_path}")
+
+    db_path = settings.database_path
+    backup_path = db_path + ".encrypted.backup"
+
+    if Path(db_path).exists():
+        Path(db_path).rename(backup_path)
+
+    try:
+        from assistant.backend.db.schema import init_db
+
+        await init_db(db_path)
+        tables = await _export_tables_encrypted_with_key(str(src_path))
+        _import_tables_sync(db_path, tables)
+    except Exception:
+        if Path(backup_path).exists():
+            if Path(db_path).exists():
+                Path(db_path).unlink()
+            Path(backup_path).rename(db_path)
+        raise
+
+    return {
+        "source": str(src_path),
+        "new_encrypted_db": db_path,
+        "source_moved_to": backup_path,
+        "tables_migrated": len(tables),
+    }
 
 
 async def migrate_to_encrypted(unencrypted_src: str | Path) -> dict:

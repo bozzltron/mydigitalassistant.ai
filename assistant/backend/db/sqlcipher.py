@@ -64,7 +64,7 @@ def apply_db_key(conn) -> None:
     try:
         key = settings.db_key
         # aiosqlite.execute() is a coroutine; sqlite3.execute() is sync
-        if hasattr(conn, "execute") and hasattr(conn.execute, "__call__"):
+        if callable(getattr(conn, "execute", None)):
             import asyncio
             loop = asyncio.get_event_loop()
             if loop.is_running():
