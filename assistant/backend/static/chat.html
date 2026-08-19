@@ -386,6 +386,25 @@
       margin-bottom: 1rem;
     }
 
+    .voice-bubble.processing .pulse-ring {
+      border-color: var(--warning);
+      animation-duration: 2s;
+    }
+
+    .voice-bubble.processing .pulse-ring::after {
+      background: var(--warning);
+    }
+
+    .voice-bubble.speaking .pulse-ring {
+      border-color: var(--accent2);
+      animation: none;
+      opacity: 0.6;
+    }
+
+    .voice-bubble.speaking .pulse-ring::after {
+      background: var(--accent2);
+    }
+
     .pulse-ring {
       width: 64px;
       height: 64px;
@@ -706,7 +725,7 @@
 <!-- Voice recording overlay -->
 <div id="voice-overlay">
   <div class="voice-bubble">
-    <h3 id="voice-status">Listening<span class="loading-dots"></span></h3>
+    <h3 id="voice-status" aria-live="polite" aria-atomic="true">Listening<span class="loading-dots"></span></h3>
     <div class="pulse-ring"></div>
     <div class="voice-actions">
       <button class="voice-stop" id="voice-stop">Stop</button>
@@ -954,9 +973,108 @@
     voiceModeBtn.classList.toggle('active', s.voiceMode);
   }
 
-  // ---- TTS ----
+  // ---- Voice / TTS state machine ----
+  const VoiceState = {
+    IDLE: 'idle',
+    LISTENING: 'listening',
+    PROCESSING: 'processing',
+    SPEAKING: 'speaking',
+  };
+
+  let voiceState = VoiceState.IDLE;
   let currentUtterance = null;
   let speakGeneration = 0;
+  let bargeInGeneration = 0;
+
+  // Audio analysis globals
+  let mediaStream = null;
+  let audioContext = null;
+  let analyser = null;
+  let silenceTimeout = null;
+  let bargeInMonitorId = null;
+  let recordingTimeoutId = null;
+  const SILENCE_THRESHOLD = 0.08;
+  const BARGE_IN_THRESHOLD = 0.14;
+  const SILENCE_DURATION = 1500;
+  const BARGE_IN_DURATION = 350;
+  const MAX_RECORDING_MS = 30000;
+
+  function setVoiceState(newState, reason = '') {
+    const oldState = voiceState;
+    if (oldState === newState) return;
+    voiceState = newState;
+
+    // Update overlay and UI
+    voiceOverlay.classList.toggle('active', newState !== VoiceState.IDLE);
+    micBtn.classList.toggle('recording', newState === VoiceState.LISTENING);
+
+    const bubble = voiceOverlay.querySelector('.voice-bubble');
+    if (bubble) {
+      bubble.classList.remove('listening', 'processing', 'speaking');
+      if (newState !== VoiceState.IDLE) {
+        bubble.classList.add(newState);
+      }
+    }
+
+    switch (newState) {
+      case VoiceState.IDLE:
+        voiceStatus.textContent = '';
+        stopSpeakingBtn.style.display = 'none';
+        break;
+      case VoiceState.LISTENING:
+        voiceStatus.textContent = 'Listening';
+        stopSpeakingBtn.style.display = 'none';
+        break;
+      case VoiceState.PROCESSING:
+        voiceStatus.textContent = 'Thinking...';
+        stopSpeakingBtn.style.display = 'none';
+        break;
+      case VoiceState.SPEAKING:
+        voiceStatus.textContent = 'Speaking';
+        stopSpeakingBtn.style.display = 'inline-block';
+        break;
+    }
+  }
+
+  // ---- Audio feedback (earcons) ----
+  function playEarcon(type) {
+    if (!window.AudioContext && !window.webkitAudioContext) return;
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      const now = ctx.currentTime;
+      if (type === 'start') {
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(880, now);
+        osc.frequency.exponentialRampToValueAtTime(1760, now + 0.08);
+        gain.gain.setValueAtTime(0.08, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+        osc.start(now);
+        osc.stop(now + 0.12);
+      } else if (type === 'stop') {
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(1760, now);
+        osc.frequency.exponentialRampToValueAtTime(880, now + 0.08);
+        gain.gain.setValueAtTime(0.08, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+        osc.start(now);
+        osc.stop(now + 0.12);
+      } else if (type === 'error') {
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(300, now);
+        gain.gain.setValueAtTime(0.06, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+        osc.start(now);
+        osc.stop(now + 0.25);
+      }
+      setTimeout(() => ctx.close(), 300);
+    } catch (e) {
+      // ignore
+    }
+  }
 
   function populateVoices() {
     const voices = speechSynthesis.getVoices();
@@ -1006,15 +1124,11 @@
   }
 
   function speak(text) {
-    if (!window.speechSynthesis) return;
-    // Increment a "speak generation" counter so stale onend/onerror
-    // callbacks from a cancelled utterance don't restart recording.
-    const gen = ++speakGeneration;
-    speechSynthesis.cancel();
-    const s = getSettings();
-    const voices = speechSynthesis.getVoices();
-    const voice = voices.find(v => v.voiceURI === s.voiceUri) || voices[0];
-    if (!voice) return;
+    if (!window.speechSynthesis) {
+      // No TTS available; if in voice mode, go straight back to listening
+      if (state.voiceMode) startListeningForVoice();
+      return;
+    }
 
     // Strip markdown links, URLs, and formatting
     let plain = text
@@ -1024,7 +1138,28 @@
       .replace(/[#*`_\[\]]/g, '')                 // markdown chars
       .replace(/\n+/g, ' ')
       .trim();
-    if (!plain) return;
+    if (!plain) {
+      if (state.voiceMode) startListeningForVoice();
+      return;
+    }
+
+    const wasVoiceMode = state.voiceMode;
+    if (wasVoiceMode) {
+      setVoiceState(VoiceState.SPEAKING, 'tts starting');
+      stopBargeInMonitor();
+      startBargeInMonitor();
+    }
+
+    const gen = ++speakGeneration;
+    speechSynthesis.cancel();
+
+    const s = getSettings();
+    const voices = speechSynthesis.getVoices();
+    const voice = voices.find(v => v.voiceURI === s.voiceUri) || voices[0];
+    if (!voice) {
+      if (wasVoiceMode) startListeningForVoice();
+      return;
+    }
 
     const u = new SpeechSynthesisUtterance(plain);
     u.voice = voice;
@@ -1032,31 +1167,61 @@
     u.pitch = 1.0;
     currentUtterance = u;
     const myGen = gen;
+    u.onstart = () => {
+      if (myGen !== speakGeneration) return;
+      if (wasVoiceMode) setVoiceState(VoiceState.SPEAKING, 'tts started');
+    };
     u.onend = u.onerror = () => {
       stopSpeakingBtn.style.display = 'none';
-      // Only react if this is still the current speak generation
-      // (prevents cancelled TTS from restarting recording)
+      stopBargeInMonitor();
       if (myGen !== speakGeneration) return;
-      // Voice mode: start listening again after TTS finishes
-      if (state.voiceMode && !state.isRecording) {
+      currentUtterance = null;
+      if (state.voiceMode) {
         startListeningForVoice();
+      } else {
+        setVoiceState(VoiceState.IDLE, 'tts finished, voice mode off');
       }
     };
-    stopSpeakingBtn.style.display = 'inline-block';
     speechSynthesis.speak(u);
-  }
-
-  // Start listening for voice input (in voice mode)
-  function startListeningForVoice() {
-    if (state.isRecording) return;
-    stopSpeaking(); // stop any current TTS
-    startRecording();
   }
 
   function stopSpeaking() {
     if (window.speechSynthesis) {
       speechSynthesis.cancel();
     }
+    currentUtterance = null;
+  }
+
+  // Start listening for voice input (in voice mode)
+  function startListeningForVoice() {
+    if (!state.voiceMode) return;
+    setVoiceState(VoiceState.LISTENING, 'start listening');
+    stopSpeaking();
+    stopBargeInMonitor();
+    startRecording();
+  }
+
+  function enterVoiceMode() {
+    state.voiceMode = true;
+    saveSettings({ voiceMode: true });
+    playEarcon('start');
+    startListeningForVoice();
+  }
+
+  function exitVoiceMode() {
+    state.voiceMode = false;
+    saveSettings({ voiceMode: false });
+    speakGeneration++;   // invalidate pending TTS callbacks
+    bargeInGeneration++; // invalidate pending barge-in callbacks
+    stopBargeInMonitor();
+    stopSpeaking();
+    stopRecording();
+    setVoiceState(VoiceState.IDLE, 'exit voice mode');
+  }
+
+  function isVoiceExitCommand(text) {
+    const t = text.toLowerCase().trim();
+    return /^(stop listening|exit voice mode|stop voice mode|goodbye|bye)$/.test(t);
   }
 
   // ---- Chat ----
@@ -1111,32 +1276,40 @@
         ogData: ogData,
       });
 
-      // Voice mode: start listening again after response (TTS will trigger it if enabled)
-      if (state.voiceMode && !state.isRecording) {
+      // Voice mode: if TTS is disabled, resume listening manually.
+      // If TTS is enabled, speak() will transition back to listening on TTS end.
+      if (state.voiceMode && !getSettings().ttsEnabled && !state.isRecording) {
         startListeningForVoice();
       }
     } catch (err) {
       addMessage('assistant', `Error: ${err.message}`);
+      if (state.voiceMode && !getSettings().ttsEnabled) {
+        startListeningForVoice();
+      }
     } finally {
       setLoading(false);
     }
   }
 
   // ---- Voice input (MediaRecorder + /transcribe) ----
-  let mediaStream = null;
-  let audioContext = null;
-  let analyser = null;
-  let silenceTimeout = null;
-  const SILENCE_THRESHOLD = 0.1;  // audio level below this is silence
-  const SILENCE_DURATION = 1500;   // ms of silence before auto-stop
 
   async function startRecording() {
     if (state.isRecording) return;
     try {
-      mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Close any existing audio context first to avoid multiple mic streams
+      if (audioContext) {
+        await audioContext.close().catch(() => {});
+      }
 
-      // Set up audio analysis for silence detection
-      audioContext = new AudioContext();
+      mediaStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
+
+      audioContext = new (window.AudioContext || window.webkitAudioContext)();
       analyser = audioContext.createAnalyser();
       analyser.fftSize = 256;
       const source = audioContext.createMediaStreamSource(mediaStream);
@@ -1152,36 +1325,47 @@
       };
 
       state.mediaRecorder.onstop = async () => {
-        if (state.audioChunks.length === 0) return;
+        if (state.audioChunks.length === 0) {
+          if (state.voiceMode) scheduleListenRetry("Didn't catch that");
+          return;
+        }
         const blob = new Blob(state.audioChunks, { type: 'audio/webm' });
         state.audioChunks = [];
         await sendAudioForTranscription(blob);
       };
 
+      state.mediaRecorder.onerror = (e) => {
+        console.error('MediaRecorder error:', e);
+        if (state.voiceMode) scheduleListenRetry('Recording error');
+      };
+
       state.mediaRecorder.start();
       state.isRecording = true;
-      micBtn.classList.add('recording');
 
       // Start monitoring audio levels
       monitorAudioLevels();
 
-      // Auto-stop after 30 seconds max
-      state._recordingTimeout = setTimeout(() => {
+      // Auto-stop after max duration
+      recordingTimeoutId = setTimeout(() => {
         if (state.isRecording) stopRecording();
-      }, 30000);
+      }, MAX_RECORDING_MS);
     } catch (e) {
       console.warn('Failed to start recording:', e);
-      alert('Microphone access denied or not available.');
+      addMessage('assistant', 'Microphone access denied or not available. Voice mode paused.');
+      if (state.voiceMode) {
+        state.voiceMode = false;
+        saveSettings({ voiceMode: false });
+        setVoiceState(VoiceState.IDLE, 'mic permission denied');
+      }
     }
   }
 
   function monitorAudioLevels() {
-    if (!state.isRecording || !analyser) return;
+    if (voiceState !== VoiceState.LISTENING || !analyser) return;
 
     const dataArray = new Uint8Array(analyser.frequencyBinCount);
     analyser.getByteFrequencyData(dataArray);
 
-    // Calculate average volume
     let sum = 0;
     for (let i = 0; i < dataArray.length; i++) {
       sum += dataArray[i];
@@ -1189,34 +1373,36 @@
     const average = sum / dataArray.length / 255;
 
     if (average < SILENCE_THRESHOLD) {
-      // Silent - start or continue silence timer
       if (!silenceTimeout) {
         silenceTimeout = setTimeout(() => {
           if (state.isRecording) stopRecording();
         }, SILENCE_DURATION);
       }
     } else {
-      // Sound detected - cancel silence timer
       if (silenceTimeout) {
         clearTimeout(silenceTimeout);
         silenceTimeout = null;
       }
     }
 
-    // Continue monitoring if still recording
-    if (state.isRecording) {
+    if (voiceState === VoiceState.LISTENING) {
       requestAnimationFrame(monitorAudioLevels);
     }
   }
 
   function stopRecording() {
     if (!state.isRecording || !state.mediaRecorder) return;
-    clearTimeout(state._recordingTimeout);
+    clearTimeout(recordingTimeoutId);
+    recordingTimeoutId = null;
     if (silenceTimeout) {
       clearTimeout(silenceTimeout);
       silenceTimeout = null;
     }
-    state.mediaRecorder.stop();
+    try {
+      state.mediaRecorder.stop();
+    } catch (e) {
+      console.warn('Error stopping recorder:', e);
+    }
     if (mediaStream) {
       mediaStream.getTracks().forEach(t => t.stop());
       mediaStream = null;
@@ -1227,11 +1413,68 @@
       analyser = null;
     }
     state.isRecording = false;
-    micBtn.classList.remove('recording');
+  }
+
+  function startBargeInMonitor() {
+    stopBargeInMonitor();
+    if (!analyser) return;
+    const gen = ++bargeInGeneration;
+    let consecutiveLoudFrames = 0;
+    const requiredFrames = Math.ceil(BARGE_IN_DURATION / 16); // ~60fps
+
+    function tick() {
+      if (gen !== bargeInGeneration) return;
+      if (voiceState !== VoiceState.SPEAKING || !analyser) return;
+
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      analyser.getByteFrequencyData(dataArray);
+
+      let sum = 0;
+      for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
+      const average = sum / dataArray.length / 255;
+
+      if (average > BARGE_IN_THRESHOLD) {
+        consecutiveLoudFrames++;
+        if (consecutiveLoudFrames >= requiredFrames) {
+          // Barge-in detected: cancel TTS and start listening
+          speakGeneration++;
+          stopSpeaking();
+          stopBargeInMonitor();
+          playEarcon('stop');
+          startListeningForVoice();
+          return;
+        }
+      } else {
+        consecutiveLoudFrames = 0;
+      }
+
+      bargeInMonitorId = requestAnimationFrame(tick);
+    }
+
+    bargeInMonitorId = requestAnimationFrame(tick);
+  }
+
+  function stopBargeInMonitor() {
+    if (bargeInMonitorId) {
+      cancelAnimationFrame(bargeInMonitorId);
+      bargeInMonitorId = null;
+    }
+  }
+
+  function scheduleListenRetry(message, delayMs = 1200) {
+    setVoiceState(VoiceState.PROCESSING, message);
+    setTimeout(() => {
+      if (state.voiceMode) {
+        startListeningForVoice();
+      }
+    }, delayMs);
   }
 
   async function sendAudioForTranscription(blob) {
-    voiceStatus.textContent = 'Transcribing...';
+    if (!state.voiceMode) return;
+    setVoiceState(VoiceState.PROCESSING, 'transcribing');
+    playEarcon('stop');
+
     try {
       const formData = new FormData();
       formData.append('file', blob, 'audio.webm');
@@ -1249,34 +1492,21 @@
       const data = await res.json();
       const text = (data.text || '').trim();
 
-      if (text) {
-        sendMessage(text);
-      } else {
-        if (state.voiceMode) setTimeout(startRecording, 500);
+      if (!text) {
+        scheduleListenRetry("Didn't catch that");
+        return;
       }
+
+      if (isVoiceExitCommand(text)) {
+        exitVoiceMode();
+        return;
+      }
+
+      sendMessage(text);
     } catch (err) {
       console.error('Transcription error:', err);
-      addMessage('assistant', `Transcription error: ${err.message}`);
-      if (state.voiceMode) setTimeout(startRecording, 1000);
+      scheduleListenRetry('Transcription error');
     }
-  }
-
-  // ---- Voice conversation mode ----
-  function enterVoiceMode() {
-    state.voiceMode = true;
-    saveSettings({ voiceMode: true });
-    voiceOverlay.classList.add('active');
-    voiceStatus.textContent = 'Recording';
-    startRecording();
-  }
-
-  function exitVoiceMode() {
-    state.voiceMode = false;
-    saveSettings({ voiceMode: false });
-    speakGeneration++;  // invalidate any pending TTS onend listener
-    stopSpeaking();
-    stopRecording();
-    voiceOverlay.classList.remove('active');
   }
 
   // ---- Init ----
@@ -1315,6 +1545,11 @@
     // Apply settings
     applySettings();
 
+    // Restore voice mode if it was active before reload
+    if (getSettings().voiceMode && state.userId) {
+      enterVoiceMode();
+    }
+
     // Restore session messages from memory
     // (we don't store full history in localStorage, just reload via conversation)
 
@@ -1330,8 +1565,12 @@
     micBtn.addEventListener('click', () => {
       if (state.isRecording) {
         stopRecording();
+      } else if (state.voiceMode) {
+        // Voice mode is active; force a fresh listen cycle
+        startListeningForVoice();
       } else {
-        startRecording();
+        // Mic button enters continuous voice mode
+        enterVoiceMode();
       }
     });
 
@@ -1343,7 +1582,12 @@
       }
     });
 
-    stopSpeakingBtn.addEventListener('click', stopSpeaking);
+    stopSpeakingBtn.addEventListener('click', () => {
+      stopSpeaking();
+      if (state.voiceMode && voiceState === VoiceState.SPEAKING) {
+        startListeningForVoice();
+      }
+    });
 
     voiceStopBtn.addEventListener('click', exitVoiceMode);
     voiceCancelBtn.addEventListener('click', () => {

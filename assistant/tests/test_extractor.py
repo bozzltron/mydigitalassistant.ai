@@ -572,7 +572,7 @@ async def test_apply_correction_sets_high_reliability(store):
 
 async def test_apply_extraction_returns_frame_ids(store):
     """apply_extraction should return the frame_ids it created/looked up."""
-    from assistant.backend.pipeline.extractor import ExtractionResult, ExtractedSlot
+    from assistant.backend.pipeline.extractor import ExtractedSlot, ExtractionResult
     extraction = ExtractionResult(
         slots=[
             ExtractedSlot(frame_name="guitar", frame_type="entity", key="strings", value="6"),
@@ -590,7 +590,7 @@ async def test_apply_extraction_returns_frame_ids(store):
 
 async def test_apply_search_extraction_returns_frame_ids(store):
     """apply_search_extraction should return the frame_ids it created."""
-    from assistant.backend.pipeline.extractor import ExtractionResult, ExtractedSlot
+    from assistant.backend.pipeline.extractor import ExtractedSlot, ExtractionResult
     from assistant.backend.pipeline.search import SearchResult
     extraction = ExtractionResult(
         slots=[
