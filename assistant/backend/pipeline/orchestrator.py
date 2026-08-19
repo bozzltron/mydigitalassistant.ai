@@ -302,12 +302,26 @@ class Orchestrator:
             else None
         )
 
-        # 10. Append sources to response
+        # 10. Append sources to response — only for informational/search tasks
         response_text = llm_response.content
-        if citations:
+        if citations and task_type.value == "search":
             unique_citations = list(dict.fromkeys(citations))
             sources_block = "\n\n**Sources:**\n" + "\n".join(f"- {url}" for url in unique_citations)
             response_text += sources_block
+
+        # Memory source indicator: show for introspective/recall when frames were retrieved
+        show_memory_source = (
+            task_type.value == "introspective"
+            and memory_context.retrieved_frames
+        )
+        if show_memory_source:
+            frame_count = len(memory_context.retrieved_frames)
+            fact_word = "facts" if frame_count != 1 else "fact"
+            memory_block = (
+                f"\n\n<small>_(Answered from memory"
+                f" · {frame_count} {fact_word} retrieved)_</small>"
+            )
+            response_text += memory_block
 
         # Return response
         return ChatResponse(

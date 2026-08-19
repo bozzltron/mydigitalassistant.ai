@@ -993,10 +993,16 @@
   let silenceTimeout = null;
   let bargeInMonitorId = null;
   let recordingTimeoutId = null;
+  let recordingStartTime = null;
+  let loudFrameCount = 0;
+  let silenceAfterLoud = false;
   const SILENCE_THRESHOLD = 0.08;
   const BARGE_IN_THRESHOLD = 0.14;
-  const SILENCE_DURATION = 1500;
+  const SILENCE_DURATION = 2200;
   const BARGE_IN_DURATION = 350;
+  const MIN_RECORDING_MS = 800;
+  const MIN_AUDIO_LEVEL = 0.05;
+  const MIN_AUDIO_FRAMES = 6;
   const MAX_RECORDING_MS = 30000;
 
   function setVoiceState(newState, reason = '') {
@@ -1196,6 +1202,7 @@
   function startListeningForVoice() {
     if (!state.voiceMode) return;
     setVoiceState(VoiceState.LISTENING, 'start listening');
+    playEarcon('start');
     stopSpeaking();
     stopBargeInMonitor();
     startRecording();
@@ -1329,6 +1336,13 @@
           if (state.voiceMode) scheduleListenRetry("Didn't catch that");
           return;
         }
+        const elapsed = Date.now() - (recordingStartTime || Date.now());
+        const tooShort = elapsed < MIN_RECORDING_MS;
+        const notEnoughLoud = loudFrameCount < MIN_AUDIO_FRAMES;
+        if (tooShort || notEnoughLoud) {
+          if (state.voiceMode) scheduleListenRetry("Didn't catch that");
+          return;
+        }
         const blob = new Blob(state.audioChunks, { type: 'audio/webm' });
         state.audioChunks = [];
         await sendAudioForTranscription(blob);
@@ -1341,6 +1355,9 @@
 
       state.mediaRecorder.start();
       state.isRecording = true;
+      recordingStartTime = Date.now();
+      loudFrameCount = 0;
+      silenceAfterLoud = false;
 
       // Start monitoring audio levels
       monitorAudioLevels();
@@ -1371,17 +1388,25 @@
       sum += dataArray[i];
     }
     const average = sum / dataArray.length / 255;
+    const elapsed = Date.now() - (recordingStartTime || Date.now());
+    const metMinDuration = elapsed >= MIN_RECORDING_MS;
+    const hasLoudAudio = average >= MIN_AUDIO_LEVEL;
 
-    if (average < SILENCE_THRESHOLD) {
-      if (!silenceTimeout) {
-        silenceTimeout = setTimeout(() => {
-          if (state.isRecording) stopRecording();
-        }, SILENCE_DURATION);
-      }
-    } else {
+    if (hasLoudAudio) {
+      loudFrameCount++;
+      silenceAfterLoud = false;
       if (silenceTimeout) {
         clearTimeout(silenceTimeout);
         silenceTimeout = null;
+      }
+    } else {
+      if (!silenceAfterLoud && loudFrameCount > 0) {
+        silenceAfterLoud = true;
+      }
+      if (!silenceTimeout && metMinDuration && loudFrameCount >= MIN_AUDIO_FRAMES) {
+        silenceTimeout = setTimeout(() => {
+          if (state.isRecording) stopRecording();
+        }, SILENCE_DURATION);
       }
     }
 
@@ -1413,6 +1438,9 @@
       analyser = null;
     }
     state.isRecording = false;
+    recordingStartTime = null;
+    loudFrameCount = 0;
+    silenceAfterLoud = false;
   }
 
   function startBargeInMonitor() {
@@ -1515,6 +1543,7 @@
     try {
       const { name } = await api('/assistant/name');
       document.getElementById('agent-name').textContent = name;
+      if (name) document.title = name;
     } catch (_) {}
 
     // Load users
