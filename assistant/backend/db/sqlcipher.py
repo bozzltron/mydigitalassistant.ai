@@ -62,8 +62,16 @@ def apply_db_key(conn) -> None:
     if not settings.db_key:
         return
     try:
-
         key = settings.db_key
-        conn.execute(f"PRAGMA key = '{key}'")
+        # aiosqlite.execute() is a coroutine; sqlite3.execute() is sync
+        if hasattr(conn, "execute") and hasattr(conn.execute, "__call__"):
+            import asyncio
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                loop.create_task(conn.execute(f"PRAGMA key = '{key}'"))
+            else:
+                loop.run_until_complete(conn.execute(f"PRAGMA key = '{key}'"))
+        else:
+            conn.execute(f"PRAGMA key = '{key}'")
     except Exception:
         pass

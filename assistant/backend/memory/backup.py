@@ -59,25 +59,30 @@ async def _export_tables(db_path: str) -> dict:
     return tables
 
 
-async def _import_tables(db_path: str, tables: dict[str, list[dict]]) -> None:
-    """Import table data into a fresh database (schema must already exist)."""
-    db = await aiosqlite.connect(db_path)
-    apply_db_key(db)
-    await db.execute("PRAGMA foreign_keys = OFF")
-    await db.commit()
+def _import_tables_sync(db_path: str, tables: dict[str, list[dict]]) -> None:
+    """Import table data into a fresh database (schema must already exist).
 
-    async with db:
-        for tname, rows in tables.items():
-            if not rows:
-                continue
-            for row in rows:
-                placeholders = ", ".join(["?"] * len(row))
-                cols = ", ".join(row.keys())
-                await db.execute(
-                    f"INSERT OR IGNORE INTO {tname} ({cols}) VALUES ({placeholders})",
-                    list(row.values()),
-                )
-        await db.commit()
+    Uses vanilla sqlite3 directly to avoid aiosqlite/SQLCipher threading conflicts
+    when DB_KEY is set and the patching is active.
+    """
+    import sqlite3
+
+    conn = sqlite3.connect(db_path)
+    conn.execute("PRAGMA foreign_keys = OFF")
+    conn.commit()
+
+    for tname, rows in tables.items():
+        if not rows:
+            continue
+        for row in rows:
+            placeholders = ", ".join(["?"] * len(row))
+            cols = ", ".join(row.keys())
+            conn.execute(
+                f"INSERT OR IGNORE INTO {tname} ({cols}) VALUES ({placeholders})",
+                list(row.values()),
+            )
+    conn.commit()
+    conn.close()
 
 
 async def create_encrypted_backup(dest_path: str | Path) -> dict:
@@ -200,31 +205,28 @@ async def restore_encrypted_backup(src_path: str | Path) -> dict:
 async def _export_tables_unencrypted(db_path: str) -> dict:
     """Export all tables from an unencrypted SQLite database.
 
-    Uses a raw aiosqlite connection without SQLCipher key — for unencrypted DBs.
+    Uses vanilla sqlite3 directly to avoid SQLCipher patch conflicts with aiosqlite's
+    background thread when DB_KEY is set but the source DB is unencrypted.
     """
     import sqlite3
 
-    unpatched_conn = sqlite3.connect(db_path)
-    cursor = unpatched_conn.execute(
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+
+    cursor = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name",
     )
-    table_names = [r[0] for r in cursor.fetchall()]
-    unpatched_conn.close()
+    table_names = [r["name"] for r in cursor.fetchall()]
 
-    db = await aiosqlite.connect(db_path)
-    await db.execute("PRAGMA foreign_keys = OFF")
     tables: dict[str, list[dict]] = {}
+    for tname in table_names:
+        if tname in ("sqlite_sequence", "sqlite_stat1", "sqlite_stat4"):
+            continue
+        cols = [desc[1] for desc in conn.execute(f"PRAGMA table_info({tname})")]
+        rows = conn.execute(f"SELECT * FROM {tname}").fetchall()
+        tables[tname] = [dict(zip(cols, row, strict=True)) for row in rows]
 
-    async with db:
-        for tname in table_names:
-            if tname in ("sqlite_sequence", "sqlite_stat1", "sqlite_stat4"):
-                continue
-            rows = await db.execute_fetchall(f"SELECT * FROM {tname}")
-            cols = [
-                desc[1] for desc in await db.execute_fetchall(f"PRAGMA table_info({tname})")
-            ]
-            tables[tname] = [dict(zip(cols, row, strict=True)) for row in rows]
-
+    conn.close()
     return tables
 
 
@@ -264,7 +266,7 @@ async def migrate_to_encrypted(unencrypted_src: str | Path) -> dict:
 
         await init_db(db_path)
         tables = await _export_tables_unencrypted(str(src_path))
-        await _import_tables(db_path, tables)
+        _import_tables_sync(db_path, tables)
     except Exception:
         if Path(backup_path).exists():
             if Path(db_path).exists():
