@@ -1,5 +1,9 @@
 import logging
 
+from assistant.backend.db.sqlcipher import patch_sqlite_for_sqlcipher
+
+patch_sqlite_for_sqlcipher()
+
 import aiosqlite
 
 logger = logging.getLogger(__name__)

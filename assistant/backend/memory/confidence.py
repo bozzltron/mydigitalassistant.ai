@@ -10,6 +10,16 @@ PRIORITY_BUMP = 0.2  # "remember this" bumps priority by this amount
 MAX_PRIORITY = 1.0
 FORGOTTEN_PRIORITY = 0.0
 
+# Default source reliability by source_type
+DEFAULT_RELIABILITY = {
+    "user": 0.95,
+    "user_correction": 0.95,
+    "manual_override": 1.0,
+    "search": 0.5,
+    "inference": 0.6,
+    "imported": 0.7,
+}
+
 
 class ConflictResolution(Enum):
     NEW_WINS = "new_wins"
@@ -40,6 +50,17 @@ def max_priority() -> float:
 def forget_priority() -> float:
     """'Forget this' — soft-delete by setting priority to 0."""
     return FORGOTTEN_PRIORITY
+
+
+def default_source_reliability(source_type: str | None) -> float:
+    """Return the default reliability for a source type.
+
+    User-provided facts are most reliable; search results are least reliable.
+    Returns 0.5 (unknown reliability) for unrecognized or None source types.
+    """
+    if source_type is None:
+        return 0.5
+    return DEFAULT_RELIABILITY.get(source_type, 0.5)
 
 
 def initial_priority() -> float:

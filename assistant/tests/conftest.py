@@ -7,9 +7,12 @@ import pytest
 import pytest_asyncio
 
 from assistant.backend.db.schema import init_db
+from assistant.backend.db.sqlcipher import patch_sqlite_for_sqlcipher
 from assistant.backend.memory.store import MemoryStore
 from assistant.backend.pipeline.llm_client import ChatResponse, EmbeddingResponse, OllamaClient
 from assistant.backend.pipeline.search import WebSearchTool
+
+patch_sqlite_for_sqlcipher()
 
 
 @pytest_asyncio.fixture

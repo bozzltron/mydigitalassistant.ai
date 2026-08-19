@@ -1,12 +1,17 @@
 import json
 from contextlib import asynccontextmanager
 
+from assistant.backend.db.sqlcipher import apply_db_key, patch_sqlite_for_sqlcipher
+
+patch_sqlite_for_sqlcipher()
+
 import aiosqlite
 
 from assistant.backend.db.schema import _load_sqlite_vec
 from assistant.backend.memory.confidence import (
     ConflictResolution,
     bump_confidence,
+    default_source_reliability,
     forget_priority,
     initial_confidence,
     resolve_conflict,
@@ -27,8 +32,9 @@ class MemoryStore:
 
     @asynccontextmanager
     async def _connect(self):
-        """Open a DB connection with sqlite-vec extension loaded."""
+        """Open a DB connection with sqlite-vec extension loaded and SQLCipher key set."""
         db = await aiosqlite.connect(self.db_path)
+        apply_db_key(db)
         await db.execute("PRAGMA foreign_keys = ON")
         await _load_sqlite_vec(db)
         try:
@@ -447,6 +453,11 @@ class MemoryStore:
                 (frame_id, key),
             )
             if not existing:
+                eff_rel = (
+                    source_reliability
+                    if source_reliability is not None
+                    else default_source_reliability(source_type)
+                )
                 cursor = await db.execute(
                     "INSERT INTO slots "
                     "(frame_id, key, value, confidence, essential, priority, "
@@ -461,7 +472,7 @@ class MemoryStore:
                         priority,
                         source_type,
                         source_url,
-                        source_reliability,
+                        eff_rel,
                         source_episode_id,
                     ),
                 )

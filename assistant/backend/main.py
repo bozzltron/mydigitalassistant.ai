@@ -1,9 +1,14 @@
 import logging
 import shutil
-import sqlite3
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
+
+from assistant.backend.db.sqlcipher import patch_sqlite_for_sqlcipher
+
+patch_sqlite_for_sqlcipher()
+
+import sqlite3
 
 from fastapi import Depends as _Depends
 from fastapi import FastAPI, HTTPException, UploadFile

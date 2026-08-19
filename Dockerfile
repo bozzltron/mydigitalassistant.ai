@@ -24,7 +24,9 @@ RUN pip install --no-cache-dir --upgrade pip \
         "python-multipart>=0.0.9" \
         "ruff>=0.7.0" \
         "pytest>=8.0" \
-        "pytest-asyncio>=0.23"
+        "pytest-asyncio>=0.23" \
+        "sqlcipher3>=0.6.0" \
+        "cryptography>=42.0"
 
 FROM python:3.11-slim AS runtime
 
@@ -54,6 +56,8 @@ RUN pip install --no-cache-dir --no-index --find-links /wheels \
         ruff \
         pytest \
         pytest-asyncio \
+        sqlcipher3 \
+        cryptography \
     && rm -rf /wheels
 
 COPY --chown=assistant:assistant assistant/ /app/assistant/

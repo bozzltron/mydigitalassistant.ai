@@ -2,6 +2,7 @@ import argparse
 import asyncio
 import os
 import sys
+from datetime import datetime
 from typing import Any
 
 import httpx
@@ -11,6 +12,9 @@ from rich.prompt import Prompt
 from rich.table import Table
 
 from assistant.backend.config import settings
+from assistant.backend.db.sqlcipher import patch_sqlite_for_sqlcipher
+
+patch_sqlite_for_sqlcipher()
 
 console = Console()
 # Get backend URL from environment or use default
@@ -446,6 +450,60 @@ def cmd_db_restore(args: argparse.Namespace, client: BackendClient) -> None:
         sys.exit(1)
 
 
+def cmd_db_backup_encrypted(args: argparse.Namespace, client: BackendClient) -> None:
+    """Create an AES-256-GCM encrypted backup of the database (requires DB_KEY)."""
+    try:
+        import asyncio
+
+        from assistant.backend.memory.backup import create_encrypted_backup
+
+        dest = args.output or f"assistant-backup-{datetime.now():%Y%m%d-%H%M%S}.enc.json"
+        result = asyncio.run(create_encrypted_backup(dest))
+        console.print(f"[green]Encrypted backup created: {dest}[/green]")
+        db_size = result["db_size_bytes"]
+        bk_size = result["backup_size_bytes"]
+        console.print(f"  Size: {bk_size:,} bytes (from {db_size:,} byte DB)")
+        console.print(f"  Key ID: {result['key_id']}")
+        console.print("[dim]Store this file securely. To restore:[/dim]")
+        console.print(f"  assistant db restore-encrypted {dest}")
+    except ValueError as e:
+        console.print(f"[red]{e}[/red]")
+        console.print("[yellow]Set DB_KEY in .env to enable encrypted backups.[/yellow]")
+        sys.exit(1)
+    except Exception as e:
+        console.print(f"[red]Backup failed: {e}[/red]")
+        sys.exit(1)
+
+
+def cmd_db_restore_encrypted(args: argparse.Namespace, client: BackendClient) -> None:
+    """Restore an encrypted backup (requires DB_KEY matching the backup)."""
+    try:
+        import asyncio
+
+        from assistant.backend.memory.backup import restore_encrypted_backup
+
+        if not args.yes:
+            console.print(
+                "[yellow]This will overwrite the current database.[/yellow]\n"
+                "The old database will be moved to <db_path>.pre-restore before restore."
+            )
+            confirm = Prompt.ask("Continue?", choices=["y", "n"], default="n")
+            if confirm != "y":
+                console.print("[dim]Cancelled.[/dim]")
+                return
+
+        result = asyncio.run(restore_encrypted_backup(args.file))
+        console.print(f"[green]Restored from: {result['restored_from']}[/green]")
+        console.print(f"  Tables restored: {result['tables_restored']}")
+        console.print("[yellow]Restart the backend for changes to take effect.[/yellow]")
+    except ValueError as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+    except Exception as e:
+        console.print(f"[red]Restore failed: {e}[/red]")
+        sys.exit(1)
+
+
 def cmd_db_list(args: argparse.Namespace, client: BackendClient) -> None:
     """List available backups."""
     try:
@@ -739,6 +797,22 @@ def main() -> None:
         "backfill-embeddings", help="Generate embeddings for all existing frames"
     )
     p_db_embed.set_defaults(func=cmd_db_backfill_embeddings)
+
+    p_db_backup_enc = db_sub.add_parser(
+        "backup-encrypted", help="Create AES-256-GCM encrypted backup (requires DB_KEY)"
+    )
+    p_db_backup_enc.add_argument(
+        "-o", "--output",
+        help="Output file path (default: assistant-backup-TIMESTAMP.enc.json)"
+    )
+    p_db_backup_enc.set_defaults(func=cmd_db_backup_encrypted)
+
+    p_db_restore_enc = db_sub.add_parser(
+        "restore-encrypted", help="Restore from AES-256-GCM encrypted backup (requires DB_KEY)"
+    )
+    p_db_restore_enc.add_argument("file", help="Path to encrypted backup file")
+    p_db_restore_enc.add_argument("-y", "--yes", action="store_true", help="Skip confirmation")
+    p_db_restore_enc.set_defaults(func=cmd_db_restore_encrypted)
 
     # status
     p_status = subparsers.add_parser("status", help="Check backend status")

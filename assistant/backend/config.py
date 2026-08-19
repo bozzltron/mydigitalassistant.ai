@@ -19,6 +19,10 @@ class Settings(BaseSettings):
 
     database_path: str = "./assistant.db"
 
+    # Encryption key for SQLCipher. If empty, DB is stored unencrypted.
+    # The key is passed to SQLCipher via "PRAGMA key" on each connection.
+    db_key: str = ""
+
     conflict_auto_resolve: bool = True
 
     # Web search settings (always enabled - core requirement)
