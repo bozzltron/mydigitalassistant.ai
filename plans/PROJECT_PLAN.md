@@ -1,6 +1,6 @@
 # Project Plan — Memory Rework, Encryption & Hardening
 
-**Status:** active
+**Status:** completed
 **Last updated:** 2026-08-20
 
 ---
@@ -140,7 +140,7 @@ Phase 4 focuses on hardening: smarter citation display and TLS for local service
 6. **Priority decay GC** (2A.3) — done. `assistant db gc [--dry-run]`
 7. **Embedding model migration** (2A.5) — done. `assistant db reembed [--model <model>]`
 
-### Phase 3: Hardening (in progress)
+### Phase 3: Hardening ✅ (done)
 
 8. **Sources intelligence** — only show citations block for `task_type=search`. Show memory source indicator inline for introspective tasks. Do not show citations for introspective, functional, or correction tasks.
 9. **TLS for local LLM/search** (2B.3) — environment hardening.
