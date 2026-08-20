@@ -367,11 +367,14 @@
           hasConflict: f.slots?.some(s => conflictKeys.has(`${f.id}-${s.key}`)) || false
         }));
 
-        links = associations.map(a => ({
-          ...a,
-          source: a.from_frame_id,
-          target: a.to_frame_id
-        }));
+        links = associations
+          .filter(a => a.from_frame_id && a.to_frame_id)
+          .map(a => ({
+            ...a,
+            source: nodes.find(n => n.id === a.from_frame_id),
+            target: nodes.find(n => n.id === a.to_frame_id)
+          }))
+          .filter(l => l.source && l.target);
 
         if (nodes.length === 0) {
           document.getElementById('empty-state').style.display = 'block';
