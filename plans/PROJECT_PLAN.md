@@ -1,19 +1,19 @@
-# Project Plan — Memory Rework, Encryption & Coding
+# Project Plan — Memory Rework, Encryption & Hardening
 
 **Status:** active
-**Last updated:** 2026-08-19
+**Last updated:** 2026-08-20
 
 ---
 
 ## 1. Motivation
 
-The current memory system works for MVP but has three structural gaps:
+The memory system had three structural gaps that have been addressed in Phase 2:
 
-1. **No working memory** — the agent cannot distinguish what's active in the current session from what's in long-term storage. All context comes from retrieval, which mixes recent and stale facts with equal weight.
-2. **Shallow conflict resolution** — the current "confidence + recency" heuristic is ad hoc. It handles simple contradictions but fails when multiple sources disagree in complex ways.
-3. **No encryption at rest** — `assistant.db` is plaintext. A stolen laptop means a full memory dump with no protection.
+1. **No working memory** — fixed with LRU cache and retrieval bias.
+2. **Shallow conflict resolution** — fixed with AGM belief revision.
+3. **No encryption at rest** — fixed with SQLCipher in Phase 1.
 
-Separately, the agent's ability to **pair-program** is limited because it has no persistent model of the codebase: it doesn't remember architectural decisions, refactorings done, or the structure of the project beyond what the current context window provides.
+Phase 4 focuses on hardening: smarter citation display and TLS for local services.
 
 ---
 
@@ -125,61 +125,6 @@ Separately, the agent's ability to **pair-program** is limited because it has no
 
 ---
 
-### 2C — Coding Persona
-
-#### 2C.1 — Coding Persona System Prompt
-
-**Goal:** When the user is coding, the agent switches to a programming-focused persona with injected project context.
-
-- Add `PERSONA` env var (`default`, `coding`, `creative`, etc.).
-- Add `assistant/backend/personas/coding.py`: returns a system prompt fragment with:
-  - Project structure summary (generated from `ls -R` once and cached)
-  - Key file descriptions: `store.py`, `retrieval.py`, `orchestrator.py`, `extractor.py`, etc.
-  - Active interface/function signatures from the relevant modules
-  - The agent's own architectural decisions (e.g. "frames use UUIDs as primary keys")
-  - Recent refactorings or architectural changes (stored as episodic memories tagged `code_architecture`)
-- When `PERSONA=coding`, inject the persona fragment into the chat system prompt.
-- `PERSONA` can be changed mid-session via a CLI command or chat command: "switch to coding mode".
-
-**Files:** `assistant/backend/personas/`, `assistant/backend/pipeline/llm_client.py`, `assistant/backend/config.py`
-
-#### 2C.2 — Code Memory Extraction
-
-**Goal:** The agent learns from its own coding sessions and remembers decisions, patterns, and project structure.
-
-- When in coding persona, after each LLM response that produces code, extract and store:
-  - A `CodePattern` frame: the filename, the pattern type (e.g. "repository-pattern", "pydantic-schema"), and a summary.
-  - A `SymbolRef` frame: function/class name, file, signature hash, last seen.
-  - An `ArchitectureDecision` frame: the decision made, the alternatives considered, the reason.
-- This is similar to how the extractor learns facts from conversation, but specialized for code.
-- Retrieval in coding persona biases heavily toward `CodePattern`, `SymbolRef`, and `ArchitectureDecision` frames.
-
-**Files:** `assistant/backend/pipeline/extractor.py`, new `assistant/backend/pipeline/code_extractor.py`
-
-#### 2C.3 — Multi-File Context Tracking
-
-**Goal:** When working on a task spanning multiple files, the agent maintains context across files without re-explaining.
-
-- Add `CodeSession` table: `id`, `session_id`, `files_touched` (JSON list), `created_at`, `last_active_at`.
-- When a user asks to "refactor X across Y files", create a `CodeSession` and track all files involved.
-- The coding persona's context injection includes: "You are currently working on session `<id>` touching: `<file1>`, `<file2>`..."
-- If the user switches to an unrelated task, mark the `CodeSession` inactive; don't inject stale file context.
-- Limit to 10 active `CodeSession` rows (oldest auto-archived to episodic memory).
-
-**Files:** `assistant/backend/memory/store.py`, `assistant/backend/pipeline/orchestrator.py`
-
-#### 2C.4 — Context Window Budget Management
-
-**Goal:** For large code tasks, manage the context window proactively rather than hitting OOM or truncation.
-
-- Add `MAX_CONTEXT_TURNS` config (default 20) — maximum conversation turns to include in context.
-- For coding persona, maintain a "context budget" string that includes: system prompt + recent episode + retrieved code memory + current file contents (truncated to last N lines per file).
-- Add `assistant context stats` CLI command: shows current context window size estimate and what's included.
-
-**Files:** `assistant/backend/pipeline/llm_client.py`, `assistant/backend/cli/commands.py`
-
----
-
 ## 3. Implementation Order
 
 ### Phase 1: Foundation ✅ (done)
@@ -195,17 +140,10 @@ Separately, the agent's ability to **pair-program** is limited because it has no
 6. **Priority decay GC** (2A.3) — done. `assistant db gc [--dry-run]`
 7. **Embedding model migration** (2A.5) — done. `assistant db reembed [--model <model>]`
 
-### Phase 3: Coding
+### Phase 3: Hardening (in progress)
 
-8. **Coding persona** (2C.1) — persona system, env var, context injection.
-9. **Code memory extraction** (2C.2) — code extractor, code-specific frames.
-10. **Multi-file context tracking** (2C.3) — CodeSession table, session awareness.
-11. **Context window budget** (2C.4) — budget management, stats CLI.
-
-### Phase 4: Hardening
-
-12. **Sources intelligence** — only show citations block for `task_type=search`. Show memory source indicator inline for introspective tasks (e.g. "Answered from memory · 3 facts retrieved"). Do not show citations for introspective, functional, or correction tasks.
-13. **TLS for local LLM/search** (2B.3) — environment hardening.
+8. **Sources intelligence** — only show citations block for `task_type=search`. Show memory source indicator inline for introspective tasks. Do not show citations for introspective, functional, or correction tasks.
+9. **TLS for local LLM/search** (2B.3) — environment hardening.
 
 ---
 
@@ -218,7 +156,6 @@ Separately, the agent's ability to **pair-program** is limited because it has no
 | `associations` | Add `embedding_model` (text nullable) |
 | `metadata` | New: `key`, `value` — schema version, embedding model, embedding dimension |
 | `working_memory` | New: `id`, `frame_id`, `entered_at`, `access_count`, `last_accessed_at` |
-| `code_sessions` | New: `id`, `session_id`, `files_touched` (JSON), `created_at`, `last_active_at` |
 
 All new columns are nullable with sensible defaults. No existing columns are modified or removed.
 
@@ -236,16 +173,13 @@ All new columns are nullable with sensible defaults. No existing columns are mod
 
 ## 6. Testing
 
-- All 258 existing tests must continue to pass.
-- New tests for each Phase 2 module:
+- All existing tests must continue to pass.
+- Phase 2 tests:
   - `test_working_memory.py` — LRU eviction, retrieval bias
   - `test_belief_revision.py` — expand/revise/contract postulates, legacy conflict resolution compatibility
-  - `test_source_reliability.py` — corroboration bumps reliability
   - `test_gc.py` — decay math, essential-fact exemption
   - `test_backup_restore.py` — encrypted round-trip
-  - `test_coding_persona.py` — persona injection, mode switching
-  - `test_code_extraction.py` — code memory frames created from LLM output
-  - `test_code_sessions.py` — multi-file tracking, session archival
+- Run: `./run_ci.sh` (plain + encrypted modes)
 
 ---
 
@@ -255,14 +189,12 @@ All new columns are nullable with sensible defaults. No existing columns are mod
 - SQLCipher-encrypted DB is unreadable with standard sqlite3 (verify with `file` and hexdump).
 - Working memory entries are retrieved before long-term entries when both match a query.
 - AGM `revise` produces the same result as the legacy resolver for all existing conflict test cases.
-- Priority decay does not affect priority-1.0 slots. ✅
-- `assistant db gc [--dry-run]` runs decay math and reports scanned/decayed/soft-deleted counts. ✅
-- `assistant db reembed --model <model>` re-embeds frames in batches and updates metadata. ✅
-- Startup logs a warning if `metadata.embedding_model` differs from `EMBEDDING_MODEL` env var. ✅
-- `PERSONA=coding` injects project context; agent answers "what files handle memory?" correctly.
-- Code sessions track touched files across a multi-file task.
-- Context window budget is observable via `assistant context stats`.
-- `pytest assistant/tests/` and `ruff check .` stay green throughout.
+- Priority decay does not affect priority-1.0 slots.
+- `assistant db gc [--dry-run]` runs decay math and reports scanned/decayed/soft-deleted counts.
+- `assistant db reembed --model <model>` re-embeds frames in batches and updates metadata.
+- Startup logs a warning if `metadata.embedding_model` differs from `EMBEDDING_MODEL` env var.
+- Sources intelligence: citations only shown for `task_type=search`.
+- `./run_ci.sh` passes in both plain and encrypted modes.
 
 ---
 
@@ -270,6 +202,4 @@ All new columns are nullable with sensible defaults. No existing columns are mod
 
 1. Should working memory entries be persisted across sessions (survive restart) or reset on each boot? Current design: persisted but evictable.
 2. Should the agent proactively suggest memory sync to the Solid pod after a backup? Low priority.
-3. Should code memory extraction run synchronously (blocking the response) or async? Async is safer for latency.
-4. Should we support multiple concurrent coding sessions? Yes — session_id + archive strategy handles it.
-5. SQLCipher requires a native library. Does `pysqlite3-sqlcipher` work in the Docker image? Verify early in Phase 1.
+3. SQLCipher requires a native library. Does `pysqlite3-sqlcipher` work in the Docker image? Verified in Phase 1: yes.
