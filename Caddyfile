@@ -1,0 +1,9 @@
+{
+    admin off
+    grace_period 1s
+}
+
+https://localhost {
+    tls /etc/caddy/certs/localhost.crt /etc/caddy/certs/localhost.key
+    reverse_proxy assistant:8000
+}

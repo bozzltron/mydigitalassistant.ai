@@ -5,6 +5,12 @@ FastAPI backend + CLI client. Ollama for LLM inference (two models: 7b for chat,
 3b for extraction/routing). SQLite + sqlite-vec for local memory storage.
 Web search for retrieval-only; learned facts stored locally in memory frames/slots.
 
+## Network Security
+- Backend binds to `127.0.0.1:8000` (never exposed directly)
+- HTTPS termination via Caddy reverse proxy on `127.0.0.1:8443`
+- All services on internal Docker network (`appnet`)
+- SearXNG binds to `127.0.0.1:8080` (localhost only)
+
 ## Web Search
 - Uses SearXNG (privacy-friendly meta-search engine) for external retrieval.
 - Search results are **retrieval-only** unless explicitly worth learning.
@@ -66,6 +72,6 @@ Web search for retrieval-only; learned facts stored locally in memory frames/slo
 ## Don't
 - Don't run extraction synchronously in the chat request — it's async, fire-and-forget.
 - Don't make a second blocking LLM call for task routing when heuristics suffice.
-- Don't bind FastAPI to anything but 127.0.0.1.
+- Don't expose backend directly — always route through Caddy HTTPS proxy.
 - Don't add cloud LLM APIs (OpenAI, Anthropic, Google, etc.) — all inference via local Ollama.
 - Don't skip SearXNG localhost binding when using search.

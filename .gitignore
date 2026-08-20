@@ -60,6 +60,9 @@ temp/
 Dockerfile.*.bak
 docker-compose.override.yml
 
+# Caddy auto-generated certs (keep local)
+.data/caddy/
+
 # ----- IDE & editor -----
 .vscode/
 .idea/

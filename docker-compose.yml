@@ -2,8 +2,6 @@ services:
   assistant:
     build: .
     container_name: assistant-backend
-    ports:
-      - "127.0.0.1:8000:8000"
     environment:
       - DATABASE_PATH=/app/data/assistant.db
       - DB_KEY=${DB_KEY}
@@ -12,7 +10,7 @@ services:
       - UTILITY_MODEL=qwen2.5:3b
       - REASONING_MODEL=qwen2.5:7b
       - EMBEDDING_MODEL=nomic-embed-text
-      - BACKEND_HOST=0.0.0.0
+      - BACKEND_HOST=127.0.0.1
       - SEARCH_BASE_URL=http://searxng:8080
       - WHISPER_MODEL=base
       - WHISPER_DEVICE=cpu
@@ -22,6 +20,23 @@ services:
       - "host.docker.internal:host-gateway"
     command: ["sh", "-c", "uvicorn assistant.backend.main:app --host ${BACKEND_HOST} --port 8000"]
     restart: unless-stopped
+    networks:
+      - appnet
+
+  caddy:
+    image: caddy:alpine
+    container_name: caddy
+    ports:
+      - "127.0.0.1:8443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - ./.data/caddy:/etc/caddy/certs
+      - caddy-data:/data
+    depends_on:
+      - assistant
+    restart: unless-stopped
+    networks:
+      - appnet
 
   cli:
     build: .
@@ -37,6 +52,8 @@ services:
     restart: "no"
     profiles:
       - cli
+    networks:
+      - appnet
 
   searxng:
     image: searxng/searxng:latest
@@ -49,7 +66,15 @@ services:
     volumes:
       - ./searxng:/etc/searxng
     restart: unless-stopped
+    networks:
+      - appnet
+
+networks:
+  appnet:
+    driver: bridge
 
 volumes:
   assistant-data:
+    driver: local
+  caddy-data:
     driver: local
