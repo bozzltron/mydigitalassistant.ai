@@ -33,5 +33,9 @@ class Settings(BaseSettings):
     whisper_model: str = "base"
     whisper_device: str = "cpu"
 
+    # Working memory (LRU cache for retrieval bias)
+    working_memory_max_size: int = 50   # max entries in working memory
+    working_memory_boost: float = 1.5  # relevance multiplier for working memory frames
+
 
 settings = Settings()

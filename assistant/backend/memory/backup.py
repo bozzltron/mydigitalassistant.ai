@@ -17,14 +17,15 @@ The inner JSON contains all tables exported from SQLite as rows.
 import hashlib
 import json
 import secrets
+from contextlib import asynccontextmanager
 from pathlib import Path
 
-import aiosqlite
-
 from assistant.backend.config import settings
-from assistant.backend.db.sqlcipher import apply_db_key, patch_sqlite_for_sqlcipher
-
-patch_sqlite_for_sqlcipher()
+from assistant.backend.db.sqlcipher import (
+    aiosqlite_connect,
+    connect,
+    connect_plain,
+)
 
 
 def _derive_key(key: str) -> bytes:
@@ -36,38 +37,36 @@ def _key_id(key: str) -> str:
     return hashlib.sha256(key.encode()).hexdigest()[:16]
 
 
-async def _export_tables(db_path: str) -> dict:
-    """Export all tables from SQLite to a dict of table_name -> list of rows."""
-    db = await aiosqlite.connect(db_path)
-    apply_db_key(db)
+@asynccontextmanager
+async def _export_tables_encrypted(db_path: str):
+    """Export all tables from an encrypted SQLCipher database."""
+    db = await aiosqlite_connect(db_path, encrypted=True)
     await db.execute("PRAGMA foreign_keys = OFF")
     tables: dict[str, list[dict]] = {}
 
-    async with db:
-        cursor = await db.execute_fetchall(
-            "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name",
-        )
-        table_names = [r[0] for r in cursor]
+    cursor = await db.execute_fetchall(
+        "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name",
+    )
+    table_names = [r[0] for r in cursor]
 
-        for tname in table_names:
-            if tname in ("sqlite_sequence", "sqlite_stat1", "sqlite_stat4"):
-                continue
-            rows = await db.execute_fetchall(f"SELECT * FROM {tname}")
-            cols = [desc[1] for desc in await db.execute_fetchall(f"PRAGMA table_info({tname})")]
-            tables[tname] = [dict(zip(cols, row, strict=True)) for row in rows]
+    for tname in table_names:
+        if tname in ("sqlite_sequence", "sqlite_stat1", "sqlite_stat4"):
+            continue
+        rows = await db.execute_fetchall(f"SELECT * FROM {tname}")
+        cols = [desc[1] for desc in await db.execute_fetchall(f"PRAGMA table_info({tname})")]
+        tables[tname] = [dict(zip(cols, row, strict=True)) for row in rows]
 
-    return tables
+    await db.close()
+    yield tables
 
 
 def _import_tables_sync(db_path: str, tables: dict[str, list[dict]]) -> None:
     """Import table data into a fresh database (schema must already exist).
 
-    Uses vanilla sqlite3 directly to avoid aiosqlite/SQLCipher threading conflicts
-    when DB_KEY is set and the patching is active.
+    Uses a synchronous connection so it can run outside the aiosqlite worker
+    thread and avoid re-entrancy issues during restore/migration.
     """
-    import sqlite3
-
-    conn = sqlite3.connect(db_path)
+    conn = connect(db_path)
     conn.execute("PRAGMA foreign_keys = OFF")
     conn.commit()
 
@@ -85,18 +84,19 @@ def _import_tables_sync(db_path: str, tables: dict[str, list[dict]]) -> None:
     conn.close()
 
 
-async def create_encrypted_backup(dest_path: str | Path) -> dict:
+async def create_encrypted_backup(dest_path: str | Path, *, db_path: str | None = None) -> dict:
     """Create an encrypted backup of the database.
 
     Args:
         dest_path: Output file path for the encrypted bundle.
+        db_path: Source database path. Defaults to ``settings.database_path``.
 
     Returns:
         dict with metadata: version, key_id, db_size_bytes, backup_size_bytes
     """
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-    db_path = settings.database_path
+    db_path = db_path or settings.database_path
     if not Path(db_path).exists():
         raise FileNotFoundError(f"Database not found at {db_path}")
 
@@ -109,37 +109,38 @@ async def create_encrypted_backup(dest_path: str | Path) -> dict:
     key = _derive_key(settings.db_key)
     key_id = _key_id(settings.db_key)
 
-    tables = await _export_tables(db_path)
-    plaintext = json.dumps(tables, indent=2, default=str).encode()
+    async with _export_tables_encrypted(db_path) as tables:
+        plaintext = json.dumps(tables, indent=2, default=str).encode()
 
-    iv = secrets.token_bytes(12)
-    aesgcm = AESGCM(key)
-    ciphertext = aesgcm.encrypt(iv, plaintext, None)
+        iv = secrets.token_bytes(12)
+        aesgcm = AESGCM(key)
+        ciphertext = aesgcm.encrypt(iv, plaintext, None)
 
-    bundle = {
-        "version": 1,
-        "key_id": key_id,
-        "iv": iv.hex(),
-        "data": ciphertext.hex(),
-    }
+        bundle = {
+            "version": 1,
+            "key_id": key_id,
+            "iv": iv.hex(),
+            "data": ciphertext.hex(),
+        }
 
-    dest = Path(dest_path)
-    dest.write_bytes(json.dumps(bundle).encode())
+        dest = Path(dest_path)
+        dest.write_bytes(json.dumps(bundle).encode())
 
-    return {
-        "version": 1,
-        "key_id": key_id,
-        "db_size_bytes": Path(db_path).stat().st_size,
-        "backup_size_bytes": dest.stat().st_size,
-        "backup_path": str(dest),
-    }
+        return {
+            "version": 1,
+            "key_id": key_id,
+            "db_size_bytes": Path(db_path).stat().st_size,
+            "backup_size_bytes": dest.stat().st_size,
+            "backup_path": str(dest),
+        }
 
 
-async def restore_encrypted_backup(src_path: str | Path) -> dict:
+async def restore_encrypted_backup(src_path: str | Path, *, db_path: str | None = None) -> dict:
     """Restore an encrypted backup, overwriting the current database.
 
     Args:
         src_path: Path to the encrypted backup bundle.
+        db_path: Target database path. Defaults to ``settings.database_path``.
 
     Returns:
         dict with metadata about the restore.
@@ -180,7 +181,7 @@ async def restore_encrypted_backup(src_path: str | Path) -> dict:
 
     tables = json.loads(plaintext.decode())
 
-    db_path = settings.database_path
+    db_path = db_path or settings.database_path
     backup_db_path = db_path + ".pre-restore"
     Path(db_path).rename(backup_db_path)
 
@@ -203,14 +204,10 @@ async def restore_encrypted_backup(src_path: str | Path) -> dict:
 
 
 async def _export_tables_unencrypted(db_path: str) -> dict:
-    """Export all tables from an unencrypted SQLite database.
-
-    Uses vanilla sqlite3 directly to avoid SQLCipher patch conflicts with aiosqlite's
-    background thread when DB_KEY is set but the source DB is unencrypted.
-    """
+    """Export all tables from an unencrypted SQLite database."""
     import sqlite3
 
-    conn = sqlite3.connect(db_path)
+    conn = connect_plain(db_path)
     conn.row_factory = sqlite3.Row
 
     cursor = conn.execute(
@@ -230,47 +227,20 @@ async def _export_tables_unencrypted(db_path: str) -> dict:
     return tables
 
 
-async def _export_tables_encrypted_with_key(db_path: str) -> dict:
-    """Export all tables from an encrypted SQLite database using the current DB_KEY.
-
-    Uses aiosqlite with apply_db_key to decrypt and read the database.
-    Safe for encrypted-to-encrypted migration when source and target share the same key.
-    """
-    db = await aiosqlite.connect(db_path)
-    apply_db_key(db)
-    await db.execute("PRAGMA foreign_keys = OFF")
-    tables: dict[str, list[dict]] = {}
-
-    async with db:
-        cursor = await db.execute_fetchall(
-            "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name",
-        )
-        table_names = [r[0] for r in cursor]
-
-        for tname in table_names:
-            if tname in ("sqlite_sequence", "sqlite_stat1", "sqlite_stat4"):
-                continue
-            rows = await db.execute_fetchall(f"SELECT * FROM {tname}")
-            cols = [
-                desc[1] for desc in await db.execute_fetchall(f"PRAGMA table_info({tname})")
-            ]
-            tables[tname] = [dict(zip(cols, row, strict=True)) for row in rows]
-
-    return tables
-
-
-async def migrate_from_encrypted(encrypted_src: str | Path) -> dict:
+async def migrate_from_encrypted(encrypted_src: str | Path, *, db_path: str | None = None) -> dict:
     """Migrate an encrypted SQLite database to a new encrypted database.
 
     Reads all data from an encrypted source (using the current DB_KEY),
-    then creates a fresh encrypted database at settings.database_path and
-    imports all data. The source file is moved to <db_path>.encrypted.backup.
+    then creates a fresh encrypted database at ``db_path`` (or
+    ``settings.database_path`` if not specified) and imports all data.
+    The source file is moved to <db_path>.encrypted.backup.
 
     Use this when migrating between encryption keys or when the source
     encrypted DB cannot be read as unencrypted.
 
     Args:
         encrypted_src: Path to the existing encrypted SQLite file.
+        db_path: Target database path. Defaults to ``settings.database_path``.
 
     Returns:
         dict with migration stats.
@@ -282,7 +252,7 @@ async def migrate_from_encrypted(encrypted_src: str | Path) -> dict:
     if not src_path.exists():
         raise FileNotFoundError(f"Source database not found: {src_path}")
 
-    db_path = settings.database_path
+    db_path = db_path or settings.database_path
     backup_path = db_path + ".encrypted.backup"
 
     if Path(db_path).exists():
@@ -292,8 +262,8 @@ async def migrate_from_encrypted(encrypted_src: str | Path) -> dict:
         from assistant.backend.db.schema import init_db
 
         await init_db(db_path)
-        tables = await _export_tables_encrypted_with_key(str(src_path))
-        _import_tables_sync(db_path, tables)
+        async with _export_tables_encrypted(str(src_path)) as tables:
+            _import_tables_sync(db_path, tables)
     except Exception:
         if Path(backup_path).exists():
             if Path(db_path).exists():
@@ -309,15 +279,17 @@ async def migrate_from_encrypted(encrypted_src: str | Path) -> dict:
     }
 
 
-async def migrate_to_encrypted(unencrypted_src: str | Path) -> dict:
+async def migrate_to_encrypted(unencrypted_src: str | Path, *, db_path: str | None = None) -> dict:
     """Migrate an unencrypted SQLite database to a new encrypted one.
 
     Reads all data from the unencrypted source file, then creates a new
-    encrypted database at settings.database_path and imports all data.
-    The original unencrypted file is moved to <db_path>.unencrypted.
+    encrypted database at ``db_path`` (or ``settings.database_path`` if not
+    specified) and imports all data. The original unencrypted file is moved
+    to <db_path>.unencrypted.
 
     Args:
         unencrypted_src: Path to the existing unencrypted SQLite file.
+        db_path: Target database path. Defaults to ``settings.database_path``.
 
     Returns:
         dict with migration stats.
@@ -334,7 +306,7 @@ async def migrate_to_encrypted(unencrypted_src: str | Path) -> dict:
     if not src_path.exists():
         raise FileNotFoundError(f"Source database not found: {src_path}")
 
-    db_path = settings.database_path
+    db_path = db_path or settings.database_path
     backup_path = db_path + ".unencrypted"
 
     if Path(db_path).exists():

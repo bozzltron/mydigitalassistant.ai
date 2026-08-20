@@ -21,7 +21,7 @@ class ExtractedSlot(BaseModel):
     frame_name: str
     frame_type: str = "entity"  # 'entity' | 'concept' | 'event' | 'household'
     key: str
-    value: str
+    value: str | None = None  # Optional — some facts may not have a simple value
 
 
 class ExtractedAssociation(BaseModel):
@@ -241,6 +241,8 @@ async def apply_extraction(
     slots_applied = 0
     conflicts_created = 0
     for slot in extraction.slots:
+        if slot.value is None:
+            continue
         frame_id = frame_ids[slot.frame_name]
         _, conflict = await store.upsert_slot(
             frame_id=frame_id,
@@ -301,6 +303,8 @@ async def apply_search_extraction(
     for result in search_results:
         snippet_lower = result.snippet.lower()
         for slot in extraction.slots:
+            if not slot.value:
+                continue
             if slot.value.lower() in snippet_lower or slot.key.lower() in snippet_lower:
                 fact_key_to_urls[(slot.frame_name, slot.key, slot.value)].add(result.url)
 
@@ -358,6 +362,8 @@ async def apply_search_extraction(
     slots_applied = 0
     conflicts_created = 0
     for slot in deduped_slots:
+        if slot.value is None:
+            continue
         frame_id = frame_ids[slot.frame_name]
         fact_key = (slot.frame_name, slot.key, slot.value)
         urls = fact_key_to_urls.get(fact_key, set())

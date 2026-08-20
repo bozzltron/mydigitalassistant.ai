@@ -171,7 +171,7 @@ Bad:
 ### In Docker (recommended for consistency)
 
 ```bash
-docker compose -f docker/docker-compose.dev.yml run --rm test
+docker compose -f docker-compose.test.yml run --rm test
 ```
 
 The `test` service will be defined alongside the dev stack. It runs the
@@ -227,10 +227,9 @@ test is a code smell, not a safety net.
 
 ## 10. Current state of the test suite
 
-Snapshot taken 2026-07-20 after Phase 6 (containerized CLI). Added 10 tests
-for DB backup/restore endpoints, CLI API calls, and Docker CLI service
-configuration. Replaced 4 filesystem-based CLI backup/restore tests with
-API-based versions.
+Snapshot taken 2026-08-19 after Phase 2A.3 (Priority Decay GC) and 2A.5
+(Embedding Model Migration). Added 14 tests for decay math and GC integration.
+Full test suite runs in both plain SQLite and SQLCipher-encrypted modes.
 
 | File                          | Tests | Covers                                                                                  |
 | ----------------------------- | ----- | --------------------------------------------------------------------------------------- |
@@ -248,8 +247,10 @@ API-based versions.
 | `test_learning_loop.py`       | 1     | **Integration:** learn a fact, verify recall on a fresh request.                        |
 | `test_conflict_resolution.py` | 1     | **Integration:** contradiction → auto-resolve → manual override across the matrix.      |
 | `test_user_isolation.py`      | 1     | **Integration:** multi-user episodic privacy.                                           |
-| **Total**                     | **141** |                                                                                      |
+| `test_gc.py`                  | 14    | Decay math, boundary conditions, essential-fact exemption, dry-run, live GC.           |
+| **Total**                     | **317** |                                                                                      |
 
 The four integration files — `test_learning_loop.py`, `test_conflict_resolution.py`,
 `test_user_isolation.py`, and `test_cognitive_loop.py` — are the highest-signal
-tests in the suite.
+tests in the suite. Run `docker compose -f docker-compose.test.yml run --rm test-plain`
+and `test-encrypted` to verify both DB modes.

@@ -1,10 +1,6 @@
 import logging
 
-from assistant.backend.db.sqlcipher import patch_sqlite_for_sqlcipher
-
-patch_sqlite_for_sqlcipher()
-
-import aiosqlite
+from assistant.backend.db.sqlcipher import aiosqlite_connect
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +22,7 @@ async def _load_sqlite_vec(db):
     except Exception as exc:
         logger.warning("sqlite-vec extension not loaded: %s — vector search unavailable", exc)
 
+
 SCHEMA_SQL = """
 -- Users (household members)
 CREATE TABLE IF NOT EXISTS users (
@@ -46,6 +43,7 @@ CREATE TABLE IF NOT EXISTS frames (
     source_type TEXT,
     source_url TEXT,
     source_reliability REAL,
+    embedding_model TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE SET NULL
@@ -65,6 +63,7 @@ CREATE TABLE IF NOT EXISTS slots (
     source_reliability REAL,
     source_episode_id INTEGER,
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    last_strengthened_at TEXT,
     UNIQUE(frame_id, key),
     FOREIGN KEY (frame_id) REFERENCES frames(id) ON DELETE CASCADE
 );
@@ -96,6 +95,7 @@ CREATE TABLE IF NOT EXISTS associations (
     source_type TEXT,
     source_url TEXT,
     source_reliability REAL,
+    embedding_model TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE(from_frame_id, to_frame_id, relation_type),
     FOREIGN KEY (from_frame_id) REFERENCES frames(id) ON DELETE CASCADE,
@@ -140,22 +140,109 @@ CREATE INDEX IF NOT EXISTS idx_conflicts_status ON conflicts(status);
 CREATE INDEX IF NOT EXISTS idx_frames_owner ON frames(owner_user_id);
 
 -- Frame embeddings (via nomic-embed-text, stored as sqlite-vec vectors)
+-- embedding_model is part of the PK to support model migration:
+-- multiple embeddings per frame (one per model) are retained during re-embed.
 CREATE TABLE IF NOT EXISTS frame_embeddings (
-    frame_id INTEGER PRIMARY KEY,
+    frame_id INTEGER NOT NULL,
+    embedding_model TEXT NOT NULL,
     embedding vec_f32 NOT NULL,
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (frame_id, embedding_model),
     FOREIGN KEY (frame_id) REFERENCES frames(id) ON DELETE CASCADE
 );
 
 -- Index for efficient vector search
 CREATE INDEX IF NOT EXISTS idx_frame_embeddings_embedding ON frame_embeddings(embedding);
-CREATE INDEX IF NOT EXISTS idx_frame_embeddings_frame ON frame_embeddings(frame_id);
+
+-- Metadata table: key/value store for schema versioning and embedding model info
+CREATE TABLE IF NOT EXISTS metadata (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
+-- Working memory: recently accessed frames for retrieval bias and LRU eviction
+CREATE TABLE IF NOT EXISTS working_memory (
+    frame_id INTEGER PRIMARY KEY,
+    access_count INTEGER NOT NULL DEFAULT 1,
+    entered_at TEXT NOT NULL DEFAULT (datetime('now')),
+    last_accessed_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (frame_id) REFERENCES frames(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_wm_last_accessed ON working_memory(last_accessed_at);
+CREATE INDEX IF NOT EXISTS idx_wm_access_count ON working_memory(access_count);
 """
 
 
+async def _migrate_add_last_strengthened_at(db) -> None:
+    """Add last_strengthened_at column to slots if it doesn't exist.
+
+    Checks PRAGMA table_info to determine if the column already exists
+    (present in databases created with the new schema that already has
+    the column, as well as to make the migration idempotent for databases
+    where the CREATE TABLE did not yet include the column).
+    """
+    rows = await db.execute_fetchall("PRAGMA table_info(slots)")
+    existing_columns = {row[1] for row in rows}
+    if "last_strengthened_at" not in existing_columns:
+        await db.execute(
+            "ALTER TABLE slots ADD COLUMN last_strengthened_at TEXT"
+        )
+        await db.commit()
+        logger.debug("Migration: last_strengthened_at column added to slots")
+
+
+async def _migrate_add_embedding_model_and_metadata(db) -> None:
+    """Add embedding_model columns and metadata table.
+
+    Adds embedding_model to frames, associations, and frame_embeddings.
+    Creates the metadata table if it doesn't exist.
+    """
+    frames_info = await db.execute_fetchall("PRAGMA table_info(frames)")
+    frame_cols = {r[1] for r in frames_info}
+    if "embedding_model" not in frame_cols:
+        await db.execute(
+            "ALTER TABLE frames ADD COLUMN embedding_model TEXT"
+        )
+        logger.debug("Migration: embedding_model column added to frames")
+
+    assoc_info = await db.execute_fetchall("PRAGMA table_info(associations)")
+    assoc_cols = {r[1] for r in assoc_info}
+    if "embedding_model" not in assoc_cols:
+        await db.execute(
+            "ALTER TABLE associations ADD COLUMN embedding_model TEXT"
+        )
+        logger.debug("Migration: embedding_model column added to associations")
+
+    emb_info = await db.execute_fetchall("PRAGMA table_info(frame_embeddings)")
+    emb_cols = {r[1] for r in emb_info}
+    if "embedding_model" not in emb_cols:
+        await db.execute(
+            "ALTER TABLE frame_embeddings ADD COLUMN embedding_model TEXT"
+            " DEFAULT 'nomic-embed-text'"
+        )
+        logger.debug("Migration: embedding_model column added to frame_embeddings")
+
+    tables = await db.execute_fetchall(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='metadata'"
+    )
+    if not tables:
+        await db.execute(
+            "CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+        )
+        logger.debug("Migration: metadata table created")
+
+    await db.commit()
+
+
 async def init_db(db_path: str) -> None:
-    """Open connection, apply schema, enable foreign keys + WAL, load sqlite-vec."""
-    async with aiosqlite.connect(db_path) as db:
+    """Open connection, apply schema, enable foreign keys + WAL, load sqlite-vec.
+
+    Uses the same connection type as MemoryStore: encrypted when DB_KEY is set,
+    plain otherwise. This ensures the file format matches how the app will open
+    it later.
+    """
+    async with aiosqlite_connect(db_path) as db:
         await db.execute("PRAGMA foreign_keys = ON")
         await db.execute("PRAGMA journal_mode = WAL")
 
@@ -163,3 +250,6 @@ async def init_db(db_path: str) -> None:
 
         await db.executescript(SCHEMA_SQL)
         await db.commit()
+
+        await _migrate_add_last_strengthened_at(db)
+        await _migrate_add_embedding_model_and_metadata(db)

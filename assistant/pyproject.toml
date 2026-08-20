@@ -49,6 +49,9 @@ package-dir = { assistant = "." }
 asyncio_mode = "auto"
 testpaths = ["tests"]
 pythonpath = ["."]
+markers = [
+    "learning_exam: marks the E2E learning exam test (requires real Ollama + SearXNG; excluded from default runs)",
+]
 
 [tool.ruff]
 line-length = 100
@@ -56,11 +59,4 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "N"]
-ignore = ["B008", "E402"]
-
-[tool.ruff.lint.per-file-ignores]
-# E402 must be suppressed in these files because patch_sqlite_for_sqlcipher()
-# must run before aiosqlite/sqlite3 imports to enable SQLCipher encryption.
-"assistant/backend/db/schema.py" = ["E402"]
-"assistant/backend/memory/store.py" = ["E402"]
-"assistant/backend/main.py" = ["E402"]
+ignore = ["B008"]

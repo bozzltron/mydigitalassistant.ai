@@ -1,6 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
+from assistant.backend.config import settings
 from assistant.backend.main import _state, app, get_orchestrator, get_store
 from assistant.backend.memory.retrieval import Retriever
 from assistant.backend.pipeline.orchestrator import Orchestrator, OrchestratorDeps
@@ -27,11 +28,15 @@ async def client(store, stub_llm, stub_search):
     _state["retriever"] = retriever
     _state["orchestrator"] = orchestrator
 
-    with TestClient(app) as c:
-        yield c
-
-    app.dependency_overrides.clear()
-    _state.clear()
+    original_db_path = settings.database_path
+    settings.database_path = store.db_path
+    try:
+        with TestClient(app) as c:
+            yield c
+    finally:
+        settings.database_path = original_db_path
+        app.dependency_overrides.clear()
+        _state.clear()
 
 
 def test_health_endpoint(client):
@@ -166,8 +171,9 @@ def test_db_backup_creates_file(client, store):
 def test_db_backup_preserves_data(client, store):
     """Backup should contain the same data as the original."""
     import asyncio
-    import sqlite3
     from pathlib import Path
+
+    from assistant.backend.db.sqlcipher import connect
 
     asyncio.get_event_loop().run_until_complete(store.create_frame("guitar", "entity"))
 
@@ -177,7 +183,7 @@ def test_db_backup_preserves_data(client, store):
 
     assert Path(backup_path).exists()
 
-    conn = sqlite3.connect(str(backup_path))
+    conn = connect(str(backup_path))
     row = conn.execute("SELECT name FROM frames WHERE name = ?", ("guitar",)).fetchone()
     assert row is not None
     assert row[0] == "guitar"

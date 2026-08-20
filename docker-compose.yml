@@ -6,6 +6,7 @@ services:
       - "127.0.0.1:8000:8000"
     environment:
       - DATABASE_PATH=/app/data/assistant.db
+      - DB_KEY=${DB_KEY}
       - OLLAMA_URL=http://host.docker.internal:11434
       - CHAT_MODEL=qwen2.5:7b
       - UTILITY_MODEL=qwen2.5:3b

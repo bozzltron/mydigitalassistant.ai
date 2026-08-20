@@ -5,6 +5,7 @@ from assistant.backend.memory.models import Association, Episode, Frame, Slot
 
 if TYPE_CHECKING:
     from assistant.backend.memory.store import MemoryStore
+    from assistant.backend.memory.working_memory import WorkingMemory
     from assistant.backend.pipeline.llm_client import OllamaClient
 
 
@@ -84,23 +85,27 @@ class Retriever:
         self,
         store: "MemoryStore",
         llm_client: "OllamaClient",
+        embedding_model: str = "nomic-embed-text",
         top_k_direct: int = 5,
         graph_hops: int = 2,
         graph_decay: float = 0.5,  # relevance decay per hop
         min_relevance: float = 0.3,
+        working_memory: "WorkingMemory | None" = None,
     ):
         self.store = store
         self.llm_client = llm_client
+        self.embedding_model = embedding_model
         self.top_k_direct = top_k_direct
         self.graph_hops = graph_hops
         self.graph_decay = graph_decay
         self.min_relevance = min_relevance
+        self.working_memory = working_memory
 
     async def embed_frame(self, frame: Frame, slots: list[Slot]) -> list[float]:
         """Embed a frame and store its embedding."""
         text = frame_to_text(frame, slots)
         response = await self.llm_client.embed(text)
-        await self.store.store_frame_embedding(frame.id, response.embedding)
+        await self.store.store_frame_embedding(frame.id, response.embedding, self.embedding_model)
         return response.embedding
 
     # Patterns that indicate a self-identity / name query
@@ -146,6 +151,7 @@ class Retriever:
         all_results = await self.store.search_similar_frames(
             embedding=query_embedding,
             user_id=user_id,
+            embedding_model=self.embedding_model,
             limit=self.top_k_direct * 2,  # fetch more to account for graph neighbors
             min_distance=0.7,
          )
@@ -163,11 +169,19 @@ class Retriever:
             return empty
 
          # 3. Filter by distance threshold and sort by similarity × confidence × priority
-        scored: list[tuple[int, float, str]] = [
-            (frame.id, similarity * frame.confidence * frame.priority, "direct_match")
-            for frame, _slots, similarity in all_results
-            if similarity >= self.min_relevance
-        ]
+        #    Apply working memory boost if available
+        wm_boost_map: dict[int, float] = {}
+        if self.working_memory is not None:
+            wm_boost_map = await self.working_memory.get_boost_map()
+
+        scored: list[tuple[int, float, str]] = []
+        for frame, _slots, similarity in all_results:
+            if similarity < self.min_relevance:
+                continue
+            base_score = similarity * frame.confidence * frame.priority
+            boost = wm_boost_map.get(frame.id, 1.0)
+            scored.append((frame.id, base_score * boost, "direct_match"))
+
         scored.sort(key=lambda x: x[1], reverse=True)
         top_direct = scored[: self.top_k_direct]
 
@@ -244,6 +258,12 @@ class Retriever:
             formatted="",
          )
         context.formatted = format_memory_context(context)
+
+        # Record all retrieved frame IDs in working memory (LRU tracking)
+        if self.working_memory is not None and retrieved_frames:
+            frame_ids = [rf.frame.id for rf in retrieved_frames]
+            await self.working_memory.touch_frames(frame_ids)
+
         return context
 
     async def _graph_walk(

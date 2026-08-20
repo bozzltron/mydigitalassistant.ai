@@ -16,7 +16,7 @@ async def test_contradiction_then_auto_and_manual_resolution(store: MemoryStore)
     assert conflict.status == "auto_resolved"
 
     history = await store.get_slot_history(slot.id)
-    resolved = next((h for h in history if h["reason"] == "conflict_resolved"), None)
+    resolved = next((h for h in history if h["reason"] == "revise"), None)
     assert resolved is not None
     assert resolved["old_value"] == "6"
     assert resolved["new_value"] == "12"

@@ -1,0 +1,68 @@
+services:
+  exam:
+    build:
+      context: .
+      target: runtime
+    container_name: assistant-exam
+    working_dir: /app
+    volumes:
+      - .:/app
+    env_file:
+      - .env.test
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    user: root
+    command: pytest assistant/tests/test_learning_exam.py -v
+
+  # Runs the full test suite in plain (unencrypted) SQLite mode.
+  test-plain:
+    build:
+      context: .
+      target: builder
+    container_name: assistant-tests-plain
+    working_dir: /app
+    volumes:
+      - .:/app
+      - assistant-data:/app/data
+    environment:
+      - DATABASE_PATH=/app/data/assistant-test.db
+      - DB_KEY=
+    command: pip install -e ".[dev]" && pytest assistant/tests/ -q --tb=short
+    user: root
+
+  # Runs the full test suite in encrypted SQLCipher mode.
+  # DB_KEY must be set; encrypted tests are skipped if it's absent.
+  test-encrypted:
+    build:
+      context: .
+      target: builder
+    container_name: assistant-tests-encrypted
+    working_dir: /app
+    volumes:
+      - .:/app
+      - assistant-data:/app/data
+    env_file:
+      - .env
+    environment:
+      - DATABASE_PATH=/app/data/assistant-test-encrypted.db
+    command: pip install -e ".[dev]" && pytest assistant/tests/ -q --tb=short
+    user: root
+
+  dev:
+    build: .
+    container_name: assistant-dev
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      - DATABASE_PATH=/app/data/assistant.db
+      - OLLAMA_URL=http://host.docker.internal:11434
+    volumes:
+      - .:/app
+      - assistant-data:/app/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: uvicorn assistant.backend.main:app --host 127.0.0.1 --port 8000 --reload
+
+volumes:
+  assistant-data:
+    driver: local

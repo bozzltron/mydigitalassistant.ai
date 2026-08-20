@@ -182,18 +182,18 @@ Separately, the agent's ability to **pair-program** is limited because it has no
 
 ## 3. Implementation Order
 
-### Phase 1: Foundation (no feature changes, just robustness)
+### Phase 1: Foundation ✅ (done)
 
-1. **SQLCipher encryption** (2B.1) — do this first because it affects the DB schema. If we add columns, we want them encrypted.
-2. **Source reliability tracking** (2A.4) — additive schema change, no behavior change to existing logic.
-3. **Encrypted backup/restore** (2B.2) — depends on 2B.1.
+1. **SQLCipher encryption** (2B.1) — done.
+2. **Source reliability tracking** (2A.4) — done.
+3. **Encrypted backup/restore** (2B.2) — done.
 
-### Phase 2: Memory Rework
+### Phase 2: Memory Rework ✅ (done)
 
-4. **Working memory module** (2A.1) — new table, retrieval bias, LRU eviction.
-5. **AGM belief revision** (2A.2) — new module, wire into the conflict resolution path, keep old confidence math for compatibility.
-6. **Priority decay GC** (2A.3) — depends on 2A.1 and 2A.2.
-7. **Embedding model migration** (2A.5) — additive, re-embed command.
+4. **Working memory module** (2A.1) — done.
+5. **AGM belief revision** (2A.2) — done.
+6. **Priority decay GC** (2A.3) — done. `assistant db gc [--dry-run]`
+7. **Embedding model migration** (2A.5) — done. `assistant db reembed [--model <model>]`
 
 ### Phase 3: Coding
 
@@ -255,7 +255,10 @@ All new columns are nullable with sensible defaults. No existing columns are mod
 - SQLCipher-encrypted DB is unreadable with standard sqlite3 (verify with `file` and hexdump).
 - Working memory entries are retrieved before long-term entries when both match a query.
 - AGM `revise` produces the same result as the legacy resolver for all existing conflict test cases.
-- Priority decay does not affect priority-1.0 slots.
+- Priority decay does not affect priority-1.0 slots. ✅
+- `assistant db gc [--dry-run]` runs decay math and reports scanned/decayed/soft-deleted counts. ✅
+- `assistant db reembed --model <model>` re-embeds frames in batches and updates metadata. ✅
+- Startup logs a warning if `metadata.embedding_model` differs from `EMBEDDING_MODEL` env var. ✅
 - `PERSONA=coding` injects project context; agent answers "what files handle memory?" correctly.
 - Code sessions track touched files across a multi-file task.
 - Context window budget is observable via `assistant context stats`.

@@ -119,10 +119,15 @@ async def test_slot_history_preserved_on_conflict(store: MemoryStore):
     slot, _ = await store.upsert_slot(frame.id, "color", "white")
     await store.upsert_slot(frame.id, "color", "yellow")
     history = await store.get_slot_history(slot.id)
-    assert len(history) == 1
-    assert history[0]["old_value"] == "white"
-    assert history[0]["new_value"] == "yellow"
-    assert history[0]["reason"] == "conflict_resolved"
+    assert len(history) == 2
+    # First record: initial belief
+    assert history[0]["reason"] == "initial"
+    assert history[0]["old_value"] is None
+    assert history[0]["new_value"] == "white"
+    # Second record: revise (conflict resolved)
+    assert history[1]["reason"] == "revise"
+    assert history[1]["old_value"] == "white"
+    assert history[1]["new_value"] == "yellow"
 
 
 async def test_create_and_get_association(store: MemoryStore):

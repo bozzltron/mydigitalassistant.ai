@@ -12,6 +12,7 @@ class Frame(BaseModel):
     source_type: str | None = None
     source_url: str | None = None
     source_reliability: float | None = None
+    embedding_model: str | None = None
     created_at: str | None = None
     updated_at: str | None = None
 
@@ -29,6 +30,7 @@ class Slot(BaseModel):
     source_reliability: float | None = None
     source_episode_id: int | None = None
     updated_at: str | None = None
+    last_strengthened_at: str | None = None
 
 
 class Association(BaseModel):
@@ -42,6 +44,7 @@ class Association(BaseModel):
     source_type: str | None = None
     source_url: str | None = None
     source_reliability: float | None = None
+    embedding_model: str | None = None
     created_at: str | None = None
 
 

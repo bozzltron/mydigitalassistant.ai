@@ -885,8 +885,8 @@
       div.appendChild(metaEl);
     }
 
-    // Render inline og:images in assistant message
-    if (role === 'assistant' && meta.ogData) {
+    // Render inline og:images in assistant message (search results only)
+    if (role === 'assistant' && meta.ogData && meta.task_type === 'search') {
       const urlsWithImages = Object.entries(meta.ogData).filter(([, d]) => d && d.image);
       if (urlsWithImages.length > 0) {
         const imgsDiv = document.createElement('div');

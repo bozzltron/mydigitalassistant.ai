@@ -189,7 +189,7 @@ def test_cmd_db_backup_calls_api():
         "db_size_bytes": 12345,
         "backup_size_bytes": 12340,
     }
-    args = make_args()
+    args = make_args(plain=True)
     cmd_db_backup(args, client)
     client.db_backup.assert_called_once()
 

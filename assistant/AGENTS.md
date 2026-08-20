@@ -60,7 +60,8 @@ Web search for retrieval-only; learned facts stored locally in memory frames/slo
 - `tests/test_learning_loop.py` — learn-then-recall end-to-end.
 - `tests/test_conflict_resolution.py` — contradiction-then-auto-resolve.
 - `tests/test_user_isolation.py` — multi-user episodic privacy.
-- Run: `pytest assistant/tests/ -v`
+- Run full suite (plain + encrypted): `./run_ci.sh`
+- Run single test mode: `docker compose -f docker-compose.test.yml run --rm test-plain`
 
 ## Don't
 - Don't run extraction synchronously in the chat request — it's async, fire-and-forget.

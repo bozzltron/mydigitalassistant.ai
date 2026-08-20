@@ -12,9 +12,6 @@ from rich.prompt import Prompt
 from rich.table import Table
 
 from assistant.backend.config import settings
-from assistant.backend.db.sqlcipher import patch_sqlite_for_sqlcipher
-
-patch_sqlite_for_sqlcipher()
 
 console = Console()
 # Get backend URL from environment or use default
@@ -409,16 +406,45 @@ def cmd_users_list(args: argparse.Namespace, client: BackendClient) -> None:
 
 
 def cmd_db_backup(args: argparse.Namespace, client: BackendClient) -> None:
-    """Create a backup via the backend API."""
+    """Create a backup of the database.
+
+    By default produces an AES-256-GCM encrypted JSON bundle (requires DB_KEY).
+    Use --plain for an unencrypted SQLite copy via the backend API.
+    """
+    if args.plain:
+        try:
+            result = client.db_backup()
+            console.print("[green]Backup created (unencrypted)[/green]")
+            console.print(f"  Filename: {result['backup_filename']}")
+            console.print(f"  Path (in container): {result['backup_path']}")
+            console.print(f"  Size: {result['backup_size_bytes']:,} bytes")
+            console.print("[dim]To retrieve the backup file:[/dim]")
+            console.print(f"  docker cp assistant-backend:{result['backup_path']} ./")
+        except httpx.HTTPError as e:
+            console.print(f"[red]Backup failed: {e}[/red]")
+            sys.exit(1)
+        return
+
     try:
-        result = client.db_backup()
-        console.print("[green]Backup created[/green]")
-        console.print(f"  Filename: {result['backup_filename']}")
-        console.print(f"  Path (in container): {result['backup_path']}")
-        console.print(f"  Size: {result['backup_size_bytes']:,} bytes")
-        console.print("[dim]To retrieve the backup file:[/dim]")
-        console.print(f"  docker cp assistant-backend:{result['backup_path']} ./")
-    except httpx.HTTPError as e:
+        import asyncio
+
+        from assistant.backend.memory.backup import create_encrypted_backup
+
+        dest = args.output or f"assistant-backup-{datetime.now():%Y%m%d-%H%M%S}.enc.json"
+        result = asyncio.run(create_encrypted_backup(dest))
+        console.print("[green]Encrypted backup created[/green]")
+        console.print(f"  Path: {result['backup_path']}")
+        db_size = result["db_size_bytes"]
+        bk_size = result["backup_size_bytes"]
+        console.print(f"  Size: {bk_size:,} bytes (from {db_size:,} byte DB)")
+        console.print(f"  Key ID: {result['key_id']}")
+    except ValueError as e:
+        console.print(f"[red]{e}[/red]")
+        console.print(
+            "[yellow]Set DB_KEY in .env to create encrypted backups, or use --plain.[/yellow]"
+        )
+        sys.exit(1)
+    except Exception as e:
         console.print(f"[red]Backup failed: {e}[/red]")
         sys.exit(1)
 
@@ -712,6 +738,74 @@ def cmd_db_status(args: argparse.Namespace, client: BackendClient) -> None:
         sys.exit(1)
 
 
+def cmd_db_gc(args: argparse.Namespace, client: BackendClient) -> None:
+    """Run priority decay garbage collection on memory slots."""
+    try:
+        from assistant.backend.memory.gc import run_gc
+
+        console.print("[bold]Running GC...[/bold]")
+        report = asyncio.run(run_gc(settings.database_path, dry_run=args.dry_run))
+        console.print(
+            f"  Scanned:     [cyan]{report.scanned}[/cyan]\n"
+            f"  Decayed:     [cyan]{report.decayed}[/cyan]\n"
+            f"  Soft-deleted: [cyan]{report.soft_deleted}[/cyan]\n"
+            f"  Errors:      [red]{report.errors}[/red]"
+        )
+        if args.dry_run:
+            console.print("[yellow]Dry run — no changes written.[/yellow]")
+    except Exception as e:
+        console.print(f"[red]GC failed: {e}[/red]")
+        sys.exit(1)
+
+
+def cmd_db_reembed(args: argparse.Namespace, client: BackendClient) -> None:
+    """Re-embed all frames with a new embedding model."""
+    try:
+        from assistant.backend.memory.metadata import (
+            METADATA_KEY_EMBEDDING_MODEL,
+            set_metadata,
+        )
+        from assistant.backend.memory.store import MemoryStore
+        from assistant.backend.pipeline.llm_client import OllamaClient
+
+        model = args.model or settings.embedding_model
+        console.print(f"[bold]Re-embedding all frames with model [cyan]{model}[/cyan]...[/bold]")
+
+        store = MemoryStore(settings.database_path)
+        llm_client = OllamaClient(base_url=settings.ollama_url, embedding_model=model)
+
+        all_frames = asyncio.run(store.list_frames())
+        frame_ids = [f.id for f in all_frames if f.id is not None]
+
+        if not frame_ids:
+            console.print("  No frames to re-embed.")
+            asyncio.run(set_metadata(settings.database_path, METADATA_KEY_EMBEDDING_MODEL, model))
+            console.print(f"[green]✓ Metadata updated: embedding_model = {model}[/green]")
+            return
+
+        total = len(frame_ids)
+        batch_size = 100
+        embedded = 0
+
+        for i in range(0, total, batch_size):
+            batch = frame_ids[i:i + batch_size]
+            try:
+                asyncio.run(store.embed_frames(batch, llm_client.embed, model))
+                embedded += len(batch)
+                console.print(f"  [{embedded}/{total}] Embedded batch {i // batch_size + 1}")
+            except Exception as e:
+                console.print(f"[red]Error embedding batch {i // batch_size + 1}: {e}[/red]")
+
+        asyncio.run(set_metadata(settings.database_path, METADATA_KEY_EMBEDDING_MODEL, model))
+        console.print(
+            f"[green]✓ Re-embedded {embedded}/{total} frames."
+            f" Metadata updated: embedding_model = {model}[/green]"
+        )
+    except Exception as e:
+        console.print(f"[red]Re-embed failed: {e}[/red]")
+        sys.exit(1)
+
+
 def cmd_status(args: argparse.Namespace, client: BackendClient) -> None:
     """Check backend status."""
     try:
@@ -804,8 +898,15 @@ def main() -> None:
     p_db_migrate = db_sub.add_parser("migrate", help="Migrate embeddings to vec_f32")
     p_db_migrate.set_defaults(func=cmd_db_migrate)
 
-    p_db_backup = db_sub.add_parser("backup", help="Backup the DB to a file")
+    p_db_backup = db_sub.add_parser(
+        "backup",
+        help="Backup the DB to an encrypted bundle (default) or plain copy (--plain)",
+    )
     p_db_backup.add_argument("-o", "--output", help="Output file path")
+    p_db_backup.add_argument(
+        "--plain", action="store_true",
+        help="Create an unencrypted SQLite copy instead of an encrypted bundle",
+    )
     p_db_backup.set_defaults(func=cmd_db_backup)
 
     p_db_restore = db_sub.add_parser("restore", help="Restore DB from a file (DESTRUCTIVE)")
@@ -849,6 +950,20 @@ def main() -> None:
     p_db_restore_enc.add_argument("file", help="Path to encrypted backup file")
     p_db_restore_enc.add_argument("-y", "--yes", action="store_true", help="Skip confirmation")
     p_db_restore_enc.set_defaults(func=cmd_db_restore_encrypted)
+
+    p_db_gc = db_sub.add_parser("gc", help="Run priority decay garbage collection")
+    p_db_gc.add_argument(
+        "--dry-run", action="store_true", help="Show what would be deleted without deleting"
+    )
+    p_db_gc.set_defaults(func=cmd_db_gc)
+
+    p_db_reembed = db_sub.add_parser(
+        "reembed", help="Re-embed all frames with a new embedding model"
+    )
+    p_db_reembed.add_argument(
+        "--model", type=str, help="Target embedding model (default: from settings)"
+    )
+    p_db_reembed.set_defaults(func=cmd_db_reembed)
 
     # status
     p_status = subparsers.add_parser("status", help="Check backend status")

@@ -12,7 +12,7 @@ ROOT = Path(__file__).parent.parent
 REPO = ROOT.parent
 DOCKERFILE = REPO / "Dockerfile"
 COMPOSE = REPO / "docker-compose.yml"
-COMPOSE_DEV = REPO / "docker-compose.dev.yml"
+COMPOSE_DEV = REPO / "docker-compose.test.yml"
 DOCKERIGNORE = REPO / ".dockerignore"
 
 

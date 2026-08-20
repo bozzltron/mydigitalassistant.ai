@@ -4,27 +4,49 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 
-from assistant.backend.db.sqlcipher import patch_sqlite_for_sqlcipher
-
-patch_sqlite_for_sqlcipher()
-
-import sqlite3
-
 from fastapi import Depends as _Depends
 from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.staticfiles import StaticFiles
 
 from assistant.backend.config import settings
 from assistant.backend.db.schema import init_db
+from assistant.backend.db.sqlcipher import connect
+from assistant.backend.memory.metadata import (
+    METADATA_KEY_EMBEDDING_MODEL,
+    get_metadata,
+    set_metadata,
+)
 from assistant.backend.memory.models import Association, Conflict, Episode, Frame, Slot, User
 from assistant.backend.memory.retrieval import Retriever
 from assistant.backend.memory.store import MemoryStore
+from assistant.backend.memory.working_memory import WorkingMemory
 from assistant.backend.pipeline.llm_client import OllamaClient
 from assistant.backend.pipeline.orchestrator import ChatRequest, ChatResponse, Orchestrator
 from assistant.backend.pipeline.orchestrator import OrchestratorDeps as _OrchestratorDeps
 from assistant.backend.pipeline.search import WebSearchTool
 
 logger = logging.getLogger(__name__)
+
+
+async def _check_embedding_model_mismatch(db_path: str) -> None:
+    """Check if the configured embedding model matches what's stored in metadata.
+
+    If metadata has no embedding_model entry (first run after migration), seed it.
+    If it differs from settings.embedding_model, log a warning with re-embed instructions.
+    """
+    stored_model = await get_metadata(db_path, METADATA_KEY_EMBEDDING_MODEL)
+    current_model = settings.embedding_model
+    if stored_model is None:
+        await set_metadata(db_path, METADATA_KEY_EMBEDDING_MODEL, current_model)
+        logger.info("Seeded metadata with embedding_model=%s", current_model)
+    elif stored_model != current_model:
+        logger.warning(
+            "Embedding model mismatch: metadata has '%s' but settings have '%s'. "
+            "Run 'assistant db reembed --model %s' to re-embed all frames.",
+            stored_model,
+            current_model,
+            current_model,
+        )
 
 
 # Global state for the app (initialized in lifespan)
@@ -39,7 +61,14 @@ async def lifespan(app: FastAPI):
     Path(db_path).parent.mkdir(parents=True, exist_ok=True)
     await init_db(db_path)
 
+    await _check_embedding_model_mismatch(db_path)
+
     store = MemoryStore(db_path)
+    working_memory = WorkingMemory(
+        db_path=db_path,
+        max_size=settings.working_memory_max_size,
+        boost=settings.working_memory_boost,
+    )
     llm_client = OllamaClient(
         base_url=settings.ollama_url,
         chat_model=settings.chat_model,
@@ -47,7 +76,12 @@ async def lifespan(app: FastAPI):
         reasoning_model=settings.reasoning_model,
         embedding_model=settings.embedding_model,
     )
-    retriever = Retriever(store=store, llm_client=llm_client)
+    retriever = Retriever(
+        store=store,
+        llm_client=llm_client,
+        embedding_model=settings.embedding_model,
+        working_memory=working_memory,
+    )
     search_tool = WebSearchTool(
         base_url=settings.search_base_url,
         enabled=True,    # Always enabled - core requirement
@@ -62,6 +96,7 @@ async def lifespan(app: FastAPI):
     )
 
     _state["store"] = store
+    _state["working_memory"] = working_memory
     _state["llm_client"] = llm_client
     _state["retriever"] = retriever
     _state["orchestrator"] = orchestrator
@@ -403,8 +438,8 @@ async def db_backup(store: MemoryStore = _Depends(get_store)):
     backup_name = f"backup-{timestamp}.db"
     backup_path = db_path.parent / backup_name
 
-    src = sqlite3.connect(str(db_path))
-    dst = sqlite3.connect(str(backup_path))
+    src = connect(str(db_path))
+    dst = connect(str(backup_path))
     with dst:
         src.backup(dst)
     src.close()
