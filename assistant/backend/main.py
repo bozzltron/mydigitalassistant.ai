@@ -75,6 +75,7 @@ async def lifespan(app: FastAPI):
         utility_model=settings.utility_model,
         reasoning_model=settings.reasoning_model,
         embedding_model=settings.embedding_model,
+        verify_tls=settings.ollama_tls_cert if settings.ollama_tls_cert else True,
     )
     retriever = Retriever(
         store=store,

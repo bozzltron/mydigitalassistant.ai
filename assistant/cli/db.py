@@ -264,6 +264,7 @@ async def reembed_db(target_model: str | None = None):
         llm_client = OllamaClient(
             base_url=settings.ollama_url,
             embedding_model=model,
+            verify_tls=settings.ollama_tls_cert if settings.ollama_tls_cert else True,
         )
 
         all_frames = await store.list_frames()

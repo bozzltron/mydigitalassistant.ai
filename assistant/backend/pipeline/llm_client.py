@@ -36,6 +36,7 @@ class OllamaClient:
         reasoning_model: str = "qwen2.5:7b",
         embedding_model: str = "nomic-embed-text",
         timeout: float = 120.0,
+        verify_tls: bool | str = True,
     ):
         self.base_url = base_url.rstrip("/")
         self.chat_model = chat_model
@@ -43,6 +44,7 @@ class OllamaClient:
         self.reasoning_model = reasoning_model
         self.embedding_model = embedding_model
         self.timeout = timeout
+        self.verify_tls: bool | str = verify_tls
         self._client: httpx.AsyncClient | None = None
 
     async def _get_client(self) -> httpx.AsyncClient:
@@ -50,6 +52,7 @@ class OllamaClient:
             self._client = httpx.AsyncClient(
                 base_url=self.base_url,
                 timeout=self.timeout,
+                verify=self.verify_tls,
             )
         return self._client
 

@@ -668,6 +668,7 @@ def cmd_db_backfill_embeddings(args: argparse.Namespace, client: BackendClient) 
                 utility_model=settings.utility_model,
                 reasoning_model=settings.reasoning_model,
                 embedding_model=settings.embedding_model,
+                verify_tls=settings.ollama_tls_cert if settings.ollama_tls_cert else True,
             )
             try:
                 frames = await store.list_frames()
@@ -772,7 +773,11 @@ def cmd_db_reembed(args: argparse.Namespace, client: BackendClient) -> None:
         console.print(f"[bold]Re-embedding all frames with model [cyan]{model}[/cyan]...[/bold]")
 
         store = MemoryStore(settings.database_path)
-        llm_client = OllamaClient(base_url=settings.ollama_url, embedding_model=model)
+        llm_client = OllamaClient(
+            base_url=settings.ollama_url,
+            embedding_model=model,
+            verify_tls=settings.ollama_tls_cert if settings.ollama_tls_cert else True,
+        )
 
         all_frames = asyncio.run(store.list_frames())
         frame_ids = [f.id for f in all_frames if f.id is not None]

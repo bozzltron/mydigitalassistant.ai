@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     search_base_url: str = "http://127.0.0.1:8080"    # SearXNG default
     search_timeout: float = 30.0
 
+    # TLS verification (defense-in-depth for local services)
+    # Set to path of CA cert if Ollama/SearXNG use self-signed TLS
+    ollama_tls_cert: str = ""
+    search_tls_cert: str = ""
+
     # Voice transcription (optional - requires faster-whisper)
     whisper_model: str = "base"
     whisper_device: str = "cpu"
