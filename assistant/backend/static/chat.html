@@ -917,8 +917,8 @@
     if (meta.task_type) traceTaskType.textContent = meta.task_type;
     if (meta.memory_context) traceMemory.textContent = meta.memory_context.slice(0, 500) + (meta.memory_context.length > 500 ? '...' : '');
 
-    // Citations in trace panel — only when present
-    if (meta.citations && meta.citations.length > 0) {
+    // Citations in trace panel — only for search task type
+    if (meta.task_type === 'search' && meta.citations && meta.citations.length > 0) {
       if (role === 'assistant') {
         state.lastCitations = meta.citations;
       }
@@ -1256,10 +1256,10 @@
       state.sessionId = resp.session_id;
       localStorage.setItem('session_id', resp.session_id);
 
-      // Pre-fetch OG previews for inline images (up to 4)
+      // Pre-fetch OG previews for inline images — search tasks only
       const citations = resp.citations || [];
       const ogData = {};
-      if (citations.length > 0) {
+      if (resp.task_type === 'search' && citations.length > 0) {
         const toFetch = citations.slice(0, 4);
         await Promise.all(toFetch.map(async (url) => {
           if (state.ogCache[url]) {
