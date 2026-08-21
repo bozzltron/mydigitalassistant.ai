@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     # chat_think_default is the fast-path default; escalations override per call.
     chat_think_default: bool = False
     think_num_predict_cap: int = 1024
+    # Native tool-calling on the chat model (Phase 6 M5). web_search tool is
+    # additionally gated on SEARCH_ENABLED / SearXNG availability.
+    tools_enabled: bool = True
 
     backend_host: str = "127.0.0.1"
     backend_port: int = 8000

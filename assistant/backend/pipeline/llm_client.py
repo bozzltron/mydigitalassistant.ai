@@ -37,8 +37,18 @@ def split_thinking(content: str) -> tuple[str, str]:
 
 
 class ChatMessage(BaseModel):
-    role: Literal["system", "user", "assistant"]
+    role: Literal["system", "user", "assistant", "tool"]
     content: str
+    name: str | None = None  # tool name on role="tool" messages
+    # Echoed assistant turn when the model requested tool calls; passed
+    # through verbatim in payloads, never parsed back.
+    tool_calls: list[dict] | None = None
+
+
+class ToolCall(BaseModel):
+    """A tool invocation requested by the model (Ollama native tools API)."""
+    name: str
+    arguments: dict = {}
 
 
 class ChatResponse(BaseModel):
@@ -46,6 +56,7 @@ class ChatResponse(BaseModel):
     model: str
     done: bool
     thinking: str = ""
+    tool_calls: list[ToolCall] = []
 
 
 class EmbeddingResponse(BaseModel):
@@ -144,11 +155,15 @@ class OllamaClient:
         stream: bool = False,
         think: bool | None = None,
         num_predict: int | None = None,
+        tools: list[dict] | None = None,
     ) -> ChatResponse:
         """Send chat completion request. Uses chat_model by default.
 
         think: for thinking-capable models, request/suppress a reasoning chain
         via Ollama's per-request flag. None leaves the server default in charge.
+        tools: Ollama native tools API — list of {"type": "function",
+        "function": {name, description, parameters}} defs. Requested calls come
+        back on ChatResponse.tool_calls.
         """
         model = model or self.chat_model
         client = await self._get_client()
@@ -164,6 +179,8 @@ class OllamaClient:
             payload["think"] = think
         if num_predict is not None:
             payload["options"]["num_predict"] = num_predict
+        if tools:
+            payload["tools"] = tools
         r = await client.post("/api/chat", json=payload)
         r.raise_for_status()
         data = r.json()
@@ -172,11 +189,19 @@ class OllamaClient:
         thinking = data["message"].get("thinking") or ""
         if not thinking:
             content, thinking = split_thinking(content)
+        tool_calls = [
+            ToolCall(
+                name=tc.get("function", {}).get("name", ""),
+                arguments=tc.get("function", {}).get("arguments") or {},
+            )
+            for tc in data["message"].get("tool_calls") or []
+        ]
         return ChatResponse(
             content=content,
             model=data["model"],
             done=data.get("done", True),
             thinking=thinking,
+            tool_calls=tool_calls,
         )
 
     async def embed(

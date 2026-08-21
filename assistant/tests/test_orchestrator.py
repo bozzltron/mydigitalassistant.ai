@@ -29,6 +29,7 @@ class SearchSpy:
 
     def __init__(self) -> None:
         self.queries: list[str] = []
+        self.enabled = False
 
     async def search(self, query: str, num_results: int = 5):
         self.queries.append(query)

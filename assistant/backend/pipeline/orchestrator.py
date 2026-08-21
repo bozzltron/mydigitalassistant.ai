@@ -13,6 +13,7 @@ from assistant.backend.pipeline.llm_client import ChatMessage, OllamaClient, bui
 from assistant.backend.pipeline.reasoner import Action, classify_intent, format_plan_for_prompt
 from assistant.backend.pipeline.search import SearchResult, WebSearchTool
 from assistant.backend.pipeline.task_router import TaskType, route
+from assistant.backend.pipeline.tools import builtin_tools, run_tool_loop
 
 logger = logging.getLogger(__name__)
 
@@ -333,16 +334,29 @@ class Orchestrator:
 
         # Call LLM — fast path uses configured default (think off for
         # thinking-capable models); escalated plans flip thinking on with a
-        # token cap (Phase 6 plan §6.2).
+        # token cap (Phase 6 plan §6.2). With tools enabled, the model may
+        # call local tools (datetime, calculator, private web search) before
+        # answering (Phase 6 M5).
         messages = [ChatMessage(role="system", content=system_prompt)]
         messages.extend(history_messages)
         messages.append(ChatMessage(role="user", content=request.message))
         think = True if plan.think else settings.chat_think_default
-        llm_response = await self.llm_client.chat(
-            messages,
-            think=think,
-            num_predict=settings.think_num_predict_cap if plan.think else None,
-        )
+        num_predict = settings.think_num_predict_cap if plan.think else None
+        if settings.tools_enabled:
+            tools = builtin_tools(self.search_tool)
+            llm_response = await run_tool_loop(
+                self.llm_client,
+                messages,
+                tools,
+                think=think,
+                num_predict=num_predict,
+            )
+        else:
+            llm_response = await self.llm_client.chat(
+                messages,
+                think=think,
+                num_predict=num_predict,
+            )
 
         # 8. Log assistant episode
         await self.store.create_episode(
