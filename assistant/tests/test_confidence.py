@@ -7,6 +7,7 @@ from assistant.backend.memory.confidence import (
     forget_priority,
     initial_confidence,
     initial_priority,
+    lower_confidence,
     max_priority,
     resolve_conflict,
 )
@@ -148,3 +149,19 @@ def test_resolve_conflict_priority_wins_over_recency():
     )
     assert decision.winning_value == "old"
     assert decision.losing_value == "new"
+
+def test_lower_confidence_decreases():
+    assert lower_confidence(0.8) < 0.8
+    assert lower_confidence(0.8) == pytest.approx(0.65)
+
+
+def test_lower_confidence_floored_at_initial():
+    """Confidence cannot go below initial_confidence (0.5)."""
+    assert lower_confidence(0.5) == 0.5
+    assert lower_confidence(0.4) == 0.5
+    assert lower_confidence(0.0) == 0.5
+
+
+def test_lower_confidence_custom_amount():
+    assert lower_confidence(0.8, amount=0.3) == pytest.approx(0.5)
+    assert lower_confidence(0.8, amount=0.5) == pytest.approx(0.5)  # floored

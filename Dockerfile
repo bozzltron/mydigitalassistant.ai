@@ -21,6 +21,7 @@ RUN pip install --no-cache-dir --upgrade pip \
         "aiosqlite>=0.20" \
         "sqlite-vec>=0.1.0" \
         "faster-whisper>=1.0" \
+        "croniter>=2.0" \
         "python-multipart>=0.0.9" \
         "ruff>=0.7.0" \
         "pytest>=8.0" \
@@ -52,6 +53,7 @@ RUN pip install --no-cache-dir --no-index --find-links /wheels \
         aiosqlite \
         sqlite-vec \
         faster-whisper \
+        croniter \
         python-multipart \
         ruff \
         pytest \

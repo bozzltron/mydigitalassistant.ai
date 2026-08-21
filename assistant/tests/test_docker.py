@@ -42,9 +42,28 @@ def test_dockerfile_uses_slim_base():
 
 
 def test_compose_binds_to_localhost_only():
+    """Backend must not be directly exposed. Only Caddy (HTTPS) and SearXNG are exposed."""
     content = COMPOSE.read_text()
-    assert "127.0.0.1:8000:8000" in content
-    assert "0.0.0.0:8000:8000" not in content
+    data = yaml.safe_load(content)
+
+    # Assistant service must have NO ports published (it is behind Caddy)
+    assistant_ports = data.get("services", {}).get("assistant", {}).get("ports", [])
+    assert assistant_ports == [], (
+        f"assistant service must not expose any ports directly (got {assistant_ports}). "
+        "All traffic goes through the Caddy reverse proxy."
+    )
+
+    # Caddy must expose HTTPS on localhost
+    caddy_ports = data.get("services", {}).get("caddy", {}).get("ports", [])
+    assert any("127.0.0.1:8443" in str(p) for p in caddy_ports), (
+        "Caddy must expose HTTPS on 127.0.0.1:8443"
+    )
+
+    # SearXNG must be bound to localhost only
+    searxng_ports = data.get("services", {}).get("searxng", {}).get("ports", [])
+    assert any("127.0.0.1:8080" in str(p) for p in searxng_ports), (
+        "SearXNG must be bound to 127.0.0.1:8080"
+    )
 
 
 def test_compose_uses_volume_for_db():

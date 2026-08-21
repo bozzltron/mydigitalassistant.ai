@@ -19,6 +19,8 @@ dependencies = [
     "aiosqlite>=0.20",
     "sqlcipher3>=0.6.0",
     "cryptography>=42.0",
+    "faster-whisper>=1.0",
+    "croniter>=2.0",
 ]
 
 [project.optional-dependencies]

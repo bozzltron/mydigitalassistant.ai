@@ -74,3 +74,18 @@ class User(BaseModel):
     id: int | None = None
     name: str
     created_at: str | None = None
+
+
+class FeedbackKind(str):
+    POSITIVE = "positive"
+    NEGATIVE = "negative"
+    CORRECTION = "correction"
+
+
+class Feedback(BaseModel):
+    id: int | None = None
+    episode_id: str | None = None
+    message_id: str
+    kind: str
+    comment: str | None = None
+    created_at: str | None = None

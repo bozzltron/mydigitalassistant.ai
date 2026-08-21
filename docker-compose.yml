@@ -6,14 +6,15 @@ services:
       - DATABASE_PATH=/app/data/assistant.db
       - DB_KEY=${DB_KEY}
       - OLLAMA_URL=http://host.docker.internal:11434
-      - CHAT_MODEL=qwen2.5:7b
-      - UTILITY_MODEL=qwen2.5:3b
-      - REASONING_MODEL=qwen2.5:7b
-      - EMBEDDING_MODEL=nomic-embed-text
+      - CHAT_MODEL=${CHAT_MODEL:-qwen2.5:7b}
+      - UTILITY_MODEL=${UTILITY_MODEL:-qwen2.5:3b}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-nomic-embed-text}
+      - CODER_MODEL=${CODER_MODEL:-}
       - BACKEND_HOST=127.0.0.1
       - SEARCH_BASE_URL=http://searxng:8080
       - WHISPER_MODEL=base
       - WHISPER_DEVICE=cpu
+      - SCHEDULER_ENABLED=${SCHEDULER_ENABLED:-false}
     volumes:
       - assistant-data:/app/data
     extra_hosts:

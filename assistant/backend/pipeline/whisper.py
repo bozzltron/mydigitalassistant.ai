@@ -47,10 +47,21 @@ async def transcribe_audio(audio_path: Path) -> str:
         Transcribed text string.
     """
     model = _load_model()
-    transcribed, _ = model.transcribe(
+    transcribed, info = model.transcribe(
         str(audio_path),
         language="en",
         beam_size=5,
         vad_filter=True,
     )
-    return " ".join(chunk.text for chunk in transcribed)
+    chunks = list(transcribed)
+    logger.info(
+        "Transcribed %s: duration=%.2fs language=%s chunks=%d",
+        audio_path,
+        info.duration if info else 0.0,
+        info.language if info else "unknown",
+        len(chunks),
+    )
+    text = " ".join(chunk.text for chunk in chunks)
+    if not text.strip():
+        logger.warning("Transcription produced empty text for %s", audio_path)
+    return text

@@ -128,6 +128,16 @@ CREATE TABLE IF NOT EXISTS conflicts (
     FOREIGN KEY (frame_id) REFERENCES frames(id) ON DELETE CASCADE
 );
 
+-- Feedback (user reactions to assistant responses)
+CREATE TABLE IF NOT EXISTS feedback (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    episode_id TEXT,
+    message_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    comment TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_slots_frame ON slots(frame_id);
 CREATE INDEX IF NOT EXISTS idx_associations_from ON associations(from_frame_id);
@@ -138,6 +148,8 @@ CREATE INDEX IF NOT EXISTS idx_slot_history_slot ON slot_history(slot_id);
 CREATE INDEX IF NOT EXISTS idx_conflicts_frame ON conflicts(frame_id);
 CREATE INDEX IF NOT EXISTS idx_conflicts_status ON conflicts(status);
 CREATE INDEX IF NOT EXISTS idx_frames_owner ON frames(owner_user_id);
+CREATE INDEX IF NOT EXISTS idx_feedback_episode ON feedback(episode_id);
+CREATE INDEX IF NOT EXISTS idx_feedback_message ON feedback(message_id);
 
 -- Frame embeddings (via nomic-embed-text, stored as sqlite-vec vectors)
 -- embedding_model is part of the PK to support model migration:
@@ -235,6 +247,74 @@ async def _migrate_add_embedding_model_and_metadata(db) -> None:
     await db.commit()
 
 
+async def _migrate_add_feedback(db) -> None:
+    """Add feedback table if it doesn't exist (for existing databases)."""
+    tables = await db.execute_fetchall(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='feedback'"
+    )
+    if not tables:
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS feedback (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                episode_id TEXT,
+                message_id TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                comment TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            )
+            """
+        )
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_feedback_episode ON feedback(episode_id)"
+        )
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_feedback_message ON feedback(message_id)"
+        )
+        await db.commit()
+        logger.debug("Migration: feedback table created")
+
+
+async def _migrate_add_deleted_at_and_last_accessed(db) -> None:
+    """Add deleted_at to frames, last_accessed_at to slots, and scheduled task columns."""
+    frames_info = await db.execute_fetchall("PRAGMA table_info(frames)")
+    frame_cols = {r[1] for r in frames_info}
+
+    new_frame_cols = {
+        "deleted_at": "ALTER TABLE frames ADD COLUMN deleted_at TEXT",
+        "description": "ALTER TABLE frames ADD COLUMN description TEXT",
+        "schedule_cron": "ALTER TABLE frames ADD COLUMN schedule_cron TEXT",
+        "prompt": "ALTER TABLE frames ADD COLUMN prompt TEXT",
+        "enabled": "ALTER TABLE frames ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1",
+        "last_run": "ALTER TABLE frames ADD COLUMN last_run TEXT",
+        "next_run": "ALTER TABLE frames ADD COLUMN next_run TEXT",
+        "last_result_summary": "ALTER TABLE frames ADD COLUMN last_result_summary TEXT",
+    }
+    for col, sql in new_frame_cols.items():
+        if col not in frame_cols:
+            await db.execute(sql)
+    await db.commit()
+
+    slots_info = await db.execute_fetchall("PRAGMA table_info(slots)")
+    slot_cols = {r[1] for r in slots_info}
+    if "last_accessed_at" not in slot_cols:
+        await db.execute("ALTER TABLE slots ADD COLUMN last_accessed_at TEXT")
+        await db.commit()
+        logger.debug("Migration: last_accessed_at column added to slots")
+
+    logger.debug("Migration: scheduled task columns added to frames")
+
+    rows = await db.execute_fetchall(
+        "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_frames_next_run'"
+    )
+    if not rows:
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_frames_next_run ON frames(next_run)"
+        )
+        await db.commit()
+        logger.debug("Migration: idx_frames_next_run index created")
+
+
 async def init_db(db_path: str) -> None:
     """Open connection, apply schema, enable foreign keys + WAL, load sqlite-vec.
 
@@ -253,3 +333,5 @@ async def init_db(db_path: str) -> None:
 
         await _migrate_add_last_strengthened_at(db)
         await _migrate_add_embedding_model_and_metadata(db)
+        await _migrate_add_feedback(db)
+        await _migrate_add_deleted_at_and_last_accessed(db)

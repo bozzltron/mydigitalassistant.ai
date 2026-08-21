@@ -27,14 +27,18 @@ async def client(store, stub_llm, stub_search):
     _state["llm_client"] = stub_llm
     _state["retriever"] = retriever
     _state["orchestrator"] = orchestrator
+    _state["search_tool"] = stub_search
 
     original_db_path = settings.database_path
+    original_scheduler = settings.scheduler_enabled
     settings.database_path = store.db_path
+    settings.scheduler_enabled = False
     try:
         with TestClient(app) as c:
             yield c
     finally:
         settings.database_path = original_db_path
+        settings.scheduler_enabled = original_scheduler
         app.dependency_overrides.clear()
         _state.clear()
 
@@ -245,12 +249,17 @@ def test_restore_path_traversal_blocked(client, store):
     assert r.status_code == 400
 
 
-def test_health_includes_reasoning_model(client):
-    """Health endpoint should include reasoning_model."""
+def test_health_reports_model_fleet(client):
+    """Health endpoint should report the model fleet roles."""
     r = client.get("/health")
     assert r.status_code == 200
     data = r.json()
-    assert "reasoning_model" in data
+    assert "models" in data
+    assert "chat" in data["models"]
+    assert "utility" in data["models"]
+    assert "embedding" in data["models"]
+    assert "coder" in data["models"]
+    assert "thinking_supported" in data
 
 
 def test_chat_ui_returns_html(client):
@@ -266,3 +275,116 @@ def test_static_files_served(client):
     r = client.get("/static/marked.min.js")
     assert r.status_code == 200
     assert "application/javascript" in r.headers.get("content-type", "")
+
+
+def test_correction_endpoint_applies_correction(client, stub_llm):
+    """POST /correction should parse natural-language correction and apply it."""
+    stub_llm.set_extraction_result(
+        slots=[{"frame_name": "guitar", "slot_key": "strings", "value": "12"}],
+        associations=[],
+    )
+
+    r = client.post("/correction", json={
+        "message_id": "test-msg-1",
+        "episode_id": None,
+        "correction_text": "Actually the guitar has 12 strings, not 6.",
+    })
+    assert r.status_code == 200
+    data = r.json()
+    assert data["slots_corrected"] == 1
+    assert data["frame_name"] == "guitar"
+    assert data["slot_key"] == "strings"
+    assert data["new_value"] == "12"
+
+
+async def test_correction_endpoint_stores_feedback_record(client, store, stub_llm):
+    """POST /correction should create a feedback record for audit."""
+    stub_llm.set_extraction_result(
+        slots=[{"frame_name": "email", "slot_key": "address", "value": "new@example.com"}],
+        associations=[],
+    )
+
+    r = client.post("/correction", json={
+        "message_id": "test-msg-2",
+        "episode_id": None,
+        "correction_text": "My email is new@example.com.",
+    })
+    assert r.status_code == 200
+
+    async with store._connect() as db:
+        feedbacks = await db.execute_fetchall(
+            "SELECT kind, comment FROM feedback WHERE message_id = ?",
+            ("test-msg-2",),
+        )
+    assert len(feedbacks) == 1
+    assert feedbacks[0][0] == "correction"
+    assert "new@example.com" in feedbacks[0][1]
+
+
+def test_correction_endpoint_rejects_unparseable_correction(client, stub_llm):
+    """If extract_correction returns None, endpoint returns an error status."""
+    stub_llm.set_extraction_result(slots=[], associations=[])
+
+    r = client.post("/correction", json={
+        "message_id": "test-msg-3",
+        "correction_text": "That was wrong.",
+    })
+    assert r.status_code == 200
+    data = r.json()
+    assert data["slots_corrected"] == 0
+    assert "Could not understand" in data["status"] or data["status"].startswith("Correction")
+
+
+def test_correction_endpoint_requires_correction_text(client):
+    """Empty correction_text should return 400."""
+    r = client.post("/correction", json={
+        "message_id": "test-msg-4",
+        "correction_text": "",
+    })
+    assert r.status_code == 400
+
+
+async def test_feedback_endpoint_positive_creates_record(client, store):
+    """POST /feedback with kind=positive should create a feedback record."""
+    r = client.post("/feedback", json={
+        "message_id": "fb-msg-1",
+        "episode_id": None,
+        "kind": "positive",
+        "comment": None,
+    })
+    assert r.status_code == 200
+    data = r.json()
+    assert data["status"] == "ok"
+    assert data["feedback"]["kind"] == "positive"
+
+    async with store._connect() as db:
+        rows = await db.execute_fetchall(
+            "SELECT kind FROM feedback WHERE message_id = ?",
+            ("fb-msg-1",),
+        )
+    assert len(rows) == 1
+    assert rows[0][0] == "positive"
+
+
+async def test_feedback_endpoint_negative_creates_record(client, store):
+    """POST /feedback with kind=negative should create a feedback record."""
+    r = client.post("/feedback", json={
+        "message_id": "fb-msg-2",
+        "episode_id": None,
+        "kind": "negative",
+        "comment": None,
+    })
+    assert r.status_code == 200
+    data = r.json()
+    assert data["status"] == "ok"
+    assert data["feedback"]["kind"] == "negative"
+
+
+def test_feedback_endpoint_rejects_unknown_kind(client):
+    """Unknown kind should return 400."""
+    r = client.post("/feedback", json={
+        "message_id": "fb-msg-3",
+        "kind": "unknown_kind",
+    })
+    assert r.status_code == 400
+

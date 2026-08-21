@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import shutil
 from contextlib import asynccontextmanager
@@ -7,6 +8,7 @@ from pathlib import Path
 from fastapi import Depends as _Depends
 from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 from assistant.backend.config import settings
 from assistant.backend.db.schema import init_db
@@ -16,10 +18,24 @@ from assistant.backend.memory.metadata import (
     get_metadata,
     set_metadata,
 )
-from assistant.backend.memory.models import Association, Conflict, Episode, Frame, Slot, User
+from assistant.backend.memory.models import (
+    Association,
+    Conflict,
+    Episode,
+    Feedback,
+    Frame,
+    Slot,
+    User,
+)
 from assistant.backend.memory.retrieval import Retriever
 from assistant.backend.memory.store import MemoryStore
 from assistant.backend.memory.working_memory import WorkingMemory
+from assistant.backend.pipeline.extractor import (
+    CorrectionResult,
+    apply_correction,
+    extract_correction,
+    validate_correction,
+)
 from assistant.backend.pipeline.llm_client import OllamaClient
 from assistant.backend.pipeline.orchestrator import ChatRequest, ChatResponse, Orchestrator
 from assistant.backend.pipeline.orchestrator import OrchestratorDeps as _OrchestratorDeps
@@ -73,8 +89,8 @@ async def lifespan(app: FastAPI):
         base_url=settings.ollama_url,
         chat_model=settings.chat_model,
         utility_model=settings.utility_model,
-        reasoning_model=settings.reasoning_model,
         embedding_model=settings.embedding_model,
+        coder_model=settings.coder_model,
         verify_tls=settings.ollama_tls_cert if settings.ollama_tls_cert else True,
     )
     retriever = Retriever(
@@ -101,10 +117,37 @@ async def lifespan(app: FastAPI):
     _state["llm_client"] = llm_client
     _state["retriever"] = retriever
     _state["orchestrator"] = orchestrator
+    _state["search_tool"] = search_tool
+
+    scheduler_task = None
+    if settings.scheduler_enabled:
+        import signal
+
+        from assistant.backend.scheduler.runner import _signal_handler
+
+        try:
+            signal.signal(signal.SIGTERM, _signal_handler)
+            signal.signal(signal.SIGINT, _signal_handler)
+        except ValueError:
+            pass  # Not in main thread (e.g., test environments)
+
+        from assistant.backend.scheduler.runner import start_scheduler
+
+        store._orchestrator = orchestrator
+        scheduler_task = asyncio.create_task(start_scheduler(store))
+        logger.info("Scheduler background task started")
 
     logger.info("Assistant started. DB: %s, Ollama: %s, Search: enabled")
 
     yield
+
+    if scheduler_task:
+        scheduler_task.cancel()
+        try:
+            await scheduler_task
+        except asyncio.CancelledError:
+            pass
+        logger.info("Scheduler background task stopped")
 
     await llm_client.close()
     await search_tool.close()
@@ -169,15 +212,25 @@ async def brain_ui():
 # Health
 @app.get("/health")
 async def health():
-    """Health check. Verifies Ollama is reachable."""
+    """Health check. Verifies Ollama is reachable and reports the model fleet."""
     llm = _state.get("llm_client")
     ollama_ok = await llm.health_check() if llm else False
+    thinking_supported = False
+    if llm and ollama_ok:
+        try:
+            thinking_supported = await llm.supports_thinking(settings.chat_model)
+        except Exception:  # pragma: no cover - probe must never break health
+            thinking_supported = False
     return {
         "status": "ok",
         "ollama_reachable": ollama_ok,
-        "chat_model": settings.chat_model,
-        "utility_model": settings.utility_model,
-        "reasoning_model": settings.reasoning_model,
+        "models": {
+            "chat": settings.chat_model,
+            "utility": settings.utility_model,
+            "embedding": settings.embedding_model,
+            "coder": settings.coder_model or settings.chat_model,
+        },
+        "thinking_supported": thinking_supported,
     }
 
 
@@ -255,13 +308,20 @@ async def transcribe(file: UploadFile = None):
     from assistant.backend.pipeline.whisper import transcribe_audio
 
     suffix = Path(file.filename).suffix if file.filename else ".webm"
+    logger.info(
+        "Transcription request received: filename=%s content_type=%s",
+        file.filename,
+        file.content_type,
+    )
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
         content = await file.read()
         tmp.write(content)
         tmp_path = Path(tmp.name)
+    logger.info("Saved audio to %s (%d bytes)", tmp_path, len(content))
 
     try:
         text = await transcribe_audio(tmp_path)
+        logger.info("Transcription result: %r", text)
         return {"text": text.strip()}
     except Exception as e:
         logger.error("Transcription failed: %s", e)
@@ -498,3 +558,290 @@ async def list_backups(store: MemoryStore = _Depends(get_store)):
             "created_at": datetime.fromtimestamp(f.stat().st_mtime).isoformat(),
         })
     return {"backups": backups}
+
+
+# Feedback
+
+
+class FeedbackRequest(BaseModel):
+    episode_id: str | None = None
+    message_id: str
+    kind: str
+    comment: str | None = None
+
+
+class FeedbackResponse(BaseModel):
+    status: str
+    feedback: Feedback
+    slots_updated: int = 0
+
+
+@app.post("/feedback", response_model=FeedbackResponse)
+async def submit_feedback(
+    request: FeedbackRequest, store: MemoryStore = _Depends(get_store)
+):
+    """Submit feedback (reaction or correction) for an assistant message.
+
+    - positive: boosts confidence of touched frames/slots
+    - negative: lowers confidence of touched frames/slots
+    - correction: stores the correction text as new facts with high reliability
+    """
+    valid_kinds = {"positive", "negative", "correction"}
+    if request.kind not in valid_kinds:
+        raise HTTPException(status_code=400, detail=f"kind must be one of {valid_kinds}")
+
+    feedback = await store.create_feedback(
+        episode_id=request.episode_id,
+        message_id=request.message_id,
+        kind=request.kind,
+        comment=request.comment,
+    )
+
+    slots_updated = 0
+    if request.kind == "positive":
+        slots_updated = await store.apply_positive_feedback(request.episode_id)
+    elif request.kind == "negative":
+        slots_updated = await store.apply_negative_feedback(request.episode_id)
+    elif request.kind == "correction" and request.comment:
+        slots_updated, _ = await store.apply_correction_feedback(
+            request.episode_id, request.comment
+        )
+
+    return FeedbackResponse(
+        status="ok",
+        feedback=feedback,
+        slots_updated=slots_updated,
+    )
+
+
+class CorrectionRequest(BaseModel):
+    message_id: str
+    episode_id: str | None = None
+    correction_text: str
+
+
+class CorrectionResponse(BaseModel):
+    status: str
+    slots_corrected: int = 0
+    frame_name: str | None = None
+    slot_key: str | None = None
+    new_value: str | None = None
+    conflict: bool = False
+    validation_summary: str | None = None
+
+
+@app.post("/correction", response_model=CorrectionResponse)
+async def submit_correction(
+    request: CorrectionRequest,
+    store: MemoryStore = _Depends(get_store),
+):
+    """Submit a natural-language correction.
+
+    Routes through the LLM-based correction pipeline:
+    1. extract_correction — parse {frame_name, slot_key, new_value} from free text
+    2. validate_correction — optionally corroborate with web search
+    3. apply_correction — upsert the slot with high reliability
+
+    The user's raw correction text is stored as a feedback record for audit.
+    """
+    correction_text = request.correction_text.strip()
+    if not correction_text:
+        raise HTTPException(status_code=400, detail="correction_text is required")
+
+    llm_client: OllamaClient = _state["llm_client"]
+    search_tool: WebSearchTool = _state["search_tool"]
+
+    source_episode_id = None
+    if request.episode_id:
+        episode_rows = await store.db.execute_fetchall(
+            "SELECT id FROM episodes WHERE session_id = ? ORDER BY id DESC LIMIT 1",
+            (request.episode_id,),
+        )
+        if episode_rows:
+            source_episode_id = episode_rows[0][0]
+
+    await store.create_feedback(
+        episode_id=request.episode_id,
+        message_id=request.message_id,
+        kind="correction",
+        comment=correction_text,
+    )
+
+    correction: CorrectionResult | None = await extract_correction(
+        correction_text, llm_client
+    )
+
+    if not correction or not correction.frame_name:
+        return CorrectionResponse(
+            status="Could not understand correction. Try rephrasing.",
+            slots_corrected=0,
+        )
+
+    validation_summary = None
+    conflict = False
+
+    if correction and correction.slot_key and correction.new_value:
+        frame = await store.get_frame_by_name(correction.frame_name)
+        current_value = None
+        if frame:
+            slot = await store.get_slot(frame.id, correction.slot_key)
+            if slot:
+                current_value = slot.value
+
+        if search_tool and search_tool.enabled:
+            validation = await validate_correction(
+                correction, current_value, store, search_tool, llm_client
+            )
+            validation_summary = validation.summary
+            if validation.contradicted:
+                return CorrectionResponse(
+                    status="Correction contradicted by web search. Not applied.",
+                    slots_corrected=0,
+                    validation_summary=validation_summary,
+                )
+
+        result = await apply_correction(correction, store, source_episode_id)
+        slots_corrected = result.get("slots_corrected", 0)
+        conflict = result.get("conflict", False)
+
+        conversational_status = (
+            f"Got it — updated {correction.frame_name}.{correction.slot_key} to "
+            f"'{correction.new_value}'."
+            if slots_corrected > 0
+            else "Correction applied but no slots were updated."
+        )
+        if conflict:
+            conversational_status += " (Auto-resolved a conflict.)"
+
+        return CorrectionResponse(
+            status=conversational_status,
+            slots_corrected=slots_corrected,
+            frame_name=correction.frame_name,
+            slot_key=correction.slot_key,
+            new_value=correction.new_value,
+            conflict=conflict,
+            validation_summary=validation_summary,
+        )
+
+    return CorrectionResponse(
+        status="Correction parsed but missing required fields.",
+        slots_corrected=0,
+    )
+
+
+# Brain export / import
+
+
+class BrainImportRequest(BaseModel):
+    brain_json: dict
+    mode: str = "merge"  # "merge" | "overwrite"
+
+
+class BrainImportResponse(BaseModel):
+    status: str
+    imported: dict
+
+
+class ScheduledTaskResponse(BaseModel):
+    id: int
+    name: str
+    description: str
+    schedule_cron: str
+    prompt: str
+    enabled: bool
+    last_run: str | None
+    next_run: str | None
+    last_result_summary: str | None
+    source_type: str | None
+    created_at: str | None
+
+
+@app.get("/tasks", response_model=list[ScheduledTaskResponse])
+async def list_tasks(
+    user_id: int | None = None,
+    store: MemoryStore = _Depends(get_store),
+):
+    """List all scheduled tasks, optionally filtered by user_id.
+
+    System tasks are excluded unless user_id is omitted (admin view).
+    """
+    tasks = await store.get_scheduled_tasks(owner_user_id=user_id)
+    return [
+        ScheduledTaskResponse(
+            id=t["id"],
+            name=t["name"],
+            description=t.get("description", ""),
+            schedule_cron=t.get("schedule_cron", ""),
+            prompt=t.get("prompt", ""),
+            enabled=bool(t["enabled"]),
+            last_run=t.get("last_run"),
+            next_run=t.get("next_run"),
+            last_result_summary=t.get("last_result_summary"),
+            source_type=t.get("source_type"),
+            created_at=t.get("created_at"),
+        )
+        for t in tasks
+    ]
+
+
+@app.delete("/tasks/{task_id}")
+async def delete_task(
+    task_id: int,
+    store: MemoryStore = _Depends(get_store),
+):
+    """Soft-delete a scheduled task."""
+    await store.delete_scheduled_task(task_id)
+    return {"status": "ok"}
+
+
+@app.get("/tasks/{task_id}/result")
+async def get_task_result(
+    task_id: int,
+    store: MemoryStore = _Depends(get_store),
+):
+    """Get the last result from a scheduled task."""
+    tasks = await store.get_scheduled_tasks(include_system=True)
+    for t in tasks:
+        if t["id"] == task_id:
+            return {
+                "last_run": t.get("last_run"),
+                "last_result_summary": t.get("last_result_summary"),
+            }
+    raise HTTPException(status_code=404, detail="Task not found")
+
+
+@app.post("/brain/export")
+async def export_brain(store: MemoryStore = _Depends(get_store)):
+    """Export the full brain memory to a portable JSON file.
+
+    Returns JSON with: version, exported_at, frames (with slots), associations,
+    episodes, feedbacks, conflicts. Embeddings are NOT included.
+    """
+    brain = await store.export_brain()
+    return brain
+
+
+@app.post("/brain/import", response_model=BrainImportResponse)
+async def import_brain(
+    request: BrainImportRequest,
+    store: MemoryStore = _Depends(get_store),
+):
+    """Import a brain JSON export.
+
+    Modes:
+    - merge: upsert frames by name, add slots (existing data preserved)
+    - overwrite: delete all existing memory, then re-import (creates backup first)
+
+    Returns counts of imported items and backup path if overwrite mode was used.
+    """
+    if request.mode not in ("merge", "overwrite"):
+        raise HTTPException(status_code=400, detail="mode must be 'merge' or 'overwrite'")
+
+    try:
+        imported = await store.import_brain(request.brain_json, mode=request.mode)
+        return BrainImportResponse(
+            status="ok",
+            imported=imported,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None

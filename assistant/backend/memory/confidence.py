@@ -33,6 +33,11 @@ def bump_confidence(current: float) -> float:
     return min(new_conf, MAX_CONFIDENCE)
 
 
+def lower_confidence(current: float, amount: float = 0.15) -> float:
+    """Negative feedback: decrease confidence, floored at INITIAL_CONFIDENCE."""
+    return max(current - amount, INITIAL_CONFIDENCE)
+
+
 def initial_confidence() -> float:
     return INITIAL_CONFIDENCE
 
