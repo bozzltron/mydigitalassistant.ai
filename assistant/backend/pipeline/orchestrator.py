@@ -1,6 +1,5 @@
 """Orchestrator: runs the cognitive loop for chat turns."""
 
-import asyncio
 import logging
 import uuid
 from dataclasses import dataclass
@@ -12,7 +11,7 @@ from assistant.backend.memory.store import MemoryStore
 from assistant.backend.pipeline.llm_client import ChatMessage, OllamaClient, build_system_prompt
 from assistant.backend.pipeline.reasoner import Action, classify_intent, format_plan_for_prompt
 from assistant.backend.pipeline.search import SearchResult, WebSearchTool
-from assistant.backend.pipeline.task_router import classify
+from assistant.backend.pipeline.task_router import TaskType, route
 
 logger = logging.getLogger(__name__)
 
@@ -49,14 +48,16 @@ class Orchestrator:
     Flow:
     1. Get/create session_id
     2. Log user episode (conversation)
-    3. Classify task type (router)
+    3. Classify task type + search intent (router, single LLM pass when needed)
     4. Retrieve memory context (frames/slots/episodes)
-    5. Reason: assess memory sufficiency and decide action (reasoner)
-    6. Build system prompt with memory context + reasoner guidance
-    7. Call LLM with optional search results
-    8. Log assistant episode
-    9. Fire-and-forget: extract facts from conversation turn, update memory
-    10. Return response to user
+    5. Reason: assess memory sufficiency and decide action (reasoner);
+       router's wants_search judgment vetoes search for storage-style turns
+    5b. Handle correction intent: extract + validate + apply
+    6. Extract user-stated facts from the turn and store them (utility model)
+    7. Build system prompt with memory context + just-stored facts
+    7b. Execute search if still needed; store search facts (deduped vs step 6)
+    8. Call LLM; log assistant episode
+    9. Return response with extraction summary so learning is visible
     """
 
     def __init__(self, deps: OrchestratorDeps):
@@ -79,8 +80,13 @@ class Orchestrator:
             frame_ids=[],
         )
 
-        # 3. Classify task type
-        task_type = await classify(request.message, self.llm_client)
+        # 3. Classify task type + search intent (single LLM pass when needed)
+        classification = await route(request.message, self.llm_client)
+        task_type = classification.task_type
+
+        # 3b. Handle scheduled task intent
+        if task_type == TaskType.SCHEDULED:
+            return await self._handle_scheduled_task(request, session_id)
 
         # 4. Retrieve memory context
         memory_context = await self.retriever.retrieve(
@@ -95,6 +101,18 @@ class Orchestrator:
             task_type=task_type.value,
             memory=memory_context,
         )
+
+        # 5a. Storage statements must not trigger external search: the user is
+        # giving information, not requesting a lookup. The router's wants_search
+        # judgment vetoes the reasoner's memory-sufficiency heuristic here.
+        if (
+            plan.search_needed
+            and task_type != TaskType.SEARCH
+            and classification.wants_search is False
+        ):
+            logger.info("Search vetoed by router for storage-style turn")
+            plan.action = Action.ANSWER
+            plan.search_needed = False
 
         # 5b. Handle correction intent: extract + validate + apply
         if plan.action == Action.CORRECT:
@@ -187,7 +205,23 @@ class Orchestrator:
                 citations=[],
             )
 
-        # 6. Build system prompt with memory context + reasoner guidance
+        # 6. Extract user-stated facts BEFORE generation so the reply can
+        # acknowledge them truthfully (no "sure, I remember" over empty stores).
+        extraction_summary: dict = {}
+        try:
+            extraction_summary = await store_turn_memory(
+                user_message=request.message,
+                assistant_response="",
+                store=self.store,
+                llm_client=self.llm_client,
+                source_episode_id=user_episode.id,
+            )
+        except Exception as e:
+            logger.error("Extraction failed: %s", e)
+
+        stored_slots = extraction_summary.get("slots") or []
+
+        # 7. Build system prompt with memory context + reasoner guidance
         plan_instructions = format_plan_for_prompt(plan)
         system_prompt = build_system_prompt(
             memory_context=memory_context.formatted,
@@ -195,7 +229,15 @@ class Orchestrator:
             planinstructions=plan_instructions,
         )
 
-        # 7. Execute search if reasoner says it's needed
+        if stored_slots:
+            lines = [f"- {s['frame_name']}.{s['key']} = {s['value']}" for s in stored_slots]
+            system_prompt += (
+                "\n\n**Facts you just stored this turn:**\n"
+                + "\n".join(lines)
+                + "\nAcknowledge these naturally, in your own words."
+            )
+
+        # 7b. Execute search if reasoner says it's needed
         search_results: list[SearchResult] = []
         search_extraction_summary: dict = {}
         if plan.search_needed:
@@ -212,16 +254,23 @@ class Orchestrator:
                 )
                 system_prompt += f"\n\n**Search Results:**\n{search_text}"
 
-                # Extract facts from search results and store in memory
+                # Extract facts from search results and store in memory.
+                # Drop slots duplicating what conversational extraction just
+                # stored (same fact often lands under a different key).
                 from assistant.backend.pipeline.extractor import (
                     apply_search_extraction,
                     extract_facts_from_search,
+                    filter_duplicate_slots,
                 )
 
-                search_extraction_summary = await apply_search_extraction(
+                search_extraction = filter_duplicate_slots(
                     await extract_facts_from_search(
                         request.message, search_results, self.llm_client
                     ),
+                    stored_slots,
+                )
+                search_extraction_summary = await apply_search_extraction(
+                    search_extraction,
                     search_results,
                     self.store,
                 )
@@ -243,9 +292,19 @@ class Orchestrator:
                     )
 
                 if search_extraction_summary.get("slots_applied", 0) > 0:
+                    conflicts = search_extraction_summary.get("conflicts_created", 0)
+                    if conflicts > 0:
+                        fact_word = "fact was" if conflicts == 1 else "facts were"
+                        conflict_note = (
+                            f" {conflicts} conflicting {fact_word} auto-resolved — "
+                            "the new value is stored and the old is preserved in history."
+                        )
+                    else:
+                        conflict_note = ""
                     system_prompt += (
                         f"\n\n**Learned from search:** "
                         f"{search_extraction_summary['slots_applied']} new facts stored in memory."
+                        f"{conflict_note}"
                     )
             else:
                 system_prompt += (
@@ -286,23 +345,7 @@ class Orchestrator:
             frame_ids=[],
         )
 
-        # 9. Fire-and-forget extraction
-        extraction_task = asyncio.create_task(
-            fire_and_forget(
-                user_message=request.message,
-                assistant_response=llm_response.content,
-                store=self.store,
-                llm_client=self.llm_client,
-                source_episode_id=user_episode.id,
-            )
-        )
-        extraction_task.add_done_callback(
-            lambda t: logger.error("Extraction failed: %s", t.exception())
-            if t.exception()
-            else None
-        )
-
-        # 10. Append sources to response — only for informational/search tasks
+        # 9. Append sources to response — only for informational/search tasks
         response_text = llm_response.content
         if citations and task_type.value == "search":
             unique_citations = list(dict.fromkeys(citations))
@@ -329,20 +372,249 @@ class Orchestrator:
             session_id=session_id,
             task_type=task_type.value,
             memory_context=memory_context.formatted,
-            extraction_summary=None,
+            extraction_summary=extraction_summary or None,
             search_extraction_summary=search_extraction_summary or None,
             citations=citations,
         )
 
+    async def execute_task(self, prompt: str, user_id: int) -> str:
+        """Execute a scheduled task: run the prompt through the cognitive loop.
 
-async def fire_and_forget(
+        Synthesizes a session, runs retrieval + search + LLM + extraction,
+        then returns the response text. Results are stored as an assistant episode
+        so they become memory normally.
+        """
+        session_id = f"scheduled-{uuid.uuid4().hex[:8]}"
+
+        task_type_val = "functional"
+        memory_context = await self.retriever.retrieve(
+            query=prompt,
+            user_id=user_id,
+            session_id=session_id,
+        )
+
+        plan = classify_intent(
+            query=prompt,
+            task_type=task_type_val,
+            memory=memory_context,
+        )
+
+        plan_instructions = format_plan_for_prompt(plan)
+        system_prompt = build_system_prompt(
+            memory_context=memory_context.formatted,
+            task_type=task_type_val,
+            planinstructions=plan_instructions,
+        )
+
+        search_results: list[SearchResult] = []
+        if plan.search_needed:
+            logger.info("Scheduled task triggering search: %s", prompt[:50])
+            try:
+                search_results = await self.search_tool.search(prompt, num_results=5)
+            except Exception as e:
+                logger.warning("Task search failed: %s", e)
+                search_results = []
+
+            if search_results:
+                search_text = "\n".join(
+                    f"- [{r.title}]({r.url}) - {r.snippet}" for r in search_results
+                )
+                system_prompt += f"\n\n**Search Results:**\n{search_text}"
+
+                from assistant.backend.pipeline.extractor import (
+                    apply_search_extraction,
+                    extract_facts_from_search,
+                )
+                try:
+                    extraction = await extract_facts_from_search(
+                        prompt, search_results, self.llm_client
+                    )
+                    await apply_search_extraction(
+                        extraction, search_results, self.store
+                    )
+                except Exception as e:
+                    logger.error("Search extraction failed: %s", e)
+
+        messages = [ChatMessage(role="system", content=system_prompt)]
+        messages.append(ChatMessage(role="user", content=prompt))
+        llm_response = await self.llm_client.chat(messages)
+
+        await self.store.create_episode(
+            user_id=user_id,
+            session_id=session_id,
+            role="assistant",
+            content=llm_response.content,
+            frame_ids=[],
+        )
+
+        return llm_response.content
+
+    async def _handle_scheduled_task(
+        self, request: ChatRequest, session_id: str
+    ) -> ChatResponse:
+        """Handle scheduled task requests: create, list, delete, pause, run-now."""
+
+        from assistant.backend.pipeline.extractor import extract_scheduled_task_fields
+
+        from ..scheduler.cron import parse_schedule
+
+        try:
+            fields = await extract_scheduled_task_fields(request.message, self.llm_client)
+        except Exception as e:
+            logger.error("Failed to extract scheduled task fields: %s", e)
+            return ChatResponse(
+                response="I couldn't understand the task details. Try phrasing it like: "
+                         "'set up a daily briefing on AI news at 9am' or "
+                         "'list my scheduled tasks'.",
+                session_id=session_id,
+                task_type="scheduled",
+                memory_context="",
+                extraction_summary=None,
+                search_extraction_summary=None,
+                citations=[],
+            )
+
+        intent = fields.get("intent", "create")
+        response_text = ""
+
+        if intent == "list":
+            tasks = await self.store.get_scheduled_tasks(
+                owner_user_id=request.user_id
+            )
+            if not tasks:
+                response_text = (
+                    "You don't have any scheduled tasks yet. "
+                    "Say something like 'set up a daily AI news briefing' to create one."
+                )
+            else:
+                lines = ["Your scheduled tasks:"]
+                for t in tasks:
+                    enabled = "enabled" if t["enabled"] else "paused"
+                    last = t.get("last_run") or "never run"
+                    next_r = t.get("next_run") or "unknown"
+                    lines.append(
+                        f"- **{t['name']}** ({t.get('schedule_cron', '?')}, {enabled})\n"
+                        f"  Last: {last}  |  Next: {next_r}"
+                    )
+                response_text = "\n".join(lines)
+
+        elif intent == "delete":
+            task_name = fields.get("task_name", "")
+            if task_name:
+                tasks = await self.store.get_scheduled_tasks(
+                    owner_user_id=request.user_id
+                )
+                for t in tasks:
+                    if t["name"] == task_name:
+                        await self.store.delete_scheduled_task(t["id"])
+                        response_text = f"Deleted task '{task_name}'."
+                        break
+                else:
+                    response_text = f"I couldn't find a task named '{task_name}'."
+            else:
+                response_text = "Which task do you want to delete?"
+
+        elif intent == "pause":
+            task_name = fields.get("task_name", "")
+            if task_name:
+                tasks = await self.store.get_scheduled_tasks(
+                    owner_user_id=request.user_id
+                )
+                for t in tasks:
+                    if t["name"] == task_name:
+                        await self.store.upsert_scheduled_task(
+                            name=task_name,
+                            description=t.get("description", ""),
+                            schedule_cron=t.get("schedule_cron", "0 9 * * *"),
+                            prompt=t.get("prompt", ""),
+                            enabled=False,
+                            owner_user_id=request.user_id,
+                        )
+                        response_text = (
+                            f"Paused task '{task_name}'. "
+                            f"Say 'resume {task_name}' to enable it again."
+                        )
+                        break
+                else:
+                    response_text = f"I couldn't find a task named '{task_name}'."
+            else:
+                response_text = "Which task do you want to pause?"
+
+        elif intent == "run_now":
+            task_name = fields.get("task_name", "")
+            if task_name:
+                tasks = await self.store.get_scheduled_tasks(
+                    owner_user_id=request.user_id
+                )
+                for t in tasks:
+                    if t["name"] == task_name:
+                        response_text = await self.execute_task(t["prompt"], request.user_id)
+                        break
+                else:
+                    response_text = f"I couldn't find a task named '{task_name}'."
+            else:
+                response_text = "Which task do you want to run now?"
+
+        else:
+            name = fields.get("name") or f"task_{uuid.uuid4().hex[:6]}"
+            description = fields.get("description", "")
+            schedule_text = fields.get("schedule", "daily")
+            prompt = fields.get("prompt", request.message)
+
+            try:
+                parsed = parse_schedule(schedule_text)
+            except ValueError as ve:
+                return ChatResponse(
+                    response=f"I had trouble parsing that schedule: {ve}",
+                    session_id=session_id,
+                    task_type="scheduled",
+                    memory_context="",
+                    extraction_summary=None,
+                    search_extraction_summary=None,
+                    citations=[],
+                )
+
+            await self.store.upsert_scheduled_task(
+                name=name,
+                description=description,
+                schedule_cron=parsed.cron_expr,
+                prompt=prompt,
+                enabled=True,
+                owner_user_id=request.user_id,
+            )
+
+            response_text = (
+                f"Done! I've set up **{name}** ({parsed.human}). "
+                f"It will run {parsed.human.lower()} and I'll store the results "
+                f"for you to recall later. "
+                f"Next run: {parsed.next_run_utc:%Y-%m-%d %H:%M UTC}."
+            )
+
+        return ChatResponse(
+            response=response_text,
+            session_id=session_id,
+            task_type="scheduled",
+            memory_context="",
+            extraction_summary=None,
+            search_extraction_summary=None,
+            citations=[],
+        )
+
+
+async def store_turn_memory(
     user_message: str,
     assistant_response: str,
     store: MemoryStore,
     llm_client: OllamaClient,
     source_episode_id: int,
-) -> None:
-    """Extract facts from conversation and store in memory (fire-and-forget)."""
+) -> dict:
+    """Extract facts from a turn and store them in memory.
+
+    Called synchronously before response generation so the chat model can
+    acknowledge what was actually stored. Returns the extraction summary
+    ({}, e.g. slots_applied/frame_ids); empty dict if extraction failed
+    or found nothing.
+    """
     from assistant.backend.pipeline.extractor import extract_and_apply
 
     result = await extract_and_apply(
@@ -354,3 +626,4 @@ async def fire_and_forget(
     )
     if result.get("frame_ids"):
         await store.update_episode_frame_ids(source_episode_id, result["frame_ids"])
+    return result

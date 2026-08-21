@@ -7,6 +7,7 @@ from assistant.backend.pipeline.task_router import (
     classify,
     classify_heuristic,
     classify_with_llm,
+    route,
 )
 
 
@@ -74,7 +75,8 @@ async def test_llm_classify_introspective():
     mock_llm.utility_model = "qwen2.5:3b"
 
     result = await classify_with_llm("What do you think about X?", mock_llm)
-    assert result == TaskType.INTROSPECTIVE
+    assert result.task_type == TaskType.INTROSPECTIVE
+    assert result.wants_search is None  # field absent -> unknown
 
 
 async def test_llm_classify_functional():
@@ -83,7 +85,7 @@ async def test_llm_classify_functional():
     mock_llm.utility_model = "qwen2.5:3b"
 
     result = await classify_with_llm("How does X work?", mock_llm)
-    assert result == TaskType.FUNCTIONAL
+    assert result.task_type == TaskType.FUNCTIONAL
 
 
 async def test_llm_classify_malformed_falls_back_to_functional():
@@ -92,7 +94,39 @@ async def test_llm_classify_malformed_falls_back_to_functional():
     mock_llm.utility_model = "qwen2.5:3b"
 
     result = await classify_with_llm("blah", mock_llm)
-    assert result == TaskType.FUNCTIONAL
+    assert result.task_type == TaskType.FUNCTIONAL
+
+
+async def test_route_parses_wants_search():
+    """Storage statements carry wants_search=false in the same LLM pass."""
+    mock_llm = AsyncMock()
+    mock_llm.chat.return_value.content = (
+        '{"task_type": "functional", "wants_search": false}'
+    )
+    mock_llm.utility_model = "qwen2.5:3b"
+
+    result = await route("Remember that my guitar has 6 strings.", mock_llm)
+    assert result.task_type == TaskType.FUNCTIONAL
+    assert result.wants_search is False
+
+
+async def test_route_wants_search_invalid_type_becomes_none():
+    mock_llm = AsyncMock()
+    mock_llm.chat.return_value.content = (
+        '{"task_type": "functional", "wants_search": "maybe"}'
+    )
+    mock_llm.utility_model = "qwen2.5:3b"
+
+    result = await route("Explain photosynthesis", mock_llm)
+    assert result.wants_search is None
+
+
+async def test_route_heuristic_match_has_no_search_signal():
+    mock_llm = AsyncMock()
+    result = await route("What do you remember about dogs?", mock_llm)
+    assert result.task_type == TaskType.INTROSPECTIVE
+    assert result.wants_search is None
+    mock_llm.chat.assert_not_called()
 
 
 async def test_classify_uses_heuristic_first():

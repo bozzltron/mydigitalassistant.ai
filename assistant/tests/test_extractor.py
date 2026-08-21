@@ -13,6 +13,7 @@ from assistant.backend.pipeline.extractor import (
     extract_correction,
     extract_facts,
     extract_facts_from_search,
+    filter_duplicate_slots,
     validate_correction,
 )
 
@@ -683,3 +684,54 @@ async def test_store_update_episode_frame_ids(store):
     assert len(updated) == 1
     assert updated[0].frame_ids == [1, 2, 3]
 
+
+
+def test_filter_duplicate_slots_drops_cross_key_duplicates():
+    """Same fact from two channels under different keys must dedup on value."""
+    candidate = ExtractionResult(slots=[
+        ExtractedSlot(frame_name="fender_stratocaster", key="number_of_strings", value="6"),
+        ExtractedSlot(frame_name="fender_stratocaster", key="production_year", value="1985"),
+        ExtractedSlot(frame_name="fender_stratocaster", key="finish", value="sunburst"),
+    ])
+    stored = [
+        {"frame_name": "fender_stratocaster", "key": "strings", "value": "6"},
+        {"frame_name": "fender_stratocaster", "key": "year_made", "value": "1985"},
+    ]
+
+    result = filter_duplicate_slots(candidate, stored)
+
+    assert [s.key for s in result.slots] == ["finish"]
+    assert len(result.associations) == len(candidate.associations)
+
+
+def test_filter_duplicate_slots_case_and_whitespace_insensitive():
+    candidate = ExtractionResult(slots=[
+        ExtractedSlot(frame_name="Fender_Stratocaster", key="color", value=" Sunburst "),
+    ])
+    stored = [{"frame_name": "fender_stratocaster", "key": "finish", "value": "sunburst"}]
+
+    result = filter_duplicate_slots(candidate, stored)
+
+    assert result.slots == []
+
+
+def test_filter_duplicate_slots_empty_stored_returns_candidate():
+    candidate = ExtractionResult(slots=[
+        ExtractedSlot(frame_name="guitar", key="strings", value="6"),
+    ])
+
+    result = filter_duplicate_slots(candidate, [])
+
+    assert result is candidate
+
+
+def test_filter_duplicate_slots_keeps_none_values():
+    candidate = ExtractionResult(slots=[
+        ExtractedSlot(frame_name="guitar", key="strings", value=None),
+        ExtractedSlot(frame_name="guitar", key="strings", value="6"),
+    ])
+    stored = [{"frame_name": "guitar", "key": "strings", "value": "6"}]
+
+    result = filter_duplicate_slots(candidate, stored)
+
+    assert [s.value for s in result.slots] == [None]

@@ -4,8 +4,96 @@ from unittest.mock import AsyncMock
 import pytest
 
 from assistant.backend.memory.retrieval import Retriever
+from assistant.backend.pipeline.llm_client import ChatResponse
 from assistant.backend.pipeline.orchestrator import ChatRequest, Orchestrator, OrchestratorDeps
 from assistant.backend.pipeline.search import WebSearchTool
+
+from .conftest import StubLLMClient
+
+
+class StorageTurnStub(StubLLMClient):
+    """Router verdict: functional storage turn, no external lookup wanted."""
+
+    async def chat(self, messages, **kwargs):
+        if "classify" in messages[0].content.lower():
+            return ChatResponse(
+                content='{"task_type": "functional", "wants_search": false}',
+                model=self.utility_model,
+                done=True,
+            )
+        return await super().chat(messages, **kwargs)
+
+
+class SearchSpy:
+    """Records search calls; never returns results."""
+
+    def __init__(self) -> None:
+        self.queries: list[str] = []
+
+    async def search(self, query: str, num_results: int = 5):
+        self.queries.append(query)
+        return []
+
+    def close(self):
+        pass
+
+
+async def test_storage_turn_vetoes_search(store):
+    """Empty memory makes the reasoner want search; router's wants_search=false wins."""
+    llm = StorageTurnStub()
+    llm.set_extraction_result(
+        slots=[{"frame_name": "fender_stratocaster", "frame_type": "entity",
+                "key": "strings", "value": "6"}]
+    )
+    spy = SearchSpy()
+    orchestrator = Orchestrator(
+        deps=OrchestratorDeps(
+            store=store,
+            retriever=Retriever(store=store, llm_client=llm),
+            llm_client=llm,
+            search_tool=spy,
+        )
+    )
+    user = await store.create_user("alice")
+    request = ChatRequest(
+        user_id=user.id,
+        message="Remember that my Fender Stratocaster guitar has 6 strings.",
+    )
+
+    response = await orchestrator.chat(request)
+
+    assert spy.queries == []
+    assert response.task_type == "functional"
+    assert response.extraction_summary is not None
+    assert response.extraction_summary["slots_applied"] == 1
+
+
+async def test_stored_facts_injected_into_system_prompt(store):
+    """Extraction runs before generation so the reply can acknowledge truthfully."""
+    llm = StorageTurnStub()
+    llm.set_extraction_result(
+        slots=[{"frame_name": "fender_stratocaster", "frame_type": "entity",
+                "key": "strings", "value": "6"}]
+    )
+    orchestrator = Orchestrator(
+        deps=OrchestratorDeps(
+            store=store,
+            retriever=Retriever(store=store, llm_client=llm),
+            llm_client=llm,
+            search_tool=SearchSpy(),
+        )
+    )
+    user = await store.create_user("alice")
+    request = ChatRequest(user_id=user.id, message="My Fender Stratocaster has 6 strings.")
+
+    await orchestrator.chat(request)
+
+    generation_prompts = [
+        p for p in llm.system_prompts if "classify" not in p.lower() and "extract" not in p.lower()
+    ]
+    assert generation_prompts
+    assert "Facts you just stored this turn" in generation_prompts[-1]
+    assert "fender_stratocaster.strings = 6" in generation_prompts[-1]
 
 
 @pytest.fixture
@@ -221,7 +309,9 @@ async def test_orchestrator_handles_correction(store, stub_llm):
     """When user says 'that's wrong', orchestrator parses correction and updates slot."""
     from assistant.backend.pipeline.llm_client import ChatResponse
 
-    async def smart_chat(messages, model=None, temperature=0.7, format=None, stream=False):
+    async def smart_chat(
+        messages, model=None, temperature=0.7, format=None, stream=False, **kwargs
+    ):
         system = messages[0].content.lower()
         if "classify" in system:
             return ChatResponse(
@@ -284,7 +374,9 @@ async def test_orchestrator_correction_rejected_when_vague(store, stub_llm):
     """When user says 'that's wrong' but can't be parsed, graceful handling."""
     from assistant.backend.pipeline.llm_client import ChatResponse
 
-    async def vague_chat(messages, model=None, temperature=0.7, format=None, stream=False):
+    async def vague_chat(
+        messages, model=None, temperature=0.7, format=None, stream=False, **kwargs
+    ):
         system = messages[0].content.lower()
         if "classify" in system:
             return ChatResponse(

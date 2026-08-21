@@ -88,6 +88,9 @@ Output a JSON object with this exact schema:
 
 Rules:
 - Only extract facts that are explicitly stated in the snippets.
+- NEVER extract facts that come from the user query itself — anything the user
+  stated about themselves is stored separately by another channel. Extract only
+  what the search results add beyond the query.
 - frame_type is one of: entity, concept, event, household.
 - Use snake_case for frame_name (e.g. "sam_altman", "openai").
 - Don't extract opinions, commentary, or vague statements.
@@ -124,6 +127,33 @@ Output ONLY valid JSON with this schema:
 Use null for any field you cannot determine."""
 
 
+def filter_duplicate_slots(
+    candidate: ExtractionResult,
+    stored_slots: list[dict],
+) -> ExtractionResult:
+    """Drop candidate slots that duplicate already-stored slots.
+
+    Match is (frame_name, value) case-insensitive — the same fact arriving from
+    two channels (conversational + search extraction) often lands under
+    different keys ("strings" vs "number_of_strings"), so key equality would
+    miss it. Keeps the earlier channel's key vocabulary intact.
+    """
+    if not stored_slots:
+        return candidate
+    seen = {
+        (str(s.get("frame_name", "")).lower(), str(s.get("value", "")).strip().lower())
+        for s in stored_slots
+        if s.get("value") is not None
+    }
+    slots = [
+        s
+        for s in candidate.slots
+        if s.value is None
+        or (s.frame_name.lower(), str(s.value).strip().lower()) not in seen
+    ]
+    return ExtractionResult(slots=slots, associations=candidate.associations)
+
+
 async def extract_facts(
     user_message: str,
     assistant_response: str,
@@ -145,6 +175,7 @@ async def extract_facts(
                 model=llm_client.utility_model,
                 format="json",
                 temperature=0.0,
+                think=False,
             )
             data = json.loads(response.content)
             return ExtractionResult.model_validate(data)
@@ -186,6 +217,7 @@ async def extract_facts_from_search(
                 model=llm_client.utility_model,
                 format="json",
                 temperature=0.0,
+                think=False,
             )
             data = json.loads(response.content)
             return ExtractionResult.model_validate(data)
@@ -240,6 +272,7 @@ async def apply_extraction(
 
     slots_applied = 0
     conflicts_created = 0
+    applied_slots: list[dict] = []
     for slot in extraction.slots:
         if slot.value is None:
             continue
@@ -256,6 +289,12 @@ async def apply_extraction(
         slots_applied += 1
         if conflict is not None:
             conflicts_created += 1
+        applied_slots.append({
+            "frame_name": slot.frame_name,
+            "key": slot.key,
+            "value": slot.value,
+            "conflict": conflict is not None,
+        })
 
     assocs_created = 0
     for assoc in extraction.associations:
@@ -282,6 +321,7 @@ async def apply_extraction(
         "associations_created": assocs_created,
         "conflicts_created": conflicts_created,
         "frame_ids": list(frame_ids.values()),
+        "slots": applied_slots,
     }
 
 
@@ -297,7 +337,13 @@ async def apply_search_extraction(
     Per-slot source_url is the corroborating URL (prefer .edu, Wikipedia, major news).
     """
     if not extraction.slots and not extraction.associations:
-        return {"slots_applied": 0, "associations_created": 0, "conflicts_created": 0}
+        return {
+            "slots_applied": 0,
+            "associations_created": 0,
+            "conflicts_created": 0,
+            "frame_ids": [],
+            "slots": [],
+        }
 
     fact_key_to_urls: dict[tuple, set[str]] = defaultdict(set)
     for result in search_results:
@@ -361,6 +407,7 @@ async def apply_search_extraction(
 
     slots_applied = 0
     conflicts_created = 0
+    applied_slots: list[dict] = []
     for slot in deduped_slots:
         if slot.value is None:
             continue
@@ -380,6 +427,12 @@ async def apply_search_extraction(
         slots_applied += 1
         if conflict is not None:
             conflicts_created += 1
+        applied_slots.append({
+            "frame_name": slot.frame_name,
+            "key": slot.key,
+            "value": slot.value,
+            "conflict": conflict is not None,
+        })
 
     primary_url = search_results[0].url if search_results else None
     assocs_created = 0
@@ -407,6 +460,7 @@ async def apply_search_extraction(
         "associations_created": assocs_created,
         "conflicts_created": conflicts_created,
         "frame_ids": list(frame_ids.values()),
+        "slots": applied_slots,
     }
 
 
@@ -426,6 +480,7 @@ async def extract_and_apply(
                 "associations_created": 0,
                 "conflicts_created": 0,
                 "frame_ids": [],
+                "slots": [],
             }
         result = await apply_extraction(extraction, store, source_episode_id)
         if result.get("frame_ids"):
@@ -540,6 +595,7 @@ async def extract_correction(
                 model=llm_client.utility_model,
                 format="json",
                 temperature=0.0,
+                think=False,
             )
             data = json.loads(response.content)
             result = CorrectionResult.model_validate(data)
@@ -557,6 +613,72 @@ async def extract_correction(
                 logger.error("Correction extraction failed after retry for: %s", user_message[:100])
                 return None
     return None
+
+
+async def extract_scheduled_task_fields(
+    user_message: str,
+    llm_client: "OllamaClient",
+) -> dict:
+    """Parse a scheduled task request to extract intent and parameters.
+
+    Intents: create | list | delete | pause | resume | run_now
+
+    Returns a dict with intent and task fields.
+    """
+    from assistant.backend.pipeline.llm_client import ChatMessage
+
+    system = ChatMessage(
+        role="system",
+        content="""You are parsing a scheduled task request.
+
+Determine the user's intent and extract the relevant fields.
+
+Intents:
+- "create": user wants to create a new scheduled task
+- "list": user wants to see their scheduled tasks
+- "delete": user wants to remove a task
+- "pause": user wants to temporarily stop a task
+- "resume": user wants to re-enable a paused task
+- "run_now": user wants to execute a task immediately (not on schedule)
+
+Extract these fields for create:
+- name: short identifier (slug-style, e.g. "ai_news_briefing")
+- description: human-readable purpose (1-2 sentences)
+- schedule: natural language schedule (e.g. "daily at 9am", "every 30 minutes")
+- prompt: the instruction the agent should execute
+
+For delete/pause/resume/run_now: only intent and name are needed.
+For list: only intent is needed.
+
+Examples:
+- "set up a daily AI news briefing at 9am" → intent=create, name="ai_news_briefing"
+- "what scheduled tasks do I have" → intent=list
+- "delete my Monday task" → intent=delete, name="monday_task"
+- "run my AI briefing now" → intent=run_now, name="ai_briefing"
+
+Respond with ONLY valid JSON:
+{"intent": "create"|"list"|"delete"|"pause"|"resume"|"run_now", "name": "...", "description": "...", "schedule": "...", "prompt": "..."}""",  # noqa: E501
+    )
+    user = ChatMessage(role="user", content=user_message)
+
+    for attempt in range(2):
+        try:
+            response = await llm_client.chat(
+                [system, user],
+                model=llm_client.utility_model,
+                format="json",
+                temperature=0.0,
+                think=False,
+            )
+            return json.loads(response.content)
+        except (json.JSONDecodeError, ValueError) as e:
+            logger.warning("Scheduled task parse failed (attempt %d): %s", attempt + 1, e)
+            if attempt == 0:
+                extra = "\n\nIMPORTANT: Output ONLY valid JSON. No markdown, no preamble."
+                system = ChatMessage(role="system", content=system.content + extra)
+            else:
+                raise
+    raise ValueError("Failed to parse scheduled task fields")
 
 
 async def apply_correction(
