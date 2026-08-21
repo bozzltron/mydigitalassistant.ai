@@ -85,3 +85,5 @@ logs/
 ehthumbs.db
 desktop.ini
 assistant.db.unencrypted.backup
+
+eval_results/
