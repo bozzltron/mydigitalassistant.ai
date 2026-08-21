@@ -1,0 +1,90 @@
+{
+  "cases": [
+    {
+      "name": "guitar_facts",
+      "description": "The agent learns specific guitar facts and must recall them.",
+      "setup": "I have a Fender Stratocaster guitar with 6 strings, made in 1985, with a maple neck.",
+      "questions": [
+        {
+          "q": "What kind of guitar do I have?",
+          "answer": "Fender Stratocaster",
+          "keywords": ["fender", "stratocaster"]
+        },
+        {
+          "q": "How many strings does my guitar have?",
+          "answer": "6",
+          "keywords": ["6"]
+        },
+        {
+          "q": "What year was my guitar made?",
+          "answer": "1985",
+          "keywords": ["1985"]
+        }
+      ]
+    },
+    {
+      "name": "person_facts",
+      "description": "The agent learns facts about a person and must recall them.",
+      "setup": "My best friend's name is Alex Chen, they live in Portland, Oregon, and they work as a software engineer.",
+      "questions": [
+        {
+          "q": "What is my friend's name?",
+          "answer": "Alex Chen",
+          "keywords": ["alex", "chen"]
+        },
+        {
+          "q": "Where does Alex live?",
+          "answer": "Portland",
+          "keywords": ["portland"]
+        },
+        {
+          "q": "What does Alex do for a living?",
+          "answer": "software engineer",
+          "keywords": ["software", "engineer"]
+        }
+      ]
+    },
+    {
+      "name": "correction_and_recall",
+      "description": "The agent learns a wrong fact, gets corrected, and must recall the corrected version.",
+      "setup_1": "The capital of France is Paris.",
+      "correction": "Actually, I was wrong. The capital of France is Paris — that was correct, sorry.",
+      "questions": [
+        {
+          "q": "What is the capital of France?",
+          "answer": "Paris",
+          "keywords": ["paris"]
+        }
+      ]
+    },
+    {
+      "name": "preference_recall",
+      "description": "The agent learns a user's preference and applies it in context.",
+      "setup": "I prefer dark chocolate over milk chocolate. I am allergic to peanuts.",
+      "questions": [
+        {
+          "q": "What kind of chocolate do I prefer?",
+          "answer": "dark chocolate",
+          "keywords": ["dark"]
+        },
+        {
+          "q": "Do I have any food allergies?",
+          "answer": "peanuts",
+          "keywords": ["peanut"]
+        }
+      ]
+    },
+    {
+      "name": "household_fact",
+      "description": "The agent learns a household fact and recalls it later.",
+      "setup": "The WiFi password at home is SuperSecure123. Our router is on channel 6.",
+      "questions": [
+        {
+          "q": "What is the WiFi password at home?",
+          "answer": "SuperSecure123",
+          "keywords": ["supersecure123", "supersecure"]
+        }
+      ]
+    }
+  ]
+}

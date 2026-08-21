@@ -163,8 +163,13 @@ def test_cmd_status_calls_health():
     client.health.return_value = {
         "status": "ok",
         "ollama_reachable": True,
-        "chat_model": "qwen2.5:7b",
-        "utility_model": "qwen2.5:3b",
+        "models": {
+            "chat": "qwen2.5:7b",
+            "utility": "qwen2.5:3b",
+            "embedding": "nomic-embed-text",
+            "coder": "",
+        },
+        "thinking_supported": False,
     }
     args = make_args()
     cmd_status(args, client)

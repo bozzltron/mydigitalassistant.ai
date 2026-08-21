@@ -176,7 +176,6 @@ def exam_orchestrator(exam_store):
         base_url=settings.ollama_url,
         chat_model=settings.chat_model,
         utility_model=settings.utility_model,
-        reasoning_model=settings.reasoning_model,
         embedding_model=settings.embedding_model,
     )
     retriever = Retriever(store=exam_store, llm_client=llm)
