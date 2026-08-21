@@ -1,5 +1,8 @@
 import json
+import shutil
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
+from pathlib import Path
 
 import aiosqlite
 
@@ -12,11 +15,13 @@ from assistant.backend.memory.confidence import (
     default_source_reliability,
     forget_priority,
     initial_confidence,
+    lower_confidence,
 )
 from assistant.backend.memory.models import (
     Association,
     Conflict,
     Episode,
+    Feedback,
     Frame,
     Slot,
     User,
@@ -395,23 +400,31 @@ class MemoryStore:
         async with self._connect() as db:
             rows = await db.execute_fetchall(
                 """
+                -- MATERIALIZED barrier: filter by embedding_model BEFORE any
+                -- vec_distance_cosine() call. Mixed-dimension rows from other
+                -- models would otherwise crash distance computation depending
+                -- on row visitation order.
+                WITH candidate AS MATERIALIZED (
+                    SELECT frame_id, embedding
+                    FROM frame_embeddings
+                    WHERE embedding_model = ?
+                )
                 SELECT f.id, f.name, f.type, f.confidence, f.essential, f.priority,
                        f.owner_user_id, f.source_type, f.source_url, f.source_reliability,
                        f.created_at, f.updated_at, f.embedding_model,
-                       vec_distance_cosine(embedding, ?) as distance
-                FROM frame_embeddings fe
-                JOIN frames f ON fe.frame_id = f.id
-                WHERE vec_distance_cosine(embedding, ?) <= ?
-                  AND fe.embedding_model = ?
+                       vec_distance_cosine(candidate.embedding, ?) as distance
+                FROM candidate
+                JOIN frames f ON candidate.frame_id = f.id
+                WHERE vec_distance_cosine(candidate.embedding, ?) <= ?
                   AND (f.owner_user_id = ? OR f.owner_user_id IS NULL)
                 ORDER BY distance ASC
                 LIMIT ?
                 """,
                 (
+                    embedding_model,
                     json.dumps(embedding),
                     json.dumps(embedding),
                     min_distance,
-                    embedding_model,
                     user_id,
                     limit,
                 ),
@@ -904,6 +917,227 @@ class MemoryStore:
             await db.commit()
             return await self._get_slot_row(db, slot_id)
 
+    # Feedback
+    async def create_feedback(
+        self,
+        episode_id: str | None,
+        message_id: str,
+        kind: str,
+        comment: str | None = None,
+    ) -> Feedback:
+        async with self._connect() as db:
+            cursor = await db.execute(
+                "INSERT INTO feedback (episode_id, message_id, kind, comment) VALUES (?, ?, ?, ?)",
+                (episode_id, message_id, kind, comment),
+            )
+            await db.commit()
+            row = await db.execute_fetchall(
+                "SELECT id, episode_id, message_id, kind, comment, created_at "
+                "FROM feedback WHERE id = ?",
+                (cursor.lastrowid,),
+            )
+            if not row:
+                raise ValueError("Failed to retrieve created feedback")
+            id_, ep_id, msg_id, k, c, created_at = row[0]
+            return Feedback(
+                id=id_,
+                episode_id=ep_id,
+                message_id=msg_id,
+                kind=k,
+                comment=c,
+                created_at=created_at,
+            )
+
+    async def get_feedback_for_episode(self, episode_id: str) -> list[Feedback]:
+        async with self._connect() as db:
+            rows = await db.execute_fetchall(
+                "SELECT id, episode_id, message_id, kind, comment, created_at "
+                "FROM feedback WHERE episode_id = ? ORDER BY id",
+                (episode_id,),
+            )
+            return [
+                Feedback(
+                    id=r[0], episode_id=r[1], message_id=r[2],
+                    kind=r[3], comment=r[4], created_at=r[5]
+                )
+                for r in rows
+            ]
+
+    async def apply_positive_feedback(self, episode_id: str | None) -> int:
+        """Boost confidence of frames/slots touched in an episode.
+
+        Returns number of slots updated.
+        """
+        if not episode_id:
+            return 0
+        async with self._connect() as db:
+            episode_rows = await db.execute_fetchall(
+                "SELECT frame_ids FROM episodes WHERE session_id = ? ORDER BY id DESC LIMIT 1",
+                (episode_id,),
+            )
+            if not episode_rows:
+                return 0
+            frame_ids = json.loads(episode_rows[0][0] or "[]")
+            if not frame_ids:
+                return 0
+
+            updated = 0
+            for frame_id in frame_ids:
+                slots = await db.execute_fetchall(
+                    "SELECT id, confidence FROM slots WHERE frame_id = ?",
+                    (frame_id,),
+                )
+                for slot_id, conf in slots:
+                    new_conf = bump_confidence(conf)
+                    await db.execute(
+                        "UPDATE slots SET confidence = ?, updated_at = datetime('now'), "
+                        "last_strengthened_at = datetime('now') WHERE id = ?",
+                        (new_conf, slot_id),
+                    )
+                    updated += 1
+
+                frame_rows = await db.execute_fetchall(
+                    "SELECT id, confidence FROM frames WHERE id = ?",
+                    (frame_id,),
+                )
+                for frame_id_row, conf in frame_rows:
+                    new_conf = bump_confidence(conf)
+                    await db.execute(
+                        "UPDATE frames SET confidence = ?, "
+                        "updated_at = datetime('now') WHERE id = ?",
+                        (new_conf, frame_id_row),
+                    )
+            await db.commit()
+            return updated
+
+    async def apply_negative_feedback(self, episode_id: str | None) -> int:
+        """Lower confidence of frames/slots touched in an episode.
+
+        Returns number of slots updated.
+        """
+        if not episode_id:
+            return 0
+        async with self._connect() as db:
+            episode_rows = await db.execute_fetchall(
+                "SELECT frame_ids FROM episodes WHERE session_id = ? ORDER BY id DESC LIMIT 1",
+                (episode_id,),
+            )
+            if not episode_rows:
+                return 0
+            frame_ids = json.loads(episode_rows[0][0] or "[]")
+            if not frame_ids:
+                return 0
+
+            updated = 0
+            for frame_id in frame_ids:
+                slots = await db.execute_fetchall(
+                    "SELECT id, confidence FROM slots WHERE frame_id = ?",
+                    (frame_id,),
+                )
+                for slot_id, conf in slots:
+                    new_conf = lower_confidence(conf)
+                    await db.execute(
+                        "UPDATE slots SET confidence = ?, "
+                        "updated_at = datetime('now') WHERE id = ?",
+                        (new_conf, slot_id),
+                    )
+                    updated += 1
+
+                frame_rows = await db.execute_fetchall(
+                    "SELECT id, confidence FROM frames WHERE id = ?",
+                    (frame_id,),
+                )
+                for frame_id_row, conf in frame_rows:
+                    new_conf = lower_confidence(conf)
+                    await db.execute(
+                        "UPDATE frames SET confidence = ?, "
+                        "updated_at = datetime('now') WHERE id = ?",
+                        (new_conf, frame_id_row),
+                    )
+            await db.commit()
+            return updated
+
+    async def apply_correction_feedback(
+        self,
+        episode_id: str | None,
+        comment: str,
+    ) -> tuple[int, list[Conflict]]:
+        """Treat a correction as a new fact with high reliability.
+
+        DEPRECATED: Use the LLM-based /correction endpoint instead.
+        This regex-based parser only handles 'key: value' patterns and
+        creates correction_* frames — it does not update the correct frame
+        or use belief revision. Prefer POST /correction which routes through
+        extract_correction → validate_correction → apply_correction.
+
+        Parses the correction text for 'key: value' patterns and upserts them.
+        Returns (slots_updated, conflicts_created).
+        """
+        conflicts: list[Conflict] = []
+        slots_updated = 0
+
+        correction_text = comment.strip()
+        if not correction_text:
+            return 0, []
+
+        import re
+        pattern = re.compile(r'^([a-zA-Z_][a-zA-Z0-9_]*)\s*[=:]\s*(.+)$', re.MULTILINE)
+        matches = pattern.findall(correction_text)
+
+        if not matches:
+            return 0, []
+
+        async with self._connect() as db:
+            episode_rows = await db.execute_fetchall(
+                "SELECT frame_ids FROM episodes WHERE session_id = ? ORDER BY id DESC LIMIT 1",
+                (episode_id,),
+            )
+            source_episode_id = None
+            if episode_rows:
+                frame_ids = json.loads(episode_rows[0][0] or "[]")
+                if frame_ids:
+                    source_episode_id = frame_ids[0]
+
+            for key, value in matches:
+                key = key.strip()
+                value = value.strip()
+                if not key or not value:
+                    continue
+
+                frame_name = f"correction_{key}"
+                existing_frame = await db.execute_fetchall(
+                    "SELECT id FROM frames WHERE name = ?", (frame_name,)
+                )
+                if existing_frame:
+                    frame_id = existing_frame[0][0]
+                else:
+                    cursor = await db.execute(
+                        "INSERT INTO frames (name, type, confidence, source_type) "
+                        "VALUES (?, 'correction', ?, 'user_correction')",
+                        (frame_name, initial_confidence()),
+                    )
+                    frame_id = cursor.lastrowid
+                    await db.commit()
+
+                slot_cursor = await db.execute(
+                    "INSERT INTO slots "
+                    "(frame_id, key, value, confidence, source_type, "
+                    "source_reliability, source_episode_id, last_strengthened_at) "
+                    "VALUES (?, ?, ?, ?, 'user_correction', 0.95, ?, datetime('now'))",
+                    (frame_id, key, value, initial_confidence(), source_episode_id),
+                )
+                await db.execute(
+                    "INSERT INTO slot_history "
+                    "(slot_id, frame_id, slot_key, old_value, new_value, "
+                    "reason, source_episode_id) "
+                    "VALUES (?, ?, ?, NULL, ?, 'initial', ?)",
+                    (slot_cursor.lastrowid, frame_id, key, value, source_episode_id),
+                )
+                await db.commit()
+                slots_updated += 1
+
+        return slots_updated, conflicts
+
     # Helpers
     async def _get_frame_row(self, db: aiosqlite.Connection, frame_id: int) -> Frame:
         row = await db.execute_fetchall(
@@ -1029,3 +1263,557 @@ class MemoryStore:
             "created_at": row[7],
             "resolved_at": row[8],
         }
+
+    async def export_brain(self) -> dict:
+        """Export all memory to a portable JSON dict.
+
+        Embeddings are NOT exported (they can be re-derived on import).
+        Returns: {version, exported_at, frames, slots, associations, episodes, feedback}
+        """
+        frames = await self.list_frames()
+        exported_frames = []
+
+        for frame in frames:
+            slots = await self.get_slots_for_frame(frame.id)
+            exported_slots = []
+            for slot in slots:
+                exported_slots.append({
+                    "frame_name": frame.name,
+                    "key": slot.key,
+                    "value": slot.value,
+                    "confidence": slot.confidence,
+                    "essential": slot.essential,
+                    "priority": slot.priority,
+                    "source_type": slot.source_type,
+                    "source_url": slot.source_url,
+                    "source_reliability": slot.source_reliability,
+                    "last_strengthened_at": slot.last_strengthened_at,
+                })
+            exported_frames.append({
+                "name": frame.name,
+                "type": frame.type,
+                "confidence": frame.confidence,
+                "essential": frame.essential,
+                "priority": frame.priority,
+                "owner_user_id": frame.owner_user_id,
+                "source_type": frame.source_type,
+                "source_url": frame.source_url,
+                "source_reliability": frame.source_reliability,
+                "slots": exported_slots,
+            })
+
+        associations = await self.get_all_associations()
+        exported_assocs = []
+        for assoc in associations:
+            from_frame = await self.get_frame(assoc.from_frame_id)
+            to_frame = await self.get_frame(assoc.to_frame_id)
+            if from_frame and to_frame:
+                exported_assocs.append({
+                    "from_frame_name": from_frame.name,
+                    "to_frame_name": to_frame.name,
+                    "relation_type": assoc.relation_type,
+                    "confidence": assoc.confidence,
+                    "essential": assoc.essential,
+                    "priority": assoc.priority,
+                    "source_type": assoc.source_type,
+                    "source_url": assoc.source_url,
+                    "source_reliability": assoc.source_reliability,
+                })
+
+        async with self._connect() as db:
+            episode_rows = await db.execute_fetchall(
+                "SELECT id, user_id, session_id, role, content, frame_ids, timestamp "
+                "FROM episodes ORDER BY id"
+            )
+            episodes = []
+            for row in episode_rows:
+                episodes.append({
+                    "id": row[0],
+                    "user_id": row[1],
+                    "session_id": row[2],
+                    "role": row[3],
+                    "content": row[4],
+                    "frame_ids": json.loads(row[5]) if row[5] else [],
+                    "timestamp": row[6],
+                })
+
+            feedback_rows = await db.execute_fetchall(
+                "SELECT id, episode_id, message_id, kind, comment, created_at "
+                "FROM feedback ORDER BY id"
+            )
+            feedbacks = []
+            for row in feedback_rows:
+                feedbacks.append({
+                    "id": row[0],
+                    "episode_id": row[1],
+                    "message_id": row[2],
+                    "kind": row[3],
+                    "comment": row[4],
+                    "created_at": row[5],
+                })
+
+            conflict_rows = await db.execute_fetchall(
+                "SELECT id, frame_id, slot_key, existing_value, new_value, "
+                "resolved_value, status, created_at, resolved_at FROM conflicts ORDER BY id"
+            )
+            conflicts = []
+            for row in conflict_rows:
+                frame = await self.get_frame(row[1])
+                frame_name = frame.name if frame else str(row[1])
+                conflicts.append({
+                    "frame_name": frame_name,
+                    "slot_key": row[2],
+                    "existing_value": row[3],
+                    "new_value": row[4],
+                    "resolved_value": row[5],
+                    "status": row[6],
+                    "created_at": row[7],
+                    "resolved_at": row[8],
+                })
+
+        return {
+            "version": 1,
+            "exported_at": datetime.now(UTC).isoformat(),
+            "frames": exported_frames,
+            "associations": exported_assocs,
+            "episodes": episodes,
+            "feedbacks": feedbacks,
+            "conflicts": conflicts,
+        }
+
+    async def import_brain(
+        self,
+        data: dict,
+        mode: str = "merge",
+    ) -> dict:
+        """Import memory from an exported brain dict.
+
+        Modes:
+        - merge: upsert frames by name, add slots (existing data preserved)
+        - overwrite: delete all existing memory, then re-import (creates backup first)
+
+        Returns counts of imported items.
+        """
+        if data.get("version") != 1:
+            raise ValueError(f"Unsupported brain export version: {data.get('version')}")
+
+        imported = {
+            "frames": 0,
+            "slots": 0,
+            "associations": 0,
+            "episodes": 0,
+            "feedbacks": 0,
+            "conflicts": 0,
+        }
+
+        if mode == "overwrite":
+            backup_path = await self._create_backup()
+            imported["backup_path"] = str(backup_path)
+
+            async with self._connect() as db:
+                await db.execute("DELETE FROM slot_history")
+                await db.execute("DELETE FROM slots")
+                await db.execute("DELETE FROM associations")
+                await db.execute("DELETE FROM episodes")
+                await db.execute("DELETE FROM conflicts")
+                await db.execute("DELETE FROM feedback")
+                await db.execute("DELETE FROM frames")
+                await db.commit()
+
+        # Import frames and slots
+        name_to_frame_id: dict[str, int] = {}
+        for frame_data in data.get("frames", []):
+            existing = await self.get_frame_by_name(frame_data["name"])
+            if existing:
+                frame_id = existing.id
+                await self.update_frame(frame_id, confidence=frame_data.get("confidence", 0.5))
+            else:
+                frame = await self.create_frame(
+                    name=frame_data["name"],
+                    type=frame_data.get("type", "entity"),
+                    source_type=frame_data.get("source_type"),
+                    source_url=frame_data.get("source_url"),
+                )
+                frame_id = frame.id
+                imported["frames"] += 1
+            name_to_frame_id[frame_data["name"]] = frame_id
+
+            for slot_data in frame_data.get("slots", []):
+                _, _ = await self.upsert_slot(
+                    frame_id=frame_id,
+                    key=slot_data["key"],
+                    value=slot_data["value"],
+                    source_type=slot_data.get("source_type"),
+                    source_url=slot_data.get("source_url"),
+                    source_reliability=slot_data.get("source_reliability"),
+                )
+                imported["slots"] += 1
+
+        # Import associations
+        for assoc_data in data.get("associations", []):
+            from_id = name_to_frame_id.get(assoc_data.get("from_frame_name"))
+            to_id = name_to_frame_id.get(assoc_data.get("to_frame_name"))
+            if from_id and to_id:
+                try:
+                    await self.create_association(
+                        from_frame_id=from_id,
+                        to_frame_id=to_id,
+                        relation_type=assoc_data.get("relation_type", "related_to"),
+                        confidence=assoc_data.get("confidence", 0.5),
+                        source_type=assoc_data.get("source_type"),
+                        source_url=assoc_data.get("source_url"),
+                        source_reliability=assoc_data.get("source_reliability"),
+                    )
+                    imported["associations"] += 1
+                except Exception:
+                    pass  # Skip duplicate associations
+
+        # Import episodes
+        for ep_data in data.get("episodes", []):
+            async with self._connect() as db:
+                await db.execute(
+                    "INSERT INTO episodes "
+                    "(user_id, session_id, role, content, frame_ids, timestamp) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (
+                        ep_data["user_id"],
+                        ep_data.get("session_id", ""),
+                        ep_data["role"],
+                        ep_data["content"],
+                        json.dumps(ep_data.get("frame_ids", [])),
+                        ep_data.get("timestamp"),
+                    ),
+                )
+                await db.commit()
+                imported["episodes"] += 1
+
+        # Import feedback
+        for fb_data in data.get("feedbacks", []):
+            async with self._connect() as db:
+                await db.execute(
+                    "INSERT INTO feedback (episode_id, message_id, kind, comment, created_at) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (
+                        fb_data.get("episode_id"),
+                        fb_data.get("message_id", ""),
+                        fb_data.get("kind", "correction"),
+                        fb_data.get("comment"),
+                        fb_data.get("created_at"),
+                    ),
+                )
+                await db.commit()
+                imported["feedbacks"] += 1
+
+        # Import conflicts
+        for cf_data in data.get("conflicts", []):
+            frame_id = name_to_frame_id.get(cf_data.get("frame_name"))
+            if not frame_id:
+                continue
+            async with self._connect() as db:
+                await db.execute(
+                    "INSERT INTO conflicts "
+                    "(frame_id, slot_key, existing_value, new_value, "
+                    "resolved_value, status, created_at, resolved_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        frame_id,
+                        cf_data.get("slot_key"),
+                        cf_data.get("existing_value"),
+                        cf_data.get("new_value"),
+                        cf_data.get("resolved_value"),
+                        cf_data.get("status", "imported"),
+                        cf_data.get("created_at"),
+                        cf_data.get("resolved_at"),
+                    ),
+                )
+                await db.commit()
+                imported["conflicts"] += 1
+
+        return imported
+
+    async def upsert_scheduled_task(
+        self,
+        name: str,
+        description: str,
+        schedule_cron: str,
+        prompt: str,
+        enabled: bool = True,
+        owner_user_id: int | None = None,
+        next_run: str | None = None,
+    ) -> int:
+        """Create or update a scheduled_task frame.
+
+        Returns the frame id.
+        """
+        from ..scheduler.cron import next_run_from_cron
+
+        if next_run is None:
+            next_run = next_run_from_cron(schedule_cron).isoformat()
+
+        async with self._connect() as db:
+            existing = await db.execute_fetchall(
+                "SELECT id FROM frames WHERE name = ? AND type = 'scheduled_task' "
+                "AND deleted_at IS NULL",
+                (name,),
+            )
+            if existing:
+                frame_id = existing[0][0]
+                await db.execute(
+                    "UPDATE frames SET "
+                    "description=?, schedule_cron=?, prompt=?, enabled=?, "
+                    "next_run=?, updated_at=datetime('now') "
+                    "WHERE id = ?",
+                    (description, schedule_cron, prompt, 1 if enabled else 0,
+                     next_run, frame_id),
+                )
+                await db.commit()
+                return frame_id
+            else:
+                cursor = await db.execute(
+                    "INSERT INTO frames "
+                    "(name, type, confidence, essential, priority, owner_user_id, "
+                    "source_type, description, schedule_cron, prompt, enabled, next_run) "
+                    "VALUES (?, 'scheduled_task', 1.0, 1, 0.8, ?, 'user', ?, ?, ?, ?, ?)",
+                    (name, owner_user_id, description, schedule_cron, prompt,
+                     1 if enabled else 0, next_run),
+                )
+                await db.commit()
+                return cursor.lastrowid
+
+    async def get_scheduled_tasks(
+        self,
+        owner_user_id: int | None = None,
+        include_system: bool = False,
+    ) -> list[dict]:
+        """List all scheduled tasks (optionally filtered by user)."""
+        async with self._connect() as db:
+            if owner_user_id is not None:
+                rows = await db.execute_fetchall(
+                    "SELECT id, name, description, schedule_cron, prompt, "
+                    "enabled, last_run, next_run, last_result_summary, "
+                    "owner_user_id, source_type, created_at, updated_at "
+                    "FROM frames "
+                    "WHERE type = 'scheduled_task' AND deleted_at IS NULL "
+                    "AND owner_user_id = ? "
+                    "ORDER BY created_at DESC",
+                    (owner_user_id,),
+                )
+            elif include_system:
+                rows = await db.execute_fetchall(
+                    "SELECT id, name, description, schedule_cron, prompt, "
+                    "enabled, last_run, next_run, last_result_summary, "
+                    "owner_user_id, source_type, created_at, updated_at "
+                    "FROM frames "
+                    "WHERE type = 'scheduled_task' AND deleted_at IS NULL "
+                    "ORDER BY created_at DESC",
+                )
+            else:
+                rows = await db.execute_fetchall(
+                    "SELECT id, name, description, schedule_cron, prompt, "
+                    "enabled, last_run, next_run, last_result_summary, "
+                    "owner_user_id, source_type, created_at, updated_at "
+                    "FROM frames "
+                    "WHERE type = 'scheduled_task' AND deleted_at IS NULL "
+                    "AND (source_type != 'system' OR source_type IS NULL) "
+                    "ORDER BY created_at DESC",
+                )
+            cols = [
+                "id", "name", "description", "schedule_cron", "prompt",
+                "enabled", "last_run", "next_run", "last_result_summary",
+                "owner_user_id", "source_type", "created_at", "updated_at",
+            ]
+            return [dict(zip(cols, r, strict=True)) for r in rows]
+
+    async def get_due_scheduled_tasks(self) -> list[dict]:
+        """Get tasks that are enabled and whose next_run <= now (UTC)."""
+        from datetime import datetime
+        async with self._connect() as db:
+            now = datetime.now(UTC).isoformat()
+            rows = await db.execute_fetchall(
+                "SELECT id, name, description, schedule_cron, prompt, "
+                "enabled, last_run, next_run, last_result_summary, "
+                "owner_user_id, source_type, created_at, updated_at "
+                "FROM frames "
+                "WHERE type = 'scheduled_task' AND deleted_at IS NULL "
+                "AND enabled = 1 AND next_run IS NOT NULL AND next_run <= ?",
+                (now,),
+            )
+            cols = [
+                "id", "name", "description", "schedule_cron", "prompt",
+                "enabled", "last_run", "next_run", "last_result_summary",
+                "owner_user_id", "source_type", "created_at", "updated_at",
+            ]
+            return [dict(zip(cols, r, strict=True)) for r in rows]
+
+    async def get_nearest_scheduled_task_run(self) -> datetime | None:
+        """Get the nearest next_run datetime among all enabled tasks (UTC)."""
+        from datetime import datetime
+        async with self._connect() as db:
+            row = await db.execute_fetchall(
+                "SELECT MIN(next_run) FROM frames "
+                "WHERE type = 'scheduled_task' AND deleted_at IS NULL "
+                "AND enabled = 1 AND next_run IS NOT NULL",
+            )
+            if row and row[0][0]:
+                return datetime.fromisoformat(row[0][0].replace("Z", "+00:00"))
+            return None
+
+    async def update_scheduled_task_run(
+        self,
+        frame_id: int,
+        last_run: str,
+        last_result_summary: str,
+    ) -> None:
+        """Update last_run and recompute next_run from the cron expression."""
+        from ..scheduler.cron import next_run_from_cron
+
+        async with self._connect() as db:
+            row = await db.execute_fetchall(
+                "SELECT schedule_cron FROM frames WHERE id = ?",
+                (frame_id,),
+            )
+            if not row or not row[0][0]:
+                return
+            cron_expr = row[0][0]
+            next_run = next_run_from_cron(cron_expr).isoformat()
+
+            await db.execute(
+                "UPDATE frames SET "
+                "last_run=?, last_result_summary=?, next_run=?, "
+                "updated_at=datetime('now') "
+                "WHERE id = ?",
+                (last_run, last_result_summary[:2000], next_run, frame_id),
+            )
+            await db.commit()
+
+    async def delete_scheduled_task(self, frame_id: int) -> None:
+        """Soft-delete a scheduled task frame."""
+        async with self._connect() as db:
+            await db.execute(
+                "UPDATE frames SET deleted_at=datetime('now') WHERE id = ?",
+                (frame_id,),
+            )
+            await db.commit()
+
+    async def upsert_scheduler_heartbeat(self, timestamp: str) -> None:
+        """Update the scheduler heartbeat slot on the system frame."""
+        async with self._connect() as db:
+            now = datetime.now(UTC).isoformat()
+            cursor = await db.execute(
+                "INSERT OR REPLACE INTO frames "
+                "(name, type, confidence, essential, priority, source_type, updated_at) "
+                "VALUES ('scheduler_heartbeat', 'system', 1.0, 0, 0.0, 'system', ?)",
+                (now,),
+            )
+            frame_id = cursor.lastrowid
+            await db.execute(
+                "INSERT OR REPLACE INTO slots "
+                "(frame_id, key, value, updated_at) "
+                "VALUES (?, 'last_heartbeat', ?, ?)",
+                (frame_id, timestamp, now),
+            )
+            await db.commit()
+
+    async def gc(self) -> int:
+        """Garbage collect: soft-delete forgotten frames and decay stale slots.
+
+        Removes frames that have:
+          - priority < 0.2
+          - not been accessed in working_memory for > 30 days
+
+        Decays priority of slots with:
+          - priority < 0.3
+          - last_accessed_at > 60 days ago
+
+        Returns the count of frames soft-deleted.
+        """
+        from datetime import datetime, timedelta
+
+        async with self._connect() as db:
+            cutoff = (
+                datetime.now(UTC) - timedelta(days=30)
+            ).isoformat()
+            stale_cutoff = (
+                datetime.now(UTC) - timedelta(days=60)
+            ).isoformat()
+
+            stale_frames = await db.execute_fetchall(
+                "SELECT f.id FROM frames f "
+                "LEFT JOIN working_memory wm ON f.id = wm.frame_id "
+                "WHERE f.type != 'scheduled_task' AND f.deleted_at IS NULL "
+                "AND f.priority < 0.2 "
+                "AND (wm.last_accessed_at IS NULL OR wm.last_accessed_at < ?)",
+                (cutoff,),
+            )
+            removed = 0
+            for (fid,) in stale_frames:
+                await db.execute(
+                    "UPDATE frames SET deleted_at=datetime('now') WHERE id = ?",
+                    (fid,),
+                )
+                removed += 1
+
+            await db.execute(
+                "UPDATE slots SET "
+                "priority = MAX(priority * 0.9, 0.1), "
+                "updated_at = datetime('now') "
+                "WHERE frame_id IN ("
+                "  SELECT id FROM frames WHERE priority < 0.3 AND deleted_at IS NULL"
+                ") AND last_accessed_at < ?",
+                (stale_cutoff,),
+            )
+            await db.commit()
+            return removed
+
+    async def ensure_system_tasks(self) -> None:
+        """Create built-in system tasks (gc, heartbeat) if they don't exist.
+
+        Called by the scheduler on startup.
+        """
+        from ..scheduler.cron import next_run_from_cron
+
+        gc_next = next_run_from_cron("0 3 * * 0").isoformat()
+        hb_next = next_run_from_cron("*/30 * * * *").isoformat()
+
+        async with self._connect() as db:
+            gc_row = await db.execute_fetchall(
+                "SELECT id FROM frames WHERE name = 'system_memory_gc' "
+                "AND type = 'scheduled_task' AND deleted_at IS NULL"
+            )
+            if not gc_row:
+                await db.execute(
+                    "INSERT INTO frames "
+                    "(name, type, confidence, essential, priority, source_type, "
+                    "description, schedule_cron, prompt, enabled, next_run) "
+                    "VALUES ('system_memory_gc', 'scheduled_task', 1.0, 0, 0.0, "
+                    "'system', 'Weekly memory GC — decay low-priority stale slots', "
+                    "'0 3 * * 0', 'Run memory GC to decay stale slots', "
+                    "1, ?)",
+                    (gc_next,),
+                )
+
+            hb_row = await db.execute_fetchall(
+                "SELECT id FROM frames WHERE name = 'system_scheduler_heartbeat' "
+                "AND type = 'scheduled_task' AND deleted_at IS NULL"
+            )
+            if not hb_row:
+                await db.execute(
+                    "INSERT INTO frames "
+                    "(name, type, confidence, essential, priority, source_type, "
+                    "description, schedule_cron, prompt, enabled, next_run) "
+                    "VALUES ('system_scheduler_heartbeat', 'scheduled_task', 1.0, 0, 0.0, "
+                    "'system', 'Scheduler heartbeat — update every 30 minutes', "
+                    "'*/30 * * * *', 'Update scheduler heartbeat timestamp', "
+                    "1, ?)",
+                    (hb_next,),
+                )
+            await db.commit()
+
+    async def _create_backup(self) -> Path:
+        """Create a backup of the current DB before overwrite import."""
+
+        timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
+        backup_name = f"brain-overwrite-{timestamp}.db"
+        backup_path = Path(self.db_path).parent / backup_name
+        shutil.copy2(self.db_path, str(backup_path))
+        return backup_path

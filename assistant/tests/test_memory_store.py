@@ -427,3 +427,49 @@ async def test_merge_associations_are_preserved_for_primary(store: MemoryStore):
 
     primary_assocs = await store.get_all_associations_for_frame(p.id)
     assert len(primary_assocs) == 2
+
+
+async def test_search_similar_frames_with_mixed_dimension_models(store: MemoryStore):
+    """Vectors from different models (768 vs 1024 dims) coexist during migration.
+
+    search_similar_frames must filter by embedding_model BEFORE computing
+    vec_distance_cosine, or row visitation order crashes the query.
+    Regression test for the MATERIALIZED CTE fix.
+    """
+    f1 = await store.create_frame("guitar", "entity")
+    f2 = await store.create_frame("synth", "entity")
+
+    await store.store_frame_embedding(f1.id, [0.9] + [0.0] * 767, "nomic-embed-text")
+    await store.store_frame_embedding(f2.id, [0.9] + [0.0] * 1023, "qwen3-embedding:0.6b")
+
+    query_768 = [1.0] + [0.0] * 767
+    results = await store.search_similar_frames(
+        query_768, user_id=None, embedding_model="nomic-embed-text", limit=5
+    )
+    assert len(results) == 1
+    assert results[0][0].id == f1.id
+
+    query_1024 = [1.0] + [0.0] * 1023
+    results = await store.search_similar_frames(
+        query_1024, user_id=None, embedding_model="qwen3-embedding:0.6b", limit=5
+    )
+    assert len(results) == 1
+    assert results[0][0].id == f2.id
+
+
+async def test_search_similar_frames_interleaved_model_rows(store: MemoryStore):
+    """Many interleaved rows of the wrong model must not break the right model's search."""
+    frames = []
+    for i in range(6):
+        f = await store.create_frame(f"frame_{i}", "concept")
+        frames.append(f)
+        model = "nomic-embed-text" if i % 2 == 0 else "other-model"
+        dim = 768 if i % 2 == 0 else 384
+        await store.store_frame_embedding(f.id, [0.5] * dim, model)
+
+    results = await store.search_similar_frames(
+        [0.5] * 768, user_id=None, embedding_model="nomic-embed-text", limit=10
+    )
+    assert {fr.name for fr, _, _ in results} == {
+        "frame_0", "frame_2", "frame_4",
+    }
