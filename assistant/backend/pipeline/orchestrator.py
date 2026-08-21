@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from pydantic import BaseModel
 
+from assistant.backend.config import settings
 from assistant.backend.memory.retrieval import Retriever
 from assistant.backend.memory.store import MemoryStore
 from assistant.backend.pipeline.llm_client import ChatMessage, OllamaClient, build_system_prompt
@@ -330,11 +331,18 @@ class Orchestrator:
             for ep in prior_turns:
                 history_messages.append(ChatMessage(role=ep.role, content=ep.content))
 
-        # Call LLM
+        # Call LLM — fast path uses configured default (think off for
+        # thinking-capable models); escalated plans flip thinking on with a
+        # token cap (Phase 6 plan §6.2).
         messages = [ChatMessage(role="system", content=system_prompt)]
         messages.extend(history_messages)
         messages.append(ChatMessage(role="user", content=request.message))
-        llm_response = await self.llm_client.chat(messages)
+        think = True if plan.think else settings.chat_think_default
+        llm_response = await self.llm_client.chat(
+            messages,
+            think=think,
+            num_predict=settings.think_num_predict_cap if plan.think else None,
+        )
 
         # 8. Log assistant episode
         await self.store.create_episode(
@@ -437,7 +445,13 @@ class Orchestrator:
 
         messages = [ChatMessage(role="system", content=system_prompt)]
         messages.append(ChatMessage(role="user", content=prompt))
-        llm_response = await self.llm_client.chat(messages)
+        # Scheduled-task execution is latency-tolerant background work with
+        # multi-constraint prompts — always run it in thinking mode (§6.2).
+        llm_response = await self.llm_client.chat(
+            messages,
+            think=True,
+            num_predict=settings.think_num_predict_cap,
+        )
 
         await self.store.create_episode(
             user_id=user_id,

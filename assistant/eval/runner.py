@@ -28,6 +28,31 @@ RESULTS_DIR = Path(__file__).parent.parent.parent / "eval_results"
 MAX_SETUP_TURNS = 3
 
 
+class ThinkControlClient(OllamaClient):
+    """OllamaClient that records and optionally forces the chat-role think flag.
+
+    Used by the §6.4 gate: 'never'/'always' bracket production escalation,
+    'auto' records how often the reasoner escalates (<15% target).
+    Only chat-model calls are counted; utility-role calls pass through.
+    """
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.think_calls: list[bool] = []
+        self.force_think: bool | None = None
+
+    async def chat(self, messages, *args, **kwargs):
+        is_chat_role = kwargs.get("model") in (None, self.chat_model)
+        forced = None if self.force_think is None else self.force_think
+        if is_chat_role and kwargs.get("stream") is not True:
+            effective = True if self.force_think else kwargs.get("think", False)
+            self.think_calls.append(bool(effective))
+        if forced is not None:
+            kwargs["think"] = forced
+            kwargs.pop("num_predict", None)
+        return await super().chat(messages, *args, **kwargs)
+
+
 def grade_answer(answer: str, keywords: list[str]) -> tuple[int, int, str]:
     """Grade an answer by keyword presence.
 
@@ -104,6 +129,12 @@ async def run_case(
 
 
 async def main() -> dict:
+    think_mode = "auto"
+    if "--think-mode" in sys.argv:
+        i = sys.argv.index("--think-mode")
+        think_mode = sys.argv[i + 1]
+        assert think_mode in ("auto", "never", "always"), think_mode
+
     dataset = json.loads(DATASET_PATH.read_text())
     cases = dataset["cases"]
 
@@ -129,13 +160,14 @@ async def main() -> dict:
     store = MemoryStore(str(test_db_path))
     user = await store.create_user("eval_student")
 
-    llm = OllamaClient(
+    llm = ThinkControlClient(
         base_url=settings.ollama_url,
         chat_model=settings.chat_model,
         utility_model=settings.utility_model,
         embedding_model=settings.embedding_model,
         coder_model=settings.coder_model,
     )
+    llm.force_think = {"never": False, "always": True}.get(think_mode)
     retriever = Retriever(store=store, llm_client=llm)
     search = WebSearchTool(base_url=settings.search_base_url, enabled=settings.search_enabled)
     orchestrator = Orchestrator(
@@ -172,10 +204,17 @@ async def main() -> dict:
         "run_id": run_id,
         "timestamp": datetime.now(UTC).isoformat(),
         "dataset": DATASET_PATH.name,
+        "think_mode": think_mode,
+        "chat_model": settings.chat_model,
         "total_cases": len(cases),
         "total_score": total_score,
         "total_max": total_max,
         "overall_pct": round(overall_pct, 1),
+        "escalated_calls": sum(llm.think_calls),
+        "total_chat_calls": len(llm.think_calls),
+        "escalation_rate": round(
+            sum(llm.think_calls) / len(llm.think_calls), 3
+        ) if llm.think_calls else 0.0,
         "elapsed_seconds": round(elapsed, 1),
         "cases": all_results,
     }
@@ -188,6 +227,12 @@ async def main() -> dict:
     print("RESULTS SUMMARY")
     print(f"{'='*60}")
     print(f"Overall:   {total_score}/{total_max} ({overall_pct}%)")
+    print(f"Mode:      think={think_mode}  model={settings.chat_model}")
+    if think_mode == "auto":
+        rate = summary["escalation_rate"]
+        flag = "OK" if rate < 0.15 else "OVER TARGET"
+        print(f"Escalation: {summary['escalated_calls']}/{summary['total_chat_calls']}"
+              f" ({rate:.0%}) target <15% [{flag}]")
     print(f"Duration:  {elapsed:.1f}s")
     print(f"Results:   {results_path}")
     print(f"{'='*60}")

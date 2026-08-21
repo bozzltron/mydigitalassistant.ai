@@ -38,10 +38,29 @@ class Plan:
     correction_frame: str | None = None  # frame name the user is correcting
     correction_slot: str | None = None  # slot key the user is correcting
     correction_value: str | None = None  # the correct value
+    think: bool = False  # escalate to thinking mode (Phase 6 plan §6.2)
 
 
 # Relevance threshold below which a frame is considered "not relevant"
 _MIN_CITATION_RELEVANCE = 0.3
+
+# Explicit user requests for reasoning effort (Phase 6 plan §6.2)
+_EXPLICIT_THINK_MARKERS = (
+    "step by step",
+    "step-by-step",
+    "think carefully",
+    "think hard",
+    "think it through",
+    "think this through",
+    "reason through",
+    "work through",
+    "take your time",
+)
+
+# Structural sequencing markers for multi-step query detection
+_SEQUENCE_MARKERS = ("and then", "after that", "afterwards", "before that",
+                     "first,", "first of all", "next,", "finally,")
+_CLAUSE_CONJUNCTIONS = (" and then ", " then ", " after ", " while ", " because ")
 
 _NON_INFO_PATTERNS = [
     r"^(hi|hello|hey|howdy|hiya|greetings|good morning|good afternoon|good evening)[!.?]*$",
@@ -139,6 +158,22 @@ def assess_memory_sufficiency(
     return MemorySufficiency.PARTIAL, cited_ids
 
 
+def _has_explicit_think_intent(query: str) -> bool:
+    """User explicitly asked for careful reasoning (§6.2 escalation trigger)."""
+    q = query.lower()
+    return any(marker in q for marker in _EXPLICIT_THINK_MARKERS)
+
+
+def _is_multi_step(query: str) -> bool:
+    """Structural detection of multi-step queries: sequencing markers or
+    multiple clause-joining conjunctions in a longer query."""
+    q = query.lower()
+    if any(marker in q for marker in _SEQUENCE_MARKERS):
+        return True
+    conjunction_hits = sum(1 for c in _CLAUSE_CONJUNCTIONS if f" {c.strip()} " in f" {q} ")
+    return conjunction_hits >= 2 and len(q.split()) > 12
+
+
 def classify_intent(
     query: str,
     task_type: str,
@@ -150,12 +185,19 @@ def classify_intent(
     Here we map task_type to an Action and assess memory sufficiency.
     """
     sufficiency, cited_ids = assess_memory_sufficiency(query, memory)
+    escalate = _has_explicit_think_intent(query) or (
+        sufficiency in (MemorySufficiency.PARTIAL, MemorySufficiency.NONE)
+        and _is_multi_step(query)
+    )
 
     if task_type == "correction":
         return Plan(
             action=Action.CORRECT,
             sufficiency=sufficiency,
             cited_frame_ids=cited_ids,
+            # Ambiguous correction validation: memory partially corroborates
+            # AND partially conflicts — let thinking mode weigh it (§6.2).
+            think=escalate or sufficiency == MemorySufficiency.PARTIAL,
         )
 
     if task_type == "search":
@@ -164,6 +206,7 @@ def classify_intent(
             sufficiency=sufficiency,
             cited_frame_ids=cited_ids,
             search_needed=True,
+            think=escalate,
         )
 
     if task_type == "introspective":
@@ -172,6 +215,7 @@ def classify_intent(
             sufficiency=sufficiency,
             cited_frame_ids=cited_ids,
             introspect=True,
+            think=escalate,
         )
 
     if sufficiency == MemorySufficiency.NONE:
@@ -179,11 +223,13 @@ def classify_intent(
             return Plan(
                 action=Action.ANSWER,
                 sufficiency=MemorySufficiency.NONE,
+                think=_has_explicit_think_intent(query),
             )
         return Plan(
             action=Action.SEARCH,
             sufficiency=MemorySufficiency.NONE,
             search_needed=True,
+            think=escalate,
         )
 
     if sufficiency == MemorySufficiency.PARTIAL:
@@ -196,12 +242,14 @@ def classify_intent(
             sufficiency=MemorySufficiency.PARTIAL,
             cited_frame_ids=cited_ids,
             knowledge_gaps=gaps,
+            think=escalate,
         )
 
     return Plan(
         action=Action.ANSWER,
         sufficiency=MemorySufficiency.HIGH,
         cited_frame_ids=cited_ids,
+        think=escalate,
     )
 
 

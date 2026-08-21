@@ -226,3 +226,64 @@ class TestFormatPlanForPrompt:
         text = format_plan_for_prompt(plan)
         assert "identity_name" in text
         assert "full_name" in text
+
+
+class TestThinkEscalation:
+    """Phase 6 §6.2: thinking-mode escalation policy."""
+
+    def test_default_no_escalation(self):
+        memory = make_memory([(make_frame(1, confidence=0.9), [], 0.8)])
+        plan = classify_intent("what strings does my guitar have?", "functional", memory)
+        assert plan.think is False
+
+    def test_explicit_think_intent_escalates(self):
+        for marker in ("step by step", "think carefully", "reason through this"):
+            plan = classify_intent(
+                f"Explain {marker} how our budget works", "functional", make_memory([])
+            )
+            assert plan.think is True, marker
+
+    def test_partial_memory_plus_multi_step_escalates(self):
+        memory = make_memory([(make_frame(1, confidence=0.4), [], 0.5)])
+        plan = classify_intent(
+            "First check my guitar strings then compare after that with bob's kayak gear",
+            "functional",
+            memory,
+        )
+        assert plan.think is True
+
+    def test_none_memory_plus_multi_step_escalates(self):
+        plan = classify_intent(
+            "and then work out the schedule, because timing matters for everything else here",
+            "functional",
+            make_memory([]),
+        )
+        assert plan.think is True
+
+    def test_high_sufficiency_multi_step_does_not_escalate(self):
+        memory = make_memory([(make_frame(1, confidence=0.9), [], 0.8)])
+        plan = classify_intent(
+            "compare my guitar and then my amp and then my pedals for the gig",
+            "functional",
+            memory,
+        )
+        assert plan.think is False
+
+    def test_single_step_partial_does_not_escalate(self):
+        memory = make_memory([(make_frame(1, confidence=0.4), [], 0.5)])
+        plan = classify_intent("what year is my guitar?", "functional", memory)
+        assert plan.think is False
+
+    def test_correction_with_partial_memory_escalates(self):
+        memory = make_memory([(make_frame(1, confidence=0.4), [], 0.5)])
+        plan = classify_intent("actually my guitar has 7 strings", "correction", memory)
+        assert plan.think is True
+
+    def test_search_task_can_escalate(self):
+        plan = classify_intent(
+            "search for a step by step guide to restring a guitar",
+            "search",
+            make_memory([]),
+        )
+        # Explicit intent marker inside a search task
+        assert plan.think is True
