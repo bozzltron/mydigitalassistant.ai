@@ -74,6 +74,8 @@ class StubLLMClient(OllamaClient):
         temperature: float = 0.7,
         format: str | None = None,
         stream: bool = False,
+        think: bool | None = None,
+        num_predict: int | None = None,
     ) -> ChatResponse:
         system = messages[0].content
         self.system_prompts.append(system)

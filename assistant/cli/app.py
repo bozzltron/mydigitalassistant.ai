@@ -666,8 +666,8 @@ def cmd_db_backfill_embeddings(args: argparse.Namespace, client: BackendClient) 
                 base_url=settings.ollama_url,
                 chat_model=settings.chat_model,
                 utility_model=settings.utility_model,
-                reasoning_model=settings.reasoning_model,
                 embedding_model=settings.embedding_model,
+                coder_model=settings.coder_model,
                 verify_tls=settings.ollama_tls_cert if settings.ollama_tls_cert else True,
             )
             try:
@@ -815,13 +815,18 @@ def cmd_status(args: argparse.Namespace, client: BackendClient) -> None:
     """Check backend status."""
     try:
         health = client.health()
+        models = health.get("models", {})
+        think = "supported" if health.get("thinking_supported") else "not supported"
         console.print(
             Panel(
                 f"[green]Backend OK[/green]\n"
                 f"  URL: {client.base_url}\n"
                 f"  Ollama: {'reachable' if health['ollama_reachable'] else 'NOT REACHABLE'}\n"
-                f"  Chat model: {health['chat_model']}\n"
-                f"  Utility model: {health['utility_model']}",
+                f"  Chat model: {models.get('chat', health.get('chat_model', '?'))}\n"
+                f"  Utility model: {models.get('utility', health.get('utility_model', '?'))}\n"
+                f"  Embedding model: {models.get('embedding', '?')}\n"
+                f"  Coder model: {models.get('coder', '?')}\n"
+                f"  Thinking mode: {think}",
                 title="Status",
             )
         )

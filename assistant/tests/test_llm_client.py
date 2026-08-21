@@ -1,4 +1,13 @@
-from assistant.backend.pipeline.llm_client import build_system_prompt
+import json
+
+import httpx
+
+from assistant.backend.pipeline.llm_client import (
+    ChatMessage,
+    OllamaClient,
+    build_system_prompt,
+    split_thinking,
+)
 
 
 def test_build_system_prompt_functional():
@@ -18,3 +27,143 @@ def test_build_system_prompt_introspective():
     assert "guitar" in prompt
     # Introspective prompt should be more constrained
     assert "memory state" in prompt.lower() or "frames" in prompt.lower()
+
+
+# --- split_thinking (Phase 6 M1: think-mode plumbing) ---
+
+
+def test_split_thinking_no_tags():
+    clean, thinking = split_thinking("Just an answer.")
+    assert clean == "Just an answer."
+    assert thinking == ""
+
+
+def test_split_thinking_single_block():
+    clean, thinking = split_thinking("<think>reasoning here</think>The answer is 4.")
+    assert clean == "The answer is 4."
+    assert thinking == "reasoning here"
+
+
+def test_split_thinking_multiple_blocks():
+    content = "<think>first</think>Partial<think>second</think>Final."
+    clean, thinking = split_thinking(content)
+    assert clean == "PartialFinal."
+    assert "first" in thinking and "second" in thinking
+
+
+def test_split_thinking_unclosed_block():
+    """Model cut off mid-think: trailing content after <think> is reasoning."""
+    clean, thinking = split_thinking("<think>started reasoning and then")
+    assert clean == ""
+    assert "started reasoning and then" in thinking
+
+
+def test_split_thinking_multiline_preserved_in_thinking():
+    content = "<think>line1\nline2</think>\n\nAnswer"
+    _, thinking = split_thinking(content)
+    assert "line1\nline2" in thinking
+
+
+# --- chat(): think flag + structured thinking field ---
+
+
+def _client_with_transport(handler) -> OllamaClient:
+    client = OllamaClient()
+    client._client = httpx.AsyncClient(
+        transport=httpx.MockTransport(handler), base_url=client.base_url
+    )
+    return client
+
+
+async def test_chat_passes_think_flag_and_uses_structured_field():
+    captured: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["payload"] = json.loads(request.content)
+        return httpx.Response(200, json={
+            "model": "chat-model",
+            "done": True,
+            "message": {
+                "role": "assistant",
+                "content": "The answer.",
+                "thinking": "Step by step...",
+            },
+        })
+
+    client = _client_with_transport(handler)
+    resp = await client.chat(
+        [ChatMessage(role="user", content="hi")], think=True, num_predict=512
+    )
+    assert captured["payload"]["think"] is True
+    assert captured["payload"]["options"]["num_predict"] == 512
+    assert resp.content == "The answer."
+    assert resp.thinking == "Step by step..."
+    await client.close()
+
+
+async def test_chat_without_think_omits_flag_and_parses_inline_tags():
+    captured: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["payload"] = json.loads(request.content)
+        return httpx.Response(200, json={
+            "model": "chat-model",
+            "done": True,
+            "message": {
+                "role": "assistant",
+                "content": "<think>hidden chain</think>Visible reply.",
+            },
+        })
+
+    client = _client_with_transport(handler)
+    resp = await client.chat([ChatMessage(role="user", content="hi")])
+    assert "think" not in captured["payload"]
+    assert resp.content == "Visible reply."
+    assert resp.thinking == "hidden chain"
+    await client.close()
+
+
+async def test_chat_think_false_is_sent_explicitly():
+    captured: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["payload"] = json.loads(request.content)
+        return httpx.Response(200, json={
+            "model": "m", "done": True,
+            "message": {"role": "assistant", "content": "ok"},
+        })
+
+    client = _client_with_transport(handler)
+    await client.chat([ChatMessage(role="user", content="hi")], think=False)
+    assert captured["payload"]["think"] is False  # None would omit the key
+    await client.close()
+
+
+# --- capabilities probe ---
+
+
+async def test_model_capabilities_caches_per_model():
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(json.loads(request.content)["model"])
+        return httpx.Response(200, json={"capabilities": ["thinking", "tools"]})
+
+    client = _client_with_transport(handler)
+    caps1 = await client.model_capabilities("some-model")
+    caps2 = await client.model_capabilities("some-model")
+    assert caps1 == ["thinking", "tools"]
+    assert caps2 == ["thinking", "tools"]
+    assert calls == ["some-model"]  # second call served from cache
+    assert await client.supports_thinking("some-model") is True
+    await client.close()
+
+
+async def test_model_capabilities_fails_soft():
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("ollama down")
+
+    client = _client_with_transport(handler)
+    assert await client.model_capabilities("missing") == []
+    assert await client.supports_thinking("missing") is False
+    await client.close()

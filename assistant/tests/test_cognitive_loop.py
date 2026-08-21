@@ -70,4 +70,5 @@ async def test_full_cognitive_loop_learns_then_recalls(tmp_path, stub_llm):
         "associations_created": 0,
         "conflicts_created": 0,
         "frame_ids": [],
+        "slots": [],
     }
