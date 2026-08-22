@@ -1,7 +1,35 @@
 # SearXNG Settings for MyDigitalAssistant
 # https://docs.searxng.org/admin/settings/
 
-use_default_settings: true
+# Engine allow-list. Every enabled engine fires in parallel on each query,
+# and upstream providers rate-limit aggressive automated traffic (a flagged
+# IP gets CAPTCHAs that break ALL searches). Six diverse engines keeps
+# results resilient while staying under rate-limit radar.
+use_default_settings:
+  engines:
+    keep_only:
+      - duckduckgo
+      - brave
+      - mojeek
+      - qwant
+      - bing
+      - wikipedia
+
+# keep_only trims the set but inherits each engine's default `disabled`
+# flag (most are off by default). Explicitly enable all of them.
+engines:
+  - name: duckduckgo
+    disabled: false
+  - name: brave
+    disabled: false
+  - name: mojeek
+    disabled: false
+  - name: qwant
+    disabled: false
+  - name: bing
+    disabled: false
+  - name: wikipedia
+    disabled: false
 
 server:
   image_proxy: true
