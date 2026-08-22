@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Brain Observatory</title>
-  <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+  <script src="/static/d3.min.js"></script>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap');
 
@@ -219,12 +219,60 @@
     }
 
     .link {
-      stroke-opacity: 0.3;
-      transition: stroke-opacity 0.2s;
+      fill: none;
+      stroke-opacity: 0.35;
+      transition: stroke-opacity 0.2s, stroke-width 0.2s;
     }
 
     .link:hover {
-      stroke-opacity: 0.8;
+      stroke-opacity: 0.9;
+    }
+
+    .link.dimmed { stroke-opacity: 0.06; }
+    .link.lit { stroke-opacity: 0.95; }
+
+    .node.dimmed { opacity: 0.18; transition: opacity 0.2s; }
+    .node.lit circle { filter: brightness(1.25); }
+
+    .edge-label {
+      font-size: 10px;
+      fill: var(--text-dim);
+      paint-order: stroke;
+      stroke: var(--bg);
+      stroke-width: 3px;
+      pointer-events: none;
+      opacity: 0;
+    }
+    .edge-label.visible { opacity: 1; }
+
+    .edge-legend {
+      position: absolute;
+      left: 1rem;
+      bottom: 3.2rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.3rem;
+      background: rgba(26, 29, 39, 0.85);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.6rem 0.8rem;
+      z-index: 10;
+      backdrop-filter: blur(4px);
+    }
+
+    .edge-legend .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      font-size: 0.72rem;
+      color: var(--text-dim);
+    }
+
+    .edge-legend .legend-line {
+      width: 18px;
+      height: 0;
+      border-top: 2px solid;
+      border-radius: 2px;
     }
 
     nav {
@@ -305,6 +353,7 @@
     <svg id="brain-canvas"></svg>
     <div class="tooltip" id="tooltip"></div>
     <div class="stats-bar" id="stats-bar"></div>
+    <div class="edge-legend" id="edge-legend"></div>
     <nav>
       <a href="/chat-ui">Back to Chat</a>
     </nav>
@@ -322,6 +371,51 @@
       household: '#7ee787',
       entity: '#ffa657',
     };
+
+    // Edge colors by relation family. Generic relations render dimmest so
+    // meaningful connections stand out in a hairball.
+    const RELATION_GROUPS = [
+      { re: /^(is_a|instance_of|type_of|part_of|has|subclass_of)$/, color: '#79c0ff', label: 'taxonomy / structure' },
+      { re: /(located_in|based_in|place|city|country)/, color: '#7ee787', label: 'spatial' },
+      { re: /(founded|follows|inquir|member|works_for|created|produced|wrote|compared|participation)/, color: '#f78166', label: 'social / agency' },
+      { re: /(source|citation|reference|forecast|compare|lists)/, color: '#d2a8ff', label: 'informational' },
+      { re: /^related_to$|^associated/, color: '#4a5470', label: 'related (generic)' },
+    ];
+    const FALLBACK_EDGE_COLOR = '#8b9bb8';
+
+    function relationColor(relationType) {
+      for (const g of RELATION_GROUPS) {
+        if (g.re.test(relationType)) return g.color;
+      }
+      return FALLBACK_EDGE_COLOR;
+    }
+
+    function buildEdgeLegend() {
+      const legend = document.getElementById('edge-legend');
+      legend.innerHTML = RELATION_GROUPS
+        .map(g => `<div class="legend-item"><div class="legend-line" style="border-color:${g.color}"></div>${g.label}</div>`)
+        .join('');
+    }
+
+    function edgePath(d) {
+      const sx = d.source.x, sy = d.source.y, tx = d.target.x, ty = d.target.y;
+      const dx = tx - sx, dy = ty - sy;
+      const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+      const cx = sx + dx / 2 - (dy / dist) * dist * 0.08;
+      const cy = sy + dy / 2 + (dx / dist) * dist * 0.08;
+      return `M${sx},${sy}Q${cx},${cy}${tx},${ty}`;
+    }
+
+    function edgeMidpoint(d) {
+      const mx = (d.source.x + d.target.x) / 2;
+      const my = (d.source.y + d.target.y) / 2;
+      const dx = d.target.x - d.source.x, dy = d.target.y - d.source.y;
+      const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+      return {
+        x: mx - (dy / dist) * dist * 0.12,
+        y: my + (dx / dist) * dist * 0.12,
+      };
+    }
 
     const width = () => document.getElementById('canvas-container').clientWidth;
     const height = () => document.getElementById('canvas-container').clientHeight;
@@ -448,16 +542,50 @@
 
       simulation.alpha(1).restart();
 
+      buildEdgeLegend();
+
+      // Per-color arrowhead markers so directed edges read correctly.
+      const defs = svg.select('defs');
+      const edgeColors = [...new Set(links.map(l => relationColor(l.relation_type)))];
+      for (const color of edgeColors) {
+        const markerId = `arrow-${color.slice(1)}`;
+        if (defs.select(`#${markerId}`).empty()) {
+          defs.append('marker')
+            .attr('id', markerId)
+            .attr('viewBox', '0 -5 10 10')
+            .attr('refX', 14)
+            .attr('refY', 0)
+            .attr('markerWidth', 5)
+            .attr('markerHeight', 5)
+            .attr('orient', 'auto')
+            .append('path')
+            .attr('d', 'M0,-5L10,0L0,5')
+            .attr('fill', color);
+        }
+      }
+
       const link = g.append('g')
-        .selectAll('line')
+        .selectAll('path')
         .data(links)
-        .join('line')
+        .join('path')
         .attr('class', 'link')
-        .attr('stroke', '#3b4b63')
-        .attr('stroke-width', d => Math.max(0.5, d.confidence || 0.5));
+        .attr('stroke', d => relationColor(d.relation_type))
+        .attr('stroke-width', d => {
+          const conf = d.confidence || 0.5;
+          return conf === 0.5 ? 1.25 : Math.max(0.75, 2.25 * conf);
+        })
+        .attr('marker-end', d => `url(#arrow-${relationColor(d.relation_type).slice(1)})`);
 
       link.append('title')
         .text(d => `${d.relation_type} (${Math.round((d.confidence || 0.5) * 100)}%)`);
+
+      const edgeLabel = g.append('g')
+        .selectAll('text')
+        .data(links)
+        .join('text')
+        .attr('class', 'edge-label')
+        .attr('text-anchor', 'middle')
+        .text(d => d.relation_type);
 
       const node = g.append('g')
         .selectAll('g')
@@ -479,17 +607,44 @@
         .text(d => `${d.name} (${d.type})\nConfidence: ${Math.round((d.confidence || 0.5) * 100)}%`);
 
       simulation.on('tick', () => {
-        link
-          .attr('x1', d => d.source.x)
-          .attr('y1', d => d.source.y)
-          .attr('x2', d => d.target.x)
-          .attr('y2', d => d.target.y);
+        link.attr('d', edgePath);
+        edgeLabel
+          .attr('x', d => edgeMidpoint(d).x)
+          .attr('y', d => edgeMidpoint(d).y + 3);
 
         node.attr('transform', d => `translate(${d.x},${d.y})`);
       });
 
-      node.on('mouseover', (event, d) => showTooltip(event, d))
-        .on('mouseout', hideTooltip)
+      // Hover: light up the neighborhood, dim the rest, label its edges.
+      const neighbors = new Map();
+      links.forEach(l => {
+        if (!neighbors.has(l.source.id)) neighbors.set(l.source.id, new Set());
+        if (!neighbors.has(l.target.id)) neighbors.set(l.target.id, new Set());
+        neighbors.get(l.source.id).add(l.target.id);
+        neighbors.get(l.target.id).add(l.source.id);
+      });
+
+      function highlightNeighbors(activeId) {
+        const nbrs = neighbors.get(activeId) || new Set();
+        link.classed('dimmed', l =>
+          l.source.id !== activeId && l.target.id !== activeId)
+          .classed('lit', l =>
+            l.source.id === activeId || l.target.id === activeId);
+        edgeLabel.classed('visible', l =>
+          l.source.id === activeId || l.target.id === activeId);
+        node.classed('dimmed', n =>
+          n.id !== activeId && !nbrs.has(n.id))
+          .classed('lit', n => nbrs.has(n.id));
+      }
+
+      function clearHighlight() {
+        link.classed('dimmed', false).classed('lit', false);
+        node.classed('dimmed', false).classed('lit', false);
+        edgeLabel.classed('visible', false);
+      }
+
+      node.on('mouseover', (event, d) => { highlightNeighbors(d.id); showTooltip(event, d); })
+        .on('mouseout', () => { clearHighlight(); hideTooltip(); })
         .on('click', (event, d) => showTooltip(event, d));
 
       async function fetchSlots(d) {
