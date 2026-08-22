@@ -193,9 +193,11 @@ async def chat_ui():
 @app.get("/assistant/name")
 async def get_assistant_name(store: MemoryStore = _Depends(get_store)):
     """Return the assistant's own name, from the identity_name frame if set."""
-    name_frame = await store.get_frame_by_name("identity_name")
+    from .pipeline.extractor import IDENTITY_FRAME, IDENTITY_NAME_SLOT
+
+    name_frame = await store.get_frame_by_name(IDENTITY_FRAME)
     if name_frame:
-        slot = await store.get_slot(name_frame.id, "full_name")
+        slot = await store.get_slot(name_frame.id, IDENTITY_NAME_SLOT)
         if slot:
             return {"name": slot.value}
     return {"name": "Cognitive Assistant"}

@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 from collections import defaultdict
 from typing import TYPE_CHECKING
 
@@ -15,6 +16,10 @@ logger = logging.getLogger(__name__)
 INITIAL_SEARCH_RELIABILITY = 0.5
 CORROBORATION_BONUS = 0.15
 MAX_SOURCE_RELIABILITY = 0.99
+
+# Canonical frame/slot holding the assistant's own name (see /assistant/name).
+IDENTITY_FRAME = "identity_name"
+IDENTITY_NAME_SLOT = "full_name"
 
 
 class ExtractedSlot(BaseModel):
@@ -57,14 +62,16 @@ Rules:
 - frame_type is one of: entity, concept, event, household.
 - Use snake_case for frame_name (e.g. "fender_stratocaster").
 - Don't extract transient conversational content ("hello", "thanks").
-- AGENT IDENTITY: If the conversation states the assistant's name or identity, use
-  frame_name "identity_name" and key "full_name". Examples:
-  - "my name is Ada" -> {"frame_name": "identity_name", "frame_type": "entity",
-    "key": "full_name", "value": "Ada"}
-  - "we chose the name Claude" -> {"frame_name": "identity_name", "frame_type": "entity",
-    "key": "full_name", "value": "Claude"}
-  - "you said your name was Hermes" -> {"frame_name": "identity_name", "frame_type":
-    "entity", "key": "full_name", "value": "Hermes"}
+- AGENT IDENTITY (the assistant's own name) may only come from USER speech. If the
+  user names, renames, or chooses a name for the assistant — including imperatives
+  like "your name is now Echo", "I'll call you X", "let's name you X" — emit:
+  {"frame_name": "identity_name", "frame_type": "entity", "key": "full_name",
+   "value": "<the name>"}.
+  A user QUOTING a name back ("you said your name was Hermes") still counts: the
+  value came from the user's message.
+  NEVER take the assistant's identity from the Assistant side of the transcript.
+  Generic self-descriptions ("my full name is cognitive digital assistant",
+  "I am an AI language model") are not facts and must never be extracted.
 - If no facts to extract, return {"slots": [], "associations": []}.
 
 Respond with ONLY the JSON object, no commentary."""
@@ -336,6 +343,10 @@ async def apply_search_extraction(
     Facts appearing in multiple independent sources get bumped source_reliability.
     Per-slot source_url is the corroborating URL (prefer .edu, Wikipedia, major news).
     """
+    # The agent's name is never a web fact — drop any identity slots outright.
+    extraction.slots = [
+        s for s in extraction.slots if s.frame_name != IDENTITY_FRAME
+    ]
     if not extraction.slots and not extraction.associations:
         return {
             "slots_applied": 0,
@@ -464,6 +475,54 @@ async def apply_search_extraction(
     }
 
 
+def _tokens(text: str) -> list[str]:
+    """Lowercase alphanumeric tokens for membership checks."""
+    return re.findall(r"[a-z0-9]+", text.lower())
+
+
+def value_stated_by_user(value: str | None, user_message: str) -> bool:
+    """True if the slot value appears verbatim (token-wise) in the user's message.
+
+    Quote marks and punctuation are ignored, so 'Your name is now "Echo"'
+    matches a value of "Echo".
+    """
+    if not value:
+        return False
+    v = _tokens(value)
+    if not v:
+        return False
+    u = _tokens(user_message)
+    n = len(v)
+    return any(u[i : i + n] == v for i in range(len(u) - n + 1))
+
+
+def drop_unstated_identity_slots(
+    slots: list[ExtractedSlot], user_message: str
+) -> list[ExtractedSlot]:
+    """Guard against the assistant's self-descriptions becoming "facts".
+
+    The extractor sees both sides of the transcript. If the chat model ever
+    describes itself generically ("my full name is cognitive digital assistant"),
+    that line must never overwrite the identity frame — only names the USER
+    actually stated may land on identity_name. Non-identity frames pass through.
+    """
+    kept: list[ExtractedSlot] = []
+    for slot in slots:
+        if (
+            slot.frame_name == IDENTITY_FRAME
+            and slot.key == IDENTITY_NAME_SLOT
+            and not value_stated_by_user(slot.value, user_message)
+        ):
+            logger.info(
+                "Dropped identity slot %s=%r: value not stated by user",
+                slot.key,
+                slot.value,
+            )
+            continue
+        kept.append(slot)
+    return kept
+
+
 async def extract_and_apply(
     user_message: str,
     assistant_response: str,
@@ -474,6 +533,7 @@ async def extract_and_apply(
     """Full extraction pipeline: extract facts + apply to memory store + embed frames."""
     try:
         extraction = await extract_facts(user_message, assistant_response, llm_client)
+        extraction.slots = drop_unstated_identity_slots(extraction.slots, user_message)
         if not extraction.slots and not extraction.associations:
             return {
                 "slots_applied": 0,
