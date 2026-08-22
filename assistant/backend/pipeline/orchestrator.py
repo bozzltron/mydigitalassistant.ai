@@ -484,8 +484,6 @@ class Orchestrator:
 
         from assistant.backend.pipeline.extractor import extract_scheduled_task_fields
 
-        from ..scheduler.cron import parse_schedule
-
         try:
             fields = await extract_scheduled_task_fields(request.message, self.llm_client)
         except Exception as e:
@@ -527,7 +525,7 @@ class Orchestrator:
                 response_text = "\n".join(lines)
 
         elif intent == "delete":
-            task_name = fields.get("task_name", "")
+            task_name = fields.get("task_name") or fields.get("name", "")
             if task_name:
                 tasks = await self.store.get_scheduled_tasks(
                     owner_user_id=request.user_id
@@ -543,7 +541,7 @@ class Orchestrator:
                 response_text = "Which task do you want to delete?"
 
         elif intent == "pause":
-            task_name = fields.get("task_name", "")
+            task_name = fields.get("task_name") or fields.get("name", "")
             if task_name:
                 tasks = await self.store.get_scheduled_tasks(
                     owner_user_id=request.user_id
@@ -569,7 +567,7 @@ class Orchestrator:
                 response_text = "Which task do you want to pause?"
 
         elif intent == "run_now":
-            task_name = fields.get("task_name", "")
+            task_name = fields.get("task_name") or fields.get("name", "")
             if task_name:
                 tasks = await self.store.get_scheduled_tasks(
                     owner_user_id=request.user_id
@@ -586,37 +584,35 @@ class Orchestrator:
         else:
             name = fields.get("name") or f"task_{uuid.uuid4().hex[:6]}"
             description = fields.get("description", "")
-            schedule_text = fields.get("schedule", "daily")
+            repeat = bool(fields.get("repeat", True))
+            frequency = "daily" if repeat else "once"
             prompt = fields.get("prompt", request.message)
 
-            try:
-                parsed = parse_schedule(schedule_text)
-            except ValueError as ve:
-                return ChatResponse(
-                    response=f"I had trouble parsing that schedule: {ve}",
-                    session_id=session_id,
-                    task_type="scheduled",
-                    memory_context="",
-                    extraction_summary=None,
-                    search_extraction_summary=None,
-                    citations=[],
-                )
+            from ..scheduler.schedule import format_next_run, next_daily_run
 
+            next_tick = next_daily_run()
             await self.store.upsert_scheduled_task(
                 name=name,
                 description=description,
-                schedule_cron=parsed.cron_expr,
+                schedule_cron=frequency,
                 prompt=prompt,
                 enabled=True,
                 owner_user_id=request.user_id,
+                next_run=next_tick.isoformat(),
             )
 
-            response_text = (
-                f"Done! I've set up **{name}** ({parsed.human}). "
-                f"It will run {parsed.human.lower()} and I'll store the results "
-                f"for you to recall later. "
-                f"Next run: {parsed.next_run_utc:%Y-%m-%d %H:%M UTC}."
-            )
+            when = format_next_run(next_tick)
+            if repeat:
+                response_text = (
+                    f"Added **{name}** to your daily list. I'll take care of it "
+                    f"every morning — first run {when}. Say the word anytime if "
+                    "you want it off the list."
+                )
+            else:
+                response_text = (
+                    f"Got it — I'll handle **{name}** once, at my next daily "
+                    f"run ({when}), and then it's done."
+                )
 
         return ChatResponse(
             response=response_text,

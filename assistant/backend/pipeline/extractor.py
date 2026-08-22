@@ -689,35 +689,45 @@ async def extract_scheduled_task_fields(
 
     system = ChatMessage(
         role="system",
-        content="""You are parsing a scheduled task request.
+        content="""You are parsing a request about the agent's daily task list.
+
+The agent runs its task list once a day at a fixed morning time. Tasks repeat
+every day until the user asks to stop them, unless the user wants something
+done just once.
 
 Determine the user's intent and extract the relevant fields.
 
 Intents:
-- "create": user wants to create a new scheduled task
-- "list": user wants to see their scheduled tasks
-- "delete": user wants to remove a task
+- "create": user wants to add a task to the daily list
+- "list": user wants to see their daily tasks
+- "delete": user wants to remove a task (stop doing it)
 - "pause": user wants to temporarily stop a task
 - "resume": user wants to re-enable a paused task
-- "run_now": user wants to execute a task immediately (not on schedule)
+- "run_now": user wants a task executed immediately
 
 Extract these fields for create:
 - name: short identifier (slug-style, e.g. "ai_news_briefing")
 - description: human-readable purpose (1-2 sentences)
-- schedule: natural language schedule (e.g. "daily at 9am", "every 30 minutes")
-- prompt: the instruction the agent should execute
+- prompt: the instruction the agent should execute each day
+- repeat: true if the task should run every day; false if the user asked for
+  it to happen once ("tomorrow", "just this once", "on Friday", "remind me
+  Saturday"). Default true when unclear.
 
 For delete/pause/resume/run_now: only intent and name are needed.
 For list: only intent is needed.
 
 Examples:
-- "set up a daily AI news briefing at 9am" → intent=create, name="ai_news_briefing"
-- "what scheduled tasks do I have" → intent=list
-- "delete my Monday task" → intent=delete, name="monday_task"
-- "run my AI briefing now" → intent=run_now, name="ai_briefing"
+- "add an AI news briefing to my mornings" → intent=create, name="ai_news_briefing",
+  repeat=true
+- "remind me to call mom tomorrow" → intent=create, name="call_mom", repeat=false,
+  prompt="Remind Alice to call her mom"
+- "what's on my daily list?" → intent=list
+- "stop doing the weather check" → intent=delete, name="weather_check"
+- "run my briefing right now" → intent=run_now, name="briefing"
 
 Respond with ONLY valid JSON:
-{"intent": "create"|"list"|"delete"|"pause"|"resume"|"run_now", "name": "...", "description": "...", "schedule": "...", "prompt": "..."}""",  # noqa: E501
+{"intent": "create"|"list"|"delete"|"pause"|"resume"|"run_now", "name": "...",
+ "description": "...", "prompt": "...", "repeat": true|false}""",  # noqa: E501
     )
     user = ChatMessage(role="user", content=user_message)
 

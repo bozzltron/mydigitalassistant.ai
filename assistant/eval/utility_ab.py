@@ -149,16 +149,18 @@ CLASSIFY_FIXTURES = [
 ]
 
 SCHEDULED_FIXTURES = [
-    {"name": "create_daily", "text": "set up a daily AI news briefing at 9am",
-     "intent": "create", "field_contains": {"schedule": ["daily"]}},
-    {"name": "list_tasks", "text": "what scheduled tasks do I have?",
-     "intent": "list", "field_contains": None},
-    {"name": "delete_task", "text": "delete my Monday task",
-     "intent": "delete", "field_contains": None},
-    {"name": "run_now", "text": "run my AI briefing right now",
-     "intent": "run_now", "field_contains": None},
-    {"name": "pause_task", "text": "pause the weather check task",
-     "intent": "pause", "field_contains": None},
+    {"name": "create_daily", "text": "add an AI news briefing to my mornings",
+     "intent": "create", "repeat": True},
+    {"name": "create_once", "text": "remind me to call the plumber tomorrow",
+     "intent": "create", "repeat": False},
+    {"name": "list_tasks", "text": "what's on my daily list?",
+     "intent": "list", "repeat": None},
+    {"name": "delete_task", "text": "stop doing the weather check",
+     "intent": "delete", "repeat": None},
+    {"name": "run_now", "text": "run my briefing right now",
+     "intent": "run_now", "repeat": None},
+    {"name": "pause_task", "text": "pause the plant watering task",
+     "intent": "pause", "repeat": None},
 ]
 
 
@@ -219,11 +221,9 @@ async def _run_scheduled(client: OllamaClient, fixture: dict) -> tuple[bool, flo
     elapsed = time.perf_counter() - start
     if data.get("intent") != fixture["intent"]:
         return False, elapsed, False, json.dumps(data)[:200]
-    checks = fixture.get("field_contains") or {}
-    for field, subs in checks.items():
-        val = str(data.get(field) or "").lower()
-        if not any(sub.lower() in val for sub in subs):
-            return False, elapsed, False, json.dumps(data)[:200]
+    expected_repeat = fixture.get("repeat")
+    if expected_repeat is not None and bool(data.get("repeat", True)) is not expected_repeat:
+        return False, elapsed, False, json.dumps(data)[:200]
     return True, elapsed, False, json.dumps(data)[:200]
 
 

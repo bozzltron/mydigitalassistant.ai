@@ -60,5 +60,10 @@ class Settings(BaseSettings):
     # Scheduled tasks (runs as background task inside the backend)
     scheduler_enabled: bool = False
 
+    # The daily list: one wake-up time for all user tasks. Tasks repeat daily
+    # until the user stops them, or run once at the next tick.
+    daily_tasks_time: str = "09:00"  # HH:MM, 24h
+    daily_tasks_tz: str = ""  # IANA zone; empty = TZ env or host-local
+
 
 settings = Settings()

@@ -158,11 +158,11 @@ Reasoning itself needs no rethink — thinking-mode escalation stands. But the f
 re-evaluation lets us delete hand-written NLP code that existed *because* old models
 couldn't be trusted with these jobs cheaply:
 
-1. **`scheduler/cron.py` `parse_schedule` (largest win).** A hand-rolled NL→cron parser
-   ("every 30 minutes", "daily at 9am") built from regexes and vocab lists — classic
-   brittle NLP that qwen3.5:4b replaces wholesale with one JSON structured-output call.
-   It runs in the scheduler loop (not latency-critical), so LLM-first is safe here.
-   Keep `parse_schedule` as offline fallback only.
+1. **`scheduler/cron.py` `parse_schedule`** — SUPERSEDED 2026-08-22 by a full
+   redesign: scheduling is now "the daily list" (one tick at `DAILY_TASKS_TIME`,
+   tasks are `daily`/`once`, no cron expressions, croniter dependency removed).
+   The interim LLM-first `generate_schedule` scored 8/8 vs the regex parser's
+   4/8 on A/B fixtures before being simplified away entirely.
 2. **No tool-call client fork.** qwen3.8 has native `tools` capability — M5 uses the
    standard Ollama tools API on the chat model directly. The planned separate
    TOOL_CALL role/client never gets written; reserve coder is a config swap if ever needed.

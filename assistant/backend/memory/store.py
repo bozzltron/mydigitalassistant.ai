@@ -1543,12 +1543,19 @@ class MemoryStore:
     ) -> int:
         """Create or update a scheduled_task frame.
 
+        `schedule_cron` holds the frequency tag "daily" or "once" (column name
+        kept for schema compatibility). User tasks all fire at the shared daily
+        tick; `next_run` defaults to that.
+
         Returns the frame id.
         """
-        from ..scheduler.cron import next_run_from_cron
+        from ..scheduler.schedule import next_daily_run
 
+        if schedule_cron not in ("daily", "once"):
+            schedule_cron = "daily"
         if next_run is None:
-            next_run = next_run_from_cron(schedule_cron).isoformat()
+            if enabled:
+                next_run = next_daily_run().isoformat()
 
         async with self._connect() as db:
             existing = await db.execute_fetchall(
@@ -1664,26 +1671,35 @@ class MemoryStore:
         last_run: str,
         last_result_summary: str,
     ) -> None:
-        """Update last_run and recompute next_run from the cron expression."""
-        from ..scheduler.cron import next_run_from_cron
+        """Record a run: reschedule daily tasks, disable one-shot tasks."""
+        from ..scheduler.schedule import next_daily_run
 
         async with self._connect() as db:
             row = await db.execute_fetchall(
                 "SELECT schedule_cron FROM frames WHERE id = ?",
                 (frame_id,),
             )
-            if not row or not row[0][0]:
+            if not row:
                 return
-            cron_expr = row[0][0]
-            next_run = next_run_from_cron(cron_expr).isoformat()
-
-            await db.execute(
-                "UPDATE frames SET "
-                "last_run=?, last_result_summary=?, next_run=?, "
-                "updated_at=datetime('now') "
-                "WHERE id = ?",
-                (last_run, last_result_summary[:2000], next_run, frame_id),
-            )
+            frequency = row[0][0]
+            if frequency == "once":
+                await db.execute(
+                    "UPDATE frames SET "
+                    "last_run=?, last_result_summary=?, enabled=0, next_run=NULL, "
+                    "updated_at=datetime('now') "
+                    "WHERE id = ?",
+                    (last_run, last_result_summary[:2000], frame_id),
+                )
+            else:
+                # "daily" (and any legacy value) repeats at the next daily tick.
+                next_run = next_daily_run().isoformat()
+                await db.execute(
+                    "UPDATE frames SET "
+                    "last_run=?, last_result_summary=?, next_run=?, "
+                    "updated_at=datetime('now') "
+                    "WHERE id = ?",
+                    (last_run, last_result_summary[:2000], next_run, frame_id),
+                )
             await db.commit()
 
     async def delete_scheduled_task(self, frame_id: int) -> None:
@@ -1764,50 +1780,6 @@ class MemoryStore:
             )
             await db.commit()
             return removed
-
-    async def ensure_system_tasks(self) -> None:
-        """Create built-in system tasks (gc, heartbeat) if they don't exist.
-
-        Called by the scheduler on startup.
-        """
-        from ..scheduler.cron import next_run_from_cron
-
-        gc_next = next_run_from_cron("0 3 * * 0").isoformat()
-        hb_next = next_run_from_cron("*/30 * * * *").isoformat()
-
-        async with self._connect() as db:
-            gc_row = await db.execute_fetchall(
-                "SELECT id FROM frames WHERE name = 'system_memory_gc' "
-                "AND type = 'scheduled_task' AND deleted_at IS NULL"
-            )
-            if not gc_row:
-                await db.execute(
-                    "INSERT INTO frames "
-                    "(name, type, confidence, essential, priority, source_type, "
-                    "description, schedule_cron, prompt, enabled, next_run) "
-                    "VALUES ('system_memory_gc', 'scheduled_task', 1.0, 0, 0.0, "
-                    "'system', 'Weekly memory GC — decay low-priority stale slots', "
-                    "'0 3 * * 0', 'Run memory GC to decay stale slots', "
-                    "1, ?)",
-                    (gc_next,),
-                )
-
-            hb_row = await db.execute_fetchall(
-                "SELECT id FROM frames WHERE name = 'system_scheduler_heartbeat' "
-                "AND type = 'scheduled_task' AND deleted_at IS NULL"
-            )
-            if not hb_row:
-                await db.execute(
-                    "INSERT INTO frames "
-                    "(name, type, confidence, essential, priority, source_type, "
-                    "description, schedule_cron, prompt, enabled, next_run) "
-                    "VALUES ('system_scheduler_heartbeat', 'scheduled_task', 1.0, 0, 0.0, "
-                    "'system', 'Scheduler heartbeat — update every 30 minutes', "
-                    "'*/30 * * * *', 'Update scheduler heartbeat timestamp', "
-                    "1, ?)",
-                    (hb_next,),
-                )
-            await db.commit()
 
     async def _create_backup(self) -> Path:
         """Create a backup of the current DB before overwrite import."""

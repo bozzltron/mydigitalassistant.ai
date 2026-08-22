@@ -1,18 +1,19 @@
-"""Scheduled task runner — runs as a background task inside the backend.
+"""Daily-list task runner — background loop inside the backend.
 
-Loops: sleeps until the next task's next_run, executes due tasks, updates
-last_run/next_run. Uses the same Orchestrator as chat so that task results
-become memory normally.
+The agent wakes once a day at the configured tick (DAILY_TASKS_TIME) and runs
+every enabled "daily" task; "once" tasks run at the next tick and disable
+themselves. Housekeeping (heartbeat every 30 min, memory GC weekly) is plain
+timer logic here — not tasks, no LLM calls.
 
-Started via `start_scheduler(store)` from the FastAPI lifespan.
-System tasks (gc, heartbeat) run regardless of user-defined tasks.
+User tasks execute through the same Orchestrator as chat so results become
+memory normally. Started via `start_scheduler(store)` from the FastAPI
+lifespan.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-import signal  # noqa: F401
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
@@ -25,10 +26,15 @@ from assistant.backend.memory.store import MemoryStore
 from assistant.backend.pipeline.llm_client import OllamaClient
 from assistant.backend.pipeline.orchestrator import Orchestrator, OrchestratorDeps
 from assistant.backend.pipeline.search import WebSearchTool
+from assistant.backend.scheduler.schedule import next_daily_run
 
 logger = logging.getLogger(__name__)
 
 SHUTDOWN = False
+
+POLL_SECONDS = 20
+HEARTBEAT_INTERVAL_S = 30 * 60
+GC_INTERVAL_S = 7 * 24 * 60 * 60
 
 
 def _signal_handler(signum, frame):
@@ -61,7 +67,8 @@ async def _execute_task(
 ) -> tuple[bool, str]:
     """Run a single scheduled task through the orchestrator.
 
-    Returns (success, result_summary).
+    Returns (success, result_summary). update_scheduled_task_run reschedules
+    daily tasks to the next tick and disables one-shot tasks.
     """
     try:
         result = await orchestrator.execute_task(
@@ -110,56 +117,66 @@ async def _run_memory_gc(store: MemoryStore) -> None:
         logger.warning("Memory GC failed: %s", exc)
 
 
-async def _sleep_until(next_run: datetime) -> None:
-    """Sleep until a specific UTC datetime, checking SHUTDOWN flag."""
-    now = datetime.now(UTC)
-    if next_run <= now:
-        return
-    total_seconds = (next_run - now).total_seconds()
-    logger.debug("Sleeping %.0f seconds until %s", total_seconds, next_run)
-
-    while total_seconds > 0 and not SHUTDOWN:
-        await asyncio.sleep(min(total_seconds, 30))
-        total_seconds = (next_run - datetime.now(UTC)).total_seconds()
+def _is_new_week(last: datetime | None, now: datetime) -> bool:
+    """ISO-week comparison so GC runs once per calendar week."""
+    if last is None:
+        return True
+    local_last = last.astimezone()
+    local_now = now.astimezone()
+    return local_last.isocalendar()[:2] != local_now.isocalendar()[:2]
 
 
 async def _scheduler_loop(store: MemoryStore) -> None:
-    """Main scheduler loop."""
-    logger.info("Scheduler loop started")
+    """Main scheduler loop: poll for due tasks + housekeeping timers."""
+    logger.info("Scheduler loop started (daily tick at %s %s)",
+                settings.daily_tasks_time, settings.daily_tasks_tz or "local")
 
     await _run_heartbeat(store)
     await _run_memory_gc(store)
+    last_hb = datetime.now(UTC)
+    last_gc = last_hb
 
     while not SHUTDOWN:
         try:
-            tasks = await store.get_due_scheduled_tasks()
-            if not tasks:
-                nearest = await store.get_nearest_scheduled_task_run()
-                if nearest:
-                    await _sleep_until(nearest)
-                else:
-                    await asyncio.sleep(60)
-                continue
+            now = datetime.now(UTC)
 
-            orchestrator = _new_orchestrator(store)
+            if (now - last_hb).total_seconds() >= HEARTBEAT_INTERVAL_S:
+                await _run_heartbeat(store)
+                last_hb = now
+            if _is_new_week(last_gc, now):
+                await _run_memory_gc(store)
+                last_gc = now
 
-            for task in tasks:
-                if SHUTDOWN:
-                    break
-                await _execute_task(
-                    store=store,
-                    orchestrator=orchestrator,
-                    task_frame_id=task["id"],
-                    task_name=task["name"],
-                    task_prompt=task["prompt"],
-                    owner_user_id=task["owner_user_id"] or 1,
-                )
+            due = await store.get_due_scheduled_tasks()
+            if due:
+                orchestrator = _new_orchestrator(store)
+                logger.info("Daily list firing: %d task(s)", len(due))
+                for task in due:
+                    if SHUTDOWN:
+                        break
+                    # Catch-up guard: skip anything wildly overdue that was
+                    # already handled (e.g. clock jump), fire the rest.
+                    await _execute_task(
+                        store=store,
+                        orchestrator=orchestrator,
+                        task_frame_id=task["id"],
+                        task_name=task["name"],
+                        task_prompt=task["prompt"],
+                        owner_user_id=task["owner_user_id"] or 1,
+                    )
+
+            await asyncio.sleep(POLL_SECONDS)
 
         except asyncio.CancelledError:
             raise
         except Exception as exc:
             logger.exception("Scheduler loop error: %s", exc)
             await asyncio.sleep(30)
+
+
+def next_tick_for_display() -> str:
+    """Human-readable next daily tick (for status surfaces/tests)."""
+    return next_daily_run().isoformat()
 
 
 async def start_scheduler(store: MemoryStore) -> None:

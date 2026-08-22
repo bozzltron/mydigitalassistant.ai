@@ -95,15 +95,24 @@ Role-based model selection (Phase 6). Configurable in `.env`: `CHAT_MODEL`, `UTI
   (probed via `/api/show`). Target fleet + migration gates: see
   `/plans/PHASE_6_MODEL_TIERING.md`.
 
-## Scheduled tasks
-- `POST /chat` with a scheduling intent → `TaskType.SCHEDULED` → orchestrator handles via `_handle_scheduled_task`.
-- Task definitions stored as `scheduled_task` frames with `schedule_cron`, `prompt`, `enabled`, `last_run`, `next_run`, `last_result_summary`.
-- Natural language → cron via `scheduler/cron.py` (`parse_schedule`). Supports: "every 30 minutes", "daily at 9am", "weekly on Monday", etc. Minimum interval: 5 minutes (normalized to 30 if shorter).
-- Scheduler runs as a background asyncio task inside the backend (enabled via `SCHEDULER_ENABLED=true`). Loop: sleep until nearest `next_run`, execute due tasks, update `last_run`/`next_run`.
-- Built-in system tasks: `system_memory_gc` (weekly, decay stale slots) and `system_scheduler_heartbeat` (every 30 min).
-- Memory garbage collection (`store.gc()`): soft-deletes forgotten frames (priority < 0.2, unaccessed > 30 days) and decays stale slots (priority < 0.3, accessed > 60 days ago).
-- User tasks run through the full orchestrator (search + LLM + extraction) so results become memory normally.
+## Scheduled tasks — the daily list
+- One clock: the agent wakes once a day at `DAILY_TASKS_TIME` (default `09:00`, 24h)
+  in `DAILY_TASKS_TZ` (default: `TZ` env or host-local zone).
+- Chat is the only interface. "Add an AI briefing to my mornings" → task stored;
+  "stop doing X" → removed; "run my briefing now" → immediate execution.
+- Task kinds: `daily` (runs every tick until the user asks to stop) and `once`
+  (next tick, then auto-disabled). Stored on scheduled_task frames in the
+  `schedule_cron` column (legacy column name; now holds the frequency tag).
+- Extraction: utility model returns `{intent, name, description, prompt, repeat}`
+  (`repeat: false` for one-shots like "remind me tomorrow"). No cron generation —
+  the old NL→cron parser and croniter dependency were removed.
+- Runner (`scheduler/runner.py`): 20s poll loop; fires due tasks through the full
+  orchestrator (search + thinking + extraction) so results become memory.
+  Housekeeping is plain timers here: heartbeat every 30 min, memory GC weekly
+  (ISO-week change detection) — no LLM calls, no system frames.
+- Missed ticks (backend down at 09:00) fire once late on restart, then reschedule.
 - API: `GET /tasks`, `DELETE /tasks/{id}`, `GET /tasks/{id}/result`.
+- Tests: `assistant/tests/test_daily_schedule.py`.
 
 ## Key files
 - `backend/memory/store.py` — MemoryStore CRUD over SQLite; `export_brain`/`import_brain`; `gc()`.
@@ -114,8 +123,8 @@ Role-based model selection (Phase 6). Configurable in `.env`: `CHAT_MODEL`, `UTI
 - `backend/pipeline/reasoner.py` — planning + self-correction (`Action.CORRECT`).
 - `backend/pipeline/orchestrator.py` — coordinates full cognitive loop; `execute_task()`.
 - `backend/pipeline/llm_client.py` — Ollama client (chat + embeddings).
-- `backend/scheduler/cron.py` — natural language → cron parsing (`parse_schedule`).
-- `backend/scheduler/runner.py` — scheduler loop (system tasks + user tasks).
+- `backend/scheduler/schedule.py` — the daily clock (tick computation, tz handling).
+- `backend/scheduler/runner.py` — scheduler loop (daily-list firing + housekeeping timers).
 - `backend/main.py` — FastAPI app with all endpoints.
 - `eval/dataset.json` — evaluation cases (5 sample cases).
 - `eval/runner.py` — evaluation engine with keyword-matching grader.

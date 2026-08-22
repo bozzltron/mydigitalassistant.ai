@@ -15,6 +15,9 @@ services:
       - WHISPER_MODEL=base
       - WHISPER_DEVICE=cpu
       - SCHEDULER_ENABLED=${SCHEDULER_ENABLED:-false}
+      - DAILY_TASKS_TIME=${DAILY_TASKS_TIME:-09:00}
+      - DAILY_TASKS_TZ=${DAILY_TASKS_TZ:-}
+      - TZ=${TZ:-}
     volumes:
       - assistant-data:/app/data
     extra_hosts:
