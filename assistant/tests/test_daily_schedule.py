@@ -200,3 +200,82 @@ async def test_chat_delete_task(env):
     await orch.chat(ChatRequest(user_id=user_id, message="stop the weather"))
     tasks = await store.get_scheduled_tasks(owner_user_id=user_id)
     assert all(t["id"] != fid for t in tasks) or not tasks
+
+
+# ---- due-ness with mixed UTC offsets (regression: string compare fired
+# tasks hours early when next_run carried a non-UTC offset) ----
+
+
+async def test_due_comparison_handles_mixed_offsets(store):
+    """next_run stored as -05:00 must not fire before its true instant."""
+    now = datetime.now(UTC)
+    # Due 30 min ago, written in Chicago local time (offset -05:00).
+    past_local = (now - timedelta(minutes=30)).astimezone(
+        __import__("zoneinfo").ZoneInfo("America/Chicago")
+    )
+    # Due 2 h from now, also written local — string-wise it sorts BEFORE
+    # the past task's hour digits, which is what broke the old SQL compare.
+    future_local = (now + timedelta(hours=2)).astimezone(
+        __import__("zoneinfo").ZoneInfo("America/Chicago")
+    )
+    await store.upsert_scheduled_task(
+        name="past_task", description="", schedule_cron="daily",
+        prompt="p1", owner_user_id=None, next_run=past_local.isoformat(),
+    )
+    await store.upsert_scheduled_task(
+        name="future_task", description="", schedule_cron="daily",
+        prompt="p2", owner_user_id=None, next_run=future_local.isoformat(),
+    )
+    # Also a canonical UTC row due now.
+    await store.upsert_scheduled_task(
+        name="utc_task", description="", schedule_cron="once",
+        prompt="p3", owner_user_id=None,
+        next_run=(now - timedelta(minutes=5)).isoformat(),
+    )
+
+    due = {t["name"] for t in await store.get_due_scheduled_tasks()}
+    assert "past_task" in due
+    assert "utc_task" in due
+    assert "future_task" not in due
+
+
+async def test_upsert_stores_next_run_in_utc(store):
+    """New tasks canonicalize to UTC regardless of configured zone."""
+    from datetime import datetime as dt
+
+    fid = await store.upsert_scheduled_task(
+        name="tz_check", description="", schedule_cron="daily", prompt="p"
+    )
+    rows = await store.get_due_scheduled_tasks()  # exercises parse path too
+    row = next((t for t in rows if t["id"] == fid), None)
+    if row:  # only if immediately due; otherwise just check the format below
+        pass
+    raw = None
+    async with store._connect() as db:
+        cur = await db.execute_fetchall(
+            "SELECT next_run FROM frames WHERE id = ?", (fid,)
+        )
+        raw = cur[0][0]
+    parsed = dt.fromisoformat(raw)
+    assert parsed.tzinfo is not None
+    assert parsed.utcoffset().total_seconds() == 0
+
+
+async def test_nearest_run_parses_mixed_offsets(store):
+    now = datetime.now(UTC)
+    far = (now + timedelta(days=3)).isoformat()
+    near_local = (
+        now + timedelta(hours=1)
+    ).astimezone(__import__("zoneinfo").ZoneInfo("America/Chicago")).isoformat()
+    await store.upsert_scheduled_task(
+        name="a", description="", schedule_cron="once", prompt="p",
+        next_run=far,
+    )
+    await store.upsert_scheduled_task(
+        name="b", description="", schedule_cron="once", prompt="p",
+        next_run=near_local,
+    )
+    nearest = await store.get_nearest_scheduled_task_run()
+    assert nearest is not None
+    delta = abs((nearest - now).total_seconds())
+    assert delta < 2 * 3600  # the 1h-away task wins despite "+00:00"-style sort order

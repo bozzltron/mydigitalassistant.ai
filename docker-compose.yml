@@ -6,6 +6,7 @@ services:
       - DATABASE_PATH=/app/data/assistant.db
       - DB_KEY=${DB_KEY}
       - OLLAMA_URL=http://host.docker.internal:11434
+      - OLLAMA_TIMEOUT=${OLLAMA_TIMEOUT:-600}
       - CHAT_MODEL=${CHAT_MODEL:-qwen2.5:7b}
       - UTILITY_MODEL=${UTILITY_MODEL:-qwen2.5:3b}
       - EMBEDDING_MODEL=${EMBEDDING_MODEL:-nomic-embed-text}

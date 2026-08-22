@@ -6,8 +6,6 @@
   <title>Brain Observatory</title>
   <script src="/static/d3.min.js"></script>
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&display=swap');
-
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
@@ -19,7 +17,7 @@
       --accent: #58a6ff;
       --accent2: #3fb950;
       --error: #f47070;
-      --font: 'Space Mono', 'Courier New', monospace;
+      --font: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, 'Courier New', monospace;
       --person: #f78166;
       --concept: #d2a8ff;
       --event: #79c0ff;
@@ -228,10 +226,12 @@
       stroke-opacity: 0.9;
     }
 
-    .link.dimmed { stroke-opacity: 0.06; }
+    .link.dimmed { stroke-opacity: 0.06; marker-end: none; }
     .link.lit { stroke-opacity: 0.95; }
 
     .node.dimmed { opacity: 0.18; transition: opacity 0.2s; }
+    /* Conflict nodes stay noticeable even while their neighborhood is dimmed. */
+    .node.has-conflict.dimmed { opacity: 0.55; }
     .node.lit circle { filter: brightness(1.25); }
 
     .edge-label {
@@ -406,14 +406,16 @@
       return `M${sx},${sy}Q${cx},${cy}${tx},${ty}`;
     }
 
+    // True bezier apex: 0.25*P0 + 0.5*C + 0.25*P2 — labels sit ON the curve.
     function edgeMidpoint(d) {
-      const mx = (d.source.x + d.target.x) / 2;
-      const my = (d.source.y + d.target.y) / 2;
-      const dx = d.target.x - d.source.x, dy = d.target.y - d.source.y;
+      const sx = d.source.x, sy = d.source.y, tx = d.target.x, ty = d.target.y;
+      const dx = tx - sx, dy = ty - sy;
       const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+      const cx = sx + dx / 2 - (dy / dist) * dist * 0.08;
+      const cy = sy + dy / 2 + (dx / dist) * dist * 0.08;
       return {
-        x: mx - (dy / dist) * dist * 0.12,
-        y: my + (dx / dist) * dist * 0.12,
+        x: (sx + 2 * cx + tx) / 4,
+        y: (sy + 2 * cy + ty) / 4 + 3,
       };
     }
 
@@ -516,6 +518,7 @@
           document.getElementById('empty-state').style.display = 'block';
           document.getElementById('status').textContent = 'No memories';
           document.getElementById('stats-bar').innerHTML = '';
+          if (simulation) simulation.stop();
           g.selectAll('*').remove();
           return;
         }
@@ -591,7 +594,7 @@
         .selectAll('g')
         .data(nodes)
         .join('g')
-        .attr('class', 'node')
+        .attr('class', d => d.hasConflict ? 'node has-conflict' : 'node')
         .call(d3.drag()
           .on('start', dragstarted)
           .on('drag', dragged)
@@ -610,7 +613,7 @@
         link.attr('d', edgePath);
         edgeLabel
           .attr('x', d => edgeMidpoint(d).x)
-          .attr('y', d => edgeMidpoint(d).y + 3);
+          .attr('y', d => edgeMidpoint(d).y);
 
         node.attr('transform', d => `translate(${d.x},${d.y})`);
       });

@@ -3,6 +3,7 @@
 import logging
 import uuid
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from pydantic import BaseModel
 
@@ -567,11 +568,14 @@ class Orchestrator:
                     "Say something like 'set up a daily AI news briefing' to create one."
                 )
             else:
+                from ..scheduler.schedule import format_next_run
+
                 lines = ["Your scheduled tasks:"]
                 for t in tasks:
                     enabled = "enabled" if t["enabled"] else "paused"
                     last = t.get("last_run") or "never run"
-                    next_r = t.get("next_run") or "unknown"
+                    next_ts = _parse_iso_ts_safe(t.get("next_run"))
+                    next_r = format_next_run(next_ts) if next_ts else "unknown"
                     lines.append(
                         f"- **{t['name']}** ({t.get('schedule_cron', '?')}, {enabled})\n"
                         f"  Last: {last}  |  Next: {next_r}"
@@ -640,7 +644,7 @@ class Orchestrator:
             description = fields.get("description", "")
             repeat = bool(fields.get("repeat", True))
             frequency = "daily" if repeat else "once"
-            prompt = fields.get("prompt", request.message)
+            prompt = fields.get("prompt") or request.message
 
             from ..scheduler.schedule import format_next_run, next_daily_run
 
@@ -652,7 +656,7 @@ class Orchestrator:
                 prompt=prompt,
                 enabled=True,
                 owner_user_id=request.user_id,
-                next_run=next_tick.isoformat(),
+                next_run=next_tick.astimezone(UTC).isoformat(),
             )
 
             when = format_next_run(next_tick)
@@ -677,6 +681,17 @@ class Orchestrator:
             search_extraction_summary=None,
             citations=[],
         )
+
+
+def _parse_iso_ts_safe(value: str | None):
+    """Best-effort ISO parse for display; returns None on failure."""
+    if not value:
+        return None
+    try:
+        ts = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return ts
 
 
 async def store_turn_memory(

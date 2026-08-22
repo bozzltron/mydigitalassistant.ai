@@ -222,7 +222,13 @@ async def _run_scheduled(client: OllamaClient, fixture: dict) -> tuple[bool, flo
     if data.get("intent") != fixture["intent"]:
         return False, elapsed, False, json.dumps(data)[:200]
     expected_repeat = fixture.get("repeat")
-    if expected_repeat is not None and bool(data.get("repeat", True)) is not expected_repeat:
+    raw_repeat = data.get("repeat", True)
+    # LLM JSON isn't type-validated: coerce "false"/0/etc. before comparing.
+    repeat_ok = (
+        expected_repeat is None
+        or str(raw_repeat).lower() == str(expected_repeat).lower()
+    )
+    if not repeat_ok:
         return False, elapsed, False, json.dumps(data)[:200]
     return True, elapsed, False, json.dumps(data)[:200]
 

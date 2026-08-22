@@ -28,6 +28,23 @@ from assistant.backend.memory.models import (
 )
 
 
+def _parse_iso_ts(value: str | None) -> datetime | None:
+    """Parse an ISO timestamp, tolerating Z suffix and missing offset.
+
+    Naive timestamps are interpreted as UTC (the storage convention). Returns
+    None for unparseable values so callers can skip them safely.
+    """
+    if not value:
+        return None
+    try:
+        ts = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=UTC)
+    return ts
+
+
 class MemoryStore:
     def __init__(self, db_path: str):
         self.db_path = db_path
@@ -1555,7 +1572,7 @@ class MemoryStore:
             schedule_cron = "daily"
         if next_run is None:
             if enabled:
-                next_run = next_daily_run().isoformat()
+                next_run = next_daily_run().astimezone(UTC).isoformat()
 
         async with self._connect() as db:
             existing = await db.execute_fetchall(
@@ -1632,38 +1649,49 @@ class MemoryStore:
             return [dict(zip(cols, r, strict=True)) for r in rows]
 
     async def get_due_scheduled_tasks(self) -> list[dict]:
-        """Get tasks that are enabled and whose next_run <= now (UTC)."""
+        """Get tasks that are enabled and whose next_run <= now.
+
+        next_run values may carry mixed UTC offsets (legacy rows stored local
+        offsets like -05:00, newer rows store UTC), so due-ness is decided on
+        parsed datetimes — a lexicographic SQL compare would misfire by hours.
+        """
         from datetime import datetime
+
         async with self._connect() as db:
-            now = datetime.now(UTC).isoformat()
             rows = await db.execute_fetchall(
                 "SELECT id, name, description, schedule_cron, prompt, "
                 "enabled, last_run, next_run, last_result_summary, "
                 "owner_user_id, source_type, created_at, updated_at "
                 "FROM frames "
                 "WHERE type = 'scheduled_task' AND deleted_at IS NULL "
-                "AND enabled = 1 AND next_run IS NOT NULL AND next_run <= ?",
-                (now,),
+                "AND enabled = 1 AND next_run IS NOT NULL",
             )
-            cols = [
-                "id", "name", "description", "schedule_cron", "prompt",
-                "enabled", "last_run", "next_run", "last_result_summary",
-                "owner_user_id", "source_type", "created_at", "updated_at",
-            ]
-            return [dict(zip(cols, r, strict=True)) for r in rows]
+        cols = [
+            "id", "name", "description", "schedule_cron", "prompt",
+            "enabled", "last_run", "next_run", "last_result_summary",
+            "owner_user_id", "source_type", "created_at", "updated_at",
+        ]
+        now = datetime.now(UTC)
+        due: list[dict] = []
+        for r in rows:
+            task = dict(zip(cols, r, strict=True))
+            nr = _parse_iso_ts(task.get("next_run"))
+            if nr is not None and nr <= now:
+                due.append(task)
+        return due
 
     async def get_nearest_scheduled_task_run(self) -> datetime | None:
         """Get the nearest next_run datetime among all enabled tasks (UTC)."""
-        from datetime import datetime
         async with self._connect() as db:
-            row = await db.execute_fetchall(
-                "SELECT MIN(next_run) FROM frames "
+            rows = await db.execute_fetchall(
+                "SELECT next_run FROM frames "
                 "WHERE type = 'scheduled_task' AND deleted_at IS NULL "
                 "AND enabled = 1 AND next_run IS NOT NULL",
             )
-            if row and row[0][0]:
-                return datetime.fromisoformat(row[0][0].replace("Z", "+00:00"))
-            return None
+        parsed = [
+            ts for row in rows if (ts := _parse_iso_ts(row[0])) is not None
+        ]
+        return min(parsed) if parsed else None
 
     async def update_scheduled_task_run(
         self,
@@ -1692,7 +1720,7 @@ class MemoryStore:
                 )
             else:
                 # "daily" (and any legacy value) repeats at the next daily tick.
-                next_run = next_daily_run().isoformat()
+                next_run = next_daily_run().astimezone(UTC).isoformat()
                 await db.execute(
                     "UPDATE frames SET "
                     "last_run=?, last_result_summary=?, next_run=?, "
