@@ -1,6 +1,7 @@
 import json
 from unittest.mock import AsyncMock
 
+import httpx
 import pytest
 
 from assistant.backend.memory.retrieval import Retriever
@@ -427,3 +428,29 @@ async def test_orchestrator_correction_rejected_when_vague(store, stub_llm):
         assert "couldn't" in response.response.lower() or "parse" in response.response.lower()
     finally:
         stub_llm.chat = original_chat
+
+
+async def test_generation_failure_degrades_gracefully(store):
+    """Ollama timeouts/unavailability return a friendly response, not a 500."""
+    llm = StorageTurnStub()
+
+    async def boom(messages, **kwargs):
+        raise httpx.ReadTimeout("timed out")
+
+    llm.chat = boom
+    orchestrator = Orchestrator(
+        deps=OrchestratorDeps(
+            store=store,
+            retriever=Retriever(store=store, llm_client=llm),
+            llm_client=llm,
+            search_tool=SearchSpy(),
+        )
+    )
+    user = await store.create_user("alice")
+    response = await orchestrator.chat(
+        ChatRequest(user_id=user.id, message="hello")
+    )
+    assert "try again" in response.response.lower()
+    # The failure is still logged as an assistant episode for the transcript.
+    episodes = await store.get_episodes_for_user(user_id=user.id, limit=1)
+    assert any(e.role == "assistant" for e in episodes)

@@ -369,20 +369,46 @@ class Orchestrator:
         messages.append(ChatMessage(role="user", content=request.message))
         think = True if plan.think else settings.chat_think_default
         num_predict = settings.think_num_predict_cap if plan.think else None
-        if settings.tools_enabled:
-            tools = builtin_tools(self.search_tool)
-            llm_response = await run_tool_loop(
-                self.llm_client,
-                messages,
-                tools,
-                think=think,
-                num_predict=num_predict,
+        try:
+            if settings.tools_enabled:
+                tools = builtin_tools(self.search_tool)
+                llm_response = await run_tool_loop(
+                    self.llm_client,
+                    messages,
+                    tools,
+                    think=think,
+                    num_predict=num_predict,
+                )
+            else:
+                llm_response = await self.llm_client.chat(
+                    messages,
+                    think=think,
+                    num_predict=num_predict,
+                )
+        except Exception as e:
+            # Local inference can be slow (large prefill, model load) or the
+            # backend briefly unreachable — degrade gracefully instead of 500.
+            logger.error("Generation failed: %s", e)
+            fallback = (
+                "I'm having trouble reaching my language model right now. "
+                "It may still be loading or thinking through a long answer — "
+                "please try again in a moment."
             )
-        else:
-            llm_response = await self.llm_client.chat(
-                messages,
-                think=think,
-                num_predict=num_predict,
+            await self.store.create_episode(
+                user_id=request.user_id,
+                session_id=session_id,
+                role="assistant",
+                content=fallback,
+                frame_ids=[],
+            )
+            return ChatResponse(
+                response=fallback,
+                session_id=session_id,
+                task_type=task_type.value,
+                memory_context=memory_context.formatted,
+                extraction_summary=extraction_summary,
+                search_extraction_summary=search_extraction_summary,
+                citations=[],
             )
 
         # 8. Log assistant episode

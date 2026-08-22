@@ -44,6 +44,11 @@ class Settings(BaseSettings):
     search_base_url: str = "http://127.0.0.1:8080"    # SearXNG default
     search_timeout: float = 30.0
 
+    # Ollama request timeout in seconds. Local 27B-class models with large
+    # context prefills (tool loops) can legitimately take minutes; the default
+    # is generous on purpose.
+    ollama_timeout: float = 600.0
+
     # TLS verification (defense-in-depth for local services)
     # Set to path of CA cert if Ollama/SearXNG use self-signed TLS
     ollama_tls_cert: str = ""
