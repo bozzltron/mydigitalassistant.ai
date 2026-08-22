@@ -83,6 +83,8 @@ class OllamaClient:
         coder_model: str = "",
         timeout: float = 120.0,
         verify_tls: bool | str = True,
+        chat_num_ctx: int = 8192,
+        utility_num_ctx: int = 4096,
     ):
         self.base_url = base_url.rstrip("/")
         self.chat_model = chat_model
@@ -91,6 +93,8 @@ class OllamaClient:
         self.coder_model = coder_model
         self.timeout = timeout
         self.verify_tls: bool | str = verify_tls
+        self.chat_num_ctx = chat_num_ctx
+        self.utility_num_ctx = utility_num_ctx
         self._client: httpx.AsyncClient | None = None
         self._capabilities_cache: dict[str, list[str]] = {}
 
@@ -156,6 +160,7 @@ class OllamaClient:
         think: bool | None = None,
         num_predict: int | None = None,
         tools: list[dict] | None = None,
+        num_ctx: int | None = None,
     ) -> ChatResponse:
         """Send chat completion request. Uses chat_model by default.
 
@@ -164,6 +169,9 @@ class OllamaClient:
         tools: Ollama native tools API — list of {"type": "function",
         "function": {name, description, parameters}} defs. Requested calls come
         back on ChatResponse.tool_calls.
+        num_ctx: context window override. None auto-selects by role — the
+        utility model gets utility_num_ctx, everything else chat_num_ctx
+        (plan §4.4: never let Ollama's 32K default inflate KV allocation).
         """
         model = model or self.chat_model
         client = await self._get_client()
@@ -179,6 +187,12 @@ class OllamaClient:
             payload["think"] = think
         if num_predict is not None:
             payload["options"]["num_predict"] = num_predict
+        if num_ctx is None:
+            num_ctx = (
+                self.utility_num_ctx if model == self.utility_model else self.chat_num_ctx
+            )
+        if num_ctx:
+            payload["options"]["num_ctx"] = num_ctx
         if tools:
             payload["tools"] = tools
         r = await client.post("/api/chat", json=payload)

@@ -92,6 +92,8 @@ async def lifespan(app: FastAPI):
         embedding_model=settings.embedding_model,
         coder_model=settings.coder_model,
         verify_tls=settings.ollama_tls_cert if settings.ollama_tls_cert else True,
+        chat_num_ctx=settings.chat_num_ctx,
+        utility_num_ctx=settings.utility_num_ctx,
     )
     retriever = Retriever(
         store=store,

@@ -669,6 +669,8 @@ def cmd_db_backfill_embeddings(args: argparse.Namespace, client: BackendClient) 
                 embedding_model=settings.embedding_model,
                 coder_model=settings.coder_model,
                 verify_tls=settings.ollama_tls_cert if settings.ollama_tls_cert else True,
+                chat_num_ctx=settings.chat_num_ctx,
+                utility_num_ctx=settings.utility_num_ctx,
             )
             try:
                 frames = await store.list_frames()
@@ -777,6 +779,8 @@ def cmd_db_reembed(args: argparse.Namespace, client: BackendClient) -> None:
             base_url=settings.ollama_url,
             embedding_model=model,
             verify_tls=settings.ollama_tls_cert if settings.ollama_tls_cert else True,
+            chat_num_ctx=settings.chat_num_ctx,
+            utility_num_ctx=settings.utility_num_ctx,
         )
 
         all_frames = asyncio.run(store.list_frames())

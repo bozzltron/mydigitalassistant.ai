@@ -23,6 +23,12 @@ class Settings(BaseSettings):
     # additionally gated on SEARCH_ENABLED / SearXNG availability.
     tools_enabled: bool = True
 
+    # Context windows per call class (Phase 6 plan §4.4). Without these,
+    # Ollama defaults to 32K context on large-RAM hosts and allocates a
+    # proportionally huge KV cache on every request.
+    chat_num_ctx: int = 8192
+    utility_num_ctx: int = 4096
+
     backend_host: str = "127.0.0.1"
     backend_port: int = 8000
 

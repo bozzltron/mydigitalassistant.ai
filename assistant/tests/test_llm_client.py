@@ -167,3 +167,49 @@ async def test_model_capabilities_fails_soft():
     assert await client.model_capabilities("missing") == []
     assert await client.supports_thinking("missing") is False
     await client.close()
+
+
+async def test_chat_num_ctx_auto_by_role():
+    captured: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.setdefault("num_ctx", []).append(
+            json.loads(request.content)["options"]["num_ctx"]
+        )
+        return httpx.Response(200, json={
+            "model": "m", "done": True,
+            "message": {"role": "assistant", "content": "ok"},
+        })
+
+    client = OllamaClient(
+        chat_model="chat-m", utility_model="util-m",
+        chat_num_ctx=8192, utility_num_ctx=4096,
+    )
+    client._client = httpx.AsyncClient(
+        transport=httpx.MockTransport(handler), base_url=client.base_url
+    )
+    await client.chat([ChatMessage(role="user", content="hi")])
+    await client.chat([ChatMessage(role="user", content="hi")], model="util-m")
+    assert captured["num_ctx"] == [8192, 4096]
+    await client.close()
+
+
+async def test_chat_num_ctx_explicit_overrides_and_zero_disables():
+    captured: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        opts = json.loads(request.content)["options"]
+        captured.setdefault("num_ctx", []).append(opts.get("num_ctx"))
+        return httpx.Response(200, json={
+            "model": "m", "done": True,
+            "message": {"role": "assistant", "content": "ok"},
+        })
+
+    client = OllamaClient(chat_num_ctx=8192, utility_num_ctx=4096)
+    client._client = httpx.AsyncClient(
+        transport=httpx.MockTransport(handler), base_url=client.base_url
+    )
+    await client.chat([ChatMessage(role="user", content="hi")], num_ctx=16384)
+    await client.chat([ChatMessage(role="user", content="hi")], num_ctx=0)
+    assert captured["num_ctx"] == [16384, None]
+    await client.close()
