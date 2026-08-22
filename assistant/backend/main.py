@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import shutil
+import time
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
@@ -288,12 +289,67 @@ async def search_frames(
 
 
 # Chat
+
+# Live stage progress for in-flight turns (transparency in the chat UI).
+# Keyed by client-supplied turn_id; small, pruned, best-effort only.
+_turn_progress: dict[str, dict] = {}
+_TURN_PROGRESS_MAX = 200
+
+
+def _prune_turn_progress() -> None:
+    if len(_turn_progress) <= _TURN_PROGRESS_MAX:
+        return
+    now = time.time()
+    for tid in [
+        t
+        for t, v in _turn_progress.items()
+        if v.get("done") or now - v.get("started_at", 0) > 600
+    ]:
+        _turn_progress.pop(tid, None)
+
+
 @app.post("/chat", response_model=ChatResponse)
 async def chat(
     request: ChatRequest, orch: Orchestrator = _Depends(get_orchestrator)
 ):
     """Send a message to the assistant. Returns the response with trace info."""
+    turn_id = request.turn_id
+    if turn_id:
+        _prune_turn_progress()
+        _turn_progress[turn_id] = {
+            "stage": "queued",
+            "detail": "getting started",
+            "started_at": time.time(),
+            "done": False,
+        }
+
+        async def progress(stage: str, detail: str) -> None:
+            entry = _turn_progress.get(turn_id)
+            if entry is not None:
+                entry["stage"] = stage
+                entry["detail"] = detail
+
+        try:
+            return await orch.chat(request, progress=progress)
+        finally:
+            entry = _turn_progress.get(turn_id)
+            if entry is not None:
+                entry["done"] = True
     return await orch.chat(request)
+
+
+@app.get("/chat/status/{turn_id}")
+async def chat_status(turn_id: str):
+    """Live pipeline stage for an in-flight turn (polled by the chat UI)."""
+    entry = _turn_progress.get(turn_id)
+    if entry is None:
+        raise HTTPException(status_code=404, detail="Unknown turn_id")
+    return {
+        "stage": entry["stage"],
+        "detail": entry["detail"],
+        "elapsed_s": round(time.time() - entry["started_at"], 1),
+        "done": entry["done"],
+    }
 
 
 # Voice transcription

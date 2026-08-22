@@ -2,6 +2,7 @@
 
 import logging
 import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -23,6 +24,8 @@ class ChatRequest(BaseModel):
     user_id: int
     message: str
     session_id: str | None = None  # if None, generate one
+    # Client-generated id for live stage progress (see /chat/status/{turn_id}).
+    turn_id: str | None = None
 
 
 class ChatResponse(BaseModel):
@@ -69,6 +72,20 @@ class Orchestrator:
         self.llm_client = deps.llm_client
         self.search_tool = deps.search_tool
 
+    @staticmethod
+    async def _report(
+        progress: "Callable[[str, str], Awaitable[None]] | None",
+        stage: str,
+        detail: str,
+    ) -> None:
+        """Notify a live stage listener; never let progress break the turn."""
+        if progress is None:
+            return
+        try:
+            await progress(stage, detail)
+        except Exception as e:  # pragma: no cover - defensive
+            logger.warning("progress callback failed: %s", e)
+
     async def _get_self_context(self) -> str:
         """The agent's own identity facts, for grounding every response.
 
@@ -91,8 +108,16 @@ class Orchestrator:
         ]
         return "\n".join(lines)
 
-    async def chat(self, request: ChatRequest) -> ChatResponse:
-        """Run the full cognitive loop for a chat turn."""
+    async def chat(
+        self,
+        request: ChatRequest,
+        progress: "Callable[[str, str], Awaitable[None]] | None" = None,
+    ) -> ChatResponse:
+        """Run the full cognitive loop for a chat turn.
+
+        progress: optional async callback (stage, detail) for live UI status;
+        stage is a stable key, detail is human-readable phrasing.
+        """
         # 1. Session
         session_id = request.session_id or str(uuid.uuid4())
 
@@ -106,6 +131,7 @@ class Orchestrator:
         )
 
         # 3. Classify task type + search intent (single LLM pass when needed)
+        await self._report(progress, "routing", "reading your message")
         classification = await route(request.message, self.llm_client)
         task_type = classification.task_type
 
@@ -114,6 +140,7 @@ class Orchestrator:
             return await self._handle_scheduled_task(request, session_id)
 
         # 4. Retrieve memory context
+        await self._report(progress, "recall", "checking my memory")
         memory_context = await self.retriever.retrieve(
             query=request.message,
             user_id=request.user_id,
@@ -147,6 +174,7 @@ class Orchestrator:
                 validate_correction,
             )
 
+            await self._report(progress, "correcting", "updating what I know")
             correction = await extract_correction(request.message, self.llm_client)
             correction_summary: dict = {}
 
@@ -236,6 +264,7 @@ class Orchestrator:
 
         # 6. Extract user-stated facts BEFORE generation so the reply can
         # acknowledge them truthfully (no "sure, I remember" over empty stores).
+        await self._report(progress, "learning", "learning from our conversation")
         extraction_summary: dict = {}
         try:
             extraction_summary = await store_turn_memory(
@@ -271,6 +300,7 @@ class Orchestrator:
         search_results: list[SearchResult] = []
         search_extraction_summary: dict = {}
         if plan.search_needed:
+            await self._report(progress, "searching", "searching the web")
             logger.info("Reasoner triggered search for: %s", request.message[:50])
             try:
                 search_results = await self.search_tool.search(request.message, num_results=5)
@@ -370,6 +400,10 @@ class Orchestrator:
         messages.append(ChatMessage(role="user", content=request.message))
         think = True if plan.think else settings.chat_think_default
         num_predict = settings.think_num_predict_cap if plan.think else None
+        if think:
+            await self._report(progress, "reasoning", "thinking it through")
+        else:
+            await self._report(progress, "responding", "writing a reply")
         try:
             if settings.tools_enabled:
                 tools = builtin_tools(self.search_tool)

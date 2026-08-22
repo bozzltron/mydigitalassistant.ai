@@ -388,3 +388,25 @@ def test_feedback_endpoint_rejects_unknown_kind(client):
     })
     assert r.status_code == 400
 
+
+
+def test_chat_status_roundtrip(client, stub_llm):
+    """turn_id tracks stage progress; status returns a valid shape then done."""
+    stub_llm.set_extraction_result(slots=[], associations=[])
+    u = client.post("/users", params={"name": "status"})
+    uid = u.json()["id"]
+    tid = "status-test-turn"
+    r = client.post("/chat", json={
+        "user_id": uid, "message": "hello there", "session_id": None,
+        "turn_id": tid,
+    })
+    assert r.status_code == 200
+
+    s = client.get(f"/chat/status/{tid}")
+    assert s.status_code == 200
+    body = s.json()
+    assert set(body) == {"stage", "detail", "elapsed_s", "done"}
+    assert body["done"] is True
+
+    missing = client.get("/chat/status/never-seen")
+    assert missing.status_code == 404

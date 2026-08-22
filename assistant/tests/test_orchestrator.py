@@ -454,3 +454,35 @@ async def test_generation_failure_degrades_gracefully(store):
     # The failure is still logged as an assistant episode for the transcript.
     episodes = await store.get_episodes_for_user(user_id=user.id, limit=1)
     assert any(e.role == "assistant" for e in episodes)
+
+
+async def test_progress_stages_reported_in_order(store):
+    """The chat UI's live stage display: stages arrive in pipeline order."""
+    llm = StorageTurnStub()
+    llm.set_extraction_result(
+        slots=[{"frame_name": "orchid", "frame_type": "entity",
+                "key": "color", "value": "purple"}]
+    )
+    orchestrator = Orchestrator(
+        deps=OrchestratorDeps(
+            store=store,
+            retriever=Retriever(store=store, llm_client=llm),
+            llm_client=llm,
+            search_tool=SearchSpy(),
+        )
+    )
+    user = await store.create_user("alice")
+    stages: list[str] = []
+
+    async def progress(stage: str, detail: str) -> None:
+        stages.append(stage)
+
+    await orchestrator.chat(
+        ChatRequest(user_id=user.id, message="My orchid is purple."),
+        progress=progress,
+    )
+    assert stages[0] == "routing"
+    assert "recall" in stages
+    assert "learning" in stages
+    assert stages[-1] in ("responding", "reasoning")
+    assert len(stages) == len(set(stages)), "no stage repeats"

@@ -652,6 +652,13 @@
       animation: dots 1.2s steps(4, end) infinite;
     }
 
+    .stage-elapsed {
+      color: var(--text-dim);
+      font-size: 0.78rem;
+      font-style: normal;
+      margin-left: 0.35rem;
+    }
+
     @keyframes dots {
       0% { content: ''; }
       25% { content: '.'; }
@@ -1288,7 +1295,7 @@
       const div = document.createElement('div');
       div.className = 'msg msg-assistant';
       div.id = 'loading-msg';
-      div.innerHTML = '<div class="content"><em>Thinking<span class="loading-dots"></span></em></div>';
+      div.innerHTML = '<div class="content"><em>Reading your message<span class="loading-dots"></span></em></div>';
       messagesEl.appendChild(div);
       scrollBottom();
     } else {
@@ -1582,6 +1589,44 @@
   }
 
   // ---- Chat ----
+  const STAGE_LABELS = {
+    queued: 'getting started',
+    routing: 'reading your message',
+    recall: 'checking my memory',
+    correcting: 'updating what I know',
+    learning: 'learning from our conversation',
+    searching: 'searching the web',
+    reasoning: 'thinking it through',
+    responding: 'writing a reply',
+    scheduled: 'managing your daily list',
+  };
+
+  let stagePollTimer = null;
+
+  function startStagePolling(turnId) {
+    stopStagePolling();
+    const el = () => document.querySelector('#loading-msg .content em');
+    stagePollTimer = setInterval(async () => {
+      try {
+        const r = await fetch(`/chat/status/${turnId}`);
+        if (!r.ok) return;
+        const s = await r.json();
+        if (s.done) { stopStagePolling(); return; }
+        const label = STAGE_LABELS[s.stage] || s.detail || s.stage;
+        const node = el();
+        if (node) {
+          node.innerHTML =
+            `${label}<span class="loading-dots"></span>` +
+            ` <span class="stage-elapsed">${Math.round(s.elapsed_s)}s</span>`;
+        }
+      } catch (_) { /* status is best-effort */ }
+    }, 600);
+  }
+
+  function stopStagePolling() {
+    if (stagePollTimer) { clearInterval(stagePollTimer); stagePollTimer = null; }
+  }
+
   async function sendMessage(text) {
     if (!text.trim() || !state.userId) return;
     if (state.sessionId) {
@@ -1591,6 +1636,8 @@
     addMessage('user', text);
     msgInput.value = '';
     setLoading(true);
+    const turnId = crypto.randomUUID();
+    startStagePolling(turnId);
 
     try {
       const resp = await api('/chat', {
@@ -1600,6 +1647,7 @@
           user_id: state.userId,
           message: text,
           session_id: state.sessionId,
+          turn_id: turnId,
         }),
       });
 
@@ -1646,6 +1694,7 @@
         startListeningForVoice();
       }
     } finally {
+      stopStagePolling();
       setLoading(false);
     }
   }
