@@ -109,13 +109,15 @@ async def main() -> int:
     parser.add_argument("--models", nargs="+", required=True)
     parser.add_argument("--think", nargs="+", type=lambda v: v.lower() == "true",
                         default=[False])
-    parser.add_argument("--ollama-url", default="http://127.0.0.1:11434")
+    parser.add_argument("--ollama-url", default=None)
     parser.add_argument("--rounds", type=int, default=3)
     args = parser.parse_args()
 
+    from assistant.backend.config import settings
+    ollama_url = args.ollama_url or settings.ollama_url
     results = []
     async with httpx.AsyncClient(timeout=600) as client:
-        health = await client.get(f"{args.ollama_url}/api/version")
+        health = await client.get(f"{ollama_url}/api/version")
         health.raise_for_status()
 
         for model in args.models:
@@ -126,7 +128,7 @@ async def main() -> int:
                     runs = []
                     for _ in range(args.rounds):
                         runs.append(
-                            await bench_one(client, args.ollama_url, model, think, prompt)
+                            await bench_one(client, ollama_url, model, think, prompt)
                         )
                     valid_ttft = [r["ttft_s"] for r in runs if r["ttft_s"] is not None]
                     valid_tps = [r["tok_per_s"] for r in runs if r["tok_per_s"]]

@@ -226,9 +226,21 @@ Net: less pipeline code than today's design implies, not more.
   require retuning `min_distance=0.7`. Follow-up idea (not done): nomic's documented
   `search_document:`/`search_query:` prefixes might lift baseline further.
   Rollback = repoint env var.
-- **M4 — Chat + reasoning (coupled).** Pull `qwen3.8:27b` (fallback: local qwen3.6:27b).
-  Ship §6 wiring: think=false default, escalation policy live. Measure TTFT/tok/s both
-  modes; run §6.4 eval gate; benchmark MLX tag vs GGUF before committing.
+- **M4 — Chat + reasoning (coupled).** ✅ DONE (2026-08-21). Pulled `qwen3.8:27b` (GGUF,
+  17 GB); fallback `qwen3.6:27b` already local. §6 wiring shipped: `chat_think_default=false`
+  fast path, §6.2 escalation policy in reasoner (explicit reasoning intent; PARTIAL/NONE
+  memory × multi-step query; ambiguous corrections), scheduled-task execution always thinks
+  (`think_num_predict_cap=1024`), §6.3 hygiene verified (thinking never re-sent as input;
+  history stores stripped content only). Benchmarks (warm, single round, num_ctx=8192):
+  qwen2.5:7b TTFT 0.04–0.16s @ ~50 tok/s; qwen3.8:27b think=false TTFT ~1s warm (~9s cold
+  load) @ ~9 tok/s; think=true adds 34–116 think tokens but streams immediately.
+  §6.4 gate: dataset accuracy 100% for baseline / qwen3.8 auto / qwen3.8 always;
+  escalation rate 0% (<15% target) on learn-recall dataset — escalations reserved for
+  genuinely hard turns by design. think=always costs 6.5× wall-clock (2127s vs 323s),
+  confirming the cap matters. **Flipped `CHAT_MODEL=qwen3.8:27b`** after live smoke
+  (learn/recall/escalated-math all correct end-to-end). Rollback = repoint env var to
+  `qwen2.5:7b` (or `qwen3.6:27b`). MLX tag benchmark deferred: treat as experiment per §9;
+  production stays GGUF unless measured otherwise.
 - **M5 — Tools (carries Phase-5 leftovers).** Tool framework + reaction/correction UI
   polish. Codegen via chat-role thinking; promote reserve `qwen3-coder:30b` only on
   measured failure.

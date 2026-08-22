@@ -149,7 +149,7 @@ async def main() -> dict:
     print(f"{'='*60}")
     print(f"Dataset:   {DATASET_PATH.name} ({len(cases)} cases)")
     print(f"Ollama:    {settings.ollama_url}")
-    print(f"Search:    {settings.search_base_url} (enabled={settings.search_enabled})")
+    print(f"Search:    {settings.search_base_url} (disabled for eval)")
     print(f"Run ID:    {run_id}")
     print(f"{'='*60}\n")
 
@@ -169,7 +169,8 @@ async def main() -> dict:
     )
     llm.force_think = {"never": False, "always": True}.get(think_mode)
     retriever = Retriever(store=store, llm_client=llm)
-    search = WebSearchTool(base_url=settings.search_base_url, enabled=settings.search_enabled)
+    # Eval determinism: learn-then-recall cases run without web search.
+    search = WebSearchTool(base_url=settings.search_base_url, enabled=False)
     orchestrator = Orchestrator(
         deps=OrchestratorDeps(
             store=store,
