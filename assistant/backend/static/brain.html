@@ -168,6 +168,27 @@
 
     .tooltip-slot-key { color: var(--accent); }
     .tooltip-slot-val { color: var(--text); }
+    .tooltip-slot-conf {
+      color: var(--text-dim);
+      font-size: 0.62rem;
+      margin-left: 0.35rem;
+    }
+
+    .tooltip-conflicts { margin-top: 0.5rem; border-top: 1px solid var(--border); padding-top: 0.4rem; }
+    .tooltip-conflicts-title { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--error); margin-bottom: 0.3rem; }
+    .tooltip-conflict { margin-bottom: 0.45rem; }
+    .tooltip-conflict-line { font-size: 0.7rem; margin-bottom: 0.25rem; }
+    .tooltip-conflict-key { color: var(--accent); }
+    .tooltip-conflict-old { color: var(--text-dim); text-decoration: line-through; }
+    .tooltip-conflict-new { color: var(--warning); }
+    .tooltip-conflict-actions { display: flex; gap: 0.3rem; }
+    .tooltip-conflict-actions button {
+      font-size: 0.62rem; padding: 2px 8px; cursor: pointer;
+      background: transparent; color: var(--text);
+      border: 1px solid var(--border); border-radius: 4px;
+    }
+    .tooltip-conflict-actions button:hover { border-color: var(--accent); color: var(--accent); }
+    .tooltip-conflict-actions button.use-new:hover { border-color: var(--warning); color: var(--warning); }
 
     .empty-state {
       position: absolute;
@@ -370,17 +391,21 @@
         const associations = await assocRes.json();
         const conflicts = await conflictsRes.json();
 
+        const pendingConflicts = conflicts.filter(c => c.status === 'pending');
         const conflictKeys = new Set(
-          conflicts
-            .filter(c => c.status === 'pending')
-            .map(c => `${c.frame_id}-${c.slot_key}`)
+          pendingConflicts.map(c => `${c.frame_id}-${c.slot_key}`)
         );
+        const conflictsByFrame = {};
+        for (const c of pendingConflicts) {
+          (conflictsByFrame[c.frame_id] ||= []).push(c);
+        }
 
         nodes = frames.map(f => ({
           ...f,
           type: f.type || 'entity',
           hasConflict: f.slots?.some(s => conflictKeys.has(`${f.id}-${s.key}`)) || false
         }));
+        window.__conflictsByFrame = conflictsByFrame;
 
         links = associations
           .filter(a => a.from_frame_id && a.to_frame_id)
@@ -481,10 +506,30 @@
         const pri = Math.round((d.priority || 0.5) * 100);
 
         fetchSlots(d).then(() => {
-          const slotsHtml = (d.slots || []).slice(0, 5).map(s => `
+          const slotsHtml = (d.slots || []).slice(0, 5).map(s => {
+            const sConf = s.confidence != null ? Math.round(s.confidence * 100) : null;
+            return `
             <div class="tooltip-slot">
               <span class="tooltip-slot-key">${s.key}:</span>
               <span class="tooltip-slot-val">${s.value}</span>
+              ${sConf != null ? `<span class="tooltip-slot-conf" title="slot confidence">${sConf}%</span>` : ''}
+            </div>
+          `;
+          }).join('');
+
+          const frameConflicts = (window.__conflictsByFrame || {})[d.id] || [];
+          const conflictsHtml = frameConflicts.map(c => `
+            <div class="tooltip-conflict">
+              <div class="tooltip-conflict-line">
+                <span class="tooltip-conflict-key">${c.slot_key}</span>:
+                <span class="tooltip-conflict-old">${c.existing_value ?? '∅'}</span>
+                →
+                <span class="tooltip-conflict-new">${c.new_value ?? '∅'}</span>
+              </div>
+              <div class="tooltip-conflict-actions">
+                <button onclick="resolveConflict(${c.id}, '${escAttr(c.existing_value)}')">Keep ${c.existing_value ?? 'old'}</button>
+                <button class="use-new" onclick="resolveConflict(${c.id}, '${escAttr(c.new_value)}')">Use ${c.new_value ?? 'new'}</button>
+              </div>
             </div>
           `).join('');
 
@@ -497,6 +542,7 @@
               ${d.hasConflict ? '&nbsp;|&nbsp; <span style="color:var(--error)">conflict</span>' : ''}
             </div>
             ${d.slots?.length ? `<div class="tooltip-slots">${slotsHtml}${d.slots.length > 5 ? `<div style="color:var(--text-dim)">+${d.slots.length - 5} more</div>` : ''}</div>` : ''}
+            ${frameConflicts.length ? `<div class="tooltip-conflicts"><div class="tooltip-conflicts-title">Pending conflicts</div>${conflictsHtml}</div>` : ''}
           `;
           tooltip.classList.add('visible');
         });
@@ -512,6 +558,28 @@
       function hideTooltip() {
         document.getElementById('tooltip').classList.remove('visible');
       }
+
+      function escAttr(value) {
+        return String(value ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      }
+
+      async function resolveConflict(conflictId, value) {
+        try {
+          const res = await fetch(
+            `/memory/conflicts/${conflictId}/resolve?value=${encodeURIComponent(value)}`,
+            { method: 'POST' }
+          );
+          if (!res.ok) throw new Error(await res.text());
+          hideTooltip();
+          await loadData();
+        } catch (e) {
+          console.error('Conflict resolve failed:', e);
+        }
+      }
+
+      // Inline onclick handlers execute in global scope.
+      window.resolveConflict = resolveConflict;
+      window.escAttr = escAttr;
 
       function dragstarted(event, d) {
         if (!event.active) simulation.alphaTarget(0.3).restart();
