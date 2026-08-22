@@ -92,10 +92,19 @@ Implemented in `assistant/backend/memory/`.
 - **`backend/pipeline/search.py`** — search abstraction and SearXNG backend.
 - Search is retrieval-only by default.
 - Facts from search are extracted by the reasoning model and stored with `source_type="search"`, per-slot URLs, and reliability scores.
+- SearXNG runs a curated engine allow-list (`searxng/settings.yml`: bing, duckduckgo,
+  brave, mojeek, qwant, wikipedia) instead of the full default fan-out. Every enabled
+  engine fires in parallel per query and upstream providers rate-limit aggressive
+  automated traffic, so fewer engines keeps the household IP off blocklists. Engines
+  degrade independently; results merge from whichever are healthy. `SEARXNG_SECRET`
+  must be pinned in `.env` — the compose default regenerates it on every `up`,
+  recreating the container each deploy.
 
 ### 3.5 LLM client
 
 - **`backend/pipeline/llm_client.py`** — `OllamaClient`.
+- Requests carry `keep_alive` (default `30m`, `OLLAMA_KEEP_ALIVE`) so models stay
+  resident between turns; reloading a 27B model costs tens of seconds.
 - Supports three model roles:
   - `chat_model` — user-facing responses (default `qwen2.5:7b`)
   - `utility_model` — cheap classification/routing/extraction (default `qwen2.5:3b`)
@@ -194,6 +203,10 @@ When a new slot value contradicts an existing one, a conflict is logged. Auto-re
 4. Graph-walk 1-2 hops over associations, decaying relevance per hop.
 5. Fetch session episodes first; if fewer than 2 turns, supplement with user-wide episodes.
 6. Format everything into a structured text block for the system prompt.
+   Recent episodes are included as short digests (240 chars each) rather than
+   full transcripts — the most recent turns still arrive verbatim as chat
+   history, and full episode text in the system prompt was inflating every
+   prompt's prefill by thousands of tokens (tens of seconds on a 27B model).
 
 ### 5.2 Confidence math
 
@@ -252,6 +265,7 @@ Environment variables (via Pydantic Settings / `.env`):
 | Variable | Purpose | Default |
 |----------|---------|---------|
 | `OLLAMA_URL` | Ollama base URL | `http://127.0.0.1:11434` |
+| `OLLAMA_KEEP_ALIVE` | How long Ollama keeps models resident between requests | `30m` |
 | `CHAT_MODEL` | User-facing chat model | `qwen2.5:7b` |
 | `UTILITY_MODEL` | Routing / cheap extraction | `qwen2.5:3b` |
 | `REASONING_MODEL` | Search extraction / context / citations | `qwen2.5:7b` |

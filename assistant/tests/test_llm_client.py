@@ -67,8 +67,8 @@ def test_split_thinking_multiline_preserved_in_thinking():
 # --- chat(): think flag + structured thinking field ---
 
 
-def _client_with_transport(handler) -> OllamaClient:
-    client = OllamaClient()
+def _client_with_transport(handler, **kwargs) -> OllamaClient:
+    client = OllamaClient(**kwargs)
     client._client = httpx.AsyncClient(
         transport=httpx.MockTransport(handler), base_url=client.base_url
     )
@@ -212,4 +212,26 @@ async def test_chat_num_ctx_explicit_overrides_and_zero_disables():
     await client.chat([ChatMessage(role="user", content="hi")], num_ctx=16384)
     await client.chat([ChatMessage(role="user", content="hi")], num_ctx=0)
     assert captured["num_ctx"] == [16384, None]
+    await client.close()
+
+
+async def test_keep_alive_sent_on_chat_and_embed():
+    """Models stay warm: keep_alive rides on every inference payload."""
+    captured: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured[request.url.path] = json.loads(request.content)
+        if request.url.path == "/api/embeddings":
+            return httpx.Response(200, json={"embedding": [0.1, 0.2]})
+        return httpx.Response(200, json={
+            "model": "chat-model",
+            "done": True,
+            "message": {"role": "assistant", "content": "ok"},
+        })
+
+    client = _client_with_transport(handler, keep_alive="45m")
+    await client.chat([ChatMessage(role="user", content="hi")])
+    await client.embed("hello")
+    assert captured["/api/chat"]["keep_alive"] == "45m"
+    assert captured["/api/embeddings"]["keep_alive"] == "45m"
     await client.close()

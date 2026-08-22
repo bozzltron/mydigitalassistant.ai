@@ -96,6 +96,7 @@ async def lifespan(app: FastAPI):
         chat_num_ctx=settings.chat_num_ctx,
         utility_num_ctx=settings.utility_num_ctx,
         timeout=settings.ollama_timeout,
+        keep_alive=settings.ollama_keep_alive,
     )
     retriever = Retriever(
         store=store,

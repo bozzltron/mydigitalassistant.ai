@@ -351,3 +351,26 @@ async def test_retrieve_identity_query_does_not_duplicate_if_already_retrieved(s
     identity_frames = [rf for rf in ctx.retrieved_frames if rf.frame.name == "identity_name"]
     assert len(identity_frames) == 1
     assert identity_frames[0].relevance == 1.0
+
+
+def test_format_memory_context_truncates_really_long_episodes():
+    """Episodes beyond EPISODE_DIGEST_CHARS become digests.
+
+    Verbatim full episodes in the system prompt duplicated the conversation
+    history and inflated prefill by thousands of tokens; the most recent
+    turns still arrive in full as chat history messages.
+    """
+    ep = Episode(
+        id=1,
+        user_id=1,
+        session_id="s1",
+        role="assistant",
+        content="word " * 120,  # 600 chars
+        frame_ids=[],
+    )
+    ctx = MemoryContext(query="test", retrieved_frames=[], recent_episodes=[ep], formatted="")
+    formatted = format_memory_context(ctx)
+    assert "…" in formatted
+    # Digest is bounded: header + role prefix + digest + ellipsis.
+    episode_line = [line for line in formatted.splitlines() if "[assistant]" in line][0]
+    assert len(episode_line) < 300

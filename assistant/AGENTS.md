@@ -27,6 +27,10 @@ Web search for retrieval-only; learned facts stored locally in memory frames/slo
 2. For functional queries requiring external info: fetch via search engine (SearXNG).
 3. Retrieve: embed query → sqlite-vec similarity → graph-walk associations → memory context.
 4. LLM call (chat model): system prompt injects structured memory context + task-type guidance.
+   Sections are ordered stable-first, volatile-last (persona → task guidance → plan
+   instructions → memory) so Ollama's prompt cache reuses the stable prefix across
+   consecutive turns. Recent episodes appear in memory context as 240-char digests;
+   the last 6 turns still arrive verbatim as message history.
 5. Response to user + extraction summary (`ChatResponse.extraction_summary`).
 6. Synchronous extraction (utility model): extract frames/slots/associations as JSON → upsert with confidence → auto-resolve conflicts → log to slot_history.
 

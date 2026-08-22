@@ -49,6 +49,12 @@ class Settings(BaseSettings):
     # is generous on purpose.
     ollama_timeout: float = 600.0
 
+    # How long Ollama keeps a model in memory after the last request.
+    # Reloading a 27B model takes tens of seconds, so short defaults make
+    # every turn feel slow. "30m" keeps weights warm between household use;
+    # negative numbers keep models loaded forever.
+    ollama_keep_alive: str = "30m"
+
     # TLS verification (defense-in-depth for local services)
     # Set to path of CA cert if Ollama/SearXNG use self-signed TLS
     ollama_tls_cert: str = ""

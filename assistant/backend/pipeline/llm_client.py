@@ -85,6 +85,7 @@ class OllamaClient:
         verify_tls: bool | str = True,
         chat_num_ctx: int = 8192,
         utility_num_ctx: int = 4096,
+        keep_alive: str = "30m",
     ):
         self.base_url = base_url.rstrip("/")
         self.chat_model = chat_model
@@ -95,6 +96,10 @@ class OllamaClient:
         self.verify_tls: bool | str = verify_tls
         self.chat_num_ctx = chat_num_ctx
         self.utility_num_ctx = utility_num_ctx
+        # How long Ollama keeps a model loaded after a request. Reloading the
+        # 27B chat model costs tens of seconds, so household-style intermittent
+        # use pays a huge tax without this (default 5m evicts between turns).
+        self.keep_alive = keep_alive
         self._client: httpx.AsyncClient | None = None
         self._capabilities_cache: dict[str, list[str]] = {}
 
@@ -179,6 +184,7 @@ class OllamaClient:
             "model": model,
             "messages": [m.model_dump() for m in messages],
             "stream": stream,
+            "keep_alive": self.keep_alive,
             "options": {"temperature": temperature},
         }
         if format:
@@ -226,7 +232,7 @@ class OllamaClient:
         """Generate embedding for text. Uses embedding_model by default."""
         model = model or self.embedding_model
         client = await self._get_client()
-        payload = {"model": model, "prompt": text}
+        payload = {"model": model, "prompt": text, "keep_alive": self.keep_alive}
         r = await client.post("/api/embeddings", json=payload)
         r.raise_for_status()
         data = r.json()
@@ -244,49 +250,61 @@ def build_system_prompt(
 ) -> str:
     """Build a system prompt that injects structured memory context.
 
+    Sections are ordered stable-first, volatile-last: persona and task
+    guidance rarely change between turns, while memory state changes every
+    turn. Keeping the volatile material at the end lets Ollama's prompt
+    cache reuse the prefill of the stable prefix on consecutive turns,
+    which saves tens of seconds per turn on large local models.
+
     planinstructions: additional instructions from the reasoner's Plan,
     e.g. citation requirements, memory-sufficiency caveats, search directives.
     self_context: the agent's own identity facts (name, working agreements),
     always included when available so responses stay consistent with them.
     """
     if self_context:
-        base = f"""You are a personal cognitive assistant with a structured memory system.
+        persona = f"""You are a personal cognitive assistant with a structured memory system.
 
 Who you are (from your own memory — treat as always true):
 {self_context}
 
-You have the following relevant memory state:
-
-{memory_context}
-"""
+Match reply length and structure to the question: answer short factual
+questions briefly in plain prose; reserve lists, headers, and tables for
+answers that genuinely need them."""
     else:
-        base = f"""You are a cognitive digital assistant with a structured memory system.
+        persona = """You are a cognitive digital assistant with a structured memory system.
 
-You have the following relevant memory state:
+Match reply length and structure to the question: answer short factual
+questions briefly in plain prose; reserve lists, headers, and tables for
+answers that genuinely need them."""
 
-{memory_context}
-"""
-    if planinstructions:
-        base += f"\n\n{planinstructions}\n"
-
+    parts: list[str] = [persona]
     if task_type == "introspective":
-        return base + """
+        parts.append("""
 For this query, the user is asking about YOUR memory or knowledge. You must:
-1. Ground your answer ONLY in the memory state above.
+1. Ground your answer ONLY in the retrieved memory state below.
 2. Cite specific frames/slots/episodes when relevant (frame IDs if available).
 3. If the memory doesn't contain the answer, say so clearly — do not hallucinate.
 4. Be honest about uncertainty (low-confidence slots).
 5. For introspective queries, prefer citing episode content over slot values.
 
-Respond conversationally as a helpful assistant."""
+Respond conversationally as a helpful assistant.""")
     else:
-        return base + """
-**Guidelines:**
-- Answer from the memory state above when relevant.
+        parts.append("""**Guidelines:**
+- Answer from the retrieved memory state when relevant.
 - If the memory state contains partial information, acknowledge gaps.
 - If search results are provided, ground your answer in both memory AND search results.
-- Only cite sources if the Search Results section is present above.
+- Only cite sources if a Search Results section is present.
   Do NOT fabricate URLs or source references.
 - Never fabricate facts, URLs, or citations that are not explicitly in the provided search results.
 
-Respond conversationally and helpfully."""
+Respond conversationally and helpfully.""")
+
+    if planinstructions:
+        parts.append(planinstructions)
+
+    # Memory goes last: it changes every turn, so it must sit after the
+    # stable prefix for prompt caching to help.
+    parts.append(
+        f"You have the following relevant memory state:\n\n{memory_context}"
+    )
+    return "\n\n".join(parts)

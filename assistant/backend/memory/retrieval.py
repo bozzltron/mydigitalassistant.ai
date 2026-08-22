@@ -34,6 +34,12 @@ def frame_to_text(frame: Frame, slots: list[Slot]) -> str:
     return "\n".join(parts)
 
 
+# Max chars of any single episode shown in the memory-context digest.
+# Recent turns still arrive verbatim as chat history; this only bounds the
+# older tail so one verbose answer can't inflate every future prompt.
+EPISODE_DIGEST_CHARS = 240
+
+
 def format_memory_context(context: "MemoryContext") -> str:
     """Format a MemoryContext as structured text for LLM injection."""
     lines: list[str] = []
@@ -66,7 +72,17 @@ def format_memory_context(context: "MemoryContext") -> str:
     if context.recent_episodes:
         lines.append("\n## Recent conversation (this session)")
         for ep in context.recent_episodes[-10:]:
-            lines.append(f"   [{ep.role}] {ep.content}")
+            # Digests, not verbatim text. The orchestrator passes the most
+            # recent turns as proper history messages, so full content here
+            # duplicated the conversation and inflated every prompt's
+            # prefill by thousands of tokens. Full episode text stays in
+            # the DB; these digest lines keep older context citable.
+            content = " ".join(ep.content.split())
+            if len(content) > EPISODE_DIGEST_CHARS:
+                content = (
+                    content[:EPISODE_DIGEST_CHARS].rsplit(" ", 1)[0] + "…"
+                )
+            lines.append(f"   [{ep.role}] {content}")
     return "\n".join(lines) if lines else "(no relevant memory found)"
 
 
