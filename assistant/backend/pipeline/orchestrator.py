@@ -68,6 +68,28 @@ class Orchestrator:
         self.llm_client = deps.llm_client
         self.search_tool = deps.search_tool
 
+    async def _get_self_context(self) -> str:
+        """The agent's own identity facts, for grounding every response.
+
+        Reads the identity frame's slots (name, working agreements, traits).
+        Cheap deterministic DB reads — no LLM involved.
+        """
+        from assistant.backend.pipeline.extractor import IDENTITY_FRAME
+
+        try:
+            frame = await self.store.get_frame_by_name(IDENTITY_FRAME)
+        except Exception:
+            return ""
+        if not frame:
+            return ""
+        slots = await self.store.get_slots_for_frame(frame.id)
+        lines = [
+            f"- {s.key}: {s.value}"
+            for s in sorted(slots, key=lambda s: s.key)
+            if s.value
+        ]
+        return "\n".join(lines)
+
     async def chat(self, request: ChatRequest) -> ChatResponse:
         """Run the full cognitive loop for a chat turn."""
         # 1. Session
@@ -126,9 +148,13 @@ class Orchestrator:
 
             correction = await extract_correction(request.message, self.llm_client)
             correction_summary: dict = {}
-            response_text = "I acknowledge your correction."
 
-            if correction:
+            if (
+                correction
+                and correction.frame_name
+                and correction.slot_key
+                and correction.new_value is not None
+            ):
                 frame = await self.store.get_frame_by_name(correction.frame_name)
                 current_slot = (
                     await self.store.get_slot(frame.id, correction.slot_key) if frame else None
@@ -229,6 +255,7 @@ class Orchestrator:
             memory_context=memory_context.formatted,
             task_type=task_type.value,
             planinstructions=plan_instructions,
+            self_context=await self._get_self_context(),
         )
 
         if stored_slots:
@@ -426,6 +453,7 @@ class Orchestrator:
             memory_context=memory_context.formatted,
             task_type=task_type_val,
             planinstructions=plan_instructions,
+            self_context=await self._get_self_context(),
         )
 
         search_results: list[SearchResult] = []

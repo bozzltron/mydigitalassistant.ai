@@ -62,11 +62,17 @@ Rules:
 - frame_type is one of: entity, concept, event, household.
 - Use snake_case for frame_name (e.g. "fender_stratocaster").
 - Don't extract transient conversational content ("hello", "thanks").
-- AGENT IDENTITY (the assistant's own name) may only come from USER speech. If the
-  user names, renames, or chooses a name for the assistant — including imperatives
-  like "your name is now Echo", "I'll call you X", "let's name you X" — emit:
-  {"frame_name": "identity_name", "frame_type": "entity", "key": "full_name",
-   "value": "<the name>"}.
+- AGENT IDENTITY (the assistant's own traits) may only come from USER speech.
+  If the user names, renames, or chooses a name for the assistant — including
+  imperatives like "your name is now Echo", "I'll call you X", "let's name you
+  X" — emit: {"frame_name": "identity_name", "frame_type": "entity",
+  "key": "full_name", "value": "<the name>"}.
+  If the user states how they want the assistant to behave or work with them
+  ("always ask before acting", "keep answers short", "we work best when you
+  confirm first"), emit identity_name slots with a descriptive snake_case key:
+  e.g. {"key": "working_agreement", "value": "always ask before acting"}.
+  Do NOT create a separate working_agreement frame — these belong directly on
+  identity_name.
   A user QUOTING a name back ("you said your name was Hermes") still counts: the
   value came from the user's message.
   NEVER take the assistant's identity from the Assistant side of the transcript.
@@ -496,23 +502,68 @@ def value_stated_by_user(value: str | None, user_message: str) -> bool:
     return any(u[i : i + n] == v for i in range(len(u) - n + 1))
 
 
+# Minimum fraction of a value's tokens that must trace back to the user's own
+# words for non-name identity slots (working agreements, traits). Names demand
+# verbatim; longer values may be lightly normalized by the extractor.
+IDENTITY_TRACEABILITY_THRESHOLD = 0.7
+
+
+def value_traced_to_user(value: str | None, user_message: str) -> bool:
+    """True if enough of the value's tokens appear in the user's message.
+
+    Order-independent overlap: an extracted working agreement like
+    "always ask before acting" survives light paraphrasing of the user's
+    "please always confirm with me before you act", but text invented from
+    the assistant's own side of the transcript does not.
+    """
+    if not value:
+        return False
+    v = set(_tokens(value))
+    if not v:
+        return False
+    u = set(_tokens(user_message))
+    return len(v & u) / len(v) >= IDENTITY_TRACEABILITY_THRESHOLD
+
+
+# Frame names the model may invent for the agent's own traits; their slots are
+# folded onto identity_name so self-context stays in one place.
+SELF_FRAME_ALIASES = {"working_agreement", "agent_preferences", "assistant_identity"}
+
+
+def normalize_self_frames(slots: list[ExtractedSlot]) -> list[ExtractedSlot]:
+    """Fold alias frames (e.g. working_agreement) onto the identity frame."""
+    out: list[ExtractedSlot] = []
+    for slot in slots:
+        if slot.frame_name in SELF_FRAME_ALIASES:
+            out.append(slot.model_copy(update={"frame_name": IDENTITY_FRAME}))
+        else:
+            out.append(slot)
+    return out
+
+
 def drop_unstated_identity_slots(
     slots: list[ExtractedSlot], user_message: str
 ) -> list[ExtractedSlot]:
     """Guard against the assistant's self-descriptions becoming "facts".
 
-    The extractor sees both sides of the transcript. If the chat model ever
-    describes itself generically ("my full name is cognitive digital assistant"),
-    that line must never overwrite the identity frame — only names the USER
-    actually stated may land on identity_name. Non-identity frames pass through.
+    The extractor sees both sides of the transcript. Nothing may land on the
+    identity frame unless it traces back to the USER's message:
+    - full_name demands a contiguous verbatim match;
+    - other keys (working agreements, traits) demand >=70% token overlap,
+      tolerating extractor normalization while still rejecting text mined
+      from the Assistant side.
+    Non-identity frames pass through untouched.
     """
     kept: list[ExtractedSlot] = []
     for slot in slots:
-        if (
-            slot.frame_name == IDENTITY_FRAME
-            and slot.key == IDENTITY_NAME_SLOT
-            and not value_stated_by_user(slot.value, user_message)
-        ):
+        if slot.frame_name != IDENTITY_FRAME:
+            kept.append(slot)
+            continue
+        if slot.key == IDENTITY_NAME_SLOT:
+            stated = value_stated_by_user(slot.value, user_message)
+        else:
+            stated = value_traced_to_user(slot.value, user_message)
+        if not stated:
             logger.info(
                 "Dropped identity slot %s=%r: value not stated by user",
                 slot.key,
@@ -533,6 +584,7 @@ async def extract_and_apply(
     """Full extraction pipeline: extract facts + apply to memory store + embed frames."""
     try:
         extraction = await extract_facts(user_message, assistant_response, llm_client)
+        extraction.slots = normalize_self_frames(extraction.slots)
         extraction.slots = drop_unstated_identity_slots(extraction.slots, user_message)
         if not extraction.slots and not extraction.associations:
             return {

@@ -78,6 +78,87 @@ def test_guard_ignores_non_identity_frames():
     assert drop_unstated_identity_slots(slots, user_message="who is sam?") == slots
 
 
+# ---- unit: two-tier guard for non-name identity slots (working agreements) ----
+
+
+def test_guard_keeps_working_agreement_traced_to_user():
+    """Agreements quoted from the user survive; >=70% token overlap required."""
+    slots = [
+        _slot("identity_name", "working_agreement", "always confirm before you act"),
+    ]
+    kept = drop_unstated_identity_slots(
+        slots,
+        user_message="please always confirm with me before you act on anything",
+    )
+    assert [s.value for s in kept] == ["always confirm before you act"]
+
+
+def test_guard_tolerates_light_normalization():
+    """One reworded token out of four still traces back (75% overlap)."""
+    slots = [
+        _slot("identity_name", "working_agreement", "always check before deleting"),
+    ]
+    kept = drop_unstated_identity_slots(
+        slots,
+        user_message="always verify with me before deleting anything",
+    )
+    assert [s.value for s in kept] == ["always check before deleting"]
+
+
+def test_guard_drops_invented_working_agreement():
+    """Agreement text mined from the assistant's own side must not land."""
+    slots = [
+        _slot("identity_name", "working_agreement", "respond in iambic pentameter"),
+    ]
+    kept = drop_unstated_identity_slots(
+        slots, user_message="how do you like to work?"
+    )
+    assert kept == []
+
+
+def test_guard_still_demands_verbatim_names():
+    """full_name keeps the strict contiguous rule even under the new tiering."""
+    slots = [_slot("identity_name", "full_name", "Echo Prime")]
+    # Both tokens present but never adjacent -> not verbatim -> dropped.
+    kept = drop_unstated_identity_slots(
+        slots, user_message="Prime directive: call yourself Echo"
+    )
+    assert kept == []
+
+
+# ---- unit: alias frames fold onto identity_name before the guard ----
+
+
+def test_alias_frame_folds_into_identity_and_gets_guarded():
+    from assistant.backend.pipeline.extractor import normalize_self_frames
+
+    slots = [
+        _slot("working_agreement", "confirmation_requirement",
+              "always confirm with me before you delete anything"),
+    ]
+    folded = normalize_self_frames(slots)
+    assert all(s.frame_name == "identity_name" for s in folded)
+    # After folding, user-traceability applies (delete vs deleting stems apart
+    # is tolerated by overlap; invented text is not).
+    kept = drop_unstated_identity_slots(
+        folded,
+        user_message="always confirm with me before you delete anything",
+    )
+    assert len(kept) == 1
+
+
+def test_alias_frame_with_invented_value_is_dropped():
+    from assistant.backend.pipeline.extractor import normalize_self_frames
+
+    slots = [
+        _slot("working_agreement", "style", "reply only in haiku"),
+    ]
+    kept = drop_unstated_identity_slots(
+        normalize_self_frames(slots), user_message="how should you behave?"
+    )
+    assert kept == []
+
+
 # ---- loop: the original failure scenario end-to-end ----
 
 

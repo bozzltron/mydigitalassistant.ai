@@ -240,13 +240,27 @@ def build_system_prompt(
     memory_context: str,
     task_type: str,    # "functional" | "introspective"
     planinstructions: str = "",
+    self_context: str = "",
 ) -> str:
     """Build a system prompt that injects structured memory context.
 
     planinstructions: additional instructions from the reasoner's Plan,
     e.g. citation requirements, memory-sufficiency caveats, search directives.
+    self_context: the agent's own identity facts (name, working agreements),
+    always included when available so responses stay consistent with them.
     """
-    base = f"""You are a cognitive digital assistant with a structured memory system.
+    if self_context:
+        base = f"""You are a personal cognitive assistant with a structured memory system.
+
+Who you are (from your own memory — treat as always true):
+{self_context}
+
+You have the following relevant memory state:
+
+{memory_context}
+"""
+    else:
+        base = f"""You are a cognitive digital assistant with a structured memory system.
 
 You have the following relevant memory state:
 
