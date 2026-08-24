@@ -1,10 +1,13 @@
 import json
 import logging
 import re
+import sqlite3
 from collections import defaultdict
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
+
+from assistant.backend.config import settings
 
 if TYPE_CHECKING:
     from assistant.backend.memory.store import MemoryStore
@@ -61,6 +64,12 @@ Rules:
 - Only extract facts that are EXPLICITLY stated or strongly implied.
 - frame_type is one of: entity, concept, event, household.
 - Use snake_case for frame_name (e.g. "fender_stratocaster").
+- frame_name MUST be a specific proper noun or title ("mount_rainier",
+  "dark_side_of_the_moon"). NEVER use a bare type word as the name
+  ("song", "movie", "entity", "thing", "concept").
+- Emit at most 4 associations per turn — only the most meaningful relations.
+- relation_type is a short snake_case verb phrase (e.g. "related_to",
+  "part_of", "created_by", "located_in", "inspired_by").
 - Don't extract transient conversational content ("hello", "thanks").
 - AGENT IDENTITY (the assistant's own traits) may only come from USER speech.
   If the user names, renames, or chooses a name for the assistant — including
@@ -106,6 +115,11 @@ Rules:
   what the search results add beyond the query.
 - frame_type is one of: entity, concept, event, household.
 - Use snake_case for frame_name (e.g. "sam_altman", "openai").
+- frame_name MUST be a specific proper noun or title. NEVER use a bare type
+  word as the name ("song", "movie", "entity", "thing", "concept").
+- Emit at most 4 associations per turn — only the most meaningful relations.
+- relation_type is a short snake_case verb phrase (e.g. "founded", "located_in",
+  "created_by", "related_to").
 - Don't extract opinions, commentary, or vague statements.
 - If no reliable facts to extract, return {"slots": [], "associations": []}.
 - A fact confirmed by multiple sources should appear once in the slots list.
@@ -161,10 +175,121 @@ def filter_duplicate_slots(
     slots = [
         s
         for s in candidate.slots
-        if s.value is None
-        or (s.frame_name.lower(), str(s.value).strip().lower()) not in seen
+        if s.value is None or (s.frame_name.lower(), str(s.value).strip().lower()) not in seen
     ]
     return ExtractionResult(slots=slots, associations=candidate.associations)
+
+
+# Words ignored when building a frame's canonical form. Mid-name articles and
+# conjunctions are the main source of cosmetic near-duplicates
+# ("The Mountain & the Wolf" vs "the mountain and the wolf").
+_NAME_STOP_WORDS = {"the", "a", "an", "and", "of"}
+
+
+def normalize_frame_name(name: str) -> str:
+    """Lowercase, drop punctuation/stop words, collapse whitespace.
+
+    "The Mountain & the Wolf" -> "mountain wolf"; used for exact-normalized
+    duplicate detection ahead of the embedding-similarity check.
+    """
+    return " ".join(
+        token for token in re.findall(r"[a-z0-9]+", name.lower()) if token not in _NAME_STOP_WORDS
+    )
+
+
+# Fuzzy reuse is only allowed when both types match, or one side is "entity"
+# (the extractor's catch-all). concept/event/household stay strict so a
+# household item never absorbs into an unrelated entity by name similarity.
+_ENTITY_WILDCARD = "entity"
+
+MIN_FUZZY_NAME_LENGTH = 4  # skip fuzzy matching for short names ("bo" vs "bob")
+
+
+async def resolve_or_create_frame(
+    store: "MemoryStore",
+    name: str,
+    ftype: str,
+    *,
+    source_type: str | None = None,
+    source_url: str | None = None,
+    source_reliability: float | None = None,
+    embed_fn=None,
+    known: dict[str, tuple[int, str]] | None = None,
+) -> int:
+    """Resolve a frame name to an existing frame id, or create a new frame.
+
+    Canonical resolution order (Phase 9A/B):
+      1. exact name match;
+      2. normalized-name match (case/punctuation/stop-word-insensitive);
+      3. consolidation alias map (names of merged duplicate frames);
+      4. embedding similarity within settings.canonical_name_distance — shared
+         (owner-less) frames with compatible types only; skipped when no
+         embedder is available or the normalized name is under
+         MIN_FUZZY_NAME_LENGTH chars;
+      5. create a new frame (registering it in ``known`` for later lookups).
+    """
+    existing = await store.get_frame_by_name(name)
+    if existing:
+        return existing.id
+
+    if known is None:
+        known = {
+            normalize_frame_name(name_): (frame_id, type_)
+            for frame_id, name_, type_ in await store.list_live_frame_stubs()
+        }
+
+    normalized = normalize_frame_name(name)
+    if known is not None and normalized:
+        hit = known.get(normalized)
+        if hit is not None:
+            return hit[0]
+
+    if normalized:
+        alias_id = await store.get_alias_frame_id(normalized)
+        if alias_id is not None:
+            logger.info("Resolved %r through alias to frame %d", name, alias_id)
+            return alias_id
+
+    if embed_fn is not None and len(normalized) >= MIN_FUZZY_NAME_LENGTH:
+        try:
+            query_embedding = await embed_fn(normalized)
+            matches = await store.search_similar_frames(
+                query_embedding,
+                user_id=None,
+                limit=5,
+                min_distance=settings.canonical_name_distance,
+            )
+        except Exception as exc:
+            logger.warning("Canonicalization embedding lookup failed: %s", exc)
+        else:
+            for frame, _slots, similarity in matches:
+                if frame.owner_user_id is not None:
+                    continue
+                if (
+                    frame.type != ftype
+                    and ftype != _ENTITY_WILDCARD
+                    and frame.type != _ENTITY_WILDCARD
+                ):
+                    continue
+                logger.info(
+                    "Canonicalized %r onto existing frame %d (%r, d=%.3f)",
+                    name,
+                    frame.id,
+                    frame.name,
+                    1 - similarity,
+                )
+                return frame.id
+
+    new_frame = await store.create_frame(
+        name,
+        ftype,
+        source_type=source_type,
+        source_url=source_url,
+        source_reliability=source_reliability,
+    )
+    if known is not None and normalized:
+        known[normalized] = (new_frame.id, ftype)
+    return new_frame.id
 
 
 async def extract_facts(
@@ -252,11 +377,13 @@ async def apply_extraction(
     source_type: str | None = None,
     source_url: str | None = None,
     source_reliability: float | None = None,
+    embed_fn=None,
 ) -> dict:
     """Apply an ExtractionResult to the MemoryStore.
 
-    For each slot: ensure frame exists (create if needed), then upsert_slot.
-    For each association: ensure both frames exist, then create_association.
+    For each slot: resolve or create its frame (canonicalized), then upsert_slot.
+    For each association: ensure both frames exist, then create_association
+    (duplicates bump the existing edge's confidence instead of erroring).
     """
     frame_ids: dict[str, int] = {}
 
@@ -265,23 +392,22 @@ async def apply_extraction(
         all_frame_names.add(assoc.from_frame)
         all_frame_names.add(assoc.to_frame)
 
+    ftype_hints = {slot.frame_name: slot.frame_type for slot in extraction.slots}
+    known = {
+        normalize_frame_name(name_): (frame_id, type_)
+        for frame_id, name_, type_ in await store.list_live_frame_stubs()
+    }
     for name in all_frame_names:
-        existing = await store.get_frame_by_name(name)
-        if existing:
-            frame_ids[name] = existing.id
-        else:
-            ftype = next(
-                (slot.frame_type for slot in extraction.slots if slot.frame_name == name),
-                "entity",
-            )
-            new_frame = await store.create_frame(
-                name,
-                ftype,
-                source_type=source_type,
-                source_url=source_url,
-                source_reliability=source_reliability,
-            )
-            frame_ids[name] = new_frame.id
+        frame_ids[name] = await resolve_or_create_frame(
+            store,
+            name,
+            ftype_hints.get(name, "entity"),
+            source_type=source_type,
+            source_url=source_url,
+            source_reliability=source_reliability,
+            embed_fn=embed_fn,
+            known=known,
+        )
 
     slots_applied = 0
     conflicts_created = 0
@@ -302,12 +428,14 @@ async def apply_extraction(
         slots_applied += 1
         if conflict is not None:
             conflicts_created += 1
-        applied_slots.append({
-            "frame_name": slot.frame_name,
-            "key": slot.key,
-            "value": slot.value,
-            "conflict": conflict is not None,
-        })
+        applied_slots.append(
+            {
+                "frame_name": slot.frame_name,
+                "key": slot.key,
+                "value": slot.value,
+                "conflict": conflict is not None,
+            }
+        )
 
     assocs_created = 0
     for assoc in extraction.associations:
@@ -325,9 +453,10 @@ async def apply_extraction(
                 source_url=source_url,
                 source_reliability=source_reliability,
             )
-            assocs_created += 1
-        except Exception as e:
-            logger.debug("Association likely duplicate: %s", e)
+        except sqlite3.IntegrityError:
+            # Concurrent turn inserted the same edge first; it exists now.
+            continue
+        assocs_created += 1
 
     return {
         "slots_applied": slots_applied,
@@ -342,6 +471,7 @@ async def apply_search_extraction(
     extraction: ExtractionResult,
     search_results: list["SearchResult"],
     store: "MemoryStore",
+    embed_fn=None,
 ) -> dict:
     """Apply search extraction with corroboration support.
 
@@ -350,9 +480,7 @@ async def apply_search_extraction(
     Per-slot source_url is the corroborating URL (prefer .edu, Wikipedia, major news).
     """
     # The agent's name is never a web fact — drop any identity slots outright.
-    extraction.slots = [
-        s for s in extraction.slots if s.frame_name != IDENTITY_FRAME
-    ]
+    extraction.slots = [s for s in extraction.slots if s.frame_name != IDENTITY_FRAME]
     if not extraction.slots and not extraction.associations:
         return {
             "slots_applied": 0,
@@ -410,17 +538,20 @@ async def apply_search_extraction(
         all_frame_names.add(assoc.from_frame)
         all_frame_names.add(assoc.to_frame)
 
+    ftype_hints = {slot.frame_name: slot.frame_type for slot in deduped_slots}
+    known = {
+        normalize_frame_name(name_): (frame_id, type_)
+        for frame_id, name_, type_ in await store.list_live_frame_stubs()
+    }
     for name in all_frame_names:
-        existing = await store.get_frame_by_name(name)
-        if existing:
-            frame_ids[name] = existing.id
-        else:
-            ftype = next(
-                (slot.frame_type for slot in deduped_slots if slot.frame_name == name),
-                "entity",
-            )
-            new_frame = await store.create_frame(name, ftype, source_type="search")
-            frame_ids[name] = new_frame.id
+        frame_ids[name] = await resolve_or_create_frame(
+            store,
+            name,
+            ftype_hints.get(name, "entity"),
+            source_type="search",
+            embed_fn=embed_fn,
+            known=known,
+        )
 
     slots_applied = 0
     conflicts_created = 0
@@ -444,12 +575,14 @@ async def apply_search_extraction(
         slots_applied += 1
         if conflict is not None:
             conflicts_created += 1
-        applied_slots.append({
-            "frame_name": slot.frame_name,
-            "key": slot.key,
-            "value": slot.value,
-            "conflict": conflict is not None,
-        })
+        applied_slots.append(
+            {
+                "frame_name": slot.frame_name,
+                "key": slot.key,
+                "value": slot.value,
+                "conflict": conflict is not None,
+            }
+        )
 
     primary_url = search_results[0].url if search_results else None
     assocs_created = 0
@@ -468,9 +601,10 @@ async def apply_search_extraction(
                 source_url=primary_url,
                 source_reliability=INITIAL_SEARCH_RELIABILITY,
             )
-            assocs_created += 1
-        except Exception:
-            pass
+        except sqlite3.IntegrityError:
+            # Concurrent turn inserted the same edge first; it exists now.
+            continue
+        assocs_created += 1
 
     return {
         "slots_applied": slots_applied,
@@ -594,13 +728,15 @@ async def extract_and_apply(
                 "frame_ids": [],
                 "slots": [],
             }
-        result = await apply_extraction(extraction, store, source_episode_id)
+
+        async def get_embedding(text: str) -> list[float]:
+            resp = await llm_client.embed(text)
+            return resp.embedding
+
+        result = await apply_extraction(
+            extraction, store, source_episode_id, embed_fn=get_embedding
+        )
         if result.get("frame_ids"):
-
-            async def get_embedding(text: str) -> list[float]:
-                resp = await llm_client.embed(text)
-                return resp.embedding
-
             await store.embed_frames(result["frame_ids"], get_embedding)
         return result
     except Exception as e:
@@ -718,9 +854,7 @@ async def extract_correction(
             logger.warning("Correction parse failed (attempt %d): %s", attempt + 1, e)
             if attempt == 0:
                 extra = "\n\nIMPORTANT: Output ONLY valid JSON. No markdown, no preamble."
-                system = ChatMessage(
-                    role="system", content=CORRECTION_EXTRACTION_PROMPT + extra
-                )
+                system = ChatMessage(role="system", content=CORRECTION_EXTRACTION_PROMPT + extra)
             else:
                 logger.error("Correction extraction failed after retry for: %s", user_message[:100])
                 return None

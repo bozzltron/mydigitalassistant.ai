@@ -46,6 +46,12 @@ class Settings(BaseSettings):
     # Web search settings (always enabled - core requirement)
     search_base_url: str = "http://127.0.0.1:8080"    # SearXNG default
     search_timeout: float = 30.0
+    # Result-quality controls (search hardening). safesearch follows
+    # SearXNG's 0=off..2=strict scale; min_relevance is the cosine similarity
+    # between query and title+snippet below which results are dropped.
+    search_language: str = "en"
+    search_safesearch: int = 1
+    search_min_relevance: float = 0.30
 
     # Ollama request timeout in seconds. Local 27B-class models with large
     # context prefills (tool loops) can legitimately take minutes; the default
@@ -62,6 +68,24 @@ class Settings(BaseSettings):
     # Retrieval: max vector distance for direct candidate frames
     # (sqlite-vec cosine, 0-2). Lower = stricter similarity.
     retrieval_min_distance: float = 0.7
+
+    # Canonical frame resolution (Phase 9A): max embedding distance at which a
+    # near-duplicate name reuses an existing frame instead of creating one.
+    # Conservative by design — consolidation (Phase 9B) loosens with evidence.
+    canonical_name_distance: float = 0.10
+
+    # Consolidation merge pass (Phase 9B): embedding gate for the offline
+    # dedup job. Calibrated against the live corpus: true duplicates sit at
+    # cosine distance < 0.17, unrelated same-type pairs at 0.26+ (p01).
+    # 0.15 keeps precision high; shared-title evidence catches the rest.
+    consolidation_name_distance: float = 0.15
+    # Twice-daily memory consolidation ("dreaming") in the scheduler loop:
+    # merge duplicate frames + strengthen episode-backed associations.
+    # 0 disables the timer entirely.
+    consolidation_interval_hours: int = 12
+    # Circuit breaker for unattended runs: if a pass plans more merges than
+    # this, it writes nothing and logs for manual review instead.
+    consolidation_max_merges_per_run: int = 10
 
     # TLS verification (defense-in-depth for local services)
     # Set to path of CA cert if Ollama/SearXNG use self-signed TLS

@@ -156,7 +156,7 @@ async def test_apply_extraction_skips_self_loops(store):
 
 
 async def test_apply_extraction_handles_duplicate_association(store):
-    """Re-applying the same association shouldn't fail."""
+    """Re-applying the same association bumps confidence instead of duplicating."""
     extraction = ExtractionResult(
         slots=[
             ExtractedSlot(frame_name="guitar", frame_type="entity", key="strings", value="6"),
@@ -168,7 +168,12 @@ async def test_apply_extraction_handles_duplicate_association(store):
     )
     await apply_extraction(extraction, store)
     summary = await apply_extraction(extraction, store)  # apply again
-    assert summary["associations_created"] == 0
+    assert summary["associations_created"] == 1
+
+    guitar = await store.get_frame_by_name("guitar")
+    edges = await store.get_all_associations_for_frame(guitar.id)
+    assert len(edges) == 1
+    assert edges[0].confidence > 0.5
 
 
 async def test_apply_extraction_records_conflicts(store):
