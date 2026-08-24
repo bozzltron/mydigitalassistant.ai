@@ -166,6 +166,16 @@ CREATE TABLE IF NOT EXISTS frame_embeddings (
 -- Index for efficient vector search
 CREATE INDEX IF NOT EXISTS idx_frame_embeddings_embedding ON frame_embeddings(embedding);
 
+-- Frame aliases: canonical names recorded when consolidation merges a
+-- duplicate frame. Extraction resolves through this map so a merged name
+-- lands on the surviving frame instead of recreating the duplicate.
+CREATE TABLE IF NOT EXISTS frame_aliases (
+    alias_norm TEXT PRIMARY KEY,
+    frame_id INTEGER NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (frame_id) REFERENCES frames(id) ON DELETE CASCADE
+);
+
 -- Metadata table: key/value store for schema versioning and embedding model info
 CREATE TABLE IF NOT EXISTS metadata (
     key TEXT PRIMARY KEY,

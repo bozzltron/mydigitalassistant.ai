@@ -29,7 +29,10 @@ from assistant.backend.memory.models import (
     User,
 )
 from assistant.backend.memory.retrieval import Retriever
-from assistant.backend.memory.store import MemoryStore
+from assistant.backend.memory.store import (
+    MemoryStore,
+    lexical_blend_similarity,
+)
 from assistant.backend.memory.working_memory import WorkingMemory
 from assistant.backend.pipeline.extractor import (
     CorrectionResult,
@@ -594,12 +597,17 @@ async def memory_search(
         semantic_ok = False
 
     # Keyword pass always runs: exact names/acronyms embeddings blur, and the
-    # only signal when the embedding model is unreachable.
-    for kf in await store.search_frames_keyword(q, limit=limit):
+    # only signal when the embedding model is unreachable. Lexical matches are
+    # blended INTO the semantic ranking (0.55 + 0.4·coverage) so an exact
+    # multi-word topic hit outranks the flat ~0.5 fuzzy band instead of being
+    # buried beneath it.
+    for kf, strength in await store.search_frames_lexical(q, limit=limit):
         if kf.id in matches:
             continue
         matches[kf.id] = TopicMatch(
-            frame=kf, slots=await store.get_slots_for_frame(kf.id)
+            frame=kf,
+            slots=await store.get_slots_for_frame(kf.id),
+            similarity=lexical_blend_similarity(strength),
         )
 
     ranked = sorted(

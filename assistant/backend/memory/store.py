@@ -1,4 +1,5 @@
 import json
+import re
 import shutil
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -121,23 +122,65 @@ class MemoryStore:
         source_reliability: float | None = None,
     ) -> Frame:
         async with self._connect() as db:
-            cursor = await db.execute(
-                "INSERT INTO frames "
-                "(name, type, confidence, essential, priority, owner_user_id, "
-                "source_type, source_url, source_reliability) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    name,
-                    type,
-                    confidence,
-                    essential,
-                    priority,
-                    owner_user_id,
-                    source_type,
-                    source_url,
-                    source_reliability,
-                ),
+            # Soft-deleted frames keep their UNIQUE name row; recreate by
+            # resurrecting instead of violating the constraint (consolidation
+            # and GC both tombstone via deleted_at). Owner-scoped: never
+            # resurrect another user's tombstoned frame (privacy).
+            existing = await db.execute_fetchall(
+                "SELECT id FROM frames WHERE name = ? AND deleted_at IS NOT NULL "
+                "AND (owner_user_id IS ? OR "
+                "(? IS NOT NULL AND owner_user_id IS NULL))",
+                (name, owner_user_id, owner_user_id),
             )
+            if existing:
+                frame_id = existing[0][0]
+                await db.execute(
+                    "UPDATE frames SET deleted_at = NULL, updated_at = datetime('now') "
+                    "WHERE id = ?",
+                    (frame_id,),
+                )
+                await db.commit()
+                return await self._get_frame_row(db, frame_id)
+
+            try:
+                cursor = await db.execute(
+                    "INSERT INTO frames "
+                    "(name, type, confidence, essential, priority, owner_user_id, "
+                    "source_type, source_url, source_reliability) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        name,
+                        type,
+                        confidence,
+                        essential,
+                        priority,
+                        owner_user_id,
+                        source_type,
+                        source_url,
+                        source_reliability,
+                    ),
+                )
+            except aiosqlite.IntegrityError:
+                # UNIQUE(name) held by another user's tombstoned frame —
+                # namespace this row instead of resurrecting their memory.
+                scoped = f"{name}__u{owner_user_id}"
+                cursor = await db.execute(
+                    "INSERT INTO frames "
+                    "(name, type, confidence, essential, priority, owner_user_id, "
+                    "source_type, source_url, source_reliability) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        scoped,
+                        type,
+                        confidence,
+                        essential,
+                        priority,
+                        owner_user_id,
+                        source_type,
+                        source_url,
+                        source_reliability,
+                    ),
+                )
             await db.commit()
             return await self._get_frame_row(db, cursor.lastrowid)
 
@@ -154,16 +197,68 @@ class MemoryStore:
             return Frame(**self._frame_dict(row[0]))
 
     async def get_frame_by_name(self, name: str) -> Frame | None:
+        """Exact-name lookup, excluding soft-deleted (tombstoned) frames."""
         async with self._connect() as db:
             row = await db.execute_fetchall(
                 "SELECT id, name, type, confidence, essential, priority, "
                 "owner_user_id, source_type, source_url, source_reliability, "
-                "embedding_model, created_at, updated_at FROM frames WHERE name = ?",
+                "embedding_model, created_at, updated_at FROM frames "
+                "WHERE name = ? AND deleted_at IS NULL",
                 (name,),
             )
             if not row:
                 return None
             return Frame(**self._frame_dict(row[0]))
+
+    async def list_live_frame_stubs(self) -> list[tuple[int, str, str]]:
+        """(id, name, type) for every non-tombstoned frame.
+
+        Lightweight feed for canonicalization caches — excludes soft-deleted
+        frames so resolution never lands on a consolidation loser.
+        """
+        async with self._connect() as db:
+            rows = await db.execute_fetchall(
+                "SELECT id, name, type FROM frames WHERE deleted_at IS NULL ORDER BY id"
+            )
+            return [(r[0], r[1], r[2]) for r in rows]
+
+    async def get_alias_frame_id(self, alias_norm: str) -> int | None:
+        """Resolve a normalized alias to its surviving frame id (Phase 9B).
+
+        Returns None when unknown or when the aliases table does not exist yet
+        (databases initialized before consolidation shipped).
+        """
+        async with self._connect() as db:
+            try:
+                rows = await db.execute_fetchall(
+                    "SELECT frame_id FROM frame_aliases WHERE alias_norm = ?",
+                    (alias_norm,),
+                )
+            except aiosqlite.OperationalError:
+                return None
+            return rows[0][0] if rows else None
+
+    async def record_frame_alias(self, alias_norm: str, frame_id: int) -> None:
+        """Record/rewrite a canonical-name mapping (used by consolidation)."""
+        async with self._connect() as db:
+            await db.execute(
+                "INSERT INTO frame_aliases (alias_norm, frame_id) VALUES (?, ?) "
+                "ON CONFLICT(alias_norm) DO UPDATE SET frame_id = excluded.frame_id",
+                (alias_norm, frame_id),
+            )
+            await db.commit()
+
+    async def rewrite_aliases_target(self, old_frame_id: int, new_frame_id: int) -> None:
+        """Point every alias referencing old_frame_id at new_frame_id."""
+        async with self._connect() as db:
+            try:
+                await db.execute(
+                    "UPDATE frame_aliases SET frame_id = ? WHERE frame_id = ?",
+                    (new_frame_id, old_frame_id),
+                )
+                await db.commit()
+            except aiosqlite.OperationalError:
+                pass
 
     async def list_frames(
         self, type: str | None = None, owner_user_id: int | None = None
@@ -439,6 +534,7 @@ class MemoryStore:
                 FROM candidate
                 JOIN frames f ON candidate.frame_id = f.id
                 WHERE vec_distance_cosine(candidate.embedding, ?) <= ?
+                  AND f.deleted_at IS NULL
                   {owner_filter}
                 ORDER BY distance ASC
                 LIMIT ?
@@ -732,6 +828,21 @@ class MemoryStore:
         source_reliability: float | None = None,
     ) -> Association:
         async with self._connect() as db:
+            existing = await db.execute_fetchall(
+                "SELECT id, confidence FROM associations "
+                "WHERE from_frame_id = ? AND to_frame_id = ? AND relation_type = ?",
+                (from_frame_id, to_frame_id, relation_type),
+            )
+            if existing:
+                assoc_id, current_confidence = existing[0]
+                new_confidence = bump_confidence(current_confidence)
+                await db.execute(
+                    "UPDATE associations SET confidence = ? WHERE id = ?",
+                    (new_confidence, assoc_id),
+                )
+                await db.commit()
+                return await self._get_association_row(db, assoc_id)
+
             cursor = await db.execute(
                 "INSERT INTO associations "
                 "(from_frame_id, to_frame_id, relation_type, confidence, essential, "
@@ -881,20 +992,65 @@ class MemoryStore:
         that embeddings blur, and serves as the fallback when the embedding
         model is unreachable. Excludes soft-deleted (priority 0 / GC'd) frames.
         """
-        like = f"%{term}%"
+        return [
+            frame
+            for frame, _strength in await self.search_frames_lexical(term, limit)
+        ]
+
+    async def search_frames_lexical(
+        self, term: str, limit: int = 10
+    ) -> list[tuple[Frame, float]]:
+        """Tokenized lexical match with per-frame match strength.
+
+        Unlike naive whole-query LIKE ('%mountain wolf%' never matches
+        'The Mountain & The Wolf'), this splits the query into tokens and
+        scores each frame by how many tokens it matches somewhere in its
+        name or slots. Returns (frame, coverage) with coverage in 0..1 =
+        matched_tokens / query_tokens, best-first. Excludes soft-deleted
+        (priority 0 / GC'd) frames.
+        """
+        tokens = [t for t in re.split(r"\W+", term.lower()) if len(t) >= 2]
+        if not tokens:
+            return []
+        like_clauses = " OR ".join(
+            "(f.name LIKE ? COLLATE NOCASE OR s.key LIKE ? COLLATE NOCASE "
+            "OR s.value LIKE ? COLLATE NOCASE)"
+            for _ in tokens
+        )
+        params: list = []
+        for t in tokens:
+            like = f"%{t}%"
+            params.extend([like, like, like])
         async with self._connect() as db:
             rows = await db.execute_fetchall(
                 "SELECT DISTINCT f.id, f.name, f.type, f.confidence, f.essential, "
                 "f.priority, f.owner_user_id, f.source_type, f.source_url, "
-                "f.source_reliability, f.embedding_model, f.created_at, f.updated_at "
+                "f.source_reliability, f.embedding_model, f.created_at, f.updated_at, "
+                "s.key, s.value "
                 "FROM frames f LEFT JOIN slots s ON s.frame_id = f.id "
-                "WHERE f.priority > 0 AND f.deleted_at IS NULL AND ("
-                "f.name LIKE ? COLLATE NOCASE OR s.key LIKE ? COLLATE NOCASE "
-                "OR s.value LIKE ? COLLATE NOCASE) "
-                "ORDER BY f.confidence DESC LIMIT ?",
-                (like, like, like, limit),
+                f"WHERE f.priority > 0 AND f.deleted_at IS NULL AND ({like_clauses})",
+                params,
             )
-            return [Frame(**self._frame_dict(row)) for row in rows]
+        # Score coverage per frame across its row expansion (one row per slot).
+        by_frame: dict[int, dict] = {}
+        for row in rows:
+            fid = row[0]
+            entry = by_frame.setdefault(
+                fid, {"row": row, "matched": set()}
+            )
+            haystack = " ".join(
+                str(x).lower() for x in row[13:15] if x is not None
+            )
+            hay_name = (row[1] or "").lower()
+            for i, t in enumerate(tokens):
+                if t in hay_name or t in haystack:
+                    entry["matched"].add(i)
+        scored = [
+            (Frame(**self._frame_dict(e["row"][:13])), len(e["matched"]) / len(tokens))
+            for e in by_frame.values()
+        ]
+        scored.sort(key=lambda pair: (-pair[1], -pair[0].confidence))
+        return scored[:limit]
 
     # Conflicts
     async def get_conflicts(self, status: str | None = None) -> list[Conflict]:
@@ -1722,3 +1878,13 @@ class MemoryStore:
         backup_path = Path(self.db_path).parent / backup_name
         shutil.copy2(self.db_path, str(backup_path))
         return backup_path
+
+
+def lexical_blend_similarity(coverage: float) -> float:
+    """Rank score for a lexical frame match with token coverage 0..1.
+
+    Blends keyword matches INTO the semantic ranking: full coverage scores
+    0.95, which outranks the flat ~0.5-0.56 fuzzy band that vector search
+    returns for unrelated frames, while partial coverage degrades gracefully.
+    """
+    return round(0.55 + 0.4 * coverage, 6)

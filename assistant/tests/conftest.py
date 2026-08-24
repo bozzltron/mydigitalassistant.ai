@@ -29,15 +29,30 @@ def stub_search() -> WebSearchTool:
     return WebSearchTool(enabled=False)
 
 
+_EMBEDDING_CLUSTERS = {
+    "guitar", "fender", "stratocaster", "strings", "household", "my guitar",
+}
+
+
+def add_embedding_cluster(*keywords: str) -> None:
+    """Register extra keywords that cluster at [1, 0, 0, ...] for tests.
+
+    The relevance gate compares query vs result embeddings; stubbed search
+    results must share a cluster with their query to survive it.
+    """
+    for kw in keywords:
+        _EMBEDDING_CLUSTERS.add(kw.lower())
+
+
 def deterministic_embedding(text: str, dim: int = 768) -> list[float]:
     """Return a deterministic embedding for integration tests.
 
-    Guitar/household-related text clusters at [1, 0, 0, ...] so retrieval can
-    find shared frames without calling a real embedding model.
+    Keyword-clustered text (guitar/household by default, extendable via
+    add_embedding_cluster) maps to [1, 0, 0, ...] so retrieval and the
+    search-relevance gate can find matches without a real embedding model.
     """
     lower = text.lower()
-    keywords = ("guitar", "fender", "stratocaster", "strings", "household", "my guitar")
-    if any(k in lower for k in keywords):
+    if any(k in lower for k in _EMBEDDING_CLUSTERS):
         return [1.0] + [0.0] * (dim - 1)
     sha = hashlib.sha256(text.encode()).digest()
     seed = int.from_bytes(sha[:8], "big")
