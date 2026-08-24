@@ -18,7 +18,10 @@ class Settings(BaseSettings):
     # Thinking-mode plumbing (Phase 6 M4 wires the escalation policy).
     # chat_think_default is the fast-path default; escalations override per call.
     chat_think_default: bool = False
-    think_num_predict_cap: int = 1024
+    # Cap applies to thinking AND answer combined (Ollama has no separate
+    # think budget). 1024 truncated long answers mid-sentence once the model
+    # spent its budget reasoning; 4096 leaves room for both.
+    think_num_predict_cap: int = 4096
     # Native tool-calling on the chat model (Phase 6 M5). The web_search tool
     # additionally depends on SearXNG availability.
     tools_enabled: bool = True
