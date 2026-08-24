@@ -535,12 +535,129 @@ async def forget_slot(
     return {"status": "forgotten", "slot": forgotten}
 
 
+# Topic transparency search (Brain Observatory)
+class TopicMatch(BaseModel):
+    frame: Frame
+    slots: list[Slot]
+    # Semantic similarity 0..1; None when the match came from keyword fallback
+    similarity: float | None = None
+    associations: list[Association] = []
+    episodes: list[Episode] = []
+    conflicts: list[Conflict] = []
+
+
+class TopicSearchResponse(BaseModel):
+    query: str
+    # False when embedding failed (Ollama down) and only keyword matching ran
+    semantic_search: bool
+    matches: list[TopicMatch]
+
+
+@app.get("/memory/search", response_model=TopicSearchResponse)
+async def memory_search(
+    q: str,
+    limit: int = 8,
+    store: MemoryStore = _Depends(get_store),
+):
+    """Search memory for everything known about a topic.
+
+    Semantic (embedding) search over frames, unioned with a keyword pass over
+    frame names and slot keys/values. Each match carries its full slot list,
+    associations, episodes that touched it, and pending conflicts — the point
+    is transparency: see what the agent stored about a topic, with what
+    confidence, and what it never captured.
+    """
+    q = q.strip()
+    if not q:
+        raise HTTPException(status_code=400, detail="Empty query")
+
+    matches: dict[int, TopicMatch] = {}
+    semantic_ok = True
+    try:
+        llm_client: OllamaClient | None = _state.get("llm_client")
+        embed_response = await llm_client.embed(q)
+        results = await store.search_similar_frames(
+            embedding=embed_response.embedding,
+            user_id=None,  # observatory view: all users' + shared frames
+            embedding_model=settings.embedding_model,
+            limit=limit * 2,
+            min_distance=settings.retrieval_min_distance,
+        )
+        for frame, slots, distance in results:
+            matches[frame.id] = TopicMatch(
+                frame=frame,
+                slots=slots,
+                similarity=max(0.0, min(1.0, 1.0 - distance)),
+            )
+    except Exception as e:
+        logger.warning("Topic semantic search unavailable (%s); keyword-only", e)
+        semantic_ok = False
+
+    # Keyword pass always runs: exact names/acronyms embeddings blur, and the
+    # only signal when the embedding model is unreachable.
+    for kf in await store.search_frames_keyword(q, limit=limit):
+        if kf.id in matches:
+            continue
+        matches[kf.id] = TopicMatch(
+            frame=kf, slots=await store.get_slots_for_frame(kf.id)
+        )
+
+    ranked = sorted(
+        matches.values(),
+        key=lambda m: (m.similarity is not None, m.similarity or 0.0),
+        reverse=True,
+    )[:limit]
+
+    pending_conflicts = [
+        c for c in await store.get_conflicts(status="pending") if c.frame_id
+    ]
+    conflicts_by_frame: dict[int, list[Conflict]] = {}
+    for c in pending_conflicts:
+        conflicts_by_frame.setdefault(c.frame_id, []).append(c)
+
+    for m in ranked:
+        m.associations = await store.get_all_associations_for_frame(m.frame.id)
+        m.episodes = await store.get_episodes_for_frames([m.frame.id], limit=6)
+        m.conflicts = conflicts_by_frame.get(m.frame.id, [])
+
+    return TopicSearchResponse(query=q, semantic_search=semantic_ok, matches=ranked)
+
+
 # Episodes (for debugging / inspection)
 @app.get("/users/{user_id}/episodes", response_model=list[Episode])
 async def get_user_episodes(
     user_id: int, limit: int = 50, store: MemoryStore = _Depends(get_store)
 ):
     return await store.get_episodes_for_user(user_id, limit=limit)
+
+
+class SessionMessage(BaseModel):
+    role: str
+    content: str
+    timestamp: str | None = None
+
+
+@app.get("/chat/session/{session_id}/messages", response_model=list[SessionMessage])
+async def get_session_messages(
+    session_id: str,
+    user_id: int,
+    limit: int = 50,
+    store: MemoryStore = _Depends(get_store),
+):
+    """Conversation turns for a session, oldest first — chat UI restore.
+
+    user_id is required and filters the episodes so one household member
+    cannot replay another member's session by guessing the session id.
+    """
+    episodes = [
+        e
+        for e in await store.get_episodes_for_session(session_id)
+        if e.user_id == user_id
+    ]
+    return [
+        SessionMessage(role=e.role, content=e.content, timestamp=e.timestamp)
+        for e in episodes[-limit:]
+    ]
 
 
 # DB backup / restore (CLI container cannot access the DB file directly)

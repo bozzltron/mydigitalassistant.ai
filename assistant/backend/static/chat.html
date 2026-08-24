@@ -102,10 +102,14 @@
       overflow: hidden;
     }
 
+    /* Wide screens: center a readable column (Open WebUI style) instead of
+       stretching edge-to-edge. The max() keeps normal padding on narrow
+       viewports and adds symmetric padding once space allows, so the
+       scrollbar stays at the window edge like every major chat UI. */
     #messages {
       flex: 1;
       overflow-y: auto;
-      padding: 1.5rem clamp(1rem, 4vw, 2.5rem);
+      padding: 1.5rem max(clamp(1rem, 4vw, 2.5rem), calc((100% - 56rem) / 2));
       display: flex;
       flex-direction: column;
       gap: 1.25rem;
@@ -376,7 +380,7 @@
     .sources-list a { color: var(--accent); }
 
     #input-row {
-      padding: 1rem clamp(1rem, 4vw, 2.5rem) 1.25rem;
+      padding: 1rem max(clamp(1rem, 4vw, 2.5rem), calc((100% - 56rem) / 2)) 1.25rem;
       background: var(--surface);
       border-top: 1px solid var(--border);
       display: flex;
@@ -866,7 +870,7 @@
 
     <div id="input-row">
       <textarea id="msg-input" rows="1" placeholder="Type a message..."></textarea>
-      <button id="mic-btn" title="Voice input">
+      <button id="mic-btn" title="Dictate into message box">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
           <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
@@ -976,6 +980,7 @@
     ogCache: {},  // url -> {title, description, image, site_name}
     isTurnActive: false,
     messageQueue: [],  // {text, el} — sent sequentially after the active turn
+    dictation: false,  // one-shot mic recording → populate input (no auto-send)
   };
 
   // ---- DOM refs ----
@@ -1627,6 +1632,23 @@
     startRecording();
   }
 
+  // One-shot dictation: record a single utterance and put the transcript in
+  // the message box for review — distinct from continuous conversation mode.
+  function startDictation() {
+    if (state.isRecording || state.voiceMode) return;
+    state.dictation = true;
+    setVoiceState(VoiceState.LISTENING, 'listening');
+    playEarcon('start');
+    startRecording();
+  }
+
+  function endDictation() {
+    state.dictation = false;
+    if (!state.voiceMode && voiceState !== VoiceState.SPEAKING) {
+      setVoiceState(VoiceState.IDLE);
+    }
+  }
+
   function enterVoiceMode() {
     state.voiceMode = true;
     saveSettings({ voiceMode: true });
@@ -1831,14 +1853,14 @@
         console.log('[voice] onstop chunks:', state.audioChunks.length, 'elapsed:', elapsed, 'loudFrames:', currentLoudFrames);
         try {
           if (state.audioChunks.length === 0) {
-            if (state.voiceMode) scheduleListenRetry("Didn't catch that");
+            handleRecordingDiscard("Didn't catch that");
             return;
           }
           const tooShort = elapsed < MIN_RECORDING_MS;
           const notEnoughLoud = currentLoudFrames < MIN_AUDIO_FRAMES;
           console.log('[voice] onstop checks tooShort:', tooShort, 'notEnoughLoud:', notEnoughLoud);
           if (tooShort || notEnoughLoud) {
-            if (state.voiceMode) scheduleListenRetry("Didn't catch that");
+            handleRecordingDiscard("Didn't catch that");
             return;
           }
           const blob = new Blob(state.audioChunks, { type: state.currentMimeType || 'audio/webm' });
@@ -1882,7 +1904,7 @@
   }
 
   function monitorAudioLevels() {
-    if (!state.voiceMode || voiceState !== VoiceState.LISTENING || !analyser) return;
+    if (!(state.voiceMode || state.dictation) || voiceState !== VoiceState.LISTENING || !analyser) return;
 
     const dataArray = new Uint8Array(analyser.frequencyBinCount);
     analyser.getByteFrequencyData(dataArray);
@@ -1996,6 +2018,17 @@
     }
   }
 
+  // A recording was discarded (too short / silent). In conversation mode we
+  // loop back to listening; in dictation we just surface why and stop.
+  function handleRecordingDiscard(message) {
+    if (state.dictation) {
+      endDictation();
+      setVoiceState(VoiceState.IDLE, message);
+    } else if (state.voiceMode) {
+      scheduleListenRetry(message);
+    }
+  }
+
   function scheduleListenRetry(message, delayMs = 1200) {
     setVoiceState(VoiceState.PROCESSING, message);
     setTimeout(() => {
@@ -2006,8 +2039,8 @@
   }
 
   async function sendAudioForTranscription(blob) {
-    console.log('[voice] sendAudioForTranscription blob:', blob.size, 'mime:', blob.type, 'voiceMode:', state.voiceMode);
-    if (!state.voiceMode) return;
+    console.log('[voice] sendAudioForTranscription blob:', blob.size, 'mime:', blob.type, 'voiceMode:', state.voiceMode, 'dictation:', state.dictation);
+    if (!state.voiceMode && !state.dictation) return;
     setVoiceState(VoiceState.PROCESSING, 'transcribing');
     playEarcon('stop');
 
@@ -2031,7 +2064,16 @@
       console.log('[voice] transcription response:', text);
 
       if (!text) {
-        scheduleListenRetry("Didn't catch that");
+        handleRecordingDiscard("Didn't catch that");
+        return;
+      }
+
+      // Dictation: drop the transcript into the input for review — the user
+      // decides when to send. Exit commands only apply to conversation mode.
+      if (state.dictation) {
+        endDictation();
+        msgInput.value = msgInput.value ? `${msgInput.value} ${text}` : text;
+        msgInput.focus();
         return;
       }
 
@@ -2043,8 +2085,13 @@
       sendMessage(text);
     } catch (err) {
       console.error('Transcription error:', err);
-      addMessage('assistant', 'Transcription failed. Please try again.');
-      scheduleListenRetry('Transcription error, retrying...');
+      if (state.dictation) {
+        endDictation();
+        addMessage('assistant', 'Transcription failed. Please try again.');
+      } else {
+        addMessage('assistant', 'Transcription failed. Please try again.');
+        scheduleListenRetry('Transcription error, retrying...');
+      }
     }
   }
 
@@ -2090,8 +2137,20 @@
       enterVoiceMode();
     }
 
-    // Restore session messages from memory
-    // (we don't store full history in localStorage, just reload via conversation)
+    // Restore the previous conversation so a refresh or a detour to the
+    // brain page doesn't lose the visible thread. session_id already persists
+    // in localStorage (memory continuity); this restores what was said.
+    if (state.sessionId && state.userId) {
+      try {
+        const history = await api(
+          `/chat/session/${encodeURIComponent(state.sessionId)}/messages?user_id=${state.userId}&limit=50`
+        );
+        for (const m of history) {
+          if (m.role === 'user' || m.role === 'assistant') addMessage(m.role, m.content);
+        }
+        if (history.length) messagesEl.scrollTop = messagesEl.scrollHeight;
+      } catch (_) { /* history restore is best-effort */ }
+    }
 
     // Events
     sendBtn.addEventListener('click', () => sendMessage(msgInput.value));
@@ -2109,8 +2168,7 @@
         // Voice mode is active; force a fresh listen cycle
         startListeningForVoice();
       } else {
-        // Mic button enters continuous voice mode
-        enterVoiceMode();
+        startDictation();
       }
     });
 
@@ -2129,9 +2187,21 @@
       }
     });
 
-    voiceStopBtn.addEventListener('click', exitVoiceMode);
+    voiceStopBtn.addEventListener('click', () => {
+      // Stop during dictation finalizes the recording; in voice mode it exits.
+      if (state.dictation) stopRecording();
+      else exitVoiceMode();
+    });
     voiceCancelBtn.addEventListener('click', () => {
-      exitVoiceMode();
+      if (state.dictation) {
+        state.isRecording = false;
+        clearTimeout(recordingTimeoutId);
+        if (silenceTimeout) { clearTimeout(silenceTimeout); silenceTimeout = null; }
+        try { state.mediaRecorder?.stop(); } catch (_) {}
+        endDictation();
+      } else {
+        exitVoiceMode();
+      }
     });
 
     settingsToggle.addEventListener('click', () => {

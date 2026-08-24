@@ -402,7 +402,7 @@ class MemoryStore:
     async def search_similar_frames(
         self,
         embedding: list[float],
-        user_id: int,
+        user_id: int | None,
         embedding_model: str = "nomic-embed-text",
         limit: int = 10,
         min_distance: float = 0.7,
@@ -411,12 +411,18 @@ class MemoryStore:
 
         Returns list of (frame, slots, distance) tuples ordered by similarity.
         Distance is 0.0 to 1.0+; lower is more similar.
-        Filters to frames owned by user_id or with no owner (shared household frame).
+        Filters to frames owned by user_id or with no owner (shared household
+        frame); user_id=None skips ownership filtering entirely (observatory /
+        admin views).
         Uses the specified embedding_model for the search.
         """
+        # None-safe ownership filter keeps the MATERIALIZED query shape intact.
+        owner_filter = (
+            "" if user_id is None else "AND (f.owner_user_id = ? OR f.owner_user_id IS NULL)"
+        )
         async with self._connect() as db:
             rows = await db.execute_fetchall(
-                """
+                f"""
                 -- MATERIALIZED barrier: filter by embedding_model BEFORE any
                 -- vec_distance_cosine() call. Mixed-dimension rows from other
                 -- models would otherwise crash distance computation depending
@@ -433,7 +439,7 @@ class MemoryStore:
                 FROM candidate
                 JOIN frames f ON candidate.frame_id = f.id
                 WHERE vec_distance_cosine(candidate.embedding, ?) <= ?
-                  AND (f.owner_user_id = ? OR f.owner_user_id IS NULL)
+                  {owner_filter}
                 ORDER BY distance ASC
                 LIMIT ?
                 """,
@@ -442,7 +448,7 @@ class MemoryStore:
                     json.dumps(embedding),
                     json.dumps(embedding),
                     min_distance,
-                    user_id,
+                    *([user_id] if user_id is not None else []),
                     limit,
                 ),
             )
@@ -845,6 +851,50 @@ class MemoryStore:
                 (json.dumps(frame_ids), episode_id),
             )
             await db.commit()
+
+    async def get_episodes_for_frames(
+        self, frame_ids: list[int], limit: int = 20
+    ) -> list[Episode]:
+        """Episodes that touched any of the given frames, newest first.
+
+        frame_ids is a JSON array column; json_each expands it so an episode
+        linking several frames matches each one.
+        """
+        if not frame_ids:
+            return []
+        placeholders = ",".join("?" * len(frame_ids))
+        async with self._connect() as db:
+            rows = await db.execute_fetchall(
+                "SELECT id, user_id, session_id, role, content, frame_ids, timestamp "
+                "FROM episodes WHERE EXISTS ("
+                f"SELECT 1 FROM json_each(episodes.frame_ids) je "
+                f"WHERE je.value IN ({placeholders})) "
+                "ORDER BY id DESC LIMIT ?",
+                (*frame_ids, limit),
+            )
+            return [Episode(**self._episode_dict(row)) for row in rows]
+
+    async def search_frames_keyword(self, term: str, limit: int = 10) -> list[Frame]:
+        """Case-insensitive substring match on frame names and slot keys/values.
+
+        Keyword complement to vector search: catches exact names and acronyms
+        that embeddings blur, and serves as the fallback when the embedding
+        model is unreachable. Excludes soft-deleted (priority 0 / GC'd) frames.
+        """
+        like = f"%{term}%"
+        async with self._connect() as db:
+            rows = await db.execute_fetchall(
+                "SELECT DISTINCT f.id, f.name, f.type, f.confidence, f.essential, "
+                "f.priority, f.owner_user_id, f.source_type, f.source_url, "
+                "f.source_reliability, f.embedding_model, f.created_at, f.updated_at "
+                "FROM frames f LEFT JOIN slots s ON s.frame_id = f.id "
+                "WHERE f.priority > 0 AND f.deleted_at IS NULL AND ("
+                "f.name LIKE ? COLLATE NOCASE OR s.key LIKE ? COLLATE NOCASE "
+                "OR s.value LIKE ? COLLATE NOCASE) "
+                "ORDER BY f.confidence DESC LIMIT ?",
+                (like, like, like, limit),
+            )
+            return [Frame(**self._frame_dict(row)) for row in rows]
 
     # Conflicts
     async def get_conflicts(self, status: str | None = None) -> list[Conflict]:

@@ -128,6 +128,13 @@ Role-based model selection (Phase 6). Configurable in `.env`: `CHAT_MODEL`, `UTI
 - `backend/memory/store.py` — MemoryStore CRUD over SQLite; `export_brain`/`import_brain`.
 - `backend/memory/gc.py` — all memory GC: slot priority decay + stale-frame soft-delete
   (`run_gc`); runs weekly in the scheduler and on-demand via `assistant db gc`.
+- `backend/static/brain.html` — Brain Observatory: force-graph of frames/associations,
+  conflict resolution, and topic memory search (`GET /memory/search` unions semantic
+  frame matches with keyword hits, returning slots, associations, source episodes,
+  and pending conflicts per match).
+- `backend/static/chat.html` — chat UI; mic button is one-shot dictation into the
+  input (continuous conversation mode is the separate toggle); conversation history
+  restores from `GET /chat/session/{id}/messages` on reload.
 - `backend/memory/confidence.py` — confidence + conflict math. Single source of truth.
 - `backend/memory/retrieval.py` — embed + sqlite-vec + graph-walk.
 - `backend/pipeline/task_router.py` — functional/introspective/scheduled classification.

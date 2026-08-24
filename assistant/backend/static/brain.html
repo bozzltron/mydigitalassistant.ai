@@ -17,6 +17,7 @@
       --accent: #58a6ff;
       --accent2: #3fb950;
       --error: #f47070;
+      --warning: #d29922;
       --font: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, 'Courier New', monospace;
       --person: #f78166;
       --concept: #d2a8ff;
@@ -298,6 +299,163 @@
       color: var(--accent);
     }
 
+    /* Topic search */
+    .topic-search {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .topic-search input {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 0.72rem;
+      padding: 0.38rem 0.6rem;
+      width: 220px;
+    }
+
+    .topic-search input:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+
+    .topic-panel {
+      position: absolute;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      width: min(430px, 92vw);
+      background: rgba(13, 17, 23, 0.97);
+      border-left: 1px solid var(--border);
+      z-index: 15;
+      display: none;
+      flex-direction: column;
+      backdrop-filter: blur(6px);
+    }
+
+    .topic-panel.open { display: flex; }
+
+    .topic-panel-header {
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+
+    .topic-panel-title {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--accent);
+    }
+
+    .topic-panel-title .kw-note { color: var(--warning); text-transform: none; letter-spacing: 0; }
+
+    .topic-panel-close {
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      color: var(--text-dim);
+      cursor: pointer;
+      display: inline-flex;
+      padding: 0.3rem;
+    }
+
+    .topic-panel-close:hover { color: var(--text); border-color: var(--text-dim); }
+
+    .topic-results {
+      overflow-y: auto;
+      padding: 0.9rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.9rem;
+    }
+
+    .topic-empty {
+      color: var(--text-dim);
+      font-size: 0.75rem;
+      line-height: 1.6;
+      padding: 0.5rem 0.25rem;
+    }
+
+    .topic-card {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.7rem 0.8rem;
+      background: var(--surface);
+    }
+
+    .topic-card-head {
+      display: flex;
+      align-items: center;
+      gap: 0.45rem;
+      margin-bottom: 0.35rem;
+    }
+
+    .topic-card-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+    .topic-card-name { font-size: 0.82rem; font-weight: 700; }
+
+    .topic-card-sim {
+      margin-left: auto;
+      font-size: 0.62rem;
+      color: var(--accent2);
+    }
+
+    .topic-meta {
+      font-size: 0.62rem;
+      color: var(--text-dim);
+      margin-bottom: 0.5rem;
+    }
+
+    .conf-bar {
+      height: 3px;
+      border-radius: 2px;
+      background: rgba(255,255,255,0.08);
+      margin: 0.25rem 0 0.5rem;
+      overflow: hidden;
+    }
+
+    .conf-bar > div { height: 100%; background: var(--accent); }
+
+    .topic-section-title {
+      font-size: 0.6rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-dim);
+      margin: 0.55rem 0 0.3rem;
+    }
+
+    .topic-slot {
+      font-size: 0.7rem;
+      margin-bottom: 0.2rem;
+      line-height: 1.5;
+    }
+    .topic-slot .k { color: var(--accent); }
+    .topic-slot .c { color: var(--text-dim); font-size: 0.62rem; margin-left: 0.3rem; }
+
+    .topic-assoc { font-size: 0.68rem; color: var(--text-dim); margin-bottom: 0.15rem; }
+    .topic-assoc .rel { color: var(--concept); }
+
+    .topic-episode {
+      font-size: 0.66rem;
+      color: var(--text-dim);
+      border-left: 2px solid var(--border);
+      padding-left: 0.5rem;
+      margin-bottom: 0.35rem;
+      line-height: 1.5;
+    }
+    .topic-episode .when { color: var(--accent2); }
+
+    .topic-conflict-line { font-size: 0.68rem; margin-bottom: 0.2rem; }
+    .topic-conflict-line .old { color: var(--text-dim); text-decoration: line-through; }
+    .topic-conflict-line .new { color: var(--warning); }
+
     .conflict-pulse {
       animation: conflictPulse 1.5s ease-in-out infinite;
     }
@@ -336,6 +494,12 @@
         <div class="legend-item"><div class="legend-dot" style="background:var(--entity)"></div>entity</div>
       </div>
       <div class="status" id="status">Loading...</div>
+      <div class="topic-search">
+        <input type="text" id="topic-input" placeholder="Search memory by topic..." autocomplete="off">
+        <button class="refresh-btn" id="topic-btn" title="Search memory for a topic">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        </button>
+      </div>
       <button class="refresh-btn" onclick="loadData()">Refresh</button>
       <button class="refresh-btn" id="export-btn" title="Export brain to JSON">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
@@ -355,8 +519,17 @@
     <div class="stats-bar" id="stats-bar"></div>
     <div class="edge-legend" id="edge-legend"></div>
     <nav>
-      <a href="/chat-ui">Back to Chat</a>
+      <a href="/chat-ui" target="_blank" rel="noopener">Back to Chat</a>
     </nav>
+    <div class="topic-panel" id="topic-panel">
+      <div class="topic-panel-header">
+        <div class="topic-panel-title" id="topic-panel-title">Topic memory</div>
+        <button class="topic-panel-close" id="topic-close" title="Close">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>
+      </div>
+      <div class="topic-results" id="topic-results"></div>
+    </div>
     <div class="empty-state" id="empty-state" style="display:none">
       <h2>No memories yet</h2>
       <p>Start chatting to build your brain</p>
@@ -421,8 +594,6 @@
 
     const width = () => document.getElementById('canvas-container').clientWidth;
     const height = () => document.getElementById('canvas-container').clientHeight;
-
-    console.log('Canvas dimensions:', { w: width(), h: height() });
 
     let svg, g, simulation, nodes = [], links = [];
 
@@ -511,8 +682,6 @@
             target: nodes.find(n => n.id === a.to_frame_id)
           }))
           .filter(l => l.source && l.target);
-
-        console.log('Brain data loaded:', { nodeCount: nodes.length, linkCount: links.length, canvasW: width(), canvasH: height() });
 
         if (nodes.length === 0) {
           document.getElementById('empty-state').style.display = 'block';
@@ -668,8 +837,8 @@
             const sConf = s.confidence != null ? Math.round(s.confidence * 100) : null;
             return `
             <div class="tooltip-slot">
-              <span class="tooltip-slot-key">${s.key}:</span>
-              <span class="tooltip-slot-val">${s.value}</span>
+              <span class="tooltip-slot-key">${esc(s.key)}:</span>
+              <span class="tooltip-slot-val">${esc(s.value)}</span>
               ${sConf != null ? `<span class="tooltip-slot-conf" title="slot confidence">${sConf}%</span>` : ''}
             </div>
           `;
@@ -679,20 +848,20 @@
           const conflictsHtml = frameConflicts.map(c => `
             <div class="tooltip-conflict">
               <div class="tooltip-conflict-line">
-                <span class="tooltip-conflict-key">${c.slot_key}</span>:
-                <span class="tooltip-conflict-old">${c.existing_value ?? '∅'}</span>
+                <span class="tooltip-conflict-key">${esc(c.slot_key)}</span>:
+                <span class="tooltip-conflict-old">${esc(c.existing_value ?? '∅')}</span>
                 →
-                <span class="tooltip-conflict-new">${c.new_value ?? '∅'}</span>
+                <span class="tooltip-conflict-new">${esc(c.new_value ?? '∅')}</span>
               </div>
               <div class="tooltip-conflict-actions">
-                <button onclick="resolveConflict(${c.id}, '${escAttr(c.existing_value)}')">Keep ${c.existing_value ?? 'old'}</button>
-                <button class="use-new" onclick="resolveConflict(${c.id}, '${escAttr(c.new_value)}')">Use ${c.new_value ?? 'new'}</button>
+                <button onclick="resolveConflict(${c.id}, '${escAttr(c.existing_value)}')">Keep ${esc(c.existing_value ?? 'old')}</button>
+                <button class="use-new" onclick="resolveConflict(${c.id}, '${escAttr(c.new_value)}')">Use ${esc(c.new_value ?? 'new')}</button>
               </div>
             </div>
           `).join('');
 
           tooltip.innerHTML = `
-            <div class="tooltip-name" style="color:${TYPE_COLORS[d.type] || TYPE_COLORS.entity}">${d.name}</div>
+            <div class="tooltip-name" style="color:${TYPE_COLORS[d.type] || TYPE_COLORS.entity}">${esc(d.name)}</div>
             <div class="tooltip-type">${d.type}</div>
             <div class="tooltip-meta">
               confidence: ${conf}% &nbsp;|&nbsp; priority: ${pri}%
@@ -719,6 +888,15 @@
 
       function escAttr(value) {
         return String(value ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+      }
+
+      // Escape memory-sourced text for HTML interpolation. Slot values and
+      // names come from LLM extraction of user conversation — treat as input.
+      function esc(value) {
+        return String(value ?? '')
+          .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
       }
 
       async function resolveConflict(conflictId, value) {
@@ -847,7 +1025,171 @@
 
     loadData();
 
-    setInterval(loadData, 30000);
+    // Periodic refresh, but never while the user is mid-inspection — a
+    // simulation restart would yank the graph out from under the tooltip.
+    setInterval(() => {
+      if (document.getElementById('tooltip').classList.contains('visible')) return;
+      loadData();
+    }, 30000);
+
+    // ---- Topic memory search ----
+    const topicInput = document.getElementById('topic-input');
+    const topicBtn = document.getElementById('topic-btn');
+    const topicPanel = document.getElementById('topic-panel');
+    const topicResults = document.getElementById('topic-results');
+    const topicTitle = document.getElementById('topic-panel-title');
+
+    // DOM builder — memory-sourced text enters via textContent only (XSS-safe).
+    function tEl(tag, className, text) {
+      const n = document.createElement(tag);
+      if (className) n.className = className;
+      if (text != null) n.textContent = text;
+      return n;
+    }
+
+    function frameNameById(id) {
+      const n = nodes.find(x => x.id === id);
+      return n ? n.name : `#${id}`;
+    }
+
+    function fmtTs(ts) {
+      if (!ts) return '';
+      const d = new Date(String(ts).replace(' ', 'T') + 'Z'); // sqlite UTC
+      return isNaN(d) ? String(ts) : d.toLocaleString();
+    }
+
+    function confBar(pct) {
+      const wrap = tEl('div', 'conf-bar');
+      const fill = tEl('div');
+      fill.style.width = Math.round((pct || 0.5) * 100) + '%';
+      wrap.appendChild(fill);
+      return wrap;
+    }
+
+    function renderMatch(m) {
+      const card = tEl('div', 'topic-card');
+      const head = tEl('div', 'topic-card-head');
+      const dot = tEl('div', 'topic-card-dot');
+      dot.style.background = TYPE_COLORS[m.frame.type] || TYPE_COLORS.entity;
+      head.appendChild(dot);
+      head.appendChild(tEl('div', 'topic-card-name', m.frame.name));
+      if (m.similarity != null) {
+        head.appendChild(tEl('div', 'topic-card-sim',
+          Math.round(m.similarity * 100) + '% match'));
+      }
+      card.appendChild(head);
+
+      const meta = tEl(
+        'div', 'topic-meta',
+        `${m.frame.type} · confidence ${Math.round((m.frame.confidence || 0.5) * 100)}%`
+        + ` · priority ${Math.round((m.frame.priority || 0.5) * 100)}%`
+        + (m.frame.essential ? ' · essential' : '')
+        + (m.similarity == null ? ' · keyword match' : '')
+      );
+      card.appendChild(meta);
+      card.appendChild(confBar(m.frame.confidence));
+
+      if ((m.slots || []).length) {
+        card.appendChild(tEl('div', 'topic-section-title', 'Stored facts'));
+        for (const s of m.slots) {
+          const line = tEl('div', 'topic-slot');
+          const k = tEl('span', 'k', s.key + ': ');
+          line.appendChild(k);
+          line.appendChild(document.createTextNode(s.value));
+          if (s.confidence != null) {
+            line.appendChild(tEl('span', 'c', Math.round(s.confidence * 100) + '%'));
+          }
+          if (s.last_strengthened_at) {
+            line.appendChild(tEl('span', 'c', ' · last reinforced ' + fmtTs(s.last_strengthened_at)));
+          }
+          card.appendChild(line);
+        }
+      } else {
+        card.appendChild(tEl('div', 'topic-section-title', 'Stored facts'));
+        card.appendChild(tEl('div', 'topic-empty', 'Frame exists but no slot values captured.'));
+      }
+
+      if ((m.associations || []).length) {
+        card.appendChild(tEl('div', 'topic-section-title', 'Connections'));
+        for (const a of m.associations) {
+          const other = a.from_frame_id === m.frame.id ? a.to_frame_id : a.from_frame_id;
+          const dir = a.from_frame_id === m.frame.id ? '→' : '←';
+          const pct = a.confidence != null ? ` (${Math.round(a.confidence * 100)}%)` : '';
+          card.appendChild(tEl('div', 'topic-assoc',
+            `${dir} ${a.relation_type} ${frameNameById(other)}${pct}`));
+        }
+      }
+
+      if ((m.episodes || []).length) {
+        card.appendChild(tEl('div', 'topic-section-title', 'Conversations that touched this'));
+        for (const ep of m.episodes.slice(0, 4)) {
+          const line = tEl('div', 'topic-episode');
+          line.appendChild(tEl('span', 'when', fmtTs(ep.timestamp)));
+          const digest = ep.content.length > 180 ? ep.content.slice(0, 180) + '…' : ep.content;
+          line.appendChild(document.createTextNode(' — ' + digest));
+          card.appendChild(line);
+        }
+      }
+
+      if ((m.conflicts || []).length) {
+        card.appendChild(tEl('div', 'topic-section-title', 'Pending conflicts'));
+        for (const c of m.conflicts) {
+          const line = tEl('div', 'topic-conflict-line');
+          line.appendChild(tEl('span', 'k', c.slot_key + ': '));
+          line.appendChild(tEl('span', 'old', c.existing_value ?? '∅'));
+          line.appendChild(document.createTextNode(' → '));
+          line.appendChild(tEl('span', 'new', c.new_value ?? '∅'));
+          card.appendChild(line);
+        }
+      }
+      return card;
+    }
+
+    function renderTopicResults(data) {
+      topicResults.textContent = '';
+      topicTitle.textContent =
+        `${data.matches.length} ${data.matches.length === 1 ? 'memory' : 'memories'} for "${data.query}"`;
+      if (!data.semantic_search) {
+        topicTitle.appendChild(tEl('span', 'kw-note', ' (semantic offline — keyword only)'));
+      }
+      if (!data.matches.length) {
+        topicResults.appendChild(tEl('div', 'topic-empty',
+          'Nothing stored about this yet. Try other phrasings — semantic search matches by meaning, keyword search by exact substring.'));
+        return;
+      }
+      for (const m of data.matches) topicResults.appendChild(renderMatch(m));
+    }
+
+    async function runTopicSearch() {
+      const q = topicInput.value.trim();
+      if (!q) return;
+      topicBtn.disabled = true;
+      topicResults.textContent = '';
+      topicResults.appendChild(tEl('div', 'topic-empty', 'Searching memory…'));
+      openTopicPanel();
+      try {
+        const res = await fetch('/memory/search?q=' + encodeURIComponent(q));
+        if (!res.ok) throw new Error(await res.text());
+        renderTopicResults(await res.json());
+      } catch (e) {
+        topicResults.textContent = '';
+        topicResults.appendChild(tEl('div', 'topic-empty', 'Search failed: ' + e.message));
+      } finally {
+        topicBtn.disabled = false;
+      }
+    }
+
+    function openTopicPanel() { topicPanel.classList.add('open'); }
+    function closeTopicPanel() { topicPanel.classList.remove('open'); }
+
+    topicBtn.addEventListener('click', runTopicSearch);
+    topicInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter') runTopicSearch();
+    });
+    document.getElementById('topic-close').addEventListener('click', closeTopicPanel);
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') closeTopicPanel();
+    });
   </script>
 </body>
 </html>

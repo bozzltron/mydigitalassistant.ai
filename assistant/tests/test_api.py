@@ -437,3 +437,92 @@ def test_chat_status_roundtrip(client, stub_llm):
 
     missing = client.get("/chat/status/never-seen")
     assert missing.status_code == 404
+
+
+def test_session_messages_restore(client):
+    """Conversation restore: session turns come back oldest-first, scoped to
+    the requesting user — a refreshed page can rebuild the visible thread."""
+    import asyncio
+
+    u1 = client.post("/users", params={"name": "restoreA"})
+    uid1 = u1.json()["id"]
+    u2 = client.post("/users", params={"name": "restoreB"})
+    uid2 = u2.json()["id"]
+    store = _state["store"]
+
+    async def seed():
+        await store.create_episode(user_id=uid1, session_id="sess-restore",
+                                   role="user", content="what is a quokka")
+        await store.create_episode(user_id=uid1, session_id="sess-restore",
+                                   role="assistant", content="A small marsupial.")
+        # Another household member's turn in the same session must NOT leak.
+        await store.create_episode(user_id=uid2, session_id="sess-restore",
+                                   role="user", content="secret note from bob")
+
+    asyncio.run(seed())
+
+    r = client.get("/chat/session/sess-restore/messages", params={"user_id": uid1})
+    assert r.status_code == 200
+    msgs = r.json()
+    assert [m["role"] for m in msgs] == ["user", "assistant"]
+    assert [m["content"] for m in msgs] == ["what is a quokka", "A small marsupial."]
+    assert all("secret" not in m["content"] for m in msgs)
+
+    r2 = client.get("/chat/session/sess-restore/messages", params={"user_id": uid2})
+    assert [m["content"] for m in r2.json()] == ["secret note from bob"]
+
+    empty = client.get("/chat/session/unknown-session/messages", params={"user_id": uid1})
+    assert empty.json() == []
+
+
+def test_topic_search_finds_frames_by_keyword_and_semantic(client, stub_llm):
+    """Topic transparency: /memory/search unions semantic hits with keyword
+    matches and returns slots, associations, episodes, conflicts per frame."""
+    stub_llm.set_extraction_result(slots=[], associations=[])
+    import asyncio
+
+    u = client.post("/users", params={"name": "topicsearcher"})
+    uid = u.json()["id"]
+    store = _state["store"]
+
+    async def seed():
+        f = await store.create_frame(
+            name="quokka", type="entity", owner_user_id=uid,
+            source_type="conversation",
+        )
+        slot, _conflict = await store.upsert_slot(
+            frame_id=f.id, key="habitat", value="Western Australia",
+        )
+        episode = await store.create_episode(
+            user_id=uid, session_id="sess-topic", role="user",
+            content="tell me about the quokka", frame_ids=[f.id],
+        )
+        return f, slot, episode
+
+    frame, slot, episode = asyncio.run(seed())
+    # Semantic pass needs a stored embedding for the frame.
+    asyncio.run(store.store_frame_embedding(
+        frame.id, [0.1] * 768, settings.embedding_model))
+
+    r = client.get("/memory/search", params={"q": "quokka"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["query"] == "quokka"
+    names = [m["frame"]["name"] for m in body["matches"]]
+    assert "quokka" in names
+    top = next(m for m in body["matches"] if m["frame"]["name"] == "quokka")
+    assert any(s["key"] == "habitat" for s in top["slots"])
+    assert any(e["id"] == episode.id for e in top["episodes"])
+
+    # Slot-value substring also matches (keyword pass), even when the term
+    # appears nowhere in the frame name.
+    r2 = client.get("/memory/search", params={"q": "Western Australia"})
+    names2 = [m["frame"]["name"] for m in r2.json()["matches"]]
+    assert "quokka" in names2
+
+    r3 = client.get("/memory/search", params={"q": "zzz-no-such-topic"})
+    assert r3.status_code == 200
+    assert r3.json()["matches"] == []
+
+    empty_q = client.get("/memory/search", params={"q": "   "})
+    assert empty_q.status_code == 400
