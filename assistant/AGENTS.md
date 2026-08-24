@@ -20,6 +20,9 @@ Web search for retrieval-only; learned facts stored locally in memory frames/slo
 - The LLM decides which facts to retain from search results.
 - Always on by design — no feature flag; point `SEARCH_BASE_URL` at your local SearXNG.
 - All search queries go to local SearXNG instance (not cloud APIs).
+- Engine roster is curated in `searxng/settings.yml`. Engines that serve
+  CAPTCHAs on every request are removed outright (they retry-and-fail on
+  each query); rate-limited engines that self-heal (e.g. Brave 429s) stay.
 
 ## The cognitive loop
 1. Task Router classifies input: functional (goal-directed) vs introspective (reflective).

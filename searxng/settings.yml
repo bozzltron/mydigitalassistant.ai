@@ -3,28 +3,30 @@
 
 # Engine allow-list. Every enabled engine fires in parallel on each query,
 # and upstream providers rate-limit aggressive automated traffic (a flagged
-# IP gets CAPTCHAs that break ALL searches). Six diverse engines keeps
-# results resilient while staying under rate-limit radar.
+# IP gets CAPTCHAs that break ALL searches).
+#
+# Curated roster (2026-08): duckduckgo and qwant were removed after serving
+# CAPTCHAs on every query — both engines raise their captcha exception with
+# suspended_time=0, so SearXNG never suspends them and retries (and fails)
+# on every single search, taxing latency for zero results.
+#
+# To re-enable an engine once its block has lifted, add its name back to
+# BOTH lists below (keep_only + engines). Brave suspensions (HTTP 429) are
+# self-healing by contrast — it stays enabled.
 use_default_settings:
   engines:
     keep_only:
-      - duckduckgo
       - brave
       - mojeek
-      - qwant
       - bing
       - wikipedia
 
 # keep_only trims the set but inherits each engine's default `disabled`
 # flag (most are off by default). Explicitly enable all of them.
 engines:
-  - name: duckduckgo
-    disabled: false
   - name: brave
     disabled: false
   - name: mojeek
-    disabled: false
-  - name: qwant
     disabled: false
   - name: bing
     disabled: false
