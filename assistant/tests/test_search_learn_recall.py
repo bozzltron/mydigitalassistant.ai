@@ -16,6 +16,12 @@ from assistant.backend.pipeline.search import SearchResult, WebSearchTool
 
 async def test_search_learn_stores_fact_in_memory(store, stub_llm):
     """Search results are extracted and stored in the memory store."""
+    from .conftest import add_embedding_cluster
+
+    # The relevance gate compares query vs result embeddings; make the stub
+    # embedder treat this test's topic as one cluster.
+    add_embedding_cluster("capital", "texas", "austin")
+
     retriever = Retriever(store=store, llm_client=stub_llm)
 
     async def fake_search(query, num_results=5):

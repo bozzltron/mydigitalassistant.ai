@@ -72,6 +72,19 @@ class Orchestrator:
         self.llm_client = deps.llm_client
         self.search_tool = deps.search_tool
 
+    def _embed_fn(self):
+        """Embedding callable for canonical frame resolution (Phase 9A)."""
+
+        async def get_embedding(text: str) -> list[float]:
+            resp = await self.llm_client.embed(text)
+            return resp.embedding
+
+        return get_embedding
+
+    def embed_fn(self):
+        """Public alias — scheduler consolidation reuses the hot-path embedder."""
+        return self._embed_fn()
+
     @staticmethod
     async def _report(
         progress: "Callable[[str, str], Awaitable[None]] | None",
@@ -301,12 +314,26 @@ class Orchestrator:
         search_extraction_summary: dict = {}
         if plan.search_needed:
             await self._report(progress, "searching", "searching the web")
-            logger.info("Reasoner triggered search for: %s", request.message[:50])
+            # Prefer the router's keyword query; fall back to a sanitized
+            # version of the raw message (never raw conversational text).
+            from assistant.backend.pipeline.search import (
+                filter_relevant,
+                sanitize_query,
+            )
+
+            query = classification.search_query or sanitize_query(request.message)
+            logger.info("Reasoner triggered search for: %s", query[:80])
             try:
-                search_results = await self.search_tool.search(request.message, num_results=5)
+                search_results = await self.search_tool.search(query, num_results=5)
             except Exception as e:
                 logger.warning("Search failed, continuing without results: %s", e)
                 search_results = []
+
+            # Relevance gate: drop links that don't belong to the query
+            # before they can pollute the system prompt or citations.
+            search_results = await filter_relevant(
+                search_results, query, self._embed_fn()
+            )
 
             if search_results:
                 search_text = "\n".join(
@@ -333,6 +360,7 @@ class Orchestrator:
                     search_extraction,
                     search_results,
                     self.store,
+                    embed_fn=self._embed_fn(),
                 )
                 logger.info(
                     "Search extraction: %d slots, %d assocs",
@@ -519,12 +547,22 @@ class Orchestrator:
 
         search_results: list[SearchResult] = []
         if plan.search_needed:
-            logger.info("Scheduled task triggering search: %s", prompt[:50])
+            from assistant.backend.pipeline.search import (
+                filter_relevant,
+                sanitize_query,
+            )
+
+            query = sanitize_query(prompt)
+            logger.info("Scheduled task triggering search: %s", query[:80])
             try:
-                search_results = await self.search_tool.search(prompt, num_results=5)
+                search_results = await self.search_tool.search(query, num_results=5)
             except Exception as e:
                 logger.warning("Task search failed: %s", e)
                 search_results = []
+
+            search_results = await filter_relevant(
+                search_results, query, self._embed_fn()
+            )
 
             if search_results:
                 search_text = "\n".join(
@@ -541,7 +579,8 @@ class Orchestrator:
                         prompt, search_results, self.llm_client
                     )
                     await apply_search_extraction(
-                        extraction, search_results, self.store
+                        extraction, search_results, self.store,
+                        embed_fn=self._embed_fn(),
                     )
                 except Exception as e:
                     logger.error("Search extraction failed: %s", e)

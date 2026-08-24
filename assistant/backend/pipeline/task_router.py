@@ -26,6 +26,7 @@ class ClassificationResult(BaseModel):
 
     task_type: TaskType
     wants_search: bool | None = None
+    search_query: str | None = None
 
 
 # Heuristic patterns for introspective queries (case-insensitive)
@@ -139,9 +140,14 @@ current information from the web. Statements that give information to remember a
 wants_search=false. General-knowledge questions you can answer without looking
 anything up are also wants_search=false.
 
+When wants_search is true, also return "search_query": a short keyword query
+(3-8 words) for a search engine — strip greetings, filler and personal details,
+keep the names and topic words that a search engine needs.
+
 Respond with ONLY valid JSON:
 {"task_type": "functional"|"introspective"|"correction"|"search"|"scheduled",
- "wants_search": true|false}""",
+ "wants_search": true|false,
+ "search_query": "short keyword query"}""",
     )
     user = ChatMessage(role="user", content=text)
     try:
@@ -160,7 +166,13 @@ Respond with ONLY valid JSON:
             task_type = TaskType.FUNCTIONAL
         raw_wants = data.get("wants_search")
         wants_search = bool(raw_wants) if isinstance(raw_wants, bool) else None
-        return ClassificationResult(task_type=task_type, wants_search=wants_search)
+        raw_query = data.get("search_query")
+        search_query = (
+            raw_query.strip() if isinstance(raw_query, str) and raw_query.strip() else None
+        )
+        return ClassificationResult(
+            task_type=task_type, wants_search=wants_search, search_query=search_query
+        )
     except (json.JSONDecodeError, AttributeError):
         return ClassificationResult(task_type=TaskType.FUNCTIONAL)
     except Exception:
