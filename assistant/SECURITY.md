@@ -7,12 +7,13 @@ data to external servers. All inference happens locally via Ollama.
 
 ## What's enforced
 
-- FastAPI binds to `127.0.0.1` only — never accessible from the network
-- All HTTP calls limited to Ollama at `http://127.0.0.1:11434` or SearXNG at `http://127.0.0.1:8080`
-- Search tool only allows localhost SearXNG endpoints (no cloud search)
+- Bare-metal runs: FastAPI binds to `127.0.0.1` only — never accessible from the network
+- Docker runs: the backend binds inside the container with **no published ports**;
+  Caddy is the single published surface (`127.0.0.1:8443`) on the internal `appnet` bridge
+- All HTTP calls limited to Ollama and SearXNG (local endpoints only; see defaults in `.env.example`)
+- Search tool only allows local SearXNG endpoints (no cloud search); search is always-on by design
 - No telemetry, analytics, or phone-home code
 - No cloud LLM APIs (OpenAI, Anthropic, Google, etc.)
-- All HTTP calls to external services require explicit `SEARCH_ENABLED=true` config
 - SQLite DB stored locally; backups via `assistant db backup`
 - Secrets live in `.env` (gitignored); `.env.example` documents safe defaults
 

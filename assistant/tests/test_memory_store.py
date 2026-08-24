@@ -194,15 +194,6 @@ async def test_get_episodes_for_session(store: MemoryStore):
     assert all(ep.session_id == "session-x" for ep in eps)
 
 
-async def test_get_episodes_for_frame(store: MemoryStore):
-    user = await store.create_user("Alice")
-    frame = await store.create_frame("Mars", "entity")
-    await store.create_episode(user.id, "s1", "user", "Mars is red", [frame.id])
-    eps = await store.get_episodes_for_frame(frame.id)
-    assert len(eps) == 1
-    assert eps[0].content == "Mars is red"
-
-
 async def test_merge_frames_moves_slots_and_associations(store: MemoryStore):
     primary = await store.create_frame("Mars", "entity")
     secondary = await store.create_frame("The Red Planet", "entity")

@@ -137,3 +137,70 @@ class TestRunGc:
                 "SELECT priority FROM slots WHERE frame_id = ?", (frame.id,)
             )
             assert row[0][0] == 0.4
+
+    @pytest.mark.asyncio
+    async def test_stale_low_priority_frame_soft_deleted(self, store):
+        """Frames below the priority threshold untouched by working memory for
+        FRAME_STALE_DAYS are soft-deleted; scheduled_task frames are exempt."""
+        from assistant.backend.db.sqlcipher import aiosqlite_connect
+        from assistant.backend.memory.gc import FRAME_STALE_PRIORITY
+
+        user = await store.create_user("Alice")
+        stale = await store.create_frame(
+            name="stale_frame",
+            type="entity",
+            priority=FRAME_STALE_PRIORITY - 0.05,
+            owner_user_id=user.id,
+        )
+        task = await store.create_frame(
+            name="task_frame",
+            type="scheduled_task",
+            priority=FRAME_STALE_PRIORITY - 0.05,
+            owner_user_id=user.id,
+        )
+
+        report = await run_gc(store.db_path)
+
+        assert report.frames_soft_deleted == 1
+        async with aiosqlite_connect(store.db_path) as db:
+            rows = await db.execute_fetchall(
+                "SELECT id, deleted_at FROM frames WHERE id IN (?, ?)",
+                (stale.id, task.id),
+            )
+        deleted_by_id = {fid: deleted_at for fid, deleted_at in rows}
+        assert deleted_by_id[stale.id] is not None
+        assert deleted_by_id[task.id] is None
+
+    @pytest.mark.asyncio
+    async def test_recently_accessed_low_priority_frame_kept(self, store):
+        """A low-priority frame with fresh working-memory access survives GC."""
+        from datetime import UTC, datetime, timedelta
+
+        from assistant.backend.db.sqlcipher import aiosqlite_connect
+
+        user = await store.create_user("Alice")
+        frame = await store.create_frame(
+            name="fresh_frame",
+            type="entity",
+            priority=0.1,
+            owner_user_id=user.id,
+        )
+        recent = (
+            datetime.now(UTC) - timedelta(hours=1)
+        ).isoformat()
+        async with aiosqlite_connect(store.db_path) as db:
+            await db.execute(
+                "INSERT INTO working_memory (frame_id, access_count, entered_at, "
+                "last_accessed_at) VALUES (?, 1, ?, ?)",
+                (frame.id, recent, recent),
+            )
+            await db.commit()
+
+        report = await run_gc(store.db_path)
+
+        assert report.frames_soft_deleted == 0
+        async with aiosqlite_connect(store.db_path) as db:
+            rows = await db.execute_fetchall(
+                "SELECT deleted_at FROM frames WHERE id = ?", (frame.id,)
+            )
+        assert rows[0][0] is None

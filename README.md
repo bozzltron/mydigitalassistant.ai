@@ -25,6 +25,9 @@ ollama pull qwen2.5:7b
 ollama pull qwen2.5:3b
 ollama pull nomic-embed-text
 
+# Tip: keep models warm between turns (see .env.example)
+#   OLLAMA_KEEP_ALIVE=-1  OLLAMA_MAX_LOADED_MODELS=2
+
 # 2. Install the assistant
 pip install -e ./assistant
 

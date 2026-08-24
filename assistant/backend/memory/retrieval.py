@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from assistant.backend.config import settings
 from assistant.backend.memory.models import Association, Episode, Frame, Slot
 
 if TYPE_CHECKING:
@@ -169,7 +170,7 @@ class Retriever:
             user_id=user_id,
             embedding_model=self.embedding_model,
             limit=self.top_k_direct * 2,  # fetch more to account for graph neighbors
-            min_distance=0.7,
+            min_distance=settings.retrieval_min_distance,
          )
 
         if not all_results:

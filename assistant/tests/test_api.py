@@ -35,6 +35,11 @@ async def client(store, stub_llm, stub_search):
     settings.scheduler_enabled = False
     try:
         with TestClient(app) as c:
+            # Lifespan startup rebuilds real clients into _state; re-inject
+            # stubs so endpoints reading _state directly (/correction) stay
+            # hermetic regardless of whether host Ollama is running.
+            _state["llm_client"] = stub_llm
+            _state["search_tool"] = stub_search
             yield c
     finally:
         settings.database_path = original_db_path
@@ -274,7 +279,8 @@ def test_static_files_served(client):
     """Static files including marked.min.js should be served."""
     r = client.get("/static/marked.min.js")
     assert r.status_code == 200
-    assert "application/javascript" in r.headers.get("content-type", "")
+    # Starlette >=0.41 serves .js as text/javascript; older as application/javascript
+    assert "javascript" in r.headers.get("content-type", "")
 
 
 def test_correction_endpoint_applies_correction(client, stub_llm):
@@ -333,6 +339,27 @@ def test_correction_endpoint_rejects_unparseable_correction(client, stub_llm):
     data = r.json()
     assert data["slots_corrected"] == 0
     assert "Could not understand" in data["status"] or data["status"].startswith("Correction")
+
+
+def test_correction_endpoint_resolves_episode_id(client, stub_llm):
+    """Regression: /correction with episode_id must not crash resolving the
+    latest episode for that session (store.db AttributeError, Phase 8 B1)."""
+    u = client.post("/users", params={"name": "corrector"})
+    uid = u.json()["id"]
+    chat = client.post("/chat", json={"user_id": uid, "message": "Hello!"})
+    session_id = chat.json()["session_id"]
+
+    stub_llm.set_extraction_result(
+        slots=[{"frame_name": "guitar", "slot_key": "strings", "value": "12"}],
+        associations=[],
+    )
+    r = client.post("/correction", json={
+        "message_id": "test-msg-ep",
+        "episode_id": session_id,
+        "correction_text": "Actually the guitar has 12 strings.",
+    })
+    assert r.status_code == 200
+    assert r.json()["slots_corrected"] == 1
 
 
 def test_correction_endpoint_requires_correction_text(client):

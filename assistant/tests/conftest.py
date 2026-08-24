@@ -109,6 +109,23 @@ class StubLLMClient(OllamaClient):
                 done=True,
             )
 
+        if "parse a user correction" in system_lower:
+            # Correction-extraction expects CorrectionResult JSON
+            # ({frame_name, slot_key, new_value}), not slot batches.
+            slots = self._next_extraction_result or []
+            self._next_extraction_result = None
+            payload: dict = {}
+            if slots:
+                first = slots[0]
+                payload = {
+                    "frame_name": first.get("frame_name"),
+                    "slot_key": first.get("slot_key"),
+                    "new_value": first.get("value"),
+                }
+            return ChatResponse(
+                content=json.dumps(payload), model=self.utility_model, done=True
+            )
+
         if "extract" in system_lower:
             slots: list[dict] = []
             associations: list[dict] = []

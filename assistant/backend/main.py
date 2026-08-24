@@ -138,8 +138,7 @@ async def lifespan(app: FastAPI):
 
         from assistant.backend.scheduler.runner import start_scheduler
 
-        store._orchestrator = orchestrator
-        scheduler_task = asyncio.create_task(start_scheduler(store))
+        scheduler_task = asyncio.create_task(start_scheduler(store, orchestrator))
         logger.info("Scheduler background task started")
 
     logger.info("Assistant started. DB: %s, Ollama: %s, Search: enabled")
@@ -203,7 +202,7 @@ async def get_assistant_name(store: MemoryStore = _Depends(get_store)):
         slot = await store.get_slot(name_frame.id, IDENTITY_NAME_SLOT)
         if slot:
             return {"name": slot.value}
-    return {"name": "Cognitive Assistant"}
+    return {"name": settings.assistant_name}
 
 
 @app.get("/brain-ui")
@@ -646,7 +645,8 @@ async def submit_feedback(
 
     - positive: boosts confidence of touched frames/slots
     - negative: lowers confidence of touched frames/slots
-    - correction: stores the correction text as new facts with high reliability
+    - correction: records the correction text; apply it via POST /correction,
+      which routes through the LLM correction pipeline
     """
     valid_kinds = {"positive", "negative", "correction"}
     if request.kind not in valid_kinds:
@@ -664,10 +664,6 @@ async def submit_feedback(
         slots_updated = await store.apply_positive_feedback(request.episode_id)
     elif request.kind == "negative":
         slots_updated = await store.apply_negative_feedback(request.episode_id)
-    elif request.kind == "correction" and request.comment:
-        slots_updated, _ = await store.apply_correction_feedback(
-            request.episode_id, request.comment
-        )
 
     return FeedbackResponse(
         status="ok",
@@ -715,12 +711,9 @@ async def submit_correction(
 
     source_episode_id = None
     if request.episode_id:
-        episode_rows = await store.db.execute_fetchall(
-            "SELECT id FROM episodes WHERE session_id = ? ORDER BY id DESC LIMIT 1",
-            (request.episode_id,),
-        )
-        if episode_rows:
-            source_episode_id = episode_rows[0][0]
+        episodes = await store.get_episodes_for_session(request.episode_id)
+        if episodes:
+            source_episode_id = episodes[-1].id
 
     await store.create_feedback(
         episode_id=request.episode_id,

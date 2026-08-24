@@ -19,8 +19,8 @@ class Settings(BaseSettings):
     # chat_think_default is the fast-path default; escalations override per call.
     chat_think_default: bool = False
     think_num_predict_cap: int = 1024
-    # Native tool-calling on the chat model (Phase 6 M5). web_search tool is
-    # additionally gated on SEARCH_ENABLED / SearXNG availability.
+    # Native tool-calling on the chat model (Phase 6 M5). The web_search tool
+    # additionally depends on SearXNG availability.
     tools_enabled: bool = True
 
     # Context windows per call class (Phase 6 plan §4.4). Without these,
@@ -51,9 +51,14 @@ class Settings(BaseSettings):
 
     # How long Ollama keeps a model in memory after the last request.
     # Reloading a 27B model takes tens of seconds, so short defaults make
-    # every turn feel slow. "30m" keeps weights warm between household use;
-    # negative numbers keep models loaded forever.
-    ollama_keep_alive: str = "30m"
+    # every turn feel slow. "-1" keeps models loaded forever (Option A
+    # residency: chat + utility stay warm so alternating roles cost ~0).
+    # Pair with host Ollama env OLLAMA_MAX_LOADED_MODELS>=2.
+    ollama_keep_alive: str = "-1"
+
+    # Retrieval: max vector distance for direct candidate frames
+    # (sqlite-vec cosine, 0-2). Lower = stricter similarity.
+    retrieval_min_distance: float = 0.7
 
     # TLS verification (defense-in-depth for local services)
     # Set to path of CA cert if Ollama/SearXNG use self-signed TLS
@@ -63,6 +68,11 @@ class Settings(BaseSettings):
     # Voice transcription (optional - requires faster-whisper)
     whisper_model: str = "base"
     whisper_device: str = "cpu"
+    whisper_download_root: str = "/app/.cache/whisper"  # model cache dir
+    whisper_language: str = "en"  # ISO code; "" = auto-detect
+
+    # Fallback display name until the user sets the assistant's identity name.
+    assistant_name: str = "Cognitive Assistant"
 
     # Working memory (LRU cache for retrieval bias)
     working_memory_max_size: int = 50   # max entries in working memory

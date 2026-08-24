@@ -69,7 +69,7 @@ class OllamaClient:
 
     Model roles (Phase 6 fleet):
     - chat_model: user-facing responses; thinking-capable models accept think=True
-    - utility_model: extraction + task-routing fallback + cron generation
+    - utility_model: extraction + task-routing fallback
     - embedding_model: frame/query embeddings
     - coder_model: reserved for tool codegen (M5); empty = fall back to chat_model
     """
@@ -102,6 +102,26 @@ class OllamaClient:
         self.keep_alive = keep_alive
         self._client: httpx.AsyncClient | None = None
         self._capabilities_cache: dict[str, list[str]] = {}
+
+    def _keep_alive_param(self) -> str | int:
+        """Normalize the keep_alive config into an Ollama API value.
+
+        Ollama accepts duration strings ("30m", "-1s") or plain integers
+        (nanoseconds; negative = never unload). A bare string like "-1" or
+        "0" fails server-side with 'missing unit in duration', and a positive
+        bare integer would mean nanoseconds (≈ unload immediately) — neither
+        matches intent, so bare integers are rewritten here:
+          negative -> JSON number (never unload), positive -> "<n>s".
+        """
+        value = self.keep_alive
+        if isinstance(value, str):
+            stripped = value.strip()
+            if stripped.lstrip("-").isdigit() and stripped not in ("", "-"):
+                n = int(stripped)
+                if n < 0:
+                    return n
+                return f"{n}s"
+        return value
 
     async def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
@@ -184,7 +204,7 @@ class OllamaClient:
             "model": model,
             "messages": [m.model_dump() for m in messages],
             "stream": stream,
-            "keep_alive": self.keep_alive,
+            "keep_alive": self._keep_alive_param(),
             "options": {"temperature": temperature},
         }
         if format:
@@ -232,7 +252,7 @@ class OllamaClient:
         """Generate embedding for text. Uses embedding_model by default."""
         model = model or self.embedding_model
         client = await self._get_client()
-        payload = {"model": model, "prompt": text, "keep_alive": self.keep_alive}
+        payload = {"model": model, "prompt": text, "keep_alive": self._keep_alive_param()}
         r = await client.post("/api/embeddings", json=payload)
         r.raise_for_status()
         data = r.json()

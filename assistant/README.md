@@ -13,6 +13,9 @@ frame/slot memory model. Runs 100% locally via Ollama.
   ollama pull qwen2.5:3b
   ollama pull nomic-embed-text
   ```
+- Recommended host env so models stay warm between turns (reloading a 27B
+  model costs tens of seconds): `OLLAMA_KEEP_ALIVE=-1` and
+  `OLLAMA_MAX_LOADED_MODELS=2`.
 
 ### Start the backend
 Docker compose files are at the repo root. Run from the repo root:

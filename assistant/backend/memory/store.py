@@ -837,19 +837,6 @@ class MemoryStore:
             )
             return [Episode(**self._episode_dict(row)) for row in rows]
 
-    async def get_episodes_for_frame(self, frame_id: int, limit: int = 20) -> list[Episode]:
-        async with self._connect() as db:
-            rows = await db.execute_fetchall(
-                "SELECT id, user_id, session_id, role, content, frame_ids, timestamp "
-                "FROM episodes ORDER BY id DESC LIMIT ?",
-                (limit,),
-            )
-            return [
-                Episode(**self._episode_dict(row))
-                for row in rows
-                if frame_id in self._episode_dict(row)["frame_ids"]
-            ]
-
     async def update_episode_frame_ids(self, episode_id: int, frame_ids: list[int]) -> None:
         """Update the frame_ids for an episode after extraction completes."""
         async with self._connect() as db:
@@ -1073,87 +1060,6 @@ class MemoryStore:
                     )
             await db.commit()
             return updated
-
-    async def apply_correction_feedback(
-        self,
-        episode_id: str | None,
-        comment: str,
-    ) -> tuple[int, list[Conflict]]:
-        """Treat a correction as a new fact with high reliability.
-
-        DEPRECATED: Use the LLM-based /correction endpoint instead.
-        This regex-based parser only handles 'key: value' patterns and
-        creates correction_* frames — it does not update the correct frame
-        or use belief revision. Prefer POST /correction which routes through
-        extract_correction → validate_correction → apply_correction.
-
-        Parses the correction text for 'key: value' patterns and upserts them.
-        Returns (slots_updated, conflicts_created).
-        """
-        conflicts: list[Conflict] = []
-        slots_updated = 0
-
-        correction_text = comment.strip()
-        if not correction_text:
-            return 0, []
-
-        import re
-        pattern = re.compile(r'^([a-zA-Z_][a-zA-Z0-9_]*)\s*[=:]\s*(.+)$', re.MULTILINE)
-        matches = pattern.findall(correction_text)
-
-        if not matches:
-            return 0, []
-
-        async with self._connect() as db:
-            episode_rows = await db.execute_fetchall(
-                "SELECT frame_ids FROM episodes WHERE session_id = ? ORDER BY id DESC LIMIT 1",
-                (episode_id,),
-            )
-            source_episode_id = None
-            if episode_rows:
-                frame_ids = json.loads(episode_rows[0][0] or "[]")
-                if frame_ids:
-                    source_episode_id = frame_ids[0]
-
-            for key, value in matches:
-                key = key.strip()
-                value = value.strip()
-                if not key or not value:
-                    continue
-
-                frame_name = f"correction_{key}"
-                existing_frame = await db.execute_fetchall(
-                    "SELECT id FROM frames WHERE name = ?", (frame_name,)
-                )
-                if existing_frame:
-                    frame_id = existing_frame[0][0]
-                else:
-                    cursor = await db.execute(
-                        "INSERT INTO frames (name, type, confidence, source_type) "
-                        "VALUES (?, 'correction', ?, 'user_correction')",
-                        (frame_name, initial_confidence()),
-                    )
-                    frame_id = cursor.lastrowid
-                    await db.commit()
-
-                slot_cursor = await db.execute(
-                    "INSERT INTO slots "
-                    "(frame_id, key, value, confidence, source_type, "
-                    "source_reliability, source_episode_id, last_strengthened_at) "
-                    "VALUES (?, ?, ?, ?, 'user_correction', 0.95, ?, datetime('now'))",
-                    (frame_id, key, value, initial_confidence(), source_episode_id),
-                )
-                await db.execute(
-                    "INSERT INTO slot_history "
-                    "(slot_id, frame_id, slot_key, old_value, new_value, "
-                    "reason, source_episode_id) "
-                    "VALUES (?, ?, ?, NULL, ?, 'initial', ?)",
-                    (slot_cursor.lastrowid, frame_id, key, value, source_episode_id),
-                )
-                await db.commit()
-                slots_updated += 1
-
-        return slots_updated, conflicts
 
     # Helpers
     async def _get_frame_row(self, db: aiosqlite.Connection, frame_id: int) -> Frame:
@@ -1757,57 +1663,6 @@ class MemoryStore:
                 (frame_id, timestamp, now),
             )
             await db.commit()
-
-    async def gc(self) -> int:
-        """Garbage collect: soft-delete forgotten frames and decay stale slots.
-
-        Removes frames that have:
-          - priority < 0.2
-          - not been accessed in working_memory for > 30 days
-
-        Decays priority of slots with:
-          - priority < 0.3
-          - last_accessed_at > 60 days ago
-
-        Returns the count of frames soft-deleted.
-        """
-        from datetime import datetime, timedelta
-
-        async with self._connect() as db:
-            cutoff = (
-                datetime.now(UTC) - timedelta(days=30)
-            ).isoformat()
-            stale_cutoff = (
-                datetime.now(UTC) - timedelta(days=60)
-            ).isoformat()
-
-            stale_frames = await db.execute_fetchall(
-                "SELECT f.id FROM frames f "
-                "LEFT JOIN working_memory wm ON f.id = wm.frame_id "
-                "WHERE f.type != 'scheduled_task' AND f.deleted_at IS NULL "
-                "AND f.priority < 0.2 "
-                "AND (wm.last_accessed_at IS NULL OR wm.last_accessed_at < ?)",
-                (cutoff,),
-            )
-            removed = 0
-            for (fid,) in stale_frames:
-                await db.execute(
-                    "UPDATE frames SET deleted_at=datetime('now') WHERE id = ?",
-                    (fid,),
-                )
-                removed += 1
-
-            await db.execute(
-                "UPDATE slots SET "
-                "priority = MAX(priority * 0.9, 0.1), "
-                "updated_at = datetime('now') "
-                "WHERE frame_id IN ("
-                "  SELECT id FROM frames WHERE priority < 0.3 AND deleted_at IS NULL"
-                ") AND last_accessed_at < ?",
-                (stale_cutoff,),
-            )
-            await db.commit()
-            return removed
 
     async def _create_backup(self) -> Path:
         """Create a backup of the current DB before overwrite import."""

@@ -5,9 +5,9 @@ every enabled "daily" task; "once" tasks run at the next tick and disable
 themselves. Housekeeping (heartbeat every 30 min, memory GC weekly) is plain
 timer logic here — not tasks, no LLM calls.
 
-User tasks execute through the same Orchestrator as chat so results become
-memory normally. Started via `start_scheduler(store)` from the FastAPI
-lifespan.
+User tasks execute through the same Orchestrator instance as chat so results
+become memory normally. Started via `start_scheduler(store, orchestrator)`
+from the FastAPI lifespan.
 """
 
 from __future__ import annotations
@@ -21,11 +21,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
 from assistant.backend.config import settings
-from assistant.backend.memory.retrieval import Retriever
+from assistant.backend.memory.gc import run_gc
 from assistant.backend.memory.store import MemoryStore
-from assistant.backend.pipeline.llm_client import OllamaClient
-from assistant.backend.pipeline.orchestrator import Orchestrator, OrchestratorDeps
-from assistant.backend.pipeline.search import WebSearchTool
+from assistant.backend.pipeline.orchestrator import Orchestrator
 from assistant.backend.scheduler.schedule import next_daily_run
 
 logger = logging.getLogger(__name__)
@@ -41,20 +39,6 @@ def _signal_handler(signum, frame):
     global SHUTDOWN
     logger.info("Shutdown signal received, finishing current task...")
     SHUTDOWN = True
-
-
-def _new_orchestrator(store: MemoryStore) -> Orchestrator:
-    llm = OllamaClient(base_url=settings.ollama_url)
-    search = WebSearchTool(base_url=settings.search_base_url, enabled=True)
-    retriever = Retriever(store=store, llm_client=llm)
-    return Orchestrator(
-        deps=OrchestratorDeps(
-            store=store,
-            retriever=retriever,
-            llm_client=llm,
-            search_tool=search,
-        )
-    )
 
 
 async def _execute_task(
@@ -109,10 +93,16 @@ async def _run_heartbeat(store: MemoryStore) -> None:
 
 
 async def _run_memory_gc(store: MemoryStore) -> None:
-    """Run memory garbage collection: decay low-priority stale slots."""
+    """Run memory garbage collection: slot decay + stale-frame soft-delete."""
     try:
-        removed = await store.gc()
-        logger.info("Memory GC completed: %d stale slots removed", removed)
+        report = await run_gc(store.db_path)
+        logger.info(
+            "Memory GC completed: %d slots decayed, %d soft-deleted, "
+            "%d frames soft-deleted",
+            report.decayed,
+            report.soft_deleted,
+            report.frames_soft_deleted,
+        )
     except Exception as exc:
         logger.warning("Memory GC failed: %s", exc)
 
@@ -126,7 +116,7 @@ def _is_new_week(last: datetime | None, now: datetime) -> bool:
     return local_last.isocalendar()[:2] != local_now.isocalendar()[:2]
 
 
-async def _scheduler_loop(store: MemoryStore) -> None:
+async def _scheduler_loop(store: MemoryStore, orchestrator: Orchestrator) -> None:
     """Main scheduler loop: poll for due tasks + housekeeping timers."""
     logger.info("Scheduler loop started (daily tick at %s %s)",
                 settings.daily_tasks_time, settings.daily_tasks_tz or "local")
@@ -149,7 +139,6 @@ async def _scheduler_loop(store: MemoryStore) -> None:
 
             due = await store.get_due_scheduled_tasks()
             if due:
-                orchestrator = _new_orchestrator(store)
                 logger.info("Daily list firing: %d task(s)", len(due))
                 for task in due:
                     if SHUTDOWN:
@@ -179,12 +168,12 @@ def next_tick_for_display() -> str:
     return next_daily_run().isoformat()
 
 
-async def start_scheduler(store: MemoryStore) -> None:
+async def start_scheduler(store: MemoryStore, orchestrator: Orchestrator) -> None:
     """Start the scheduler loop. Called from FastAPI lifespan as a background task.
 
     Signal handlers are set in the lifespan (main thread), not here.
     """
     try:
-        await _scheduler_loop(store)
+        await _scheduler_loop(store, orchestrator)
     finally:
         logger.info("Scheduler loop stopped")

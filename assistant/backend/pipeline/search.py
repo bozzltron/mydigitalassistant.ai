@@ -7,12 +7,10 @@ without changing the orchestrator or extractor.
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
 
 import httpx
 
-if TYPE_CHECKING:
-    pass
+from assistant.backend.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -41,13 +39,18 @@ class SearchBackend(ABC):
 class SearXNGBackend(SearchBackend):
     """SearXNG meta-search engine (self-hosted, privacy-first)."""
 
-    def __init__(self, base_url: str = "http://127.0.0.1:8080"):
+    def __init__(
+        self,
+        base_url: str = "http://127.0.0.1:8080",
+        timeout: float | None = None,
+    ):
         self.base_url = base_url.rstrip("/")
+        self.timeout = timeout if timeout is not None else settings.search_timeout
         self._client: httpx.AsyncClient | None = None
 
     async def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
-            self._client = httpx.AsyncClient(timeout=30.0)
+            self._client = httpx.AsyncClient(timeout=self.timeout)
         return self._client
 
     async def close(self) -> None:

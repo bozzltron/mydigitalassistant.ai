@@ -66,7 +66,6 @@ SCHEDULED_TASK_PATTERNS = [
     r"\brun (every|daily|weekly|monthly)\b",
     r"\bhave a (daily|weekly|monthly) (briefing|task|check|report)\b",
     r"\btrack (daily|weekly|monthly)\b",
-    r"\bfollow artificial intelligence in the news\b",
 ]
 
 _COMPILED_INTROSPECTIVE = [re.compile(p, re.IGNORECASE) for p in INTROSPECTIVE_PATTERNS]

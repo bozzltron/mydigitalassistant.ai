@@ -31,7 +31,7 @@ def _load_model() -> WhisperModel:
     _model = WhisperModel(
         settings.whisper_model,
         device=settings.whisper_device,
-        download_root=Path("/app/.cache/whisper"),
+        download_root=Path(settings.whisper_download_root),
     )
     logger.info("Whisper model loaded.")
     return _model
@@ -49,7 +49,7 @@ async def transcribe_audio(audio_path: Path) -> str:
     model = _load_model()
     transcribed, info = model.transcribe(
         str(audio_path),
-        language="en",
+        language=settings.whisper_language or None,
         beam_size=5,
         vad_filter=True,
     )

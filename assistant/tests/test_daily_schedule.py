@@ -86,9 +86,11 @@ def test_parse_daily_time():
 
 
 def test_next_daily_run_before_and_after_tick():
-    original = settings.daily_tasks_time
+    original_time = settings.daily_tasks_time
+    original_tz = settings.daily_tasks_tz
     try:
         settings.daily_tasks_time = "09:00"
+        settings.daily_tasks_tz = "UTC"  # pin zone: test asserts UTC wall-clock
         now = datetime.now(tz=UTC).replace(hour=7, minute=0, second=0, microsecond=0)
         nxt = next_daily_run(now)
         assert nxt > now
@@ -99,13 +101,19 @@ def test_next_daily_run_before_and_after_tick():
         assert nxt2.date() == (now + timedelta(days=1)).date()
         assert nxt2.hour == 9
     finally:
-        settings.daily_tasks_time = original
+        settings.daily_tasks_time = original_time
+        settings.daily_tasks_tz = original_tz
 
 
 def test_format_next_run_contains_weekday_and_time():
-    dt = datetime(2026, 8, 21, 9, 0, tzinfo=UTC)
-    text = format_next_run(dt)
-    assert "09:00" in text
+    original_tz = settings.daily_tasks_tz
+    try:
+        settings.daily_tasks_tz = "UTC"  # pin zone: assertion is UTC wall-clock
+        dt = datetime(2026, 8, 21, 9, 0, tzinfo=UTC)
+        text = format_next_run(dt)
+        assert "09:00" in text
+    finally:
+        settings.daily_tasks_tz = original_tz
 
 
 # ---- store semantics ----

@@ -6,17 +6,19 @@ embedding; coder reserved). SQLite + sqlite-vec for local memory storage.
 Web search for retrieval-only; learned facts stored locally in memory frames/slots.
 
 ## Network Security
-- Backend binds to `127.0.0.1:8000` (never exposed directly)
+- Bare-metal runs: backend binds to `127.0.0.1:8000` (never exposed directly)
+- Docker runs (`docker-compose.yml`): backend binds inside the container with no
+  published ports; Caddy is the only published surface. Loopback-in-container would
+  break Caddy's appnet proxy — exposure is controlled by port publishing, not the bind.
 - HTTPS termination via Caddy reverse proxy on `127.0.0.1:8443`
 - All services on internal Docker network (`appnet`)
-- SearXNG binds to `127.0.0.1:8080` (localhost only)
+- SearXNG publishes only `127.0.0.1:8080` (localhost)
 
 ## Web Search
 - Uses SearXNG (privacy-friendly meta-search engine) for external retrieval.
 - Search results are **retrieval-only** unless explicitly worth learning.
 - The LLM decides which facts to retain from search results.
-- Configurable: `SEARCH_ENABLED=true` in `.env` to enable web search.
-- Default: `SEARCH_ENABLED=true` for useful assistant functionality.
+- Always on by design — no feature flag; point `SEARCH_BASE_URL` at your local SearXNG.
 - All search queries go to local SearXNG instance (not cloud APIs).
 
 ## The cognitive loop
@@ -68,7 +70,8 @@ Actual ordering inside `orchestrator.chat()`:
 - `POST /feedback` with `kind=positive|negative|correction`.
 - Positive: `bump_confidence` (up to MAX_CONFIDENCE).
 - Negative: `lower_confidence` (down to initial_confidence=0.5).
-- Correction: triggers correction pipeline above.
+- Correction: records the text for audit only — applying it goes through
+  `POST /correction` (the LLM correction pipeline above).
 
 ## Brain portability
 - `POST /brain/export`: serializes all frames/slots/associations/conflicts to JSON.
@@ -90,7 +93,7 @@ Role-based model selection (Phase 6). Configurable in `.env`: `CHAT_MODEL`, `UTI
 - Chat model (default `qwen2.5:7b`): user-facing responses. Thinking-capable models accept
   per-request `think=True/False` (`OllamaClient.chat`); inline `<think>` tags are parsed
   out into `ChatResponse.thinking` automatically.
-- Utility model (default `qwen2.5:3b`): extraction, task-routing fallback, cron generation.
+- Utility model (default `qwen2.5:3b`): extraction, task-routing fallback.
 - Embedding model (default `nomic-embed-text`): frame/query embeddings.
 - Coder model: reserved for tool codegen (Phase 6 M5); falls back to chat model.
 - No separate router/reasoning models: routing reuses utility; reasoning is a thinking-mode
@@ -119,7 +122,9 @@ Role-based model selection (Phase 6). Configurable in `.env`: `CHAT_MODEL`, `UTI
 - Tests: `assistant/tests/test_daily_schedule.py`.
 
 ## Key files
-- `backend/memory/store.py` — MemoryStore CRUD over SQLite; `export_brain`/`import_brain`; `gc()`.
+- `backend/memory/store.py` — MemoryStore CRUD over SQLite; `export_brain`/`import_brain`.
+- `backend/memory/gc.py` — all memory GC: slot priority decay + stale-frame soft-delete
+  (`run_gc`); runs weekly in the scheduler and on-demand via `assistant db gc`.
 - `backend/memory/confidence.py` — confidence + conflict math. Single source of truth.
 - `backend/memory/retrieval.py` — embed + sqlite-vec + graph-walk.
 - `backend/pipeline/task_router.py` — functional/introspective/scheduled classification.

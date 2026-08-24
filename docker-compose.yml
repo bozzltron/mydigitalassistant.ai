@@ -2,17 +2,24 @@ services:
   assistant:
     build: .
     container_name: assistant-backend
+    # Ollama runs on the HOST (see OLLAMA_URL). For model residency (Option A)
+    # the host daemon needs: OLLAMA_KEEP_ALIVE=-1 and
+    # OLLAMA_MAX_LOADED_MODELS>=2 (chat + utility stay warm side-by-side).
     environment:
       - DATABASE_PATH=/app/data/assistant.db
       - DB_KEY=${DB_KEY}
       - OLLAMA_URL=http://host.docker.internal:11434
       - OLLAMA_TIMEOUT=${OLLAMA_TIMEOUT:-600}
-      - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-30m}
+      - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:--1}
       - CHAT_MODEL=${CHAT_MODEL:-qwen2.5:7b}
       - UTILITY_MODEL=${UTILITY_MODEL:-qwen2.5:3b}
       - EMBEDDING_MODEL=${EMBEDDING_MODEL:-nomic-embed-text}
       - CODER_MODEL=${CODER_MODEL:-}
-      - BACKEND_HOST=127.0.0.1
+      # Binds inside the container only. Exposure is controlled by port
+      # publishing: the assistant service publishes NO ports; Caddy is the
+      # single published surface (127.0.0.1:8443). Loopback-in-container would
+      # break Caddy's appnet proxy.
+      - BACKEND_HOST=0.0.0.0
       - SEARCH_BASE_URL=http://searxng:8080
       - WHISPER_MODEL=base
       - WHISPER_DEVICE=cpu
@@ -24,7 +31,9 @@ services:
       - assistant-data:/app/data
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    command: ["sh", "-c", "uvicorn assistant.backend.main:app --host ${BACKEND_HOST} --port 8000"]
+    # $${...} = expanded at RUNTIME inside the container (container env wins);
+    # a host-side .env value can no longer silently override the bind.
+    command: ["sh", "-c", "uvicorn assistant.backend.main:app --host $${BACKEND_HOST:-0.0.0.0} --port 8000"]
     restart: unless-stopped
     networks:
       - appnet

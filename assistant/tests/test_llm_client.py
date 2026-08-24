@@ -235,3 +235,33 @@ async def test_keep_alive_sent_on_chat_and_embed():
     assert captured["/api/chat"]["keep_alive"] == "45m"
     assert captured["/api/embeddings"]["keep_alive"] == "45m"
     await client.close()
+
+
+# --- keep_alive normalization (regression: bare "-1" string made Ollama 400) ---
+
+
+def test_keep_alive_bare_negative_int_sent_as_number():
+    client = OllamaClient(keep_alive="-1")
+    assert client._keep_alive_param() == -1
+
+
+def test_keep_alive_zero_and_positive_bare_ints_get_seconds_unit():
+    assert OllamaClient(keep_alive="0")._keep_alive_param() == "0s"
+    assert OllamaClient(keep_alive="600")._keep_alive_param() == "600s"
+
+
+def test_keep_alive_duration_strings_pass_through():
+    assert OllamaClient(keep_alive="30m")._keep_alive_param() == "30m"
+    assert OllamaClient(keep_alive="-1s")._keep_alive_param() == "-1s"
+
+
+async def test_embed_sends_normalized_keep_alive():
+    captured: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["payload"] = json.loads(request.content)
+        return httpx.Response(200, json={"embedding": [0.1, 0.2]})
+
+    client = _client_with_transport(handler, keep_alive="-1")
+    await client.embed("hello")
+    assert captured["payload"]["keep_alive"] == -1
