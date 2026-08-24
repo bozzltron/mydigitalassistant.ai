@@ -97,6 +97,11 @@ async def backup_db():
         console.print("✗ No database found")
         return False
 
+    from assistant.backend.db.sqlcipher import aiosqlite_connect
+
+    async with aiosqlite_connect(str(db_path)) as adb:
+        await adb.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     backup_path = Path(f"backup-{timestamp}.db")
 
@@ -217,6 +222,69 @@ async def status():
     return True
 
 
+async def consolidate_db(execute: bool = False):
+    """Merge duplicate frames in memory (Phase 9B).
+
+    Defaults to dry-run: prints the merge plan without writing. Pass
+    --execute to apply it.
+    """
+    from assistant.backend.memory.consolidate import run_consolidation
+
+    db_path = settings.database_path
+    mode = "[bold green]EXECUTE[/bold green]" if execute else "[bold yellow]DRY RUN[/bold yellow]"
+    console.print(f"Running consolidation in {mode} mode on [cyan]{db_path}[/cyan]...")
+
+    def _make_embed_fn():
+        """Embedding callable built from settings (container-aware base_url)."""
+        from assistant.backend.pipeline.llm_client import OllamaClient
+
+        client = OllamaClient(
+            base_url=settings.ollama_url,
+            embedding_model=settings.embedding_model,
+            timeout=settings.ollama_timeout,
+            keep_alive=settings.ollama_keep_alive,
+        )
+
+        async def _embed(text: str) -> list[float]:
+            resp = await client.embed(text)
+            return resp.embedding
+
+        return _embed
+
+    try:
+        try:
+            embed_fn = _make_embed_fn()
+            await embed_fn("consolidation probe")
+        except Exception as e:
+            embed_fn = None
+            console.print(
+                f"[yellow]Embedding model unreachable ({e}) — "
+                "normalized-name matching only.[/yellow]"
+            )
+        report = await run_consolidation(
+            db_path, dry_run=not execute, embed_fn=embed_fn
+        )
+        if report.planned_merges:
+            table = Table(title="Duplicate frame merges")
+            table.add_column("Survivor")
+            table.add_column("Merges away")
+            for merge in report.planned_merges:
+                table.add_row(
+                    f"#{merge.survivor_id} {merge.survivor_name}",
+                    f"#{merge.loser_id} {merge.loser_name}",
+                )
+            console.print(table)
+        else:
+            console.print("No duplicate frames found.")
+        console.print(f"  {report.summary()}")
+        if not execute:
+            console.print("[yellow]Dry run — no changes written. Use --execute to apply.[/yellow]")
+        return True
+    except Exception as e:
+        console.print(f"[red]Consolidation failed: {e}[/red]")
+        return False
+
+
 async def gc_db(dry_run: bool = False):
     """Run priority decay garbage collection on memory slots."""
     from assistant.backend.memory.gc import run_gc
@@ -301,6 +369,7 @@ async def reembed_db(target_model: str | None = None):
 async def main(
     command: str,
     dry_run: bool = False,
+    execute: bool = False,
     reembed_model: str | None = None,
     export_path: Path | None = None,
     import_path: Path | None = None,
@@ -324,6 +393,8 @@ async def main(
         success = await status()
     elif command == "gc":
         success = await gc_db(dry_run=dry_run)
+    elif command == "consolidate":
+        success = await consolidate_db(execute=execute)
     elif command == "reembed":
         success = await reembed_db(target_model=reembed_model)
     else:
@@ -336,12 +407,16 @@ async def main(
 def main_entry():
     """CLI entry point."""
     if len(sys.argv) < 2:
-        print("Usage: assistant db <command> [--dry-run] [--model <model>]")
-        print("Commands: upgrade, migrate, backup, export, import, status, gc, reembed")
+        print("Usage: assistant db <command> [--dry-run] [--execute] [--model <model>]")
+        print(
+            "Commands: upgrade, migrate, backup, export, import, "
+            "status, gc, consolidate, reembed"
+        )
         sys.exit(1)
 
     command = sys.argv[1]
     dry_run = "--dry-run" in sys.argv
+    execute = "--execute" in sys.argv
     reembed_model = None
     export_path = None
     import_path = None
@@ -360,6 +435,7 @@ def main_entry():
         main(
             command,
             dry_run=dry_run,
+            execute=execute,
             reembed_model=reembed_model,
             export_path=export_path,
             import_path=import_path,
