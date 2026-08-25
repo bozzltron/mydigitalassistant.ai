@@ -102,8 +102,8 @@ Role-based model selection (Phase 6). Configurable in `.env`: `CHAT_MODEL`, `UTI
 - No separate router/reasoning models: routing reuses utility; reasoning is a thinking-mode
   escalation on the chat model (Phase 6 plan §6).
 - `/health` reports the full fleet in a `models` dict plus `thinking_supported`
-  (probed via `/api/show`). Target fleet + migration gates: see
-  `/plans/PHASE_6_MODEL_TIERING.md`.
+  (probed via `/api/show`). Fleet details live in `backend/config.py`; the
+  original tiering plan is in git history under `/plans/`.
 
 ## Scheduled tasks — the daily list
 - One clock: the agent wakes once a day at `DAILY_TASKS_TIME` (default `09:00`, 24h)
