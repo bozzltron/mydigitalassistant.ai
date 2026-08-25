@@ -395,6 +395,19 @@
       padding: 0.5rem 0.25rem;
     }
 
+    .topic-summary {
+      font-size: 0.82rem;
+      line-height: 1.55;
+      color: var(--text);
+      padding: 0.6rem 0.8rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-bottom: 0.6rem;
+      font-style: italic;
+      opacity: 0.9;
+    }
+
     .topic-card {
       border: 1px solid var(--border);
       border-radius: 8px;
@@ -1519,6 +1532,10 @@
         refresh3D();
         return;
       }
+      if (data.summary && data.summary.trim()) {
+        const summaryEl = tEl('div', 'topic-summary', data.summary);
+        topicResults.appendChild(summaryEl);
+      }
       for (const m of data.matches) {
         highlightedFrameIds.add(m.frame.id);
         topicResults.appendChild(renderMatch(m));
@@ -1540,7 +1557,7 @@
       topicResults.appendChild(tEl('div', 'topic-empty', 'Searching memory…'));
       openTopicPanel();
       try {
-        const res = await fetch('/memory/search?q=' + encodeURIComponent(q));
+        const res = await fetch('/memory/search?q=' + encodeURIComponent(q) + '&summary=true');
         if (!res.ok) throw new Error(await res.text());
         renderTopicResults(await res.json());
       } catch (e) {

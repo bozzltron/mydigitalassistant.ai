@@ -40,7 +40,7 @@ from assistant.backend.pipeline.extractor import (
     extract_correction,
     validate_correction,
 )
-from assistant.backend.pipeline.llm_client import OllamaClient
+from assistant.backend.pipeline.llm_client import ChatMessage, OllamaClient
 from assistant.backend.pipeline.orchestrator import ChatRequest, ChatResponse, Orchestrator
 from assistant.backend.pipeline.orchestrator import OrchestratorDeps as _OrchestratorDeps
 from assistant.backend.pipeline.search import WebSearchTool
@@ -550,6 +550,8 @@ async def forget_slot(
 
 
 # Topic transparency search (Brain Observatory)
+
+
 class TopicMatch(BaseModel):
     frame: Frame
     slots: list[Slot]
@@ -567,12 +569,80 @@ class TopicSearchResponse(BaseModel):
     # Handler revision, for verifying deploys of ranking changes
     backend_rev: int = 2
     matches: list[TopicMatch]
+    # LLM-generated summary of the matched memories (only when ?summary=true)
+    summary: str = ""
+
+
+def _build_memories_text(matches: list[TopicMatch], query: str) -> str:
+    """Build a readable text representation of matched memories for summarization."""
+    lines = [f"Query: {query}", f"Total matches: {len(matches)}", ""]
+    for i, m in enumerate(matches, 1):
+        sim_str = f" (similarity: {m.similarity:.2f})" if m.similarity else ""
+        lines.append(f"--- Memory {i}{sim_str} ---")
+        lines.append(f"Name: {m.frame.name}")
+        lines.append(f"Type: {m.frame.type}")
+        if m.slots:
+            lines.append("Slots:")
+            for s in m.slots:
+                lines.append(f"  {s.key}: {s.value}")
+        if m.associations:
+            assoc_descriptions = []
+            for a in m.associations:
+                assoc_descriptions.append(
+                    f"{a.relation_type} (confidence: {a.confidence:.2f})"
+                )
+            lines.append(f"Relations: {', '.join(assoc_descriptions)}")
+        if m.episodes:
+            lines.append("Episodes (recent conversation excerpts):")
+            for ep in m.episodes[:3]:
+                snippet = ep.content[:200].replace("\n", " ")
+                lines.append(f"  [{ep.role}]: {snippet}...")
+        if m.conflicts:
+            lines.append(f"Conflicts: {len(m.conflicts)} pending")
+        lines.append("")
+    return "\n".join(lines)
+
+
+async def _summarize_memories(
+    memories_text: str,
+    query: str,
+    llm_client: OllamaClient | None,
+) -> str:
+    """Use the utility LLM to summarize what the brain knows about the query."""
+    if not llm_client:
+        return "Summary unavailable (LLM not configured)."
+
+    system_prompt = (
+        "You are a concise memory analyst. Based on the memories below, "
+        "write a 2-3 sentence summary of what the brain knows about the topic. "
+        "Focus on key facts, relationships, and notable details. "
+        "Use plain language, not lists. Be specific."
+    )
+
+    user_prompt = f"Memories about '{query}':\n\n{memories_text}\n\nSummary:"
+
+    messages = [
+        ChatMessage(role="system", content=system_prompt),
+        ChatMessage(role="user", content=user_prompt),
+    ]
+
+    model_to_use = llm_client.chat_model
+    response = await llm_client.chat(
+        messages,
+        model=model_to_use,
+        temperature=0.3,
+        num_predict=256,
+    )
+
+    text = response.content.strip() if response.content.strip() else response.thinking.strip()
+    return text
 
 
 @app.get("/memory/search", response_model=TopicSearchResponse)
 async def memory_search(
     q: str,
     limit: int = 8,
+    summary: bool = False,
     store: MemoryStore = _Depends(get_store),
 ):
     """Search memory for everything known about a topic.
@@ -656,8 +726,17 @@ async def memory_search(
         m.episodes = await store.get_episodes_for_frames([m.frame.id], limit=6)
         m.conflicts = conflicts_by_frame.get(m.frame.id, [])
 
+    summary_text = ""
+    if summary and ranked:
+        try:
+            memories_text = _build_memories_text(ranked, q)
+            summary_text = await _summarize_memories(memories_text, q, _state.get("llm_client"))
+        except Exception as e:
+            logger.warning("Failed to generate memory summary: %s", e)
+
     return TopicSearchResponse(
-        query=q, semantic_search=semantic_ok, backend_rev=2, matches=ranked
+        query=q, semantic_search=semantic_ok, backend_rev=2, matches=ranked,
+        summary=summary_text
     )
 
 
