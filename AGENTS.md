@@ -48,6 +48,27 @@ Runs 100% locally via Ollama. Safe for household use incl. kids.
 - Use `assistant db backup` / `assistant db restore` for safety.
 - Confidence math is in `assistant/backend/memory/confidence.py` — change it there only.
 
+## Web search (SearXNG)
+The search tool is built on a swappable `SearchBackend` ABC in `assistant/backend/pipeline/search.py`. The default implementation is `SearXNGBackend`. To swap backends, replace the class in `WebSearchTool.__init__` or subclass `WebSearchTool`.
+
+Result quality is guarded in three layers:
+1. `sanitize_query()` strips conversational filler ("can you look up", "hey", etc.) before the query leaves.
+2. `SearXNGBackend` pins safesearch and language, ranks by engine score, and dedups normalized URLs.
+3. `filter_relevant()` drops results whose embedding sits below `search_min_relevance` from the query embedding — unrelated links never reach the system prompt. Graceful by design: if the embedder fails, all results pass through.
+
+**Search settings** (all in `.env`):
+- `SEARCH_BASE_URL` — SearXNG URL (default `http://127.0.0.1:8080`)
+- `SEARCH_TIMEOUT` — request timeout in seconds (default 30)
+- `SEARCH_LANGUAGE` — locale filter (default `en`)
+- `SEARCH_SAFESEARCH` — 0=off, 1=moderate, 2=strict (default 1)
+- `SEARCH_MIN_RELEVANCE` — cosine similarity threshold below which results are dropped (default 0.30)
+
+**`fetch_url` tool** — direct HTTP fetch with auto-extraction:
+- Fetches URL content, strips HTML, respects robots.txt, detects JS-rendered pages.
+- After fetching, calls `extract_facts_from_document()` and stores facts in memory with `source_type="web_fetch"`.
+- Extraction errors are logged and degrade gracefully — fetched content is always returned.
+- Tool user-agent: `Mozilla/5.0 (compatible; AssistantBot/1.0)`.
+
 ## Don't
 - Don't make a second blocking LLM call for task routing when heuristics suffice.
 - Don't expose backend directly — always route through Caddy HTTPS proxy.

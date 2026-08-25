@@ -1,10 +1,15 @@
 """Tests for the M5 tool framework: registry, handlers, and the tool loop."""
 
 import re
+from unittest.mock import AsyncMock, patch
+
+import httpx
+import pytest
 
 from assistant.backend.pipeline.llm_client import ChatMessage, ChatResponse, ToolCall
 from assistant.backend.pipeline.search import WebSearchTool
 from assistant.backend.pipeline.tools import (
+    _make_fetch_url_handler,
     builtin_tools,
     run_tool_loop,
 )
@@ -72,7 +77,6 @@ async def test_calculate_handler():
 async def test_datetime_handler():
     tools = {t.name: t for t in builtin_tools(WebSearchTool(enabled=False))}
     result = await tools["get_current_datetime"].handler()
-    # Format: YYYY-MM-DD HH:MM Weekday (TZ)
     assert re.match(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2} \w+ \(", result)
 
 
@@ -116,12 +120,9 @@ async def test_run_tool_loop_bounded_rounds():
         done=True,
         tool_calls=[ToolCall(name="calculate", arguments={"expression": "1+1"})],
     )
-    # More loop responses than max_rounds allows
-    # Exactly enough looping replies to exhaust max_rounds, then a real answer
     llm = FakeToolLLM([looping] * 2 + [ChatResponse(content="done", model="m", done=True)])
     content, resp, _ = await _run(llm, max_rounds=2)
     assert content == "done"
-    # 2 loop rounds + 1 final forced call = 3 LLM invocations
     assert len(llm.calls) == 3
     assert resp is not None
 
@@ -152,3 +153,97 @@ async def _run(llm, max_rounds=3):
     resp = await run_tool_loop(llm, messages, tools, max_rounds=max_rounds or MAX_TOOL_ROUNDS)
     last_llm_messages = llm.calls[-1]["messages"]
     return resp.content, resp, last_llm_messages
+
+
+# ---------------------------------------------------------------------------
+# fetch_url integration tests
+# ---------------------------------------------------------------------------
+
+
+class TestFetchUrlHandlerIntegration:
+    """Test the fetch_url tool's integration with memory and extraction.
+
+    These tests mock httpx at the module level so we control the network
+    layer without requiring a live server.
+    """
+
+    @pytest.fixture
+    def mock_httpx_get(self):
+        """Patch httpx.AsyncClient.get to return controlled responses."""
+        async def mock_get(self, url, **kwargs):
+            return MockResponse(200, "Article text.", {"content-type": "text/plain"})
+
+        with patch.object(httpx.AsyncClient, "get", new=mock_get):
+            yield
+
+    @pytest.mark.asyncio
+    async def test_no_store_no_extraction(self, mock_httpx_get):
+        """Without store/llm_client, fetch returns content without calling LLM."""
+        handler = _make_fetch_url_handler(store=None, llm_client=None)
+        result = await handler("http://example.com/article")
+        assert "Article text" in result
+
+    @pytest.mark.asyncio
+    async def test_with_store_and_llm_calls_extraction(self, mock_httpx_get, store, stub_llm):
+        """With store + llm_client, extraction is called and facts stored."""
+        stub_llm.set_extraction_result(
+            slots=[
+                {
+                    "frame_name": "test_article",
+                    "frame_type": "entity",
+                    "key": "author",
+                    "value": "Jane Doe",
+                },
+            ],
+            associations=[],
+        )
+
+        handler = _make_fetch_url_handler(store=store, llm_client=stub_llm)
+        result = await handler("http://example.com/article")
+        assert "Article text" in result
+
+        frame = await store.get_frame_by_name("test_article")
+        assert frame is not None
+        assert frame.id is not None
+        slots = await store.get_slots_for_frame(frame.id)
+        slot = next((s for s in slots if s.key == "author"), None)
+        assert slot is not None
+        assert slot.value == "Jane Doe"
+
+    @pytest.mark.asyncio
+    async def test_extraction_error_does_not_break_fetch(self, mock_httpx_get, store):
+        """If extraction raises, fetched content is still returned."""
+        bad_llm = type("BadLLM", (), {
+            "utility_model": "none",
+            "chat": AsyncMock(side_effect=RuntimeError("LLM down")),
+            "close": lambda self: None,
+        })()
+
+        handler = _make_fetch_url_handler(store=store, llm_client=bad_llm)
+        result = await handler("http://example.com/page")
+        assert "Article text" in result
+
+    @pytest.mark.asyncio
+    async def test_fetch_error_returns_error_message(self, store, stub_llm):
+        """Network errors are returned as error strings, not raised."""
+        async def failing_get(self, url, **kwargs):
+            raise httpx.ConnectError("connection refused")
+
+        with patch.object(httpx.AsyncClient, "get", new=failing_get):
+            handler = _make_fetch_url_handler(store=store, llm_client=stub_llm)
+            result = await handler("http://example.com/page")
+            assert result.startswith("Error fetching")
+
+
+class MockResponse:
+    """Minimal httpx response stand-in for mock_httpx_get."""
+
+    def __init__(self, status_code: int, text: str, headers: dict):
+        self.status_code = status_code
+        self.text = text
+        self.content = text.encode("utf-8")
+        self.headers = headers
+        self.encoding = "utf-8"
+
+    def raise_for_status(self):
+        pass

@@ -141,6 +141,8 @@ Role-based model selection. Configurable in `.env`: `CHAT_MODEL`, `UTILITY_MODEL
 - `backend/memory/confidence.py` — confidence + conflict math. Single source of truth.
 - `backend/memory/retrieval.py` — embed + sqlite-vec + graph-walk.
 - `backend/pipeline/task_router.py` — functional/introspective/scheduled classification.
+- `backend/pipeline/search.py` — `SearchBackend` ABC + `SearXNGBackend`; `WebSearchTool` wraps it.
+- `backend/pipeline/tools.py` — `builtin_tools()` registry; `_make_fetch_url_handler()` for `fetch_url`.
 - `backend/pipeline/extractor.py` — fact extraction + correction pipeline + scheduled task extraction.
 - `backend/pipeline/reasoner.py` — planning + self-correction (`Action.CORRECT`).
 - `backend/pipeline/orchestrator.py` — coordinates full cognitive loop; `execute_task()`.
