@@ -370,6 +370,78 @@ async def extract_facts_from_search(
     return ExtractionResult()
 
 
+DOCUMENT_EXTRACTION_PROMPT = """You extract structured facts from a web page or document.
+
+Given the full text content of a web page, identify:
+- Concrete facts about entities, concepts, events, or household items.
+- Relationships between them.
+
+Output a JSON object with this exact schema:
+{
+  "slots": [
+    {"frame_name": "mozworth", "frame_type": "entity",
+     "key": "genre", "value": "indie alternative rock"}
+  ],
+  "associations": [
+    {"from_frame": "mozworth", "to_frame": "austin_tx",
+     "relation_type": "located_in"}
+  ]
+}
+
+Rules:
+- Only extract facts explicitly stated in the document content.
+- frame_type is one of: entity, concept, event, household.
+- Use snake_case for frame_name (e.g. "mozworth", "austin_tx").
+- frame_name MUST be a specific proper noun or title. NEVER use a bare type
+  word as the name ("song", "movie", "entity", "thing", "concept").
+- Emit at most 4 associations per turn — only the most meaningful relations.
+- relation_type is a short snake_case verb phrase (e.g. "located_in", "founded",
+  "created_by", "related_to").
+- Don't extract opinions, commentary, or vague statements.
+- If no reliable facts to extract, return {"slots": [], "associations": []}.
+- A fact confirmed by multiple parts of the document should appear once.
+
+Respond with ONLY the JSON object, no commentary."""
+
+
+async def extract_facts_from_document(
+    document_content: str,
+    source_url: str,
+    llm_client: "OllamaClient",
+) -> ExtractionResult:
+    """Extract structured facts from a fetched document using the LLM."""
+    from assistant.backend.pipeline.llm_client import ChatMessage
+
+    if not document_content.strip():
+        return ExtractionResult()
+
+    user_content = f"Source URL: {source_url}\n\nDocument content:\n{document_content[:8000]}"
+
+    system = ChatMessage(role="system", content=DOCUMENT_EXTRACTION_PROMPT)
+    user = ChatMessage(role="user", content=user_content)
+
+    for attempt in range(2):
+        try:
+            response = await llm_client.chat(
+                [system, user],
+                model=llm_client.utility_model,
+                format="json",
+                temperature=0.0,
+                think=False,
+            )
+            data = json.loads(response.content)
+            return ExtractionResult.model_validate(data)
+        except (json.JSONDecodeError, ValueError) as e:
+            logger.warning("Document extraction parse failed (attempt %d): %s", attempt + 1, e)
+            if attempt == 0:
+                extra = "\n\nIMPORTANT: Output ONLY valid JSON. No markdown, no preamble."
+                system = ChatMessage(role="system", content=DOCUMENT_EXTRACTION_PROMPT + extra)
+            else:
+                logger.error("Document extraction failed after retry for URL: %s", source_url)
+                return ExtractionResult()
+    return ExtractionResult()
+
+
 async def apply_extraction(
     extraction: ExtractionResult,
     store: "MemoryStore",

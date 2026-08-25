@@ -467,7 +467,11 @@ class Orchestrator:
             await self._report(progress, "responding", "writing a reply")
         try:
             if settings.tools_enabled:
-                tools = builtin_tools(self.search_tool)
+                tools = builtin_tools(
+                    self.search_tool,
+                    store=self.store,
+                    llm_client=self.llm_client,
+                )
                 llm_response = await run_tool_loop(
                     self.llm_client,
                     messages,

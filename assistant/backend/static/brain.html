@@ -1106,6 +1106,9 @@
         applyHighlight(computeHighlightSet());
       }
 
+      // Expose for module-level callers (topic search)
+      window.__updatePersistentHighlight = updatePersistentHighlight;
+
       // Neighborhood flash, callable from topic-search fly-to in 2D mode.
       window.__highlight2d = (frameId) => {
         highlightNeighbors(frameId);
@@ -1528,7 +1531,7 @@
       if (!data.matches.length) {
         topicResults.appendChild(tEl('div', 'topic-empty',
           'Nothing stored about this yet. Try other phrasings — semantic search matches by meaning, keyword search by exact substring.'));
-        updatePersistentHighlight();
+        window.__updatePersistentHighlight();
         refresh3D();
         return;
       }
@@ -1540,7 +1543,7 @@
         highlightedFrameIds.add(m.frame.id);
         topicResults.appendChild(renderMatch(m));
       }
-      updatePersistentHighlight();
+      window.__updatePersistentHighlight();
       refresh3D();
     }
 
@@ -1548,7 +1551,7 @@
       const q = topicInput.value.trim();
       if (!q) {
         highlightedFrameIds.clear();
-        updatePersistentHighlight();
+        window.__updatePersistentHighlight();
         refresh3D();
         return;
       }
@@ -1564,7 +1567,7 @@
         topicResults.textContent = '';
         topicResults.appendChild(tEl('div', 'topic-empty', 'Search failed: ' + e.message));
         highlightedFrameIds.clear();
-        updatePersistentHighlight();
+        window.__updatePersistentHighlight();
         refresh3D();
       } finally {
         topicBtn.disabled = false;
@@ -1575,7 +1578,7 @@
     function closeTopicPanel() {
       topicPanel.classList.remove('open');
       highlightedFrameIds.clear();
-      updatePersistentHighlight();
+      window.__updatePersistentHighlight();
       refresh3D();
     }
 
