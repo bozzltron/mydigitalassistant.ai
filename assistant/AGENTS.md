@@ -34,13 +34,17 @@ Web search for retrieval-only; learned facts stored locally in memory frames/slo
    memory context. Past conversations are also searched semantically
    (`episode_embeddings`): turns from other sessions matching the query land in
    a "Related past conversations" section (owner-scoped, current session excluded).
-4. LLM call (chat model): system prompt injects structured memory context + task-type guidance.
+4. Conversational extraction (utility model): extract frames/slots/associations as JSON →
+   upsert with confidence → auto-resolve conflicts → log to slot_history. Runs BEFORE
+   generation so just-stored facts can be injected into the system prompt.
+5. LLM call (chat model): system prompt injects structured memory context + task-type guidance.
    Sections are ordered stable-first, volatile-last (persona → task guidance → plan
    instructions → memory) so Ollama's prompt cache reuses the stable prefix across
    consecutive turns. Recent episodes appear in memory context as 240-char digests;
    the last 6 turns still arrive verbatim as message history.
-5. Response to user + extraction summary (`ChatResponse.extraction_summary`).
-6. Synchronous extraction (utility model): extract frames/slots/associations as JSON → upsert with confidence → auto-resolve conflicts → log to slot_history.
+6. Response to user (`ChatResponse` with `extraction_summary` + `search_extraction_summary`).
+7. Search extraction (utility model): runs only when a search actually happened; deduped
+   against conversational slots by (frame_name, value).
 
 Actual ordering inside `orchestrator.chat()`:
 - Router (with wants_search) → retrieval → reasoner plan (search vetoed if
@@ -59,20 +63,21 @@ Actual ordering inside `orchestrator.chat()`:
 - Slots: key/value pairs on a frame, each with confidence + source episode.
 - Associations: typed relations between frames (graph), each with confidence.
 - Episodes: per-user conversation turns, linked to touched frames.
-- Conflicts: when a new slot value contradicts existing — auto-resolve by recency+confidence,
-  old value preserved in slot_history, flagged for user review via CLI.
-- Embeddings: frame name+slot summary, via nomic-embed-text, stored in sqlite-vec.
-  Conversation turns get their own vectors (`episode_embeddings`) at write time
-  (best-effort; the daily consolidation tops up misses).
+- Conflicts: when a new slot value contradicts existing — auto-resolve by a fixed ladder
+  (source_reliability → confidence → priority → recency tiebreak). Old value preserved
+  in slot_history, flagged for user review via CLI or web UI.
+- Embeddings: frame type + name + slot key=value lines, via nomic-embed-text, stored
+  in sqlite-vec. Conversation turns get their own vectors (`episode_embeddings`) at
+  write time (best-effort; consolidation tops up misses).
 
 ## Correction pipeline
 1. User flags a response → `POST /correction` with `correction_text`.
 2. `extract_correction`: LLM parses intent (frame, slot, new value).
 3. `validate_correction`: checks corroboration (existing memory) and contradiction (active conflicts).
-4. `apply_correction`: updates slot value + reliability; creates frame if missing.
-5. Belief revision: `revise/expand/contract` per AGM postulates.
-6. Orchestrator returns `CorrectionResponse` with slots_corrected, conflict, validation_summary.
-7. System prompt acknowledges auto-resolved conflicts (surfaced via `search_extraction_summary.conflicts_created`).
+4. `apply_correction`: updates slot value + reliability via `upsert_slot`, which internally
+   runs belief revision (`revise/expand/contract` per AGM postulates). Creates frame if missing.
+5. Orchestrator returns `CorrectionResponse` with slots_corrected, conflict, validation_summary.
+6. System prompt acknowledges auto-resolved conflicts (surfaced via search extraction summary).
 
 ## Feedback pipeline
 - `POST /feedback` with `kind=positive|negative|correction`.
@@ -82,7 +87,8 @@ Actual ordering inside `orchestrator.chat()`:
   `POST /correction` (the LLM correction pipeline above).
 
 ## Brain portability
-- `POST /brain/export`: serializes all frames/slots/associations/conflicts to JSON.
+- `POST /brain/export`: serializes all frames, slots, associations, conflicts, episodes,
+  and feedbacks to JSON.
 - `POST /brain/import`: loads JSON, supports merge (accumulate) and overwrite (replace) modes.
 - Overwrite mode auto-backs up existing DB via `shutil.copy2`.
 
@@ -102,7 +108,7 @@ Role-based model selection (Phase 6). Configurable in `.env`: `CHAT_MODEL`, `UTI
 `EMBEDDING_MODEL`, `CODER_MODEL` (reserved, empty = chat model), `OLLAMA_URL`.
 - Chat model (default `qwen2.5:7b`): user-facing responses. Thinking-capable models accept
   per-request `think=True/False` (`OllamaClient.chat`); inline `<think>` tags are parsed
-  out into `ChatResponse.thinking` automatically.
+  out by the LLM client into a separate `thinking` field on the internal response.
 - Utility model (default `qwen2.5:3b`): extraction, task-routing fallback.
 - Embedding model (default `nomic-embed-text`): frame/query embeddings.
 - Coder model: reserved for tool codegen (Phase 6 M5); falls back to chat model.
@@ -125,8 +131,9 @@ Role-based model selection (Phase 6). Configurable in `.env`: `CHAT_MODEL`, `UTI
   the old NL→cron parser and croniter dependency were removed.
 - Runner (`scheduler/runner.py`): 20s poll loop; fires due tasks through the full
   orchestrator (search + thinking + extraction) so results become memory.
-  Housekeeping is plain timers here: heartbeat every 30 min, memory GC weekly
-  (ISO-week change detection) — no LLM calls, no system frames.
+  Housekeeping timers: heartbeat every 30 min, memory GC weekly (ISO-week change
+  detection), embedding consolidation every 12h (tops up frame + episode embedding
+  coverage, calls the embedding model). No chat/reasoning LLM calls in housekeeping.
 - Missed ticks (backend down at 09:00) fire once late on restart, then reschedule.
 - API: `GET /tasks`, `DELETE /tasks/{id}`, `GET /tasks/{id}/result`.
 - Tests: `assistant/tests/test_daily_schedule.py`.
@@ -152,8 +159,6 @@ Role-based model selection (Phase 6). Configurable in `.env`: `CHAT_MODEL`, `UTI
 - `backend/scheduler/schedule.py` — the daily clock (tick computation, tz handling).
 - `backend/scheduler/runner.py` — scheduler loop (daily-list firing + housekeeping timers).
 - `backend/main.py` — FastAPI app with all endpoints.
-- `eval/dataset.json` — evaluation cases (5 sample cases).
-- `eval/runner.py` — evaluation engine with keyword-matching grader.
 - `cli/app.py` — CLI entry point.
 
 ## Testing

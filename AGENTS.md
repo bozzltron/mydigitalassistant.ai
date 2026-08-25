@@ -22,8 +22,8 @@ Runs 100% locally via Ollama. Safe for household use incl. kids.
 
 ## Build and test commands
 - Install: `docker build -t assistant .`
-- Run backend: `./assistant/bin/assistant chat`
-- Run CLI: ` ./assistant/bin/assistant chat`
+- Run backend: `docker compose up` (FastAPI server via Caddy on 127.0.0.1:8443)
+- Run CLI: `./assistant/bin/assistant chat`
 - Run tests: `docker run -it --rm -v $(pwd):/app -w /app assistant pytest assistant/tests/`
 - Lint: `docker run -it --rm -v $(pwd):/app -w /app assistant ruff check .`
 
