@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Brain Observatory</title>
   <script src="/static/d3.min.js"></script>
+  <script src="/static/vendor/three.min.js"></script>
+  <script src="/static/vendor/3d-force-graph.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -116,6 +118,16 @@
       width: 100%;
       height: 100%;
       display: block;
+    }
+
+    #brain-canvas-3d {
+      position: absolute;
+      inset: 0;
+    }
+
+    .refresh-btn.active {
+      background: var(--primary);
+      color: var(--bg);
     }
 
     .tooltip {
@@ -501,6 +513,11 @@
         </button>
       </div>
       <button class="refresh-btn" onclick="loadData()">Refresh</button>
+      <button class="refresh-btn" id="tour-btn" title="Auto-orbit tour" style="display:none">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px"><circle cx="12" cy="12" r="10"/><path d="M16.2 7.8l-2 6.3-6.4 2.1 2-6.3z"/></svg>
+        Tour
+      </button>
+      <button class="refresh-btn" id="view-toggle" title="Toggle 2D / 3D view">3D</button>
       <button class="refresh-btn" id="export-btn" title="Export brain to JSON">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
         Export
@@ -515,6 +532,7 @@
 
   <div id="canvas-container">
     <svg id="brain-canvas"></svg>
+    <div id="brain-canvas-3d" style="display:none"></div>
     <div class="tooltip" id="tooltip"></div>
     <div class="stats-bar" id="stats-bar"></div>
     <div class="edge-legend" id="edge-legend"></div>
@@ -596,6 +614,100 @@
     const height = () => document.getElementById('canvas-container').clientHeight;
 
     let svg, g, simulation, nodes = [], links = [];
+
+    // ---- 3D view (Google-Earth-style fly-through) ----
+    let mode = '2d';
+    let graph3d = null;
+    let touring = false;
+
+    function hasWebGL() {
+      try {
+        const c = document.createElement('canvas');
+        return !!(window.WebGLRenderingContext &&
+          (c.getContext('webgl') || c.getContext('experimental-webgl')));
+      } catch (e) { return false; }
+    }
+
+    function has3dLibs() {
+      return typeof ForceGraph3D === 'function' && typeof THREE !== 'undefined';
+    }
+
+    function graphDataFor3d() {
+      // Fresh copies: force engines mutate node/link objects (x/y/z, source
+      // objectification), and the d3 scene owns the originals.
+      return {
+        nodes: nodes.map(n => ({ ...n })),
+        links: links.map(l => ({
+          source: l.source.id ?? l.source,
+          target: l.target.id ?? l.target,
+          relation_type: l.relation_type,
+          confidence: l.confidence,
+        })),
+      };
+    }
+
+    function init3D() {
+      if (graph3d || !has3dLibs()) return;
+      const el = document.getElementById('brain-canvas-3d');
+      graph3d = new ForceGraph3D(el)
+        .backgroundColor('rgba(0,0,0,0)')
+        .showNavInfo(false)
+        .nodeLabel(d => `${d.name} · ${d.type} · ${Math.round((d.confidence || 0.5) * 100)}%`)
+        .nodeColor(d => TYPE_COLORS[d.type] || TYPE_COLORS.entity)
+        .nodeVal(d => nodeRadius(d) / 2)
+        .linkColor(l => relationColor(l.relation_type))
+        .linkWidth(l => Math.max(0.3, 1.5 * (l.confidence || 0.5)))
+        .linkOpacity(0.45)
+        .linkDirectionalArrowLength(3.5)
+        .linkDirectionalArrowRelPos(1)
+        .linkDirectionalParticles(l => ((l.confidence || 0.5) > 0.7 ? 2 : 0))
+        .linkDirectionalParticleWidth(1.4)
+        .onNodeClick(handle3dNodeClick);
+      graph3d.controls().autoRotateSpeed = 0.6;
+      if (graph3d.d3Force('charge')) graph3d.d3Force('charge').strength(-120);
+      graph3d.width(width()).height(height());
+    }
+
+    function refresh3D() {
+      if (graph3d && mode === '3d' && nodes.length) {
+        graph3d.graphData(graphDataFor3d());
+      }
+    }
+
+    async function handle3dNodeClick(node) {
+      const tooltip = document.getElementById('tooltip');
+      if (!node.slots) {
+        const res = await fetch(`/memory/frames/${node.id}/slots`);
+        node.slots = await res.json();
+      }
+      tooltip.innerHTML = tooltipHtml(node);
+      const rect = document.getElementById('canvas-container').getBoundingClientRect();
+      const p = graph3d.graph2ScreenCoords(node.x, node.y, node.z);
+      let tx = p.x + 15;
+      let ty = p.y - 10;
+      if (tx + 280 > rect.width) tx = p.x - 295;
+      tooltip.style.left = tx + 'px';
+      tooltip.style.top = ty + 'px';
+      tooltip.classList.add('visible');
+    }
+
+    function focusFrame(frameId) {
+      if (mode === '3d' && graph3d) {
+        const nd = graph3d.graphData().nodes.find(n => n.id === frameId);
+        if (!nd || nd.x == null) return;
+        touring = false;
+        graph3d.controls().autoRotate = false;
+        document.getElementById('tour-btn').classList.remove('active');
+        // Cinematic fly-to: eased camera tween toward a close offset view.
+        graph3d.cameraPosition(
+          { x: nd.x + 70, y: nd.y + 50, z: nd.z + 70 },
+          { x: nd.x, y: nd.y, z: nd.z },
+          900
+        );
+      } else if (window.__highlight2d) {
+        window.__highlight2d(frameId);
+      }
+    }
 
     function initCanvas() {
       const container = document.getElementById('canvas-container');
@@ -689,10 +801,11 @@
           document.getElementById('stats-bar').innerHTML = '';
           if (simulation) simulation.stop();
           g.selectAll('*').remove();
+          if (graph3d) graph3d.graphData({ nodes: [], links: [] });
           return;
         }
 
-        renderGraph();
+        renderCurrent();
         updateStats();
         document.getElementById('status').textContent = 'Live';
       } catch (err) {
@@ -815,6 +928,12 @@
         edgeLabel.classed('visible', false);
       }
 
+      // Neighborhood flash, callable from topic-search fly-to in 2D mode.
+      window.__highlight2d = (frameId) => {
+        highlightNeighbors(frameId);
+        setTimeout(clearHighlight, 2400);
+      };
+
       node.on('mouseover', (event, d) => { highlightNeighbors(d.id); showTooltip(event, d); })
         .on('mouseout', () => { clearHighlight(); hideTooltip(); })
         .on('click', (event, d) => showTooltip(event, d));
@@ -829,48 +948,8 @@
 
       function showTooltip(event, d) {
         const tooltip = document.getElementById('tooltip');
-        const conf = Math.round((d.confidence || 0.5) * 100);
-        const pri = Math.round((d.priority || 0.5) * 100);
-
         fetchSlots(d).then(() => {
-          const slotsHtml = (d.slots || []).slice(0, 5).map(s => {
-            const sConf = s.confidence != null ? Math.round(s.confidence * 100) : null;
-            return `
-            <div class="tooltip-slot">
-              <span class="tooltip-slot-key">${esc(s.key)}:</span>
-              <span class="tooltip-slot-val">${esc(s.value)}</span>
-              ${sConf != null ? `<span class="tooltip-slot-conf" title="slot confidence">${sConf}%</span>` : ''}
-            </div>
-          `;
-          }).join('');
-
-          const frameConflicts = (window.__conflictsByFrame || {})[d.id] || [];
-          const conflictsHtml = frameConflicts.map(c => `
-            <div class="tooltip-conflict">
-              <div class="tooltip-conflict-line">
-                <span class="tooltip-conflict-key">${esc(c.slot_key)}</span>:
-                <span class="tooltip-conflict-old">${esc(c.existing_value ?? '∅')}</span>
-                →
-                <span class="tooltip-conflict-new">${esc(c.new_value ?? '∅')}</span>
-              </div>
-              <div class="tooltip-conflict-actions">
-                <button onclick="resolveConflict(${c.id}, '${escAttr(c.existing_value)}')">Keep ${esc(c.existing_value ?? 'old')}</button>
-                <button class="use-new" onclick="resolveConflict(${c.id}, '${escAttr(c.new_value)}')">Use ${esc(c.new_value ?? 'new')}</button>
-              </div>
-            </div>
-          `).join('');
-
-          tooltip.innerHTML = `
-            <div class="tooltip-name" style="color:${TYPE_COLORS[d.type] || TYPE_COLORS.entity}">${esc(d.name)}</div>
-            <div class="tooltip-type">${d.type}</div>
-            <div class="tooltip-meta">
-              confidence: ${conf}% &nbsp;|&nbsp; priority: ${pri}%
-              ${d.essential ? '&nbsp;|&nbsp; <span style="color:var(--warning)">essential</span>' : ''}
-              ${d.hasConflict ? '&nbsp;|&nbsp; <span style="color:var(--error)">conflict</span>' : ''}
-            </div>
-            ${d.slots?.length ? `<div class="tooltip-slots">${slotsHtml}${d.slots.length > 5 ? `<div style="color:var(--text-dim)">+${d.slots.length - 5} more</div>` : ''}</div>` : ''}
-            ${frameConflicts.length ? `<div class="tooltip-conflicts"><div class="tooltip-conflicts-title">Pending conflicts</div>${conflictsHtml}</div>` : ''}
-          `;
+          tooltip.innerHTML = tooltipHtml(d);
           tooltip.classList.add('visible');
         });
 
@@ -886,19 +965,8 @@
         document.getElementById('tooltip').classList.remove('visible');
       }
 
-      function escAttr(value) {
-        return String(value ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-      }
-
       // Escape memory-sourced text for HTML interpolation. Slot values and
       // names come from LLM extraction of user conversation — treat as input.
-      function esc(value) {
-        return String(value ?? '')
-          .replace(/&/g, '&amp;').replace(/</g, '&lt;')
-          .replace(/>/g, '&gt;').replace(/"/g, '&quot;')
-          .replace(/'/g, '&#39;');
-      }
-
       async function resolveConflict(conflictId, value) {
         try {
           const res = await fetch(
@@ -912,10 +980,6 @@
           console.error('Conflict resolve failed:', e);
         }
       }
-
-      // Inline onclick handlers execute in global scope.
-      window.resolveConflict = resolveConflict;
-      window.escAttr = escAttr;
 
       function dragstarted(event, d) {
         if (!event.active) simulation.alphaTarget(0.3).restart();
@@ -932,6 +996,89 @@
         if (!event.active) simulation.alphaTarget(0);
         d.fx = null;
         d.fy = null;
+      }
+    }
+
+    function escAttr(value) {
+      return String(value ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+    }
+
+    // Escape memory-sourced text for HTML interpolation. Slot values and
+    // names come from LLM extraction of user conversation — treat as input.
+    function esc(value) {
+      return String(value ?? '')
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    async function resolveConflict(conflictId, value) {
+      try {
+        const res = await fetch(
+          `/memory/conflicts/${conflictId}/resolve?value=${encodeURIComponent(value)}`,
+          { method: 'POST' }
+        );
+        if (!res.ok) throw new Error(await res.text());
+        document.getElementById('tooltip').classList.remove('visible');
+        await loadData();
+      } catch (e) {
+        console.error('Conflict resolve failed:', e);
+      }
+    }
+    window.resolveConflict = resolveConflict;
+    window.escAttr = escAttr;
+
+    // Shared tooltip body for the 2D and 3D renderers.
+    function tooltipHtml(d) {
+      const conf = Math.round((d.confidence || 0.5) * 100);
+      const pri = Math.round((d.priority || 0.5) * 100);
+
+      const slotsHtml = (d.slots || []).slice(0, 5).map(s => {
+        const sConf = s.confidence != null ? Math.round(s.confidence * 100) : null;
+        return `
+        <div class="tooltip-slot">
+          <span class="tooltip-slot-key">${esc(s.key)}:</span>
+          <span class="tooltip-slot-val">${esc(s.value)}</span>
+          ${sConf != null ? `<span class="tooltip-slot-conf" title="slot confidence">${sConf}%</span>` : ''}
+        </div>
+      `;
+      }).join('');
+
+      const frameConflicts = (window.__conflictsByFrame || {})[d.id] || [];
+      const conflictsHtml = frameConflicts.map(c => `
+        <div class="tooltip-conflict">
+          <div class="tooltip-conflict-line">
+            <span class="tooltip-conflict-key">${esc(c.slot_key)}</span>:
+            <span class="tooltip-conflict-old">${esc(c.existing_value ?? '∅')}</span>
+            →
+            <span class="tooltip-conflict-new">${esc(c.new_value ?? '∅')}</span>
+          </div>
+          <div class="tooltip-conflict-actions">
+            <button onclick="resolveConflict(${c.id}, '${escAttr(c.existing_value)}')">Keep ${esc(c.existing_value ?? 'old')}</button>
+            <button class="use-new" onclick="resolveConflict(${c.id}, '${escAttr(c.new_value)}')">Use ${esc(c.new_value ?? 'new')}</button>
+          </div>
+        </div>
+      `).join('');
+
+      return `
+        <div class="tooltip-name" style="color:${TYPE_COLORS[d.type] || TYPE_COLORS.entity}">${esc(d.name)}</div>
+        <div class="tooltip-type">${d.type}</div>
+        <div class="tooltip-meta">
+          confidence: ${conf}% &nbsp;|&nbsp; priority: ${pri}%
+          ${d.essential ? '&nbsp;|&nbsp; <span style="color:var(--warning)">essential</span>' : ''}
+          ${d.hasConflict ? '&nbsp;|&nbsp; <span style="color:var(--error)">conflict</span>' : ''}
+        </div>
+        ${d.slots?.length ? `<div class="tooltip-slots">${slotsHtml}${d.slots.length > 5 ? `<div style="color:var(--text-dim)">+${d.slots.length - 5} more</div>` : ''}</div>` : ''}
+        ${frameConflicts.length ? `<div class="tooltip-conflicts"><div class="tooltip-conflicts-title">Pending conflicts</div>${conflictsHtml}</div>` : ''}
+      `;
+    }
+
+    function renderCurrent() {
+      if (mode === '3d') {
+        init3D();
+        refresh3D();
+      } else {
+        renderGraph();
       }
     }
 
@@ -959,9 +1106,45 @@
         simulation.force('center', d3.forceCenter(width() / 2, height() / 2));
         simulation.alpha(0.3).restart();
       }
+      if (graph3d) graph3d.width(width()).height(height());
     });
 
     initCanvas();
+
+    // ---- View mode wiring: 3D fly-through by default when available ----
+    const viewToggle = document.getElementById('view-toggle');
+    const tourBtn = document.getElementById('tour-btn');
+
+    function setMode(next) {
+      mode = next;
+      localStorage.setItem('brain-view', mode);
+      viewToggle.textContent = mode === '3d' ? '2D' : '3D';
+      tourBtn.style.display = mode === '3d' ? '' : 'none';
+      document.getElementById('brain-canvas-3d').style.display =
+        mode === '3d' ? 'block' : 'none';
+      document.getElementById('brain-canvas').style.display =
+        mode === '3d' ? 'none' : '';
+      if (mode !== '3d') {
+        touring = false;
+        renderGraph();
+      } else {
+        init3D();
+        refresh3D();
+      }
+    }
+
+    if (hasWebGL() && has3dLibs()) {
+      viewToggle.addEventListener('click', () =>
+        setMode(mode === '3d' ? '2d' : '3d'));
+      tourBtn.addEventListener('click', () => {
+        touring = !touring;
+        if (graph3d) graph3d.controls().autoRotate = touring;
+        tourBtn.classList.toggle('active', touring);
+      });
+      setMode(localStorage.getItem('brain-view') === '2d' ? '2d' : '3d');
+    } else {
+      viewToggle.style.display = 'none';
+    }
 
     // Export brain
     document.getElementById('export-btn').addEventListener('click', async () => {
@@ -1068,6 +1251,9 @@
 
     function renderMatch(m) {
       const card = tEl('div', 'topic-card');
+      card.style.cursor = 'pointer';
+      card.title = 'Fly to this memory';
+      card.addEventListener('click', () => focusFrame(m.frame.id));
       const head = tEl('div', 'topic-card-head');
       const dot = tEl('div', 'topic-card-dot');
       dot.style.background = TYPE_COLORS[m.frame.type] || TYPE_COLORS.entity;
