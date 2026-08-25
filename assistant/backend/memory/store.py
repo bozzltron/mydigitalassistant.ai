@@ -1296,21 +1296,6 @@ class MemoryStore:
                 created_at=created_at,
             )
 
-    async def get_feedback_for_episode(self, episode_id: str) -> list[Feedback]:
-        async with self._connect() as db:
-            rows = await db.execute_fetchall(
-                "SELECT id, episode_id, message_id, kind, comment, created_at "
-                "FROM feedback WHERE episode_id = ? ORDER BY id",
-                (episode_id,),
-            )
-            return [
-                Feedback(
-                    id=r[0], episode_id=r[1], message_id=r[2],
-                    kind=r[3], comment=r[4], created_at=r[5]
-                )
-                for r in rows
-            ]
-
     async def apply_positive_feedback(self, episode_id: str | None) -> int:
         """Boost confidence of frames/slots touched in an episode.
 

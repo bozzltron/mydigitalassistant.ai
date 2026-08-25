@@ -228,39 +228,3 @@ def aiosqlite_connect(
             )
 
     return aiosqlite_connect_plain(database, **kwargs)
-
-
-def apply_db_key(conn: Any) -> None:
-    """Apply ``PRAGMA key`` to an existing SQLCipher connection.
-
-    Kept for backward compatibility. New code should use
-    :func:`connect_encrypted` or :func:`aiosqlite_connect_encrypted`, which set
-    the key during connection open.
-    """
-    from assistant.backend.config import settings
-
-    if not settings.db_key:
-        return
-    try:
-        key = settings.db_key
-        if callable(getattr(conn, "execute", None)):
-            import asyncio
-
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                loop.create_task(conn.execute(f"PRAGMA key = '{key}'"))
-            else:
-                loop.run_until_complete(conn.execute(f"PRAGMA key = '{key}'"))
-        else:
-            conn.execute(f"PRAGMA key = '{key}'")
-    except Exception:
-        pass
-
-
-def patch_sqlite_for_sqlcipher() -> None:
-    """No-op: kept for backward compatibility.
-
-    SQLCipher is now applied per-connection; the global ``sys.modules`` patch
-    has been removed.
-    """
-    pass

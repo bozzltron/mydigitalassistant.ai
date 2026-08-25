@@ -41,8 +41,6 @@ class Settings(BaseSettings):
     # The key is passed to SQLCipher via "PRAGMA key" on each connection.
     db_key: str = ""
 
-    conflict_auto_resolve: bool = True
-
     # Web search settings (always enabled - core requirement)
     search_base_url: str = "http://127.0.0.1:8080"    # SearXNG default
     search_timeout: float = 30.0
@@ -93,7 +91,6 @@ class Settings(BaseSettings):
     # TLS verification (defense-in-depth for local services)
     # Set to path of CA cert if Ollama/SearXNG use self-signed TLS
     ollama_tls_cert: str = ""
-    search_tls_cert: str = ""
 
     # Voice transcription (optional - requires faster-whisper)
     whisper_model: str = "base"

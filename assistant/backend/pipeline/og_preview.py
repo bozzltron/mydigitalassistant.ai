@@ -57,9 +57,6 @@ class PreviewCard:
     image: str | None = None
     site_name: str | None = None
 
-    def has_image(self) -> bool:
-        return bool(self.image)
-
 
 class _OGParser(HTMLParser):
     """Minimal HTML parser to extract Open Graph meta tags."""

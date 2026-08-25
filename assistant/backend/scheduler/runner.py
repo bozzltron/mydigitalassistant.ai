@@ -27,7 +27,6 @@ from assistant.backend.db.sqlcipher import aiosqlite_connect
 from assistant.backend.memory.gc import run_gc
 from assistant.backend.memory.store import MemoryStore
 from assistant.backend.pipeline.orchestrator import Orchestrator
-from assistant.backend.scheduler.schedule import next_daily_run
 
 logger = logging.getLogger(__name__)
 
@@ -267,11 +266,6 @@ async def _scheduler_loop(store: MemoryStore, orchestrator: Orchestrator) -> Non
         except Exception as exc:
             logger.exception("Scheduler loop error: %s", exc)
             await asyncio.sleep(30)
-
-
-def next_tick_for_display() -> str:
-    """Human-readable next daily tick (for status surfaces/tests)."""
-    return next_daily_run().isoformat()
 
 
 async def start_scheduler(store: MemoryStore, orchestrator: Orchestrator) -> None:
