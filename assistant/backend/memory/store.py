@@ -55,6 +55,9 @@ class MemoryStore:
         """Open a DB connection with sqlite-vec extension loaded."""
         db = await aiosqlite_connect(self.db_path)
         await db.execute("PRAGMA foreign_keys = ON")
+        # Housekeeping (consolidation/GC) shares this file with live chat;
+        # wait for the write lock instead of failing after the 5s default.
+        await db.execute("PRAGMA busy_timeout = 15000")
         await _load_sqlite_vec(db)
         try:
             yield db
@@ -189,7 +192,8 @@ class MemoryStore:
             row = await db.execute_fetchall(
                 "SELECT id, name, type, confidence, essential, priority, "
                 "owner_user_id, source_type, source_url, source_reliability, "
-                "embedding_model, created_at, updated_at FROM frames WHERE id = ?",
+                "embedding_model, created_at, updated_at, deleted_at "
+                "FROM frames WHERE id = ?",
                 (frame_id,),
             )
             if not row:
@@ -637,8 +641,8 @@ class MemoryStore:
     ) -> list[tuple[Frame, list[Slot], float]]:
         """Search frames by vector similarity using sqlite-vec vec_distance_cosine.
 
-        Returns list of (frame, slots, distance) tuples ordered by similarity.
-        Distance is 0.0 to 1.0+; lower is more similar.
+        Returns list of (frame, slots, similarity) tuples, most similar first.
+        Similarity = 1 - cosine_distance (0..1; higher is more similar).
         Filters to frames owned by user_id or with no owner (shared household
         frame); user_id=None skips ownership filtering entirely (observatory /
         admin views).
@@ -668,6 +672,7 @@ class MemoryStore:
                 JOIN frames f ON candidate.frame_id = f.id
                 WHERE vec_distance_cosine(candidate.embedding, ?) <= ?
                   AND f.deleted_at IS NULL
+                  AND f.priority > 0
                   {owner_filter}
                 ORDER BY distance ASC
                 LIMIT ?
@@ -1313,9 +1318,17 @@ class MemoryStore:
         """
         if not episode_id:
             return 0
+        # NOTE: callers pass a *session id* here (legacy param name). The
+        # latest episode of a session is the assistant turn, which carries no
+        # frame_ids — target the most recent turn that actually touched memory.
         async with self._connect() as db:
             episode_rows = await db.execute_fetchall(
-                "SELECT frame_ids FROM episodes WHERE session_id = ? ORDER BY id DESC LIMIT 1",
+                """
+                SELECT frame_ids FROM episodes
+                WHERE session_id = ?
+                  AND json_array_length(COALESCE(frame_ids, '[]')) > 0
+                ORDER BY id DESC LIMIT 1
+                """,
                 (episode_id,),
             )
             if not episode_rows:
@@ -1360,9 +1373,17 @@ class MemoryStore:
         """
         if not episode_id:
             return 0
+        # NOTE: callers pass a *session id* here (legacy param name). The
+        # latest episode of a session is the assistant turn, which carries no
+        # frame_ids — target the most recent turn that actually touched memory.
         async with self._connect() as db:
             episode_rows = await db.execute_fetchall(
-                "SELECT frame_ids FROM episodes WHERE session_id = ? ORDER BY id DESC LIMIT 1",
+                """
+                SELECT frame_ids FROM episodes
+                WHERE session_id = ?
+                  AND json_array_length(COALESCE(frame_ids, '[]')) > 0
+                ORDER BY id DESC LIMIT 1
+                """,
                 (episode_id,),
             )
             if not episode_rows:
@@ -1452,6 +1473,7 @@ class MemoryStore:
             "embedding_model": row[10] if len(row) > 10 else None,
             "created_at": row[11] if len(row) > 11 else None,
             "updated_at": row[12] if len(row) > 12 else None,
+            "deleted_at": row[13] if len(row) > 13 else None,
         }
 
     @staticmethod

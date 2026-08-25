@@ -371,6 +371,10 @@ class Retriever:
                     neighbor = await self.store.get_frame(neighbor_id)
                     if neighbor is None:
                         continue
+                    # GC-tombstoned frames keep their edges but must never
+                    # re-enter context via the graph walk.
+                    if neighbor.deleted_at is not None:
+                        continue
                     if neighbor.owner_user_id not in (None, user_id):
                         continue
                     score = (

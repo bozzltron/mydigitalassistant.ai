@@ -131,7 +131,15 @@ async def _backup_db(db_path: str, label: str) -> Path:
 
     src = Path(db_path)
     async with aiosqlite_connect(db_path) as db:
-        await db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        cursor = await db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        row = await cursor.fetchone()
+        # row = (busy, wal_pages, checkpointed_pages). busy != 0 means readers
+        # (e.g. an in-flight chat turn) pinned the WAL — the copy below would
+        # silently miss recent commits, so refuse rather than fake a snapshot.
+        if row and row[0] != 0:
+            raise RuntimeError(
+                f"wal_checkpoint(TRUNCATE) busy ({row[0]}) — retry next cycle"
+            )
     backup_dir = src.parent / "backups"
     backup_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
@@ -159,7 +167,24 @@ async def _run_consolidation(
     try:
         backup = await _backup_db(store.db_path, "consolidation")
         logger.info("Consolidation backup written: %s", backup.name)
+    except Exception as exc:
+        logger.warning("Consolidation aborted (backup failed): %s", exc)
+        return
 
+    # Episode top-up is independent of frame merging — run it even when the
+    # consolidation breaker trips below.
+    try:
+        done = await store.embed_missing_episodes(
+            orchestrator.embed_fn(),
+            embedding_model=settings.embedding_model,
+            cap=100,
+        )
+        if done:
+            logger.info("Episode embedding top-up: %d turns indexed", done)
+    except Exception as exc:
+        logger.warning("Episode embedding top-up failed: %s", exc)
+
+    try:
         # Plan first: embeddings may be filled during clustering either way.
         plan = await run_consolidation(
             store.db_path, dry_run=True, embed_fn=orchestrator.embed_fn()
@@ -181,16 +206,6 @@ async def _run_consolidation(
             max_merges=max_merges,
         )
         logger.info("Memory consolidation completed: %s", report.summary())
-
-        # Top up episode embeddings missed at write time (crashes, backlog
-        # from before this feature existed). Bounded per run.
-        done = await store.embed_missing_episodes(
-            orchestrator.embed_fn(),
-            embedding_model=settings.embedding_model,
-            cap=100,
-        )
-        if done:
-            logger.info("Episode embedding top-up: %d turns indexed", done)
     except Exception as exc:
         logger.warning("Memory consolidation failed: %s", exc)
 

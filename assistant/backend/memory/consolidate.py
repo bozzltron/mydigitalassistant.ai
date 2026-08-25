@@ -165,12 +165,14 @@ async def strengthen_from_episodes(db_path: str) -> int:
     from assistant.backend.memory.confidence import bump_confidence
 
     async with aiosqlite_connect(db_path) as db:
+        await db.execute("PRAGMA busy_timeout = 15000")
         cursor_row = await db.execute_fetchall(
             "SELECT value FROM metadata WHERE key = 'last_strengthened_episode_id'"
         )
     last_id = int(cursor_row[0][0]) if cursor_row and cursor_row[0][0] else 0
 
     async with aiosqlite_connect(db_path) as db:
+        await db.execute("PRAGMA busy_timeout = 15000")
         rows = await db.execute_fetchall(
             "SELECT id, frame_ids FROM episodes WHERE id > ? "
             "AND frame_ids IS NOT NULL ORDER BY id",
@@ -194,6 +196,7 @@ async def strengthen_from_episodes(db_path: str) -> int:
 
     strengthened = 0
     async with aiosqlite_connect(db_path) as db:
+        await db.execute("PRAGMA busy_timeout = 15000")
         await db.execute("BEGIN")
         for (a, b), _count in pair_counts.items():
             cur = await db.execute(
@@ -253,6 +256,7 @@ async def run_consolidation(
         report.associations_strengthened = await strengthen_from_episodes(db_path)
 
     async with aiosqlite_connect(db_path) as db:
+        await db.execute("PRAGMA busy_timeout = 15000")
         rows = await db.execute_fetchall(
             "SELECT id, name, type, confidence, owner_user_id, created_at "
             "FROM frames WHERE deleted_at IS NULL ORDER BY id"
@@ -290,6 +294,7 @@ async def run_consolidation(
     # title="The Mountain & The Wolf" are the same album however the extractor
     # named them). Strongest duplicate evidence available.
     async with aiosqlite_connect(db_path) as db:
+        await db.execute("PRAGMA busy_timeout = 15000")
         ident_rows = await db.execute_fetchall(
             """
             SELECT s1.frame_id, s2.frame_id FROM slots s1
@@ -456,6 +461,7 @@ async def _apply_merge(
 ) -> None:
     """Move slots/edges from loser to survivor, record alias, tombstone loser."""
     async with aiosqlite_connect(db_path) as db:
+        await db.execute("PRAGMA busy_timeout = 15000")
         # 1. Slots: copy each loser slot onto the survivor through upsert_slot
         #    so confidence bumping, belief revision, conflicts and slot_history
         #    all behave exactly like a normal re-statement of the fact.
@@ -539,6 +545,7 @@ async def _apply_merge(
         aliases += 1
 
     async with aiosqlite_connect(db_path) as db:
+        await db.execute("PRAGMA busy_timeout = 15000")
         await db.execute(
             "UPDATE frames SET deleted_at = datetime('now') WHERE id = ?",
             (merge.loser_id,),

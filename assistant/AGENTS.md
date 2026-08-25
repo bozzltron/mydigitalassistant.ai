@@ -30,7 +30,10 @@ Web search for retrieval-only; learned facts stored locally in memory frames/slo
    also returns `wants_search` — false for storage-style turns and general-knowledge
    questions, so personal facts are never forwarded to external search.
 2. For functional queries requiring external info: fetch via search engine (SearXNG).
-3. Retrieve: embed query → sqlite-vec similarity → graph-walk associations → memory context.
+3. Retrieve: embed query → sqlite-vec similarity → graph-walk associations →
+   memory context. Past conversations are also searched semantically
+   (`episode_embeddings`): turns from other sessions matching the query land in
+   a "Related past conversations" section (owner-scoped, current session excluded).
 4. LLM call (chat model): system prompt injects structured memory context + task-type guidance.
    Sections are ordered stable-first, volatile-last (persona → task guidance → plan
    instructions → memory) so Ollama's prompt cache reuses the stable prefix across
@@ -59,6 +62,8 @@ Actual ordering inside `orchestrator.chat()`:
 - Conflicts: when a new slot value contradicts existing — auto-resolve by recency+confidence,
   old value preserved in slot_history, flagged for user review via CLI.
 - Embeddings: frame name+slot summary, via nomic-embed-text, stored in sqlite-vec.
+  Conversation turns get their own vectors (`episode_embeddings`) at write time
+  (best-effort; the daily consolidation tops up misses).
 
 ## Correction pipeline
 1. User flags a response → `POST /correction` with `correction_text`.
@@ -84,9 +89,11 @@ Actual ordering inside `orchestrator.chat()`:
 ## Confidence rules (assistant/backend/memory/confidence.py)
 - New slot value: confidence 0.5.
 - Repeated same value: confidence increases: `conf = 1 - (1-conf)*0.7` (bounded).
-- Conflicting value: auto-resolve. If new value has higher confidence OR is more recent
-  (within same session), it wins; old value → slot_history. Both logged in conflicts table.
-- Positive feedback: `bump_confidence(current)` = `min(current * 0.3 + current, MAX_CONFIDENCE)`.
+- Conflicting value: auto-resolve by a fixed ladder — source_reliability →
+  confidence → priority → recency tiebreak; loser value → slot_history.
+  Both logged in conflicts table.
+- Positive feedback: `bump_confidence(current)` = `min(1 - (1-current)*0.7, 0.99)`
+  (same repeat-discount curve as reinforcement).
 - Negative feedback: `lower_confidence(current)` = `max(current - 0.15, INITIAL_CONFIDENCE)`.
 - Association confidence: increases with co-occurrence in episodes.
 

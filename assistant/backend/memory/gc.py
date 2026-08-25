@@ -103,6 +103,7 @@ async def run_gc(db_path: str, dry_run: bool = False) -> GcReport:
     ).isoformat()
 
     async with aiosqlite_connect(db_path) as db:
+        await db.execute("PRAGMA busy_timeout = 15000")
         slot_rows = await db.execute_fetchall(
             """
             SELECT id, priority, last_strengthened_at
@@ -145,6 +146,13 @@ async def run_gc(db_path: str, dry_run: bool = False) -> GcReport:
             for (frame_id,) in stale_frames:
                 await db.execute(
                     "UPDATE frames SET deleted_at = datetime('now') WHERE id = ?",
+                    (frame_id,),
+                )
+                # Drop the vector too: dead frames must not sit in the
+                # embedding candidate set, and the vec table stays bounded.
+                # (Resurrection re-embeds on next extraction.)
+                await db.execute(
+                    "DELETE FROM frame_embeddings WHERE frame_id = ?",
                     (frame_id,),
                 )
 

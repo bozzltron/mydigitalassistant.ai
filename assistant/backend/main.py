@@ -76,6 +76,13 @@ _state: dict = {}
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize DB, store, retriever, llm client on startup."""
+    # App loggers (scheduler housekeeping, consolidation, episode top-up) emit
+    # at INFO — without a root handler those logs vanish. Uvicorn configures
+    # only its own loggers.
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
     db_path = settings.database_path
     # Ensure parent dir exists
     Path(db_path).parent.mkdir(parents=True, exist_ok=True)
@@ -144,7 +151,11 @@ async def lifespan(app: FastAPI):
         scheduler_task = asyncio.create_task(start_scheduler(store, orchestrator))
         logger.info("Scheduler background task started")
 
-    logger.info("Assistant started. DB: %s, Ollama: %s, Search: enabled")
+    logger.info(
+        "Assistant started. DB: %s, Ollama: %s, Search: enabled",
+        db_path,
+        settings.ollama_url,
+    )
 
     yield
 
@@ -554,7 +565,7 @@ class TopicSearchResponse(BaseModel):
     # False when embedding failed (Ollama down) and only keyword matching ran
     semantic_search: bool
     # Handler revision, for verifying deploys of ranking changes
-    backend_rev: int = 1
+    backend_rev: int = 2
     matches: list[TopicMatch]
 
 
@@ -588,11 +599,13 @@ async def memory_search(
             limit=limit * 2,
             min_distance=settings.retrieval_min_distance,
         )
-        for frame, slots, distance in results:
+        # search_similar_frames returns SIMILARITY (1 - cosine distance,
+        # higher = better) — clamp, don't invert.
+        for frame, slots, similarity in results:
             matches[frame.id] = TopicMatch(
                 frame=frame,
                 slots=slots,
-                similarity=max(0.0, min(1.0, 1.0 - distance)),
+                similarity=max(0.0, min(1.0, similarity)),
             )
     except Exception as e:
         logger.warning("Topic semantic search unavailable (%s); keyword-only", e)

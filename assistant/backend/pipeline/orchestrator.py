@@ -437,11 +437,15 @@ class Orchestrator:
             if result.url:
                 citations.append(result.url)
 
-        # Build conversation history: up to 6 prior turns from this session
+        # Build conversation history: up to 6 prior turns from this session.
+        # Session ids are client-supplied — filter by owner so two household
+        # members sharing a session string never see each other's turns.
         history_messages: list[ChatMessage] = []
         if session_id:
             session_episodes = await self.store.get_episodes_for_session(session_id)
-            prior_turns = session_episodes[:-1]  # exclude current user episode
+            prior_turns = [
+                ep for ep in session_episodes if ep.user_id == request.user_id
+            ][:-1]  # exclude current user episode
             max_turns = min(len(prior_turns), 6)
             prior_turns = prior_turns[-max_turns:] if max_turns > 0 else []
             for ep in prior_turns:
@@ -642,10 +646,16 @@ class Orchestrator:
             fields = await extract_scheduled_task_fields(request.message, self.llm_client)
         except Exception as e:
             logger.error("Failed to extract scheduled task fields: %s", e)
+            fallback = (
+                "I couldn't understand the task details. Try phrasing it like: "
+                "'set up a daily briefing on AI news at 9am' or "
+                "'list my scheduled tasks'."
+            )
+            await self._log_episode(
+                request.user_id, session_id, role="assistant", content=fallback
+            )
             return ChatResponse(
-                response="I couldn't understand the task details. Try phrasing it like: "
-                         "'set up a daily briefing on AI news at 9am' or "
-                         "'list my scheduled tasks'.",
+                response=fallback,
                 session_id=session_id,
                 task_type="scheduled",
                 memory_context="",
@@ -723,6 +733,40 @@ class Orchestrator:
             else:
                 response_text = "Which task do you want to pause?"
 
+        elif intent == "resume":
+            task_name = fields.get("task_name") or fields.get("name", "")
+            if task_name:
+                tasks = await self.store.get_scheduled_tasks(
+                    owner_user_id=request.user_id
+                )
+                for t in tasks:
+                    if t["name"] == task_name:
+                        from ..scheduler.schedule import format_next_run, next_daily_run
+
+                        next_tick = next_daily_run()
+                        # Restore the ORIGINAL prompt/description — the extractor
+                        # returns no fields for resume, and upsert would
+                        # otherwise overwrite them with the literal request.
+                        await self.store.upsert_scheduled_task(
+                            name=task_name,
+                            description=t.get("description", ""),
+                            schedule_cron=t.get("schedule_cron", "daily"),
+                            prompt=t.get("prompt", ""),
+                            enabled=True,
+                            owner_user_id=request.user_id,
+                            next_run=next_tick.astimezone(UTC).isoformat(),
+                        )
+                        when = format_next_run(next_tick)
+                        response_text = (
+                            f"Resumed **{task_name}**. Back on your list — "
+                            f"next run {when}."
+                        )
+                        break
+                else:
+                    response_text = f"I couldn't find a task named '{task_name}'."
+            else:
+                response_text = "Which task do you want to resume?"
+
         elif intent == "run_now":
             task_name = fields.get("task_name") or fields.get("name", "")
             if task_name:
@@ -771,6 +815,11 @@ class Orchestrator:
                     f"run ({when}), and then it's done."
                 )
 
+        # Every scheduled-task interaction pairs the user turn with an
+        # assistant episode — same contract as every other chat path.
+        await self._log_episode(
+            request.user_id, session_id, role="assistant", content=response_text
+        )
         return ChatResponse(
             response=response_text,
             session_id=session_id,

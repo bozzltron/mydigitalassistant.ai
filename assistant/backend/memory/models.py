@@ -15,6 +15,7 @@ class Frame(BaseModel):
     embedding_model: str | None = None
     created_at: str | None = None
     updated_at: str | None = None
+    deleted_at: str | None = None  # set = GC-tombstoned; excluded from retrieval
 
 
 class Slot(BaseModel):
