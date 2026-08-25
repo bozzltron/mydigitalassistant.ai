@@ -370,6 +370,7 @@ async def main(
     command: str,
     dry_run: bool = False,
     execute: bool = False,
+    embed_cap: int | None = None,
     reembed_model: str | None = None,
     export_path: Path | None = None,
     import_path: Path | None = None,
@@ -395,6 +396,8 @@ async def main(
         success = await gc_db(dry_run=dry_run)
     elif command == "consolidate":
         success = await consolidate_db(execute=execute)
+    elif command == "embed-episodes":
+        success = await embed_episodes_db(cap=embed_cap)
     elif command == "reembed":
         success = await reembed_db(target_model=reembed_model)
     else:
@@ -447,3 +450,36 @@ def main_entry():
 
 if __name__ == "__main__":
     main_entry()
+
+
+async def embed_episodes_db(cap: int | None = None):
+    """Backfill embeddings for conversation turns missing vectors.
+
+    Semantic episode recall needs every stored turn indexed. New turns are
+    embedded at write time; this command archives the backlog (e.g. after
+    upgrading an existing brain).
+    """
+    from assistant.backend.config import settings
+    from assistant.backend.db.schema import init_db
+    from assistant.backend.memory.store import MemoryStore
+
+    await init_db(settings.database_path)
+    store = MemoryStore(settings.database_path)
+
+    from assistant.backend.pipeline.llm_client import OllamaClient
+
+    client = OllamaClient(
+        base_url=settings.ollama_url,
+        embedding_model=settings.embedding_model,
+        timeout=settings.ollama_timeout,
+    )
+
+    async def embed(text: str) -> list[float]:
+        resp = await client.embed(text)
+        return resp.embedding
+
+    done = await store.embed_missing_episodes(
+        embed, embedding_model=settings.embedding_model, cap=cap
+    )
+    console.print(f"✓ Embedded [green]{done}[/green] episodes")
+    return True

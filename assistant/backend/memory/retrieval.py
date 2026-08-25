@@ -1,4 +1,5 @@
-from dataclasses import dataclass
+import logging
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from assistant.backend.config import settings
@@ -8,6 +9,8 @@ if TYPE_CHECKING:
     from assistant.backend.memory.store import MemoryStore
     from assistant.backend.memory.working_memory import WorkingMemory
     from assistant.backend.pipeline.llm_client import OllamaClient
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -25,6 +28,9 @@ class MemoryContext:
     retrieved_frames: list[RetrievedFrame]
     recent_episodes: list[Episode]
     formatted: str  # ready-to-inject text for LLM system prompt
+    # Semantic matches over archived conversation turns (older than the
+    # recency window, any session). (episode, similarity) best-first.
+    past_conversations: list[tuple[Episode, float]] = field(default_factory=list)
 
 
 def frame_to_text(frame: Frame, slots: list[Slot]) -> str:
@@ -70,6 +76,18 @@ def format_memory_context(context: "MemoryContext") -> str:
                     f"{a.relation_type}\u2192frame:{a.to_frame_id}" for a in rf.associations[:3]
                 )
                 lines.append(f"  relations: {assoc_str}")
+    if context.past_conversations:
+        lines.append("\n## Related past conversations")
+        for ep, sim in context.past_conversations:
+            content = " ".join(ep.content.split())
+            if len(content) > EPISODE_DIGEST_CHARS:
+                content = (
+                    content[:EPISODE_DIGEST_CHARS].rsplit(" ", 1)[0] + "…"
+                )
+            when = (ep.timestamp or "")[:10]
+            lines.append(
+                f"   [{when} · {ep.role} · {round(sim * 100)}% match] {content}"
+            )
     if context.recent_episodes:
         lines.append("\n## Recent conversation (this session)")
         for ep in context.recent_episodes[-10:]:
@@ -174,12 +192,15 @@ class Retriever:
          )
 
         if not all_results:
-             # No frames in memory yet — just return empty context
+             # No frames in memory yet — archived conversations may still be
+             # directly relevant, so episode recall still runs.
+            past = await self._search_past_conversations(query_embedding, user_id, session_id)
             recent = await self.store.get_episodes_for_user(user_id, limit=10)
             empty = MemoryContext(
                 query=query,
                 retrieved_frames=[],
                 recent_episodes=recent,
+                past_conversations=past,
                 formatted="(no memory frames yet)",
              )
             empty.formatted = format_memory_context(empty)
@@ -268,10 +289,14 @@ class Retriever:
             recent_episodes = await self.store.get_episodes_for_user(user_id, limit=10)
 
          # Build and return context
+        past_conversations = await self._search_past_conversations(
+            query_embedding, user_id, session_id
+        )
         context = MemoryContext(
             query=query,
             retrieved_frames=retrieved_frames,
             recent_episodes=recent_episodes,
+            past_conversations=past_conversations,
             formatted="",
          )
         context.formatted = format_memory_context(context)
@@ -282,6 +307,35 @@ class Retriever:
             await self.working_memory.touch_frames(frame_ids)
 
         return context
+
+    async def _search_past_conversations(
+        self,
+        query_embedding: list[float],
+        user_id: int,
+        session_id: str | None,
+    ) -> list[tuple[Episode, float]]:
+        """Semantic recall over archived conversation turns.
+
+        Strictly owner-scoped; skips the current session (those turns are
+        already present verbatim as chat history). Best-effort: if the
+        episode_embeddings table has no rows for this model yet (fresh brain
+        or pre-upgrade archive), this quietly returns nothing.
+        """
+        if settings.retrieval_episode_limit <= 0:
+            return []
+        try:
+            hits = await self.store.search_similar_episodes(
+                embedding=query_embedding,
+                user_id=user_id,
+                embedding_model=self.embedding_model,
+                limit=settings.retrieval_episode_limit * 3,
+                min_distance=settings.retrieval_min_distance,
+                exclude_session_ids=[session_id] if session_id else None,
+            )
+        except Exception as exc:
+            logger.warning("Episode recall unavailable: %s", exc)
+            return []
+        return [(ep, sim) for ep, sim in hits[: settings.retrieval_episode_limit]]
 
     async def _graph_walk(
         self,

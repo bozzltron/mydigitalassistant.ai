@@ -468,6 +468,139 @@ class MemoryStore:
             parts.append(f"  {slot.key} = {slot.value}")
         return "\n".join(parts)
 
+    # Episode embeddings (semantic recall over raw conversation turns)
+    async def store_episode_embedding(
+        self,
+        episode_id: int,
+        embedding: list[float],
+        embedding_model: str = "nomic-embed-text",
+    ) -> None:
+        """Store an embedding for an episode's verbatim content."""
+        async with self._connect() as db:
+            await db.execute(
+                """
+                INSERT INTO episode_embeddings (episode_id, embedding_model, embedding, updated_at)
+                VALUES (?, ?, vec_f32(?), datetime('now'))
+                ON CONFLICT(episode_id, embedding_model) DO UPDATE SET
+                    embedding = vec_f32(excluded.embedding),
+                    updated_at = excluded.updated_at
+                """,
+                (episode_id, embedding_model, json.dumps(embedding)),
+            )
+            await db.commit()
+
+    async def embed_missing_episodes(
+        self,
+        embed_fn,  # async callable: (text) -> list[float]
+        embedding_model: str = "nomic-embed-text",
+        cap: int | None = None,
+    ) -> int:
+        """Embed episodes that lack a vector for this model. Returns count.
+
+        Write-time embedding is best-effort in the orchestrator; this tops up
+        anything missed (crashes, older turns, imports).
+        """
+        async with self._connect() as db:
+            rows = await db.execute_fetchall(
+                """
+                SELECT e.id FROM episodes e
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM episode_embeddings ee
+                    WHERE ee.episode_id = e.id AND ee.embedding_model = ?
+                )
+                ORDER BY e.id DESC
+                """,
+                (embedding_model,),
+            )
+        ids = [r[0] for r in rows]
+        if cap is not None:
+            ids = ids[:cap]
+        done = 0
+        for episode_id in ids:
+            try:
+                row = await self._get_episode_row(episode_id)
+                if row is None:
+                    continue
+                episode = Episode(**self._episode_dict(row))
+                text = f"{episode.role}: {episode.content[:4000]}"
+                embedding = await embed_fn(text)
+                await self.store_episode_embedding(episode_id, embedding, embedding_model)
+                done += 1
+            except Exception:
+                continue
+        return done
+
+    async def search_similar_episodes(
+        self,
+        embedding: list[float],
+        user_id: int | None,
+        embedding_model: str = "nomic-embed-text",
+        limit: int = 5,
+        min_distance: float = 0.7,
+        exclude_session_ids: list[str] | None = None,
+    ) -> list[tuple[Episode, float]]:
+        """Semantic search over conversation turns.
+
+        Returns (episode, similarity) tuples, best first. Episodes are strictly
+        personal: user_id=None skips the filter only for observatory/admin use;
+        the retriever always passes a concrete user. exclude_session_ids drops
+        turns already present verbatim as chat history.
+        """
+        owner_filter = (
+            "" if user_id is None else "AND (e.user_id = ?)"
+        )
+        session_filter = ""
+        # Params follow the statement's textual placeholder order:
+        # model, select-distance, where-distance, min_distance,
+        # [owner], [excluded sessions...], limit.
+        params: list = [
+            embedding_model,
+            json.dumps(embedding),
+            json.dumps(embedding),
+            min_distance,
+        ]
+        if user_id is not None:
+            params.append(user_id)
+        if exclude_session_ids:
+            session_filter = "AND e.session_id NOT IN ({})".format(
+                ",".join("?" for _ in exclude_session_ids)
+            )
+            params.extend(exclude_session_ids)
+        params.append(limit)
+        async with self._connect() as db:
+            rows = await db.execute_fetchall(
+                f"""
+                WITH candidate AS MATERIALIZED (
+                    SELECT episode_id, embedding
+                    FROM episode_embeddings
+                    WHERE embedding_model = ?
+                )
+                SELECT e.id, e.user_id, e.session_id, e.role, e.content,
+                       e.frame_ids, e.timestamp,
+                       vec_distance_cosine(candidate.embedding, ?) as distance
+                FROM candidate
+                JOIN episodes e ON candidate.episode_id = e.id
+                WHERE vec_distance_cosine(candidate.embedding, ?) <= ?
+                  {owner_filter}
+                  {session_filter}
+                ORDER BY distance ASC
+                LIMIT ?
+                """,
+                params,
+            )
+            return [
+                (Episode(**self._episode_dict(row)), 1.0 - row[7]) for row in rows
+            ]
+
+    async def _get_episode_row(self, episode_id: int) -> tuple | None:
+        async with self._connect() as db:
+            rows = await db.execute_fetchall(
+                "SELECT id, user_id, session_id, role, content, frame_ids, timestamp "
+                "FROM episodes WHERE id = ?",
+                (episode_id,),
+            )
+            return rows[0] if rows else None
+
     async def get_frame_embedding(
         self, frame_id: int, embedding_model: str = "nomic-embed-text"
     ) -> list[float] | None:

@@ -653,6 +653,20 @@ def cmd_db_migrate(args: argparse.Namespace, client: BackendClient) -> None:
         sys.exit(1)
 
 
+def cmd_db_consolidate(args: argparse.Namespace, client: BackendClient) -> None:
+    """Run duplicate-frame consolidation against the local brain."""
+    from assistant.cli.db import main as db_main
+
+    asyncio.run(db_main("consolidate", execute=args.execute))
+
+
+def cmd_db_embed_episodes(args: argparse.Namespace, client: BackendClient) -> None:
+    """Backfill episode embeddings for semantic conversation recall."""
+    from assistant.cli.db import main as db_main
+
+    asyncio.run(db_main("embed-episodes", embed_cap=args.cap))
+
+
 def cmd_db_backfill_embeddings(args: argparse.Namespace, client: BackendClient) -> None:
     """Generate and store embeddings for all existing frames."""
     try:
@@ -938,6 +952,24 @@ def main() -> None:
         "backfill-embeddings", help="Generate embeddings for all existing frames"
     )
     p_db_embed.set_defaults(func=cmd_db_backfill_embeddings)
+
+    p_db_consolidate = db_sub.add_parser(
+        "consolidate",
+        help="Merge duplicate memory frames (dry-run by default, --execute to apply)",
+    )
+    p_db_consolidate.add_argument(
+        "--execute", action="store_true", help="Apply the planned merges"
+    )
+    p_db_consolidate.set_defaults(func=cmd_db_consolidate)
+
+    p_db_embed_eps = db_sub.add_parser(
+        "embed-episodes",
+        help="Backfill semantic embeddings for stored conversations",
+    )
+    p_db_embed_eps.add_argument(
+        "--cap", type=int, default=None, help="Max episodes to embed this run"
+    )
+    p_db_embed_eps.set_defaults(func=cmd_db_embed_episodes)
 
     p_db_migrate_enc = db_sub.add_parser(
         "migrate-encrypted",

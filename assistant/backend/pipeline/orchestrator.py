@@ -85,6 +85,37 @@ class Orchestrator:
         """Public alias — scheduler consolidation reuses the hot-path embedder."""
         return self._embed_fn()
 
+    async def _log_episode(
+        self,
+        user_id: int,
+        session_id: str,
+        role: str,
+        content: str,
+        frame_ids: list[int] | None = None,
+    ):
+        """Persist a conversation turn and index it for semantic recall.
+
+        Embedding is best-effort: a failed vector write never breaks the chat
+        path — the twice-daily consolidation tops up missing embeddings.
+        """
+        episode = await self.store.create_episode(
+            user_id=user_id,
+            session_id=session_id,
+            role=role,
+            content=content,
+            frame_ids=frame_ids or [],
+        )
+        try:
+            embedding = await self.embed_fn()(
+                f"{role}: {content[:4000]}"
+            )
+            await self.store.store_episode_embedding(
+                episode.id, embedding, settings.embedding_model
+            )
+        except Exception as exc:
+            logger.warning("Episode embedding deferred (id=%s): %s", episode.id, exc)
+        return episode
+
     @staticmethod
     async def _report(
         progress: "Callable[[str, str], Awaitable[None]] | None",
@@ -135,12 +166,11 @@ class Orchestrator:
         session_id = request.session_id or str(uuid.uuid4())
 
         # 2. Log user episode
-        user_episode = await self.store.create_episode(
-            user_id=request.user_id,
-            session_id=session_id,
+        user_episode = await self._log_episode(
+            request.user_id,
+            session_id,
             role="user",
             content=request.message,
-            frame_ids=[],
         )
 
         # 3. Classify task type + search intent (single LLM pass when needed)
@@ -257,12 +287,11 @@ class Orchestrator:
                     "(e.g. 'Actually, the guitar has 12 strings, not 6')"
                 )
 
-            await self.store.create_episode(
-                user_id=request.user_id,
-                session_id=session_id,
+            await self._log_episode(
+                request.user_id,
+                session_id,
                 role="assistant",
                 content=response_text,
-                frame_ids=[],
             )
 
             return ChatResponse(
@@ -457,12 +486,11 @@ class Orchestrator:
                 "It may still be loading or thinking through a long answer — "
                 "please try again in a moment."
             )
-            await self.store.create_episode(
-                user_id=request.user_id,
-                session_id=session_id,
+            await self._log_episode(
+                request.user_id,
+                session_id,
                 role="assistant",
                 content=fallback,
-                frame_ids=[],
             )
             return ChatResponse(
                 response=fallback,
@@ -475,12 +503,11 @@ class Orchestrator:
             )
 
         # 8. Log assistant episode
-        await self.store.create_episode(
-            user_id=request.user_id,
-            session_id=session_id,
+        await self._log_episode(
+            request.user_id,
+            session_id,
             role="assistant",
             content=llm_response.content,
-            frame_ids=[],
         )
 
         # 9. Append sources to response — only for informational/search tasks
@@ -595,12 +622,11 @@ class Orchestrator:
             num_predict=settings.think_num_predict_cap,
         )
 
-        await self.store.create_episode(
-            user_id=user_id,
-            session_id=session_id,
+        await self._log_episode(
+            user_id,
+            session_id,
             role="assistant",
             content=llm_response.content,
-            frame_ids=[],
         )
 
         return llm_response.content

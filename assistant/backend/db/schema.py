@@ -166,6 +166,20 @@ CREATE TABLE IF NOT EXISTS frame_embeddings (
 -- Index for efficient vector search
 CREATE INDEX IF NOT EXISTS idx_frame_embeddings_embedding ON frame_embeddings(embedding);
 
+-- Episode embeddings: semantic recall over raw conversation turns ("what did
+-- we say about X last month?"). Mirrors frame_embeddings; embedding_model is
+-- part of the PK to support model migration.
+CREATE TABLE IF NOT EXISTS episode_embeddings (
+    episode_id INTEGER NOT NULL,
+    embedding_model TEXT NOT NULL,
+    embedding vec_f32 NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (episode_id, embedding_model),
+    FOREIGN KEY (episode_id) REFERENCES episodes(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_episode_embeddings_embedding ON episode_embeddings(embedding);
+
 -- Frame aliases: canonical names recorded when consolidation merges a
 -- duplicate frame. Extraction resolves through this map so a merged name
 -- lands on the surviving frame instead of recreating the duplicate.

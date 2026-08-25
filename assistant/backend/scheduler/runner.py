@@ -181,6 +181,16 @@ async def _run_consolidation(
             max_merges=max_merges,
         )
         logger.info("Memory consolidation completed: %s", report.summary())
+
+        # Top up episode embeddings missed at write time (crashes, backlog
+        # from before this feature existed). Bounded per run.
+        done = await store.embed_missing_episodes(
+            orchestrator.embed_fn(),
+            embedding_model=settings.embedding_model,
+            cap=100,
+        )
+        if done:
+            logger.info("Episode embedding top-up: %d turns indexed", done)
     except Exception as exc:
         logger.warning("Memory consolidation failed: %s", exc)
 

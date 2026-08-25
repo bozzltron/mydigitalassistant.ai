@@ -68,6 +68,9 @@ class Settings(BaseSettings):
     # Retrieval: max vector distance for direct candidate frames
     # (sqlite-vec cosine, 0-2). Lower = stricter similarity.
     retrieval_min_distance: float = 0.7
+    # Max past-conversation turns injected per retrieval cycle (semantic
+    # episode recall). 0 disables episode search entirely.
+    retrieval_episode_limit: int = 5
 
     # Canonical frame resolution (Phase 9A): max embedding distance at which a
     # near-duplicate name reuses an existing frame instead of creating one.
