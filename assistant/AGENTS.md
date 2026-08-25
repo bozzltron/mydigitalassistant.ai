@@ -5,21 +5,11 @@ FastAPI backend + CLI client. Ollama for LLM inference (role-based fleet: chat, 
 embedding; coder reserved). SQLite + sqlite-vec for local memory storage.
 Web search for retrieval-only; learned facts stored locally in memory frames/slots.
 
-## Network Security
-- Bare-metal runs: backend binds to `127.0.0.1:8000` (never exposed directly)
-- Docker runs (`docker-compose.yml`): backend binds inside the container with no
-  published ports; Caddy is the only published surface. Loopback-in-container would
-  break Caddy's appnet proxy — exposure is controlled by port publishing, not the bind.
-- HTTPS termination via Caddy reverse proxy on `127.0.0.1:8443`
-- All services on internal Docker network (`appnet`)
-- SearXNG publishes only `127.0.0.1:8080` (localhost)
-
 ## Web Search
 - Uses SearXNG (privacy-friendly meta-search engine) for external retrieval.
 - Search results are **retrieval-only** unless explicitly worth learning.
 - The LLM decides which facts to retain from search results.
 - Always on by design — no feature flag; point `SEARCH_BASE_URL` at your local SearXNG.
-- All search queries go to local SearXNG instance (not cloud APIs).
 - Engine roster is curated in `searxng/settings.yml`. Engines that serve
   CAPTCHAs on every request are removed outright (they retry-and-fail on
   each query); rate-limited engines that self-heal (e.g. Brave 429s) stay.
@@ -55,8 +45,6 @@ Actual ordering inside `orchestrator.chat()`:
 - Search extraction runs only when a search actually happened, and is deduped
   against conversational slots by (frame_name, value) — cross-key duplicates like
   "strings"/"number_of_strings" are dropped in favor of the earlier channel's key.
-
-
 
 ## Memory model
 - Frames: entities/concepts/events with confidence.
@@ -101,22 +89,22 @@ Actual ordering inside `orchestrator.chat()`:
 - Positive feedback: `bump_confidence(current)` = `min(1 - (1-current)*0.7, 0.99)`
   (same repeat-discount curve as reinforcement).
 - Negative feedback: `lower_confidence(current)` = `max(current - 0.15, INITIAL_CONFIDENCE)`.
-- Association confidence: increases with co-occurrence in episodes.
+- Association confidence: increases with co-occurrence in episodes (batch process
+  during consolidation, not real-time).
 
 ## Model fleet config
-Role-based model selection (Phase 6). Configurable in `.env`: `CHAT_MODEL`, `UTILITY_MODEL`,
+Role-based model selection. Configurable in `.env`: `CHAT_MODEL`, `UTILITY_MODEL`,
 `EMBEDDING_MODEL`, `CODER_MODEL` (reserved, empty = chat model), `OLLAMA_URL`.
 - Chat model (default `qwen2.5:7b`): user-facing responses. Thinking-capable models accept
   per-request `think=True/False` (`OllamaClient.chat`); inline `<think>` tags are parsed
   out by the LLM client into a separate `thinking` field on the internal response.
 - Utility model (default `qwen2.5:3b`): extraction, task-routing fallback.
 - Embedding model (default `nomic-embed-text`): frame/query embeddings.
-- Coder model: reserved for tool codegen (Phase 6 M5); falls back to chat model.
+- Coder model: reserved for tool codegen; falls back to chat model.
 - No separate router/reasoning models: routing reuses utility; reasoning is a thinking-mode
-  escalation on the chat model (Phase 6 plan §6).
+  escalation on the chat model.
 - `/health` reports the full fleet in a `models` dict plus `thinking_supported`
-  (probed via `/api/show`). Fleet details live in `backend/config.py`; the
-  original tiering plan is in git history under `/plans/`.
+  (probed via `/api/show`). Fleet details live in `backend/config.py`.
 
 ## Scheduled tasks — the daily list
 - One clock: the agent wakes once a day at `DAILY_TASKS_TIME` (default `09:00`, 24h)
@@ -160,20 +148,6 @@ Role-based model selection (Phase 6). Configurable in `.env`: `CHAT_MODEL`, `UTI
 - `backend/scheduler/runner.py` — scheduler loop (daily-list firing + housekeeping timers).
 - `backend/main.py` — FastAPI app with all endpoints.
 - `cli/app.py` — CLI entry point.
-
-## Testing
-- Unit tests per module under `assistant/tests/`.
-- `tests/test_learning_loop.py` — learn-then-recall end-to-end.
-- `tests/test_conflict_resolution.py` — contradiction-then-auto-resolve.
-- `tests/test_user_isolation.py` — multi-user episodic privacy.
-- Run full suite (plain + encrypted): `./run_ci.sh`
-- Run single test mode: `docker compose -f docker-compose.test.yml run --rm test-plain`
-
-## Don't
-- Don't make a second blocking LLM call for task routing when heuristics suffice.
-- Don't expose backend directly — always route through Caddy HTTPS proxy.
-- Don't add cloud LLM APIs (OpenAI, Anthropic, Google, etc.) — all inference via local Ollama.
-- Don't skip SearXNG localhost binding when using search.
 
 ## UI / UX Standards
 - **Browser support:** Latest Firefox and Chromium (Chrome/Edge). Voice mode audio uses progressive MIME type detection (`audio/ogg` → `audio/wav` → `audio/webm` → `audio/mp4`) so every browser gets its best-supported format.

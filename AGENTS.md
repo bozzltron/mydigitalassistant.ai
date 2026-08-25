@@ -19,12 +19,17 @@ Runs 100% locally via Ollama. Safe for household use incl. kids.
 - SearXNG must bind to 127.0.0.1 only — never expose to the network.
 - Secrets/config via `.env` (gitignored). Commit `.env.example` only.
 - Do not add dependencies that make external network calls without explicit review.
+- Docker: backend binds inside the container with no published ports; Caddy reverse
+  proxy on `127.0.0.1:8443` is the only published surface. All services on internal
+  Docker network (`appnet`).
 
 ## Build and test commands
 - Install: `docker build -t assistant .`
 - Run backend: `docker compose up` (FastAPI server via Caddy on 127.0.0.1:8443)
 - Run CLI: `./assistant/bin/assistant chat`
 - Run tests: `docker run -it --rm -v $(pwd):/app -w /app assistant pytest assistant/tests/`
+- Run full suite (plain + encrypted): `./run_ci.sh`
+- Run single test mode: `docker compose -f docker-compose.test.yml run --rm test-plain`
 - Lint: `docker run -it --rm -v $(pwd):/app -w /app assistant ruff check .`
 
 ## Code style
@@ -42,6 +47,12 @@ Runs 100% locally via Ollama. Safe for household use incl. kids.
 - The SQLite DB is the agent's brain. Never wipe it in tests without explicit backup.
 - Use `assistant db backup` / `assistant db restore` for safety.
 - Confidence math is in `assistant/backend/memory/confidence.py` — change it there only.
+
+## Don't
+- Don't make a second blocking LLM call for task routing when heuristics suffice.
+- Don't expose backend directly — always route through Caddy HTTPS proxy.
+- Don't add cloud LLM APIs (OpenAI, Anthropic, Google, etc.) — all inference via local Ollama.
+- Don't skip SearXNG localhost binding when using search.
 
 ## Commit messages
 - Conventional commits: `feat:`, `fix:`, `test:`, `docs:`, `refactor:`.
