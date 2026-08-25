@@ -61,9 +61,10 @@ Actual ordering inside `orchestrator.chat()`:
 ## Correction pipeline
 1. User flags a response → `POST /correction` with `correction_text`.
 2. `extract_correction`: LLM parses intent (frame, slot, new value).
-3. `validate_correction`: checks corroboration (existing memory) and contradiction (active conflicts).
+3. `validate_correction`: checks corroboration via web search; if contradicted, rejects without applying.
 4. `apply_correction`: updates slot value + reliability via `upsert_slot`, which internally
-   runs belief revision (`revise/expand/contract` per AGM postulates). Creates frame if missing.
+   runs `revise()` for AGM belief revision. Creates frame if missing. `expand` and `contract`
+   are standalone AGM operators (not part of the correction pipeline).
 5. Orchestrator returns `CorrectionResponse` with slots_corrected, conflict, validation_summary.
 6. System prompt acknowledges auto-resolved conflicts (surfaced via search extraction summary).
 

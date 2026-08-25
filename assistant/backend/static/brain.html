@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Brain Observatory</title>
   <script src="/static/d3.min.js"></script>
-  <script src="/static/vendor/three.min.js"></script>
-  <script src="/static/vendor/3d-force-graph.min.js"></script>
+  <script src="https://unpkg.com/three@0.152.2/build/three.min.js"></script>
+  <script src="https://unpkg.com/3d-force-graph@1.73.3/dist/3d-force-graph.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -614,6 +614,9 @@
     const height = () => document.getElementById('canvas-container').clientHeight;
 
     let svg, g, simulation, nodes = [], links = [];
+    let zoom; // d3 zoom behaviour, exposed for branch fit
+    let neighbors = new Map(); // frameId -> Set(neighborIds)
+    let highlightedFrameIds = new Set(); // persisted search highlight
 
     // ---- 3D view (Google-Earth-style fly-through) ----
     let mode = '2d';
@@ -646,27 +649,124 @@
       };
     }
 
+    function create3dStarfield(container) {
+      // Reuse the same seeded-ish random starfield across modes.
+      let starfield = container.querySelector('.starfield-3d');
+      if (starfield) return;
+      starfield = document.createElement('div');
+      starfield.className = 'starfield-3d';
+      starfield.style.position = 'absolute';
+      starfield.style.inset = '0';
+      starfield.style.pointerEvents = 'none';
+      starfield.style.zIndex = '0';
+      for (let i = 0; i < 200; i++) {
+        const s = document.createElement('div');
+        const size = Math.random() * 2 + 1;
+        s.style.position = 'absolute';
+        s.style.left = Math.random() * 100 + '%';
+        s.style.top = Math.random() * 100 + '%';
+        s.style.width = size + 'px';
+        s.style.height = size + 'px';
+        s.style.background = 'white';
+        s.style.borderRadius = '50%';
+        s.style.opacity = String(Math.random() * 0.4 + 0.1);
+        starfield.appendChild(s);
+      }
+      container.appendChild(starfield);
+    }
+
+    function remove3dStarfield(container) {
+      const starfield = container.querySelector('.starfield-3d');
+      if (starfield) starfield.remove();
+    }
+
+    function hexToRgba(hex, alpha) {
+      const r = parseInt(hex.slice(1, 3), 16);
+      const g = parseInt(hex.slice(3, 5), 16);
+      const b = parseInt(hex.slice(5, 7), 16);
+      return `rgba(${r},${g},${b},${alpha})`;
+    }
+
+    function is3dHighlighted(nodeOrId) {
+      if (highlightedFrameIds.size === 0) return true;
+      const id = typeof nodeOrId === 'object' ? nodeOrId.id : nodeOrId;
+      if (highlightedFrameIds.has(id)) return true;
+      const nbrs = neighbors.get(id);
+      if (!nbrs) return false;
+      for (const hid of highlightedFrameIds) {
+        if (nbrs.has(hid)) return true;
+      }
+      return false;
+    }
+
+    function nodeColor3d(d) {
+      const base = TYPE_COLORS[d.type] || TYPE_COLORS.entity;
+      if (highlightedFrameIds.size === 0 || is3dHighlighted(d)) return base;
+      return hexToRgba(base, 0.18);
+    }
+
+    function linkColor3d(l) {
+      const base = relationColor(l.relation_type);
+      const sid = typeof l.source === 'object' ? l.source.id : l.source;
+      const tid = typeof l.target === 'object' ? l.target.id : l.target;
+      if (highlightedFrameIds.size === 0 || is3dHighlighted(sid) || is3dHighlighted(tid)) return base;
+      return hexToRgba(base, 0.12);
+    }
+
+    function dispose3D() {
+      if (!graph3d) return;
+      try {
+        const ctrl = graph3d.controls();
+        if (ctrl && typeof ctrl.dispose === 'function') ctrl.dispose();
+        // _destructor is the three-render-objects cleanup hook.
+        if (typeof graph3d._destructor === 'function') graph3d._destructor();
+      } catch (e) {
+        // ignore cleanup errors
+      }
+      graph3d = null;
+      const el = document.getElementById('brain-canvas-3d');
+      if (el) {
+        el.innerHTML = '';
+        remove3dStarfield(el);
+      }
+    }
+
     function init3D() {
       if (graph3d || !has3dLibs()) return;
       const el = document.getElementById('brain-canvas-3d');
-      graph3d = new ForceGraph3D(el)
-        .backgroundColor('rgba(0,0,0,0)')
-        .showNavInfo(false)
-        .nodeLabel(d => `${d.name} · ${d.type} · ${Math.round((d.confidence || 0.5) * 100)}%`)
-        .nodeColor(d => TYPE_COLORS[d.type] || TYPE_COLORS.entity)
-        .nodeVal(d => nodeRadius(d) / 2)
-        .linkColor(l => relationColor(l.relation_type))
-        .linkWidth(l => Math.max(0.3, 1.5 * (l.confidence || 0.5)))
-        .linkOpacity(0.45)
-        .linkDirectionalArrowLength(3.5)
-        .linkDirectionalArrowRelPos(1)
-        .linkDirectionalParticles(l => ((l.confidence || 0.5) > 0.7 ? 2 : 0))
-        .linkDirectionalParticleWidth(1.4)
-        .onNodeClick(handle3dNodeClick);
-      const ctrl = graph3d.controls();
-      if (ctrl) ctrl.autoRotateSpeed = 0.6;
-      if (graph3d.d3Force('charge')) graph3d.d3Force('charge').strength(-120);
-      graph3d.width(width()).height(height());
+      create3dStarfield(el);
+      try {
+        graph3d = ForceGraph3D()(el)
+          .backgroundColor('rgba(0,0,0,0)')
+          .showNavInfo(false)
+          .nodeLabel(d => `${d.name} · ${d.type} · ${Math.round((d.confidence || 0.5) * 100)}%`)
+          .nodeColor(nodeColor3d)
+          .nodeVal(d => nodeRadius(d) / 2)
+          .linkColor(linkColor3d)
+          .linkWidth(l => Math.max(0.3, 1.5 * (l.confidence || 0.5)))
+          .linkOpacity(0.45)
+          .linkDirectionalArrowLength(3.5)
+          .linkDirectionalArrowRelPos(1)
+          .linkDirectionalParticles(l => ((l.confidence || 0.5) > 0.7 ? 2 : 0))
+          .linkDirectionalParticleWidth(1.4)
+          .onNodeClick(handle3dNodeClick);
+        const ctrl = graph3d.controls();
+        if (ctrl) ctrl.autoRotateSpeed = 0.6;
+        if (graph3d.d3Force('charge')) graph3d.d3Force('charge').strength(-120);
+        graph3d.width(width()).height(height());
+      } catch (e) {
+        console.error('3D graph initialization failed:', e);
+        dispose3D();
+        return;
+      }
+      // Safety fallback: if the renderer never appended its scene container, drop back to 2D.
+      setTimeout(() => {
+        if (mode === '3d' && el && !el.querySelector('.scene-container')) {
+          console.warn('3D renderer did not initialize; falling back to 2D');
+          dispose3D();
+          setMode('2d');
+        }
+      }, 800);
     }
 
     function refresh3D() {
@@ -693,21 +793,57 @@
     }
 
     function focusFrame(frameId) {
+      const nbrs = neighbors.get(frameId) || new Set();
       if (mode === '3d' && graph3d) {
-        const nd = graph3d.graphData().nodes.find(n => n.id === frameId);
+        const data = graph3d.graphData();
+        const nd = data.nodes.find(n => n.id === frameId);
         if (!nd || nd.x == null) return;
         touring = false;
         const ctrl = graph3d.controls();
         if (ctrl) ctrl.autoRotate = false;
         document.getElementById('tour-btn').classList.remove('active');
-        // Cinematic fly-to: eased camera tween toward a close offset view.
+        // Branch zoom: include neighbours in the camera target and distance.
+        const branchNodes = [nd];
+        for (const nid of nbrs) {
+          const n = data.nodes.find(x => x.id === nid);
+          if (n) branchNodes.push(n);
+        }
+        let cx = 0, cy = 0, cz = 0;
+        for (const n of branchNodes) { cx += n.x; cy += n.y; cz += n.z; }
+        cx /= branchNodes.length; cy /= branchNodes.length; cz /= branchNodes.length;
+        let r = 0;
+        for (const n of branchNodes) {
+          const dx = n.x - cx, dy = n.y - cy, dz = n.z - cz;
+          r = Math.max(r, Math.sqrt(dx*dx + dy*dy + dz*dz));
+        }
+        const dist = Math.max(70, r * 2.5 + 40);
         graph3d.cameraPosition(
-          { x: nd.x + 70, y: nd.y + 50, z: nd.z + 70 },
-          { x: nd.x, y: nd.y, z: nd.z },
+          { x: cx + dist, y: cy + dist * 0.7, z: cz + dist },
+          { x: cx, y: cy, z: cz },
           900
         );
-      } else if (window.__highlight2d) {
-        window.__highlight2d(frameId);
+      } else if (svg && zoom) {
+        // 2D branch zoom: fit the active node plus neighbours into view.
+        const branchIds = new Set(nbrs);
+        branchIds.add(frameId);
+        const branchNodes = nodes.filter(n => branchIds.has(n.id));
+        if (branchNodes.length === 0) return;
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const n of branchNodes) {
+          minX = Math.min(minX, n.x);
+          minY = Math.min(minY, n.y);
+          maxX = Math.max(maxX, n.x);
+          maxY = Math.max(maxY, n.y);
+        }
+        const pad = 80;
+        const w = width(), h = height();
+        const bw = maxX - minX + 2 * pad;
+        const bh = maxY - minY + 2 * pad;
+        const scale = Math.min(w / bw, h / bh, 4);
+        const tx = w / 2 - scale * (minX + maxX) / 2;
+        const ty = h / 2 - scale * (minY + maxY) / 2;
+        svg.transition().duration(750).call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
+        if (window.__highlight2d) window.__highlight2d(frameId);
       }
     }
 
@@ -748,7 +884,7 @@
 
       g = svg.append('g').attr('class', 'graph');
 
-      const zoom = d3.zoom()
+      zoom = d3.zoom()
         .scaleExtent([0.1, 4])
         .on('zoom', (event) => {
           g.attr('transform', event.transform);
@@ -903,7 +1039,7 @@
       });
 
       // Hover: light up the neighborhood, dim the rest, label its edges.
-      const neighbors = new Map();
+      neighbors = new Map();
       links.forEach(l => {
         if (!neighbors.has(l.source.id)) neighbors.set(l.source.id, new Set());
         if (!neighbors.has(l.target.id)) neighbors.set(l.target.id, new Set());
@@ -924,20 +1060,47 @@
           .classed('lit', n => nbrs.has(n.id));
       }
 
+      function computeHighlightSet() {
+        const lit = new Set();
+        if (highlightedFrameIds.size === 0) return lit;
+        for (const id of highlightedFrameIds) {
+          lit.add(id);
+          const nbrs = neighbors.get(id);
+          if (nbrs) nbrs.forEach(n => lit.add(n));
+        }
+        return lit;
+      }
+
+      function applyHighlight(litIds) {
+        if (litIds.size === 0) {
+          clearHighlight();
+          return;
+        }
+        link.classed('dimmed', l => !litIds.has(l.source.id) && !litIds.has(l.target.id))
+          .classed('lit', l => litIds.has(l.source.id) || litIds.has(l.target.id));
+        edgeLabel.classed('visible', l => litIds.has(l.source.id) || litIds.has(l.target.id));
+        node.classed('dimmed', n => !litIds.has(n.id))
+          .classed('lit', n => litIds.has(n.id));
+      }
+
       function clearHighlight() {
         link.classed('dimmed', false).classed('lit', false);
         node.classed('dimmed', false).classed('lit', false);
         edgeLabel.classed('visible', false);
       }
 
+      function updatePersistentHighlight() {
+        applyHighlight(computeHighlightSet());
+      }
+
       // Neighborhood flash, callable from topic-search fly-to in 2D mode.
       window.__highlight2d = (frameId) => {
         highlightNeighbors(frameId);
-        setTimeout(clearHighlight, 2400);
+        setTimeout(updatePersistentHighlight, 2400);
       };
 
       node.on('mouseover', (event, d) => { highlightNeighbors(d.id); showTooltip(event, d); })
-        .on('mouseout', () => { clearHighlight(); hideTooltip(); })
+        .on('mouseout', () => { clearHighlight(); updatePersistentHighlight(); hideTooltip(); })
         .on('click', (event, d) => showTooltip(event, d));
 
       async function fetchSlots(d) {
@@ -999,6 +1162,8 @@
         d.fx = null;
         d.fy = null;
       }
+
+      updatePersistentHighlight();
     }
 
     function escAttr(value) {
@@ -1128,6 +1293,7 @@
         mode === '3d' ? 'none' : '';
       if (mode !== '3d') {
         touring = false;
+        dispose3D();
         renderGraph();
       } else {
         init3D();
@@ -1150,6 +1316,8 @@
     } else {
       viewToggle.style.display = 'none';
     }
+
+    window.addEventListener('beforeunload', dispose3D);
 
     // Export brain
     document.getElementById('export-btn').addEventListener('click', async () => {
@@ -1340,20 +1508,33 @@
       topicResults.textContent = '';
       topicTitle.textContent =
         `${data.matches.length} ${data.matches.length === 1 ? 'memory' : 'memories'} for "${data.query}"`;
+      highlightedFrameIds.clear();
       if (!data.semantic_search) {
         topicTitle.appendChild(tEl('span', 'kw-note', ' (semantic offline — keyword only)'));
       }
       if (!data.matches.length) {
         topicResults.appendChild(tEl('div', 'topic-empty',
           'Nothing stored about this yet. Try other phrasings — semantic search matches by meaning, keyword search by exact substring.'));
+        updatePersistentHighlight();
+        refresh3D();
         return;
       }
-      for (const m of data.matches) topicResults.appendChild(renderMatch(m));
+      for (const m of data.matches) {
+        highlightedFrameIds.add(m.frame.id);
+        topicResults.appendChild(renderMatch(m));
+      }
+      updatePersistentHighlight();
+      refresh3D();
     }
 
     async function runTopicSearch() {
       const q = topicInput.value.trim();
-      if (!q) return;
+      if (!q) {
+        highlightedFrameIds.clear();
+        updatePersistentHighlight();
+        refresh3D();
+        return;
+      }
       topicBtn.disabled = true;
       topicResults.textContent = '';
       topicResults.appendChild(tEl('div', 'topic-empty', 'Searching memory…'));
@@ -1365,13 +1546,21 @@
       } catch (e) {
         topicResults.textContent = '';
         topicResults.appendChild(tEl('div', 'topic-empty', 'Search failed: ' + e.message));
+        highlightedFrameIds.clear();
+        updatePersistentHighlight();
+        refresh3D();
       } finally {
         topicBtn.disabled = false;
       }
     }
 
     function openTopicPanel() { topicPanel.classList.add('open'); }
-    function closeTopicPanel() { topicPanel.classList.remove('open'); }
+    function closeTopicPanel() {
+      topicPanel.classList.remove('open');
+      highlightedFrameIds.clear();
+      updatePersistentHighlight();
+      refresh3D();
+    }
 
     topicBtn.addEventListener('click', runTopicSearch);
     topicInput.addEventListener('keydown', e => {
