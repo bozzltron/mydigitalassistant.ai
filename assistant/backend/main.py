@@ -31,7 +31,7 @@ from assistant.backend.memory.models import (
 from assistant.backend.memory.retrieval import Retriever
 from assistant.backend.memory.store import (
     MemoryStore,
-    lexical_blend_similarity,
+    merge_match_scores,
 )
 from assistant.backend.memory.working_memory import WorkingMemory
 from assistant.backend.pipeline.extractor import (
@@ -553,6 +553,8 @@ class TopicSearchResponse(BaseModel):
     query: str
     # False when embedding failed (Ollama down) and only keyword matching ran
     semantic_search: bool
+    # Handler revision, for verifying deploys of ranking changes
+    backend_rev: int = 1
     matches: list[TopicMatch]
 
 
@@ -601,20 +603,33 @@ async def memory_search(
     # blended INTO the semantic ranking (0.55 + 0.4·coverage) so an exact
     # multi-word topic hit outranks the flat ~0.5 fuzzy band instead of being
     # buried beneath it.
-    for kf, strength in await store.search_frames_lexical(q, limit=limit):
-        if kf.id in matches:
+    scores = merge_match_scores(
+        {mid: m.similarity or 0.0 for mid, m in matches.items()},
+        [
+            (kf.id, strength)
+            for kf, strength in await store.search_frames_lexical(q, limit=limit)
+        ],
+    )
+    for frame_id, score in scores.items():
+        existing = matches.get(frame_id)
+        if existing is not None and (existing.similarity or 0.0) >= score:
             continue
-        matches[kf.id] = TopicMatch(
-            frame=kf,
-            slots=await store.get_slots_for_frame(kf.id),
-            similarity=lexical_blend_similarity(strength),
+        frame = existing.frame if existing else await store.get_frame(frame_id)
+        if frame is None:
+            continue
+        matches[frame_id] = TopicMatch(
+            frame=frame,
+            slots=await store.get_slots_for_frame(frame_id),
+            similarity=score,
         )
 
+    logger.info("Topic search %r: %d matches after lexical blend", q, len(matches))
     ranked = sorted(
         matches.values(),
         key=lambda m: (m.similarity is not None, m.similarity or 0.0),
         reverse=True,
     )[:limit]
+
 
     pending_conflicts = [
         c for c in await store.get_conflicts(status="pending") if c.frame_id
@@ -628,7 +643,9 @@ async def memory_search(
         m.episodes = await store.get_episodes_for_frames([m.frame.id], limit=6)
         m.conflicts = conflicts_by_frame.get(m.frame.id, [])
 
-    return TopicSearchResponse(query=q, semantic_search=semantic_ok, matches=ranked)
+    return TopicSearchResponse(
+        query=q, semantic_search=semantic_ok, backend_rev=2, matches=ranked
+    )
 
 
 # Episodes (for debugging / inspection)

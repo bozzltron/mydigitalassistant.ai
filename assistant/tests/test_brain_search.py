@@ -97,3 +97,22 @@ def test_single_token_query_still_works(store):
     # Legacy wrapper still returns plain frames.
     frames = _run(s.search_frames_keyword("germany", limit=5))
     assert any(f.name == "germany" for f in frames)
+
+
+def test_merge_upgrades_weak_semantic_with_strong_lexical():
+    """Regression: #276 sat in the semantic candidate set at 0.309 while its
+    exact-name lexical score was 0.95 — the old dedupe kept the weak score
+    and brain search missed the album entirely."""
+    from assistant.backend.memory.store import merge_match_scores
+
+    semantic = {276: 0.309, 338: 0.56, 112: 0.549}
+    merged = merge_match_scores(semantic, [(276, 1.0), (200, 0.5)])
+
+    assert merged[276] == 0.95      # upgraded to full-coverage lexical
+    assert merged[200] == 0.75      # new lexical-only entry
+    assert merged[338] == 0.56      # untouched noise
+    assert merged[112] == 0.549
+
+    # Stronger semantic evidence is never downgraded by lexical.
+    again = merge_match_scores({9: 0.9}, [(9, 0.5)])
+    assert again[9] == 0.9

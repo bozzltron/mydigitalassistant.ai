@@ -1888,3 +1888,21 @@ def lexical_blend_similarity(coverage: float) -> float:
     returns for unrelated frames, while partial coverage degrades gracefully.
     """
     return round(0.55 + 0.4 * coverage, 6)
+
+
+def merge_match_scores(
+    semantic: dict[int, float],
+    lexical: list[tuple[int, float]],
+) -> dict[int, float]:
+    """Combine semantic similarities with lexical (frame_id, coverage) hits.
+
+    A frame found both ways keeps whichever signal is stronger, so a weak
+    vector match on an exact topic name is upgraded instead of shielding the
+    frame from its own keyword evidence.
+    """
+    merged = dict(semantic)
+    for frame_id, strength in lexical:
+        score = lexical_blend_similarity(strength)
+        if frame_id not in merged or merged[frame_id] < score:
+            merged[frame_id] = score
+    return merged
