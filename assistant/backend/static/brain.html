@@ -663,7 +663,8 @@
         .linkDirectionalParticles(l => ((l.confidence || 0.5) > 0.7 ? 2 : 0))
         .linkDirectionalParticleWidth(1.4)
         .onNodeClick(handle3dNodeClick);
-      graph3d.controls().autoRotateSpeed = 0.6;
+      const ctrl = graph3d.controls();
+      if (ctrl) ctrl.autoRotateSpeed = 0.6;
       if (graph3d.d3Force('charge')) graph3d.d3Force('charge').strength(-120);
       graph3d.width(width()).height(height());
     }
@@ -696,7 +697,8 @@
         const nd = graph3d.graphData().nodes.find(n => n.id === frameId);
         if (!nd || nd.x == null) return;
         touring = false;
-        graph3d.controls().autoRotate = false;
+        const ctrl = graph3d.controls();
+        if (ctrl) ctrl.autoRotate = false;
         document.getElementById('tour-btn').classList.remove('active');
         // Cinematic fly-to: eased camera tween toward a close offset view.
         graph3d.cameraPosition(
@@ -1138,7 +1140,10 @@
         setMode(mode === '3d' ? '2d' : '3d'));
       tourBtn.addEventListener('click', () => {
         touring = !touring;
-        if (graph3d) graph3d.controls().autoRotate = touring;
+        if (graph3d) {
+          const ctrl = graph3d.controls();
+          if (ctrl) ctrl.autoRotate = touring;
+        }
         tourBtn.classList.toggle('active', touring);
       });
       setMode(localStorage.getItem('brain-view') === '2d' ? '2d' : '3d');
