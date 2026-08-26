@@ -1577,8 +1577,8 @@
     }
 
     const wasVoiceMode = state.voiceMode;
+    setVoiceState(VoiceState.SPEAKING, 'tts starting');
     if (wasVoiceMode) {
-      setVoiceState(VoiceState.SPEAKING, 'tts starting');
       stopBargeInMonitor();
       startBargeInMonitor();
     }
@@ -1607,7 +1607,11 @@
     u.onend = u.onerror = () => {
       stopSpeakingBtn.style.display = 'none';
       stopBargeInMonitor();
-      if (myGen !== speakGeneration) return;
+      if (myGen !== speakGeneration) {
+        // Interrupted by stop button: restore idle state
+        if (!state.voiceMode) setVoiceState(VoiceState.IDLE, 'tts stopped');
+        return;
+      }
       currentUtterance = null;
       if (state.voiceMode) {
         startListeningForVoice();
@@ -2194,9 +2198,23 @@
     });
 
     voiceStopBtn.addEventListener('click', () => {
-      // Stop during dictation finalizes the recording; in voice mode it exits.
-      if (state.dictation) stopRecording();
-      else exitVoiceMode();
+      if (state.dictation) {
+        stopRecording();
+        return;
+      }
+      // In voice mode: stop TTS and immediately start listening (barge-in),
+      // without fully exiting voice mode. Exit is only for explicit cancel.
+      if (state.voiceMode) {
+        speakGeneration++;   // invalidate onend callbacks
+        stopSpeaking();
+        stopBargeInMonitor();
+        playEarcon('stop');
+        startListeningForVoice();
+        return;
+      }
+      // Not in voice mode: stop TTS only
+      speakGeneration++;
+      stopSpeaking();
     });
     voiceCancelBtn.addEventListener('click', () => {
       if (state.dictation) {
