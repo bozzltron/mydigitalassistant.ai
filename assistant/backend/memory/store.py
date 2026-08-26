@@ -1,5 +1,7 @@
+import hashlib
 import json
 import re
+import secrets
 import shutil
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -7,6 +9,7 @@ from pathlib import Path
 
 import aiosqlite
 
+from assistant.backend.config import settings
 from assistant.backend.db.schema import _load_sqlite_vec
 from assistant.backend.db.sqlcipher import aiosqlite_connect
 from assistant.backend.memory.belief_revision import OperationType, revise
@@ -44,6 +47,52 @@ def _parse_iso_ts(value: str | None) -> datetime | None:
     if ts.tzinfo is None:
         ts = ts.replace(tzinfo=UTC)
     return ts
+
+
+def _derive_export_key(key: str) -> bytes:
+    """Derive a 32-byte AES key from a passphrase using SHA-256."""
+    return hashlib.sha256(key.encode()).digest()
+
+
+def _export_key_id(key: str) -> str:
+    """Return a short identifier for the key used to encrypt an export."""
+    return hashlib.sha256(key.encode()).hexdigest()[:16]
+
+
+def _encrypt_brain_json(plaintext_json: dict, key: str) -> dict:
+    """Wrap a brain export dict in an AES-256-GCM encrypted envelope.
+
+    Returns a dict with version 2, key_id, iv, and ciphertext. The inner
+    plaintext is the standard version-1 export JSON.
+    """
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+    aes_key = _derive_export_key(key)
+    iv = secrets.token_bytes(12)
+    plaintext = json.dumps(plaintext_json).encode("utf-8")
+    ciphertext = AESGCM(aes_key).encrypt(iv, plaintext, None)
+    return {
+        "version": 2,
+        "encrypted": True,
+        "key_id": _export_key_id(key),
+        "iv": iv.hex(),
+        "ciphertext": ciphertext.hex(),
+    }
+
+
+def _decrypt_brain_json(envelope: dict, key: str) -> dict:
+    """Decrypt an encrypted brain export envelope back to a version-1 dict."""
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+    expected_key_id = envelope.get("key_id")
+    if expected_key_id and expected_key_id != _export_key_id(key):
+        raise ValueError("Brain export was encrypted with a different key")
+
+    aes_key = _derive_export_key(key)
+    iv = bytes.fromhex(envelope["iv"])
+    ciphertext = bytes.fromhex(envelope["ciphertext"])
+    plaintext = AESGCM(aes_key).decrypt(iv, ciphertext, None)
+    return json.loads(plaintext.decode("utf-8"))
 
 
 class MemoryStore:
@@ -1640,7 +1689,7 @@ class MemoryStore:
                     "resolved_at": row[8],
                 })
 
-        return {
+        payload = {
             "version": 1,
             "exported_at": datetime.now(UTC).isoformat(),
             "frames": exported_frames,
@@ -1649,6 +1698,11 @@ class MemoryStore:
             "feedbacks": feedbacks,
             "conflicts": conflicts,
         }
+
+        if settings.db_key:
+            return _encrypt_brain_json(payload, settings.db_key)
+
+        return payload
 
     async def import_brain(
         self,
@@ -1661,10 +1715,21 @@ class MemoryStore:
         - merge: upsert frames by name, add slots (existing data preserved)
         - overwrite: delete all existing memory, then re-import (creates backup first)
 
+        Automatically decrypts encrypted exports when DB_KEY is configured.
         Returns counts of imported items.
         """
-        if data.get("version") != 1:
-            raise ValueError(f"Unsupported brain export version: {data.get('version')}")
+        version = data.get("version")
+        if data.get("encrypted") and version == 2:
+            if not settings.db_key:
+                raise ValueError(
+                    "Brain export is encrypted but DB_KEY is not set. "
+                    "Set DB_KEY in .env to decrypt and import."
+                )
+            data = _decrypt_brain_json(data, settings.db_key)
+            version = data.get("version")
+
+        if version != 1:
+            raise ValueError(f"Unsupported brain export version: {version}")
 
         imported = {
             "frames": 0,

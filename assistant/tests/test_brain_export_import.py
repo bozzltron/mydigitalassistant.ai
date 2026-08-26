@@ -2,7 +2,14 @@
 
 import pytest
 
+from assistant.backend.db.schema import init_db
 from assistant.backend.memory.store import MemoryStore
+
+
+@pytest.fixture(autouse=True)
+def _clear_db_key(monkeypatch):
+    """Most tests assume a plain (unencrypted) export environment."""
+    monkeypatch.setattr("assistant.backend.memory.store.settings.db_key", "")
 
 
 async def test_export_brain_returns_version_and_frames(store: MemoryStore):
@@ -199,3 +206,83 @@ async def test_import_brain_imports_conflicts(store: MemoryStore):
     conflicts = await store.get_conflicts()
     assert len(conflicts) == 1
     assert conflicts[0].status == "auto_resolved"
+
+
+async def _encrypted_store(tmp_path, key: str):
+    """Create a MemoryStore whose database is encrypted with ``key``."""
+    import assistant.backend.memory.store as store_module
+
+    db_path = str(tmp_path / "enc.db")
+    store_module.settings.db_key = key
+    await init_db(db_path)
+    return MemoryStore(db_path)
+
+
+async def test_encrypted_export_wraps_plain_payload(tmp_path, monkeypatch):
+    """When DB_KEY is set, export returns an encrypted envelope."""
+    monkeypatch.setattr("assistant.backend.memory.store.settings.db_key", "test-key-123")
+    store = await _encrypted_store(tmp_path, "test-key-123")
+    frame = await store.create_frame("guitar", "entity")
+    await store.upsert_slot(frame.id, "strings", "6")
+
+    brain = await store.export_brain()
+
+    assert brain["version"] == 2
+    assert brain["encrypted"] is True
+    assert "key_id" in brain
+    assert "iv" in brain
+    assert "ciphertext" in brain
+
+
+async def test_encrypted_import_decrypts_and_imports(tmp_path, monkeypatch):
+    """Importing an encrypted export decrypts it with DB_KEY."""
+    monkeypatch.setattr("assistant.backend.memory.store.settings.db_key", "demo-secret-key")
+    store = await _encrypted_store(tmp_path, "demo-secret-key")
+
+    brain_json = {
+        "version": 1,
+        "frames": [
+            {
+                "name": "piano",
+                "type": "entity",
+                "slots": [{"key": "keys", "value": "88"}],
+            },
+        ],
+        "associations": [],
+        "episodes": [],
+        "feedbacks": [],
+        "conflicts": [],
+    }
+    # Build encrypted envelope directly
+    from assistant.backend.memory.store import _encrypt_brain_json
+    envelope = _encrypt_brain_json(brain_json, "demo-secret-key")
+
+    imported = await store.import_brain(envelope, mode="merge")
+    assert imported["frames"] == 1
+    piano = await store.get_frame_by_name("piano")
+    assert piano is not None
+
+
+async def test_encrypted_import_requires_same_key(tmp_path, monkeypatch):
+    """Importing with a different DB_KEY than the export raises."""
+    monkeypatch.setattr("assistant.backend.memory.store.settings.db_key", "wrong-key")
+    store = await _encrypted_store(tmp_path, "wrong-key")
+
+    from assistant.backend.memory.store import _encrypt_brain_json
+    envelope = _encrypt_brain_json({"version": 1}, "correct-key")
+
+    with pytest.raises(ValueError, match="different key"):
+        await store.import_brain(envelope, mode="merge")
+
+
+async def test_plain_export_still_works_without_db_key(monkeypatch, store):
+    """When DB_KEY is empty, export stays plain version 1."""
+    monkeypatch.setattr("assistant.backend.memory.store.settings.db_key", "")
+    frame = await store.create_frame("guitar", "entity")
+    await store.upsert_slot(frame.id, "strings", "6")
+
+    brain = await store.export_brain()
+
+    assert brain["version"] == 1
+    assert brain.get("encrypted") is None
+    assert brain["frames"][0]["name"] == "guitar"
