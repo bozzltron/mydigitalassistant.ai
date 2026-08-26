@@ -1423,12 +1423,14 @@
   let silenceAfterLoud = false;
   const SILENCE_THRESHOLD = 0.08;
   const BARGE_IN_THRESHOLD = 0.14;
-  const SILENCE_DURATION = 3200;
+  const SILENCE_DURATION = 2000;
   const BARGE_IN_DURATION = 350;
-  const MIN_RECORDING_MS = 800;
+  const MIN_RECORDING_MS = 500;
   const MIN_AUDIO_LEVEL = 0.015;
-  const MIN_AUDIO_FRAMES = 6;
+  const MIN_AUDIO_FRAMES = 3;
   const MAX_RECORDING_MS = 180000;
+  let monitorIntervalId = null;
+  const MONITOR_INTERVAL_MS = 80;
 
   function setVoiceState(newState, reason = '') {
     const oldState = voiceState;
@@ -1886,8 +1888,8 @@
       loudFrameCount = 0;
       silenceAfterLoud = false;
 
-      // Start monitoring audio levels
-      monitorAudioLevels();
+      // Start interval-based audio monitoring (rAF throttles in bg tabs)
+      startAudioMonitor();
 
       // Auto-stop after max duration
       recordingTimeoutId = setTimeout(() => {
@@ -1904,12 +1906,10 @@
     }
   }
 
-  function monitorAudioLevels() {
-    if (!(state.voiceMode || state.dictation) || voiceState !== VoiceState.LISTENING || !analyser) return;
-
+  function _checkAudioLevels() {
+    if (!analyser) return;
     const dataArray = new Uint8Array(analyser.frequencyBinCount);
     analyser.getByteFrequencyData(dataArray);
-
     let sum = 0;
     for (let i = 0; i < dataArray.length; i++) {
       sum += dataArray[i];
@@ -1918,10 +1918,6 @@
     const elapsed = Date.now() - (recordingStartTime || Date.now());
     const metMinDuration = elapsed >= MIN_RECORDING_MS;
     const hasLoudAudio = average >= MIN_AUDIO_LEVEL;
-    if (hasLoudAudio || elapsed % 500 < 20) {
-      console.log('[voice] level:', average.toFixed(4), 'loud:', hasLoudAudio, 'loudFrames:', loudFrameCount, 'elapsed:', elapsed);
-    }
-
     if (hasLoudAudio) {
       loudFrameCount++;
       silenceAfterLoud = false;
@@ -1939,9 +1935,17 @@
         }, SILENCE_DURATION);
       }
     }
+  }
 
-    if (voiceState === VoiceState.LISTENING) {
-      requestAnimationFrame(monitorAudioLevels);
+  function startAudioMonitor() {
+    stopAudioMonitor();
+    monitorIntervalId = setInterval(_checkAudioLevels, MONITOR_INTERVAL_MS);
+  }
+
+  function stopAudioMonitor() {
+    if (monitorIntervalId !== null) {
+      clearInterval(monitorIntervalId);
+      monitorIntervalId = null;
     }
   }
 
@@ -1953,6 +1957,7 @@
       clearTimeout(silenceTimeout);
       silenceTimeout = null;
     }
+    stopAudioMonitor();
     try {
       state.mediaRecorder.stop();
     } catch (e) {
