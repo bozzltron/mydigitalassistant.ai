@@ -630,14 +630,44 @@ class Orchestrator:
             num_predict=settings.think_num_predict_cap,
         )
 
+        response_text = llm_response.content or llm_response.thinking
+
         await self._log_episode(
             user_id,
             session_id,
             role="assistant",
-            content=llm_response.content or llm_response.thinking,
+            content=response_text,
         )
 
-        return llm_response.content or llm_response.thinking
+        # Learn from the task output: extract facts and store in memory
+        try:
+            from assistant.backend.pipeline.extractor import (
+                apply_extraction,
+                extract_facts_from_document,
+            )
+
+            extraction = await extract_facts_from_document(
+                response_text,
+                f"scheduled_task: {prompt[:100]}",
+                self.llm_client,
+            )
+            if extraction.slots or extraction.associations:
+                await apply_extraction(
+                    extraction,
+                    self.store,
+                    source_type="scheduled_task",
+                    source_url=None,
+                    source_reliability=0.6,
+                )
+                logger.info(
+                    "execute_task: extracted %d slots, %d assocs",
+                    len(extraction.slots),
+                    len(extraction.associations),
+                )
+        except Exception as e:
+            logger.warning("Scheduled task extraction failed: %s", e)
+
+        return response_text
 
     async def _handle_scheduled_task(
         self, request: ChatRequest, session_id: str
