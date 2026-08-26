@@ -519,7 +519,7 @@ class Orchestrator:
         )
 
         # 9. Append sources to response — only for informational/search tasks
-        response_text = llm_response.content
+        response_text = llm_response.content or llm_response.thinking
         if citations and task_type.value == "search":
             unique_citations = list(dict.fromkeys(citations))
             sources_block = "\n\n**Sources:**\n" + "\n".join(f"- {url}" for url in unique_citations)
@@ -634,10 +634,10 @@ class Orchestrator:
             user_id,
             session_id,
             role="assistant",
-            content=llm_response.content,
+            content=llm_response.content or llm_response.thinking,
         )
 
-        return llm_response.content
+        return llm_response.content or llm_response.thinking
 
     async def _handle_scheduled_task(
         self, request: ChatRequest, session_id: str
