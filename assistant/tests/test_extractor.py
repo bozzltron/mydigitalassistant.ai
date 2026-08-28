@@ -14,6 +14,7 @@ from assistant.backend.pipeline.extractor import (
     extract_facts,
     extract_facts_from_search,
     filter_duplicate_slots,
+    merge_extractions,
     validate_correction,
 )
 
@@ -740,3 +741,91 @@ def test_filter_duplicate_slots_keeps_none_values():
     result = filter_duplicate_slots(candidate, stored)
 
     assert [s.value for s in result.slots] == [None]
+
+
+def test_merge_extractions_deduplicates_by_frame_name_and_value():
+    """Identical (frame_name, value) pairs across channels are dropped (first wins)."""
+    base = ExtractionResult(slots=[
+        ExtractedSlot(
+            frame_name="capybara", frame_type="entity", key="habitat", value="South America"
+        ),
+    ])
+    doc = ExtractionResult(slots=[
+        ExtractedSlot(
+            frame_name="capybara", frame_type="entity", key="habitat", value="South America"
+        ),
+        ExtractedSlot(frame_name="capybara", frame_type="entity", key="diet", value="grass"),
+    ])
+
+    merged = merge_extractions(base, doc)
+
+    assert len(merged.slots) == 2
+    frame_values = {(s.frame_name, s.value) for s in merged.slots}
+    assert ("capybara", "South America") in frame_values
+    assert ("capybara", "grass") in frame_values
+
+
+def test_merge_extractions_is_case_insensitive_for_values():
+    """Deduplication key is lowercase, so 'South America' and 'south america' merge."""
+    a = ExtractionResult(slots=[
+        ExtractedSlot(
+            frame_name="capybara", frame_type="entity", key="habitat", value="South America"
+        ),
+    ])
+    b = ExtractionResult(slots=[
+        ExtractedSlot(
+            frame_name="capybara", frame_type="entity", key="habitat", value="south america"
+        ),
+    ])
+
+    merged = merge_extractions(a, b)
+
+    assert len(merged.slots) == 1
+    assert merged.slots[0].value == "South America"
+
+
+def test_merge_extractions_preserves_none_values():
+    """Slots with value=None are not deduplicated (they represent unknown facts)."""
+    a = ExtractionResult(slots=[
+        ExtractedSlot(frame_name="capybara", frame_type="entity", key="weight", value=None),
+    ])
+    b = ExtractionResult(slots=[
+        ExtractedSlot(frame_name="capybara", frame_type="entity", key="weight", value=None),
+    ])
+
+    merged = merge_extractions(a, b)
+
+    assert len(merged.slots) == 2
+
+
+def test_merge_extractions_deduplicates_associations():
+    """Identical (from_frame, to_frame, relation_type) associations are dropped."""
+    a = ExtractionResult(associations=[
+        ExtractedAssociation(from_frame="alice", to_frame="bob", relation_type="knows"),
+    ])
+    b = ExtractionResult(associations=[
+        ExtractedAssociation(from_frame="alice", to_frame="bob", relation_type="knows"),
+        ExtractedAssociation(from_frame="alice", to_frame="carol", relation_type="knows"),
+    ])
+
+    merged = merge_extractions(a, b)
+
+    assert len(merged.associations) == 2
+    keys = {(a.from_frame, a.to_frame, a.relation_type) for a in merged.associations}
+    assert ("alice", "bob", "knows") in keys
+    assert ("alice", "carol", "knows") in keys
+
+
+def test_merge_extractions_allows_same_value_different_frames():
+    """Same value on different frames are separate facts and should all be kept."""
+    a = ExtractionResult(slots=[
+        ExtractedSlot(frame_name="alice", frame_type="person", key="city", value="Portland"),
+    ])
+    b = ExtractionResult(slots=[
+        ExtractedSlot(frame_name="bob", frame_type="person", key="city", value="Portland"),
+    ])
+
+    merged = merge_extractions(a, b)
+
+    assert len(merged.slots) == 2
+    assert {s.frame_name for s in merged.slots} == {"alice", "bob"}

@@ -14,6 +14,23 @@ services:
     user: root
     command: pytest assistant/tests/test_learning_exam.py -v
 
+  # Critical-path tests: voice, run_now, correction, search extraction.
+  # Must pass before the full suite.
+  test-critical:
+    build:
+      context: .
+      target: builder
+    container_name: assistant-tests-critical
+    working_dir: /app
+    volumes:
+      - .:/app
+      - assistant-data:/app/data
+    environment:
+      - DATABASE_PATH=/app/data/assistant-test-critical.db
+      - DB_KEY=
+    command: pip install -e ".[dev]" && pytest assistant/tests/test_daily_schedule.py assistant/tests/test_review_fixes.py assistant/tests/test_extractor.py -q --tb=short
+    user: root
+
   # Runs the full test suite in plain (unencrypted) SQLite mode.
   test-plain:
     build:

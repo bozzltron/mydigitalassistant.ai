@@ -3,7 +3,7 @@ import logging
 import shutil
 import time
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import Depends as _Depends
@@ -91,6 +91,9 @@ async def lifespan(app: FastAPI):
     await _check_embedding_model_mismatch(db_path)
 
     store = MemoryStore(db_path)
+    migrated = await store.migrate_scheduled_tasks_to_slots()
+    if migrated:
+        logger.info("Migrated %d scheduled tasks to slots", migrated)
     working_memory = WorkingMemory(
         db_path=db_path,
         max_size=settings.working_memory_max_size,
@@ -116,7 +119,7 @@ async def lifespan(app: FastAPI):
     )
     search_tool = WebSearchTool(
         base_url=settings.search_base_url,
-        enabled=True,    # Always enabled - core requirement
+        enabled=True,
     )
     orchestrator = Orchestrator(
         deps=_OrchestratorDeps(
@@ -251,6 +254,15 @@ async def health():
             "coder": settings.coder_model or settings.chat_model,
         },
         "thinking_supported": thinking_supported,
+    }
+
+
+@app.get("/settings")
+async def get_settings() -> dict:
+    """Return frontend-facing settings so the UI can show/hide the Brave toggle."""
+    return {
+        "brave_enabled": settings.brave_enabled,
+        "brave_configured": bool(settings.brave_api_key),
     }
 
 
@@ -855,6 +867,124 @@ async def list_backups(store: MemoryStore = _Depends(get_store)):
     return {"backups": backups}
 
 
+# Portable brain export / import
+
+
+class PortableBrainResponse(BaseModel):
+    status: str
+    version: int
+    key_id: str
+    file_size_bytes: int | None = None
+    frame_count: int | None = None
+    slot_count: int | None = None
+    association_count: int | None = None
+    path: str | None = None
+    exported_at: str | None = None
+    restored_from: str | None = None
+    restored_to: str | None = None
+    pre_restore_backup: str | None = None
+    detail: str | None = None
+
+
+@app.post("/brain/export-portable", response_model=PortableBrainResponse)
+async def export_portable_brain(
+    filename: str | None = None,
+    store: MemoryStore = _Depends(get_store),
+):
+    """Export the live brain as an encrypted, version-3 portable brain file.
+
+    The file is saved to ``<data_dir>/<filename>`` (default:
+    ``<timestamp>.assistant-brain``). It can be renamed, copied, and later
+    restored via ``POST /brain/import-portable`` on any local instance that
+    shares the same ``DB_KEY``.
+    """
+    from assistant.backend.memory.backup import export_portable_brain as do_export
+
+    db_path = Path(store.db_path)
+    data_dir = db_path.parent.resolve()
+
+    if filename:
+        dest = (data_dir / filename).resolve()
+        # Safety: refuse to write outside the data dir
+        try:
+            dest.relative_to(data_dir)
+        except ValueError as _err:
+            raise HTTPException(
+                status_code=400,
+                detail="filename must be inside the data directory",
+            ) from _err
+    else:
+        stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+        dest = data_dir / f"brain-{stamp}.assistant-brain"
+
+    try:
+        result = await do_export(str(dest), db_path=str(db_path))
+        return PortableBrainResponse(
+            status="ok",
+            version=result["version"],
+            key_id=result["key_id"],
+            file_size_bytes=result.get("file_size_bytes"),
+            frame_count=result.get("frame_count"),
+            slot_count=result.get("slot_count"),
+            association_count=result.get("association_count"),
+            path=result.get("path"),
+            exported_at=result.get("exported_at"),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
+
+
+@app.post("/brain/import-portable", response_model=PortableBrainResponse)
+async def import_portable_brain(
+    filename: str,
+    store: MemoryStore = _Depends(get_store),
+):
+    """Restore a version-3 portable brain from the data volume.
+
+    This is a destructive operation: the current live brain is replaced.
+    Before overwriting, a pre-restore backup is created at
+    ``<data_dir>/brain.db.pre-portable-restore``.
+
+    The portable brain must have been created with the same ``DB_KEY``.
+    """
+    from assistant.backend.memory.backup import restore_portable_brain as do_restore
+
+    db_path = Path(store.db_path)
+    data_dir = db_path.parent.resolve()
+    src = (data_dir / filename).resolve()
+
+    # Safety: refuse to read outside the data dir
+    try:
+        src.relative_to(data_dir)
+    except ValueError as _err:
+        raise HTTPException(
+            status_code=400,
+            detail="filename must be inside the data directory",
+        ) from _err
+
+    if not src.exists():
+        raise HTTPException(
+            status_code=404,
+            detail=f"Portable brain not found: {filename}",
+        )
+
+    try:
+        result = await do_restore(str(src), db_path=str(db_path))
+        return PortableBrainResponse(
+            status="ok",
+            version=3,
+            key_id=result.get("key_id", ""),
+            restored_from=result.get("restored_from"),
+            restored_to=result.get("db_path"),
+            pre_restore_backup=result.get("pre_restore_backup"),
+            frame_count=result.get("frame_count"),
+            slot_count=result.get("slot_count"),
+            association_count=result.get("association_count"),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from None
+
+
 # Feedback
 
 
@@ -993,12 +1123,58 @@ async def submit_correction(
         slots_corrected = result.get("slots_corrected", 0)
         conflict = result.get("conflict", False)
 
-        conversational_status = (
-            f"Got it — updated {correction.frame_name}.{correction.slot_key} to "
-            f"'{correction.new_value}'."
-            if slots_corrected > 0
-            else "Correction applied but no slots were updated."
-        )
+        # Generate model-based response instead of hardcoded string
+        if slots_corrected > 0:
+            prompt = (
+                f"User submitted a correction: '{correction_text}'. "
+                f"The value for {correction.frame_name}.{correction.slot_key} "
+                f"has been updated to '{correction.new_value}'. "
+                "Generate a natural, concise acknowledgment response. "
+                "Do not use templates like 'Got it — I've updated...'."
+            )
+        else:
+            prompt = (
+                "User submitted a correction that was applied but resulted in no changes. "
+                "Generate a helpful, natural acknowledgment response."
+            )
+        
+        # Use model to generate response
+        try:
+            resp = await llm_client.chat(
+                [ChatMessage(role="user", content=prompt)],
+                model=llm_client.chat_model,
+                temperature=0.7,
+                think=False,
+            )
+            conversational_status = resp.content or (
+                f"Updated {correction.frame_name}.{correction.slot_key} "
+                f"to '{correction.new_value}'." if slots_corrected > 0 else "Correction applied but no slots were updated."
+            )
+        except Exception:
+            # Fallback to simple natural-language prompt-based response
+            try:
+                fallback_prompt = (
+                    "Generate a concise, helpful acknowledgment for a correction that was applied. "
+                    "Do not use phrases like 'Got it — I've updated...' or any template patterns."
+                )
+                fallback_resp = await llm_client.chat(
+                    [ChatMessage(role="user", content=fallback_prompt)],
+                    model=llm_client.chat_model,
+                    temperature=0.7,
+                    think=False,
+                )
+                conversational_status = fallback_resp.content or (
+                    f"Updated {correction.frame_name}.{correction.slot_key} "
+                    f"to '{correction.new_value}'." if slots_corrected > 0 else "Correction applied but no slots were updated."
+                )
+            except Exception:
+                # Final absolute fallback (this should be extremely rare)
+                conversational_status = (
+                    f"Got it — updated {correction.frame_name}.{correction.slot_key} "
+                    f"'{correction.new_value}'."
+                    if slots_corrected > 0
+                    else "Correction applied but no slots were updated."
+                )
         if conflict:
             conversational_status += " (Auto-resolved a conflict.)"
 
@@ -1016,19 +1192,6 @@ async def submit_correction(
         status="Correction parsed but missing required fields.",
         slots_corrected=0,
     )
-
-
-# Brain export / import
-
-
-class BrainImportRequest(BaseModel):
-    brain_json: dict
-    mode: str = "merge"  # "merge" | "overwrite"
-
-
-class BrainImportResponse(BaseModel):
-    status: str
-    imported: dict
 
 
 class ScheduledTaskResponse(BaseModel):
@@ -1097,40 +1260,3 @@ async def get_task_result(
                 "last_result_summary": t.get("last_result_summary"),
             }
     raise HTTPException(status_code=404, detail="Task not found")
-
-
-@app.post("/brain/export")
-async def export_brain(store: MemoryStore = _Depends(get_store)):
-    """Export the full brain memory to a portable JSON file.
-
-    Returns JSON with: version, exported_at, frames (with slots), associations,
-    episodes, feedbacks, conflicts. Embeddings are NOT included.
-    """
-    brain = await store.export_brain()
-    return brain
-
-
-@app.post("/brain/import", response_model=BrainImportResponse)
-async def import_brain(
-    request: BrainImportRequest,
-    store: MemoryStore = _Depends(get_store),
-):
-    """Import a brain JSON export.
-
-    Modes:
-    - merge: upsert frames by name, add slots (existing data preserved)
-    - overwrite: delete all existing memory, then re-import (creates backup first)
-
-    Returns counts of imported items and backup path if overwrite mode was used.
-    """
-    if request.mode not in ("merge", "overwrite"):
-        raise HTTPException(status_code=400, detail="mode must be 'merge' or 'overwrite'")
-
-    try:
-        imported = await store.import_brain(request.brain_json, mode=request.mode)
-        return BrainImportResponse(
-            status="ok",
-            imported=imported,
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from None

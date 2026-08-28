@@ -123,6 +123,9 @@ Rules:
 - Don't extract opinions, commentary, or vague statements.
 - If no reliable facts to extract, return {"slots": [], "associations": []}.
 - A fact confirmed by multiple sources should appear once in the slots list.
+- When results are from a high-confidence source and include full page content:
+  extract up to 8 slots, focusing on all concrete facts explicitly stated.
+- For snippet-only results: stay conservative, aim for up to 4-5 slots.
 
 Respond with ONLY the JSON object, no commentary."""
 
@@ -178,6 +181,39 @@ def filter_duplicate_slots(
         if s.value is None or (s.frame_name.lower(), str(s.value).strip().lower()) not in seen
     ]
     return ExtractionResult(slots=slots, associations=candidate.associations)
+
+
+def merge_extractions(
+    base: ExtractionResult, *others: ExtractionResult
+) -> ExtractionResult:
+    """Merge extraction results, keeping first occurrence of each (frame_name, value).
+
+    Uses the same (frame_name, value) deduplication key as filter_duplicate_slots.
+    The first occurrence wins — subsequent identical facts from other channels
+    (e.g. snippet vs full-page extraction) are dropped to avoid inflation.
+    """
+    seen: set[tuple[str, str]] = set()
+    merged_slots: list[ExtractedSlot] = []
+    for extraction in (base, *others):
+        for slot in extraction.slots:
+            if slot.value is None:
+                merged_slots.append(slot)
+                continue
+            key = (slot.frame_name.lower(), str(slot.value).strip().lower())
+            if key not in seen:
+                seen.add(key)
+                merged_slots.append(slot)
+
+    merged_assocs: list[ExtractedAssociation] = []
+    assoc_seen: set[tuple[str, str, str]] = set()
+    for extraction in (base, *others):
+        for assoc in extraction.associations:
+            key = (assoc.from_frame.lower(), assoc.to_frame.lower(), assoc.relation_type.lower())
+            if key not in assoc_seen:
+                assoc_seen.add(key)
+                merged_assocs.append(assoc)
+
+    return ExtractionResult(slots=merged_slots, associations=merged_assocs)
 
 
 # Words ignored when building a frame's canonical form. Mid-name articles and
@@ -544,6 +580,7 @@ async def apply_search_extraction(
     search_results: list["SearchResult"],
     store: "MemoryStore",
     embed_fn=None,
+    backend_name: str = "searxng",
 ) -> dict:
     """Apply search extraction with corroboration support.
 
@@ -571,21 +608,25 @@ async def apply_search_extraction(
             if slot.value.lower() in snippet_lower or slot.key.lower() in snippet_lower:
                 fact_key_to_urls[(slot.frame_name, slot.key, slot.value)].add(result.url)
 
+    initial_reliability = (
+        INITIAL_SEARCH_RELIABILITY + 0.15 if backend_name == "brave" else INITIAL_SEARCH_RELIABILITY
+    )
+
     reliability_map: dict[tuple, float] = {}
     for fact_key, urls in fact_key_to_urls.items():
         count = len(urls)
         if count >= 3:
             reliability = min(
-                INITIAL_SEARCH_RELIABILITY + CORROBORATION_BONUS * 2,
+                initial_reliability + CORROBORATION_BONUS * 2,
                 MAX_SOURCE_RELIABILITY,
             )
         elif count >= 2:
             reliability = min(
-                INITIAL_SEARCH_RELIABILITY + CORROBORATION_BONUS,
+                initial_reliability + CORROBORATION_BONUS,
                 MAX_SOURCE_RELIABILITY,
             )
         else:
-            reliability = INITIAL_SEARCH_RELIABILITY
+            reliability = initial_reliability
         reliability_map[fact_key] = reliability
 
     def _best_url(urls: set[str]) -> str | None:
@@ -635,7 +676,7 @@ async def apply_search_extraction(
         fact_key = (slot.frame_name, slot.key, slot.value)
         urls = fact_key_to_urls.get(fact_key, set())
         slot_url = _best_url(urls)
-        slot_reliability = reliability_map.get(fact_key, INITIAL_SEARCH_RELIABILITY)
+        slot_reliability = reliability_map.get(fact_key, initial_reliability)
         _, conflict = await store.upsert_slot(
             frame_id=frame_id,
             key=slot.key,
@@ -671,7 +712,7 @@ async def apply_search_extraction(
                 confidence=0.5,
                 source_type="search",
                 source_url=primary_url,
-                source_reliability=INITIAL_SEARCH_RELIABILITY,
+                source_reliability=initial_reliability,
             )
         except sqlite3.IntegrityError:
             # Concurrent turn inserted the same edge first; it exists now.

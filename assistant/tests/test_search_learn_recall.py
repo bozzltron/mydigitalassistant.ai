@@ -16,6 +16,8 @@ from assistant.backend.pipeline.search import SearchResult, WebSearchTool
 
 async def test_search_learn_stores_fact_in_memory(store, stub_llm):
     """Search results are extracted and stored in the memory store."""
+    from assistant.backend.pipeline.search import SearchInfo
+
     from .conftest import add_embedding_cluster
 
     # The relevance gate compares query vs result embeddings; make the stub
@@ -24,9 +26,9 @@ async def test_search_learn_stores_fact_in_memory(store, stub_llm):
 
     retriever = Retriever(store=store, llm_client=stub_llm)
 
-    async def fake_search(query, num_results=5):
+    async def fake_search_with_info(query, num_results=5):
         if "capital" in query.lower() and "texas" in query.lower():
-            return [
+            results = [
                 SearchResult(
                     title="Capital of Texas",
                     url="https://en.wikipedia.org/wiki/Texas",
@@ -34,10 +36,12 @@ async def test_search_learn_stores_fact_in_memory(store, stub_llm):
                     engine="wikipedia",
                 ),
             ]
-        return []
+        else:
+            results = []
+        return results, SearchInfo(backend="test", query=query, results=results)
 
     stub_search = WebSearchTool(enabled=True)
-    stub_search.search = fake_search
+    stub_search.search_with_info = fake_search_with_info
 
     orchestrator = Orchestrator(
         deps=OrchestratorDeps(
@@ -104,11 +108,11 @@ async def test_search_learn_then_recall_does_not_re_search(store, stub_llm):
 
     search_count = 0
 
-    async def counting_search(query, num_results=5):
+    async def counting_search_with_info(query, num_results=5):
         nonlocal search_count
         search_count += 1
         if "capital" in query.lower() and "texas" in query.lower():
-            return [
+            results = [
                 SearchResult(
                     title="Capital of Texas",
                     url="https://en.wikipedia.org/wiki/Texas",
@@ -116,10 +120,13 @@ async def test_search_learn_then_recall_does_not_re_search(store, stub_llm):
                     engine="wikipedia",
                 ),
             ]
-        return []
+        else:
+            results = []
+        from assistant.backend.pipeline.search import SearchInfo
+        return results, SearchInfo(backend="test", query=query, results=results)
 
     stub_search = WebSearchTool(enabled=True)
-    stub_search.search = counting_search
+    stub_search.search_with_info = counting_search_with_info
 
     orchestrator = Orchestrator(
         deps=OrchestratorDeps(
@@ -257,10 +264,10 @@ async def test_search_contradiction_triggers_auto_resolve_and_surfaces_conflict(
     stub_llm.chat = chat_fn
 
     # Mock the search method on the instance
-    original_search = stub_search.search
-    async def fake_search(q, num_results=5):
-        return search_results
-    stub_search.search = fake_search
+    from assistant.backend.pipeline.search import SearchInfo
+    async def fake_search_with_info(q, num_results=5):
+        return search_results, SearchInfo(backend="test", query=q, results=search_results)
+    stub_search.search_with_info = fake_search_with_info
 
     try:
         resp = await orchestrator.chat(
@@ -286,4 +293,3 @@ async def test_search_contradiction_triggers_auto_resolve_and_surfaces_conflict(
         assert any(c.status == "auto_resolved" and c.new_value == "12" for c in conflicts)
     finally:
         stub_llm.chat = original_chat
-        stub_search.search = original_search

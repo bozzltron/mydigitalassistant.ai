@@ -281,6 +281,7 @@ def builtin_tools(
     search_tool: WebSearchTool,
     store=None,
     llm_client=None,
+    embed_fn=None,
 ) -> list[AssistantTool]:
     """Build the default toolset. Search is gated on SearXNG availability."""
     tools: list[AssistantTool] = [
@@ -352,7 +353,7 @@ def builtin_tools(
                     },
                     "required": ["query"],
                 },
-                handler=_make_search_handler(search_tool),
+                handler=_make_search_handler(search_tool, embed_fn=embed_fn),
             )
         )
     return tools
@@ -369,13 +370,19 @@ async def _handle_calculate(expression: str) -> str:
     return f"{expression} = {result}"
 
 
-def _make_search_handler(search_tool: WebSearchTool):
+def _make_search_handler(search_tool: WebSearchTool, embed_fn=None):
+    from assistant.backend.pipeline.search import filter_relevant
+
     async def handler(query: str, num_results: int = 5) -> str:
         try:
             results = await search_tool.search(query, num_results=num_results)
         except Exception as e:
             logger.warning("Tool web_search failed: %s", e)
             return f"Search failed: {e}"
+
+        if embed_fn is not None:
+            results = await filter_relevant(results, query, embed_fn)
+
         if not results:
             return "No results found."
         return "\n".join(

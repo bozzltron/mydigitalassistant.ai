@@ -182,8 +182,9 @@ async def test_chat_create_once_task(env):
         "prompt": "Remind Alice to call her mom",
     }
     resp = await orch.chat(ChatRequest(user_id=user_id, message="remind me tomorrow"))
-    assert "once" in resp.response.lower()
+    assert resp.task_type == "scheduled"
     tasks = await store.get_scheduled_tasks(owner_user_id=user_id)
+    assert len(tasks) == 1
     assert tasks[0]["schedule_cron"] == "once"
 
 
@@ -195,7 +196,45 @@ async def test_chat_list_tasks(env):
     )
     llm.intent_reply = {"intent": "list"}
     resp = await orch.chat(ChatRequest(user_id=user_id, message="what's on my list?"))
-    assert "briefing" in resp.response
+    assert resp.task_type == "scheduled"
+    tasks = await store.get_scheduled_tasks(owner_user_id=user_id)
+    assert len(tasks) == 1
+    assert tasks[0]["name"] == "briefing"
+
+
+async def test_chat_run_now_task(env):
+    """User says 'run my briefing now' → task is found by name and executed."""
+    orch, llm, store, user_id = env
+    await store.upsert_scheduled_task(
+        name="briefing", description="morning news",
+        schedule_cron="daily", prompt="Give me a morning news briefing",
+        owner_user_id=user_id,
+    )
+    llm.intent_reply = {"intent": "run_now", "name": "briefing"}
+    resp = await orch.chat(ChatRequest(user_id=user_id, message="run my briefing now"))
+    assert resp.task_type == "scheduled"
+    assert resp.response  # should have actual content from run_scheduled_task
+    tasks = await store.get_scheduled_tasks(owner_user_id=user_id)
+    assert tasks[0]["name"] == "briefing"
+    # last_run should be updated
+    assert tasks[0]["last_run"] is not None
+
+
+async def test_chat_run_now_disables_once_task(env):
+    """A 'once' task must be disabled after run_now fires."""
+    orch, llm, store, user_id = env
+    await store.upsert_scheduled_task(
+        name="reminder", description="call mom",
+        schedule_cron="once", prompt="Call mom",
+        owner_user_id=user_id,
+    )
+    llm.intent_reply = {"intent": "run_now", "name": "reminder"}
+    resp = await orch.chat(ChatRequest(user_id=user_id, message="run my reminder now"))
+    assert resp.task_type == "scheduled"
+    tasks = await store.get_scheduled_tasks(owner_user_id=user_id)
+    assert len(tasks) == 1
+    assert tasks[0]["enabled"] == 0, "once task must be disabled after run_now"
+    assert tasks[0]["last_run"] is not None
 
 
 async def test_chat_delete_task(env):
@@ -287,3 +326,5 @@ async def test_nearest_run_parses_mixed_offsets(store):
     assert nearest is not None
     delta = abs((nearest - now).total_seconds())
     assert delta < 2 * 3600  # the 1h-away task wins despite "+00:00"-style sort order
+
+

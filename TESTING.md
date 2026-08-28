@@ -63,6 +63,10 @@ and no ceremonial test suite.
 - **The full cognitive loop**: chat input → task route → retrieve → LLM →
   respond → async extract → store episode → memory updated. End-to-end,
   with Ollama mocked.
+- **Scheduled tasks as memory**: create task → set `next_run` in the past →
+  trigger scheduler → assert the task prompt runs through `orchestrator.chat()`,
+  the output episode exists, a `daily_run_YYYY_MM_DD` event frame is created,
+  and associations link task → run → episode.
 
 ### Boundaries and edge cases
 
@@ -227,30 +231,63 @@ test is a code smell, not a safety net.
 
 ## 10. Current state of the test suite
 
-Snapshot taken 2026-08-19 after Phase 2A.3 (Priority Decay GC) and 2A.5
-(Embedding Model Migration). Added 14 tests for decay math and GC integration.
-Full test suite runs in both plain SQLite and SQLCipher-encrypted modes.
+Snapshot taken 2026-08-27 after the Brave Search opt-in, search-learning, and
+scheduled-task-as-memory work. Full suite runs in both plain SQLite and
+SQLCipher-encrypted modes.
 
-| File                          | Tests | Covers                                                                                  |
-| ----------------------------- | ----- | --------------------------------------------------------------------------------------- |
-| `test_confidence.py`          | 8     | Bump formula, bounded confidence, initial confidence, conflict resolution branches.     |
-| `test_memory_store.py`        | 27    | Frame/slot/association CRUD, episode logging, slot history, conflict auto-resolution.   |
-| `test_retrieval.py`           | 19    | Cosine similarity, frame→text, memory-context formatting, truncation.                  |
-| `test_extractor.py`           | 14    | JSON parse, retry on malformed, frame/slot/association creation, conflict integration.  |
-| `test_task_router.py`         | 17    | Heuristic patterns (parametrized), LLM fallback paths, heuristic-first priority.       |
-| `test_schema.py`              | 2     | Pydantic model validation.                                                              |
-| `test_llm_client.py`          | 2     | System-prompt build for functional vs introspective task types.                         |
-| `test_api.py`                 | 14    | Health, users, chat, sessions, frames, conflicts, DB backup/restore endpoints.          |
-| `test_cli.py`                 | 19    | Chat, memory, users, status, DB backup/restore via API.                                 |
-| `test_docker.py`              | 15    | Dockerfile security, compose config, CLI service, shell wrapper.                        |
-| `test_cognitive_loop.py`      | 1     | **Integration:** full chat → learn → recall; turns 1 + 2 of a session.                  |
-| `test_learning_loop.py`       | 1     | **Integration:** learn a fact, verify recall on a fresh request.                        |
-| `test_conflict_resolution.py` | 1     | **Integration:** contradiction → auto-resolve → manual override across the matrix.      |
-| `test_user_isolation.py`      | 1     | **Integration:** multi-user episodic privacy.                                           |
-| `test_gc.py`                  | 14    | Decay math, boundary conditions, essential-fact exemption, dry-run, live GC.           |
-| **Total**                     | **317** |                                                                                      |
+| File                                | Tests | Covers                                                                                  |
+| ----------------------------------- | ----- | --------------------------------------------------------------------------------------- |
+| `test_memory_store.py`              | 40    | Frame/slot/association CRUD, episode logging, slot history, conflict auto-resolution.   |
+| `test_extractor.py`                 | 39    | JSON parse, retry on malformed, frame/slot/association creation, conflict integration.  |
+| `test_api.py`                       | 34    | Health, users, chat, sessions, frames, conflicts, DB backup/restore endpoints.          |
+| `test_reasoner.py`                  | 28    | Intent classification, plan formatting, self-correction branches.                       |
+| `test_task_router.py`               | 23    | Heuristic patterns (parametrized), LLM fallback paths, heuristic-first priority.       |
+| `test_working_memory.py`            | 21    | LRU cache, boost map, touch/lookup/eviction behavior.                                   |
+| `test_retrieval.py`                 | 21    | Cosine similarity, frame→text, memory-context formatting, truncation.                  |
+| `test_confidence.py`                | 21    | Bump formula, bounded confidence, initial confidence, conflict resolution branches.     |
+| `test_cli.py`                       | 20    | Chat, memory, users, status, DB backup/restore via API.                                 |
+| `test_belief_revision.py`           | 20    | Standalone AGM operators (expand/contract/revise).                                      |
+| `test_search_tool.py`               | 19    | SearXNG backend, relevance filter, backend selection, Brave gating.                     |
+| `test_llm_client.py`                | 19    | Chat/embed requests, response parsing, system prompts, error handling.                  |
+| `test_security.py`                  | 18    | Security verification script, local-only bindings, Brave endpoint gating.               |
+| `test_docker.py`                    | 18    | Dockerfile security, compose config, CLI service, shell wrapper.                        |
+| `test_orchestrator.py`              | 17    | Full cognitive loop, search injection, correction handling, scheduled-task chat flow.   |
+| `test_gc.py`                        | 16    | Decay math, boundary conditions, essential-fact exemption, dry-run, live GC.           |
+| `test_brain_portable.py`            | 16    | Encrypted portable brain export/import.                                                 |
+| `test_identity_name.py`             | 14    | Identity frame/slot behavior, self-description.                                         |
+| `test_tools.py`                     | 12    | `fetch_url` tool, robots.txt, extraction from fetched documents.                        |
+| `test_daily_schedule.py`            | 12    | Clock helpers, store semantics, create/list/delete/pause/resume chat flow.              |
+| `test_phase9_memory_strength.py`    | 11    | Memory strength reinforcement and slot priority.                                        |
+| `test_phase9_consolidation.py`      | 10    | Frame merge planning and execution.                                                     |
+| `test_episode_recall.py`            | 8     | Semantic episode recall across sessions.                                                |
+| `test_backup_restore.py`            | 8     | Full-DB JSON backup/restore.                                                            |
+| `test_review_fixes.py`              | 7     | Regression fixes for frame tombstones, aliases, retrieval.                              |
+| `test_phase9_scheduler_consolidation.py` | 6 | Scheduler-driven consolidation integration.                                             |
+| `test_brain_search.py`              | 6     | Brain Observatory memory search endpoint.                                               |
+| `test_self_context.py`              | 3     | Agent self-description in system prompt.                                                |
+| `test_search_learn_recall.py`       | 3     | Search → learn → recall integration.                                                    |
+| `test_introspective_recall.py`      | 3     | Introspective query handling.                                                           |
+| `test_schema.py`                    | 2     | Pydantic model validation (low signal; candidates for removal).                         |
+| `test_conflict_resolution.py`       | 2     | **Integration:** contradiction → auto-resolve across confidence pairings.               |
+| `test_user_isolation.py`            | 1     | **Integration:** multi-user episodic privacy.                                           |
+| `test_learning_loop.py`             | 1     | **Integration:** learn a fact, verify recall on a fresh request.                        |
+| `test_learning_exam.py`             | 1     | **Integration:** broader learn-and-recall scenario.                                     |
+| `test_cognitive_loop.py`            | 1     | **Integration:** full chat → learn → recall; turns 1 + 2 of a session.                  |
+| **Total**                           | **501** |                                                                                      |
 
-The four integration files — `test_learning_loop.py`, `test_conflict_resolution.py`,
-`test_user_isolation.py`, and `test_cognitive_loop.py` — are the highest-signal
-tests in the suite. Run `docker compose -f docker-compose.test.yml run --rm test-plain`
-and `test-encrypted` to verify both DB modes.
+The integration files — `test_learning_loop.py`, `test_conflict_resolution.py`,
+`test_user_isolation.py`, `test_cognitive_loop.py`, `test_learning_exam.py`,
+and `test_search_learn_recall.py` — are the highest-signal tests in the suite.
+
+### Known gaps to close
+
+- **Scheduled-task execution:** `test_daily_schedule.py` covers management chat flow
+  and clock/store semantics, but there is no integration test that actually fires
+  a due task through the scheduler and asserts the output episode + daily-run frame
+  + associations are created.
+- **Schema-only tests:** `test_schema.py` validates Pydantic models, which is
+  framework behavior per section 4. Consider removing or replacing with behavior
+  that exercises the models through real store/pipeline code.
+- **Belief-revision operators:** `test_belief_revision.py` covers `expand`/`contract`,
+  which are standalone operators not used in production. Keep only if the operators
+  are documented as public utilities; otherwise move to tests that exercise `revise()`.

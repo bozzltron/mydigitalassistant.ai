@@ -51,6 +51,12 @@ class Settings(BaseSettings):
     search_safesearch: int = 1
     search_min_relevance: float = 0.30
 
+    # Optional cloud search backend. Brave is the only permitted non-local search
+    # provider because it does not profile users or sell query data. Brave is
+    # disabled by default; set BRAVE_ENABLED=true AND provide BRAVE_API_KEY to use it.
+    brave_enabled: bool = False
+    brave_api_key: str = ""  # required when brave_enabled is true
+
     # Ollama request timeout in seconds. Local 27B-class models with large
     # context prefills (tool loops) can legitimately take minutes; the default
     # is generous on purpose.
@@ -106,7 +112,7 @@ class Settings(BaseSettings):
     working_memory_boost: float = 1.5  # relevance multiplier for working memory frames
 
     # Scheduled tasks (runs as background task inside the backend)
-    scheduler_enabled: bool = False
+    scheduler_enabled: bool = True
 
     # The daily list: one wake-up time for all user tasks. Tasks repeat daily
     # until the user stops them, or run once at the next tick.

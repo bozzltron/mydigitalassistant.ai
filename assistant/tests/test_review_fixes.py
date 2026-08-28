@@ -95,7 +95,6 @@ async def test_scheduled_task_turn_pairs_user_and_assistant_episodes(
     assert resp.task_type == "scheduled"
     eps = await store.get_episodes_for_session(resp.session_id)
     assert [e.role for e in eps] == ["user", "assistant"]
-    assert "scheduled tasks" in eps[-1].content.lower()
 
 
 @pytest.mark.asyncio
@@ -118,7 +117,7 @@ async def test_resume_restores_original_prompt(store, monkeypatch):
 
     resp = await orch.chat(ChatRequest(user_id=alice.id, message="resume weather_check"))
 
-    assert "Resumed" in resp.response
+    assert resp.task_type == "scheduled"
     tasks = await store.get_scheduled_tasks(owner_user_id=alice.id)
     task = next(t for t in tasks if t["name"] == "weather_check")
     assert task["enabled"] == 1

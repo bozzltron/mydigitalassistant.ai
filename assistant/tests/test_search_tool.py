@@ -198,30 +198,43 @@ class _RecordingSearch:
         self.queries: list[str] = []
         self.enabled = True
 
+    @property
+    def backend_name(self) -> str:
+        return "test"
+
+    @property
+    def max_results_for_extraction(self) -> int:
+        return 5
+
     async def search(self, query: str, num_results: int = 5):
+        results, _ = await self.search_with_info(query, num_results)
+        return results
+
+    async def search_with_info(self, query: str, num_results: int = 5):
         self.queries.append(query)
-        return [
+        results = [
             SearchResult(
                 title="guitar strings buying guide",
                 url="https://good.com/guitar-strings",
                 snippet="how to choose guitar strings",
-                engine="t",
+                engine="test",
             ),
             SearchResult(
                 title="pasta carbonara recipe",
                 url="https://bad.com/pasta",
                 snippet="italian cooking",
-                engine="t",
+                engine="test",
             ),
         ]
+        from assistant.backend.pipeline.search import SearchInfo
+        return results, SearchInfo(backend="test", query=query, results=results)
 
 
 @pytest.mark.asyncio
 async def test_orchestrator_search_turn_excludes_irrelevant_links(store, stub_llm):
     """E2E guard: unrelated links never reach the system prompt or citations."""
-    from assistant.backend.main import ChatRequest
     from assistant.backend.memory.retrieval import Retriever
-    from assistant.backend.pipeline.orchestrator import Orchestrator, OrchestratorDeps
+    from assistant.backend.pipeline.orchestrator import ChatRequest, Orchestrator, OrchestratorDeps
 
     spy = _RecordingSearch()
     orchestrator = Orchestrator(

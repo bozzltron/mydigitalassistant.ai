@@ -13,12 +13,27 @@ ACT-R/SOAR's functional/introspective task distinction).
 - **Structured memory** — frames, slots, associations, episodic memory, confidence scores
 - **Error correction** — contradictions are auto-resolved with full audit trail
 - **Multi-user** — per-user private episodic memory + shared household knowledge
-- **100% local** — Ollama for inference, local embeddings, SQLite for storage
+- **Local-first** — Ollama for inference, local embeddings, SQLite for storage
 - **Web search** — privacy-first retrieval via local SearXNG instance
-- **No cloud calls** — never leaks data to tech giants; safe for kids
+- **Optional Brave Search API** — higher-quality results with explicit opt-in
+- **Scheduled tasks** — daily list runs automatically; tasks and their outputs are memory
+- **No cloud LLM calls** — never leaks conversations to tech giants; safe for kids
 
 ## Quick Start
 
+### Option 1: Using Docker (Recommended)
+```bash
+# Build the image
+docker build -t assistant .
+
+# Start all services
+docker compose up
+
+# Chat via CLI
+assistant chat
+```
+
+### Option 2: Manual Setup
 ```bash
 # 1. Install Ollama and pull models
 ollama pull qwen2.5:7b
@@ -44,9 +59,10 @@ See `/assistant/AGENTS.md` for the cognitive architecture and memory model detai
 
 ## Security
 
-See `SECURITY.md` for the local-only guarantee and threat model.
-All inference is local via Ollama. Web search only via local SearXNG instance.
-No outbound network calls to cloud providers.
+See `SECURITY.md` for the threat model and data-flow details.
+All inference is local via Ollama. Web search defaults to local SearXNG.
+An optional Brave Search API backend is available with explicit opt-in;
+no other cloud providers are used.
 
 ## License
 

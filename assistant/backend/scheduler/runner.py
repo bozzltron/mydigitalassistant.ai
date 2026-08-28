@@ -54,22 +54,49 @@ async def _execute_task(
 ) -> tuple[bool, str]:
     """Run a single scheduled task through the orchestrator.
 
-    Returns (success, result_summary). update_scheduled_task_run reschedules
-    daily tasks to the next tick and disables one-shot tasks.
+    Calls run_scheduled_task (full cognitive loop), then:
+    - Records last_run / next_run in slots.
+    - Creates a daily_run_YYYY_MM_DD event frame.
+    - Creates associations: task --ran_in--> daily_run, task --produced_output--> episode.
     """
+    now_str = datetime.now(UTC).isoformat()
+    date_str = datetime.now(UTC).strftime("%Y_%m_%d")
+    session_id = f"scheduled-{task_name}-{date_str}"
+
     try:
-        result = await orchestrator.execute_task(
+        result = await orchestrator.run_scheduled_task(
             prompt=task_prompt,
             user_id=owner_user_id,
+            task_name=task_name,
         )
 
         full = result[:2000] if result else ""
 
         await store.update_scheduled_task_run(
             frame_id=task_frame_id,
-            last_run=datetime.now(UTC).isoformat(),
+            last_run=now_str,
             last_result_summary=full,
         )
+
+        episode = await store.get_last_assistant_episode(owner_user_id, session_id)
+
+        daily_run_frame_id = await store.get_or_create_daily_run_frame(
+            date_str, owner_user_id=owner_user_id
+        )
+
+        await store.associate_frames(
+            task_frame_id, daily_run_frame_id, "ran_in", confidence=0.9
+        )
+
+        if episode:
+            await store.upsert_scheduled_task_slot(
+                task_frame_id, "last_output_episode_id", str(episode.id)
+            )
+        await store.associate_frames(
+            daily_run_frame_id, task_frame_id, "includes_task", confidence=0.9
+        )
+
+        await store.update_daily_run_frame(daily_run_frame_id, [task_name], "completed")
 
         logger.info("Task '%s' completed successfully", task_name)
         return True, full
@@ -78,7 +105,7 @@ async def _execute_task(
         logger.exception("Task '%s' failed: %s", task_name, exc)
         await store.update_scheduled_task_run(
             frame_id=task_frame_id,
-            last_run=datetime.now(UTC).isoformat(),
+            last_run=now_str,
             last_result_summary=f"failed: {exc}",
         )
         return False, f"failed: {exc}"

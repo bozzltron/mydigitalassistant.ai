@@ -43,6 +43,19 @@ class SearchResult:
     engine: str
 
 
+@dataclass
+class SearchInfo:
+    """Full record of a search operation — backend, query, and results.
+
+    Exposed in ChatResponse so the UI can show end-to-end transparency:
+    which engine was used, what was searched, and which source each
+    result came from (Brave's own index vs Bing etc.).
+    """
+    backend: str  # "brave" or "searxng"
+    query: str  # sanitized query that was sent to the backend
+    results: list[SearchResult]
+
+
 def sanitize_query(query: str) -> str:
     """Reduce conversational text to a search-engine-friendly query.
 
@@ -129,7 +142,20 @@ async def filter_relevant(
 
 
 class SearchBackend(ABC):
-    """Abstract search backend. Implement search() and health_check()."""
+    """Abstract search backend. Implement search(), health_check(), and backend_name."""
+
+    @property
+    @abstractmethod
+    def backend_name(self) -> str:
+        """Short name of this backend, e.g. "brave" or "searxng"."""
+
+    @property
+    def max_results_for_extraction(self) -> int:
+        """Backend-specific result budget for extraction prompts.
+
+        Brave's index is cleaner; we can extract more aggressively from it.
+        """
+        return 5
 
     @abstractmethod
     async def search(self, query: str, num_results: int = 5) -> list[SearchResult]:
@@ -161,6 +187,10 @@ class SearXNGBackend(SearchBackend):
         if self._client and not self._client.is_closed:
             await self._client.aclose()
             self._client = None
+
+    @property
+    def backend_name(self) -> str:
+        return "searxng"
 
     async def health_check(self) -> bool:
         try:
@@ -223,6 +253,98 @@ class SearXNGBackend(SearchBackend):
             return []
 
 
+class BraveBackend(SearchBackend):
+    """Brave Search API (https://api.search.brave.com). Requires brave_api_key."""
+
+    BRAVE_URL = "https://api.search.brave.com/res/v1/web/search"
+    BRAVE_HEADERS = {
+        "Accept": "application/json",
+        "Accept-Encoding": "gzip",
+    }
+
+    def __init__(self, api_key: str, timeout: float | None = None):
+        self.api_key = api_key
+        self.timeout = timeout if timeout is not None else settings.search_timeout
+        self._client: httpx.AsyncClient | None = None
+
+    async def _get_client(self) -> httpx.AsyncClient:
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(timeout=self.timeout)
+        return self._client
+
+    async def close(self) -> None:
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
+            self._client = None
+
+    @property
+    def backend_name(self) -> str:
+        return "brave"
+
+    @property
+    def max_results_for_extraction(self) -> int:
+        """Brave results are cleaner; extract up to 8 slots from them (cap at 10)."""
+        return min(8, 10)
+
+    async def health_check(self) -> bool:
+        try:
+            client = await self._get_client()
+            r = await client.get(
+                self.BRAVE_URL,
+                params={"q": "test", "count": 1},
+                headers={**self.BRAVE_HEADERS, "X-Subscription-Token": self.api_key},
+            )
+            return r.status_code == 200
+        except Exception:
+            return False
+
+    async def search(self, query: str, num_results: int = 5) -> list[SearchResult]:
+        try:
+            client = await self._get_client()
+            headers = {**self.BRAVE_HEADERS, "X-Subscription-Token": self.api_key}
+            params = {
+                "q": sanitize_query(query),
+                "count": min(num_results, 20),
+                "safesearch": "moderate",
+                "search_lang": settings.search_language or "en",
+            }
+            r = await client.get(self.BRAVE_URL, params=params, headers=headers)
+            r.raise_for_status()
+            data = r.json()
+            web_results = data.get("web", {}).get("results", [])
+            if not web_results:
+                return []
+            results: list[SearchResult] = []
+            seen: set[str] = set()
+            for item in web_results:
+                url = item.get("url", "")
+                if not url:
+                    continue
+                norm = normalize_url(url)
+                if norm in seen:
+                    continue
+                seen.add(norm)
+                results.append(
+                    SearchResult(
+                        title=item.get("title", ""),
+                        url=url,
+                        snippet=item.get("description", "") or item.get("snippet", ""),
+                        engine="brave",
+                    )
+                )
+                if len(results) >= num_results:
+                    break
+            logger.info(
+                "Brave returned %d results (q=%r)",
+                len(results), params["q"][:80],
+            )
+            return results
+        except Exception as e:
+            logger.error("Brave search failed: %s", e)
+            return []
+
+
+
 class WebSearchTool(SearchBackend):
     """Default search tool using SearXNG. Backwards-compatible wrapper."""
 
@@ -231,7 +353,15 @@ class WebSearchTool(SearchBackend):
         base_url: str = "http://127.0.0.1:8080",
         enabled: bool = True,
     ):
-        self._backend = SearXNGBackend(base_url=base_url)
+        if settings.brave_enabled and settings.brave_api_key:
+            self._backend = BraveBackend(api_key=settings.brave_api_key)
+        elif settings.brave_enabled and not settings.brave_api_key:
+            raise ValueError(
+                "BRAVE_ENABLED=true but BRAVE_API_KEY is not set. "
+                "Both settings are required to use Brave Search."
+            )
+        else:
+            self._backend = SearXNGBackend(base_url=base_url)
         self.enabled = enabled
 
     async def _get_client(self) -> httpx.AsyncClient:
@@ -245,8 +375,32 @@ class WebSearchTool(SearchBackend):
             return False
         return await self._backend.health_check()
 
-    async def search(self, query: str, num_results: int = 5) -> list[SearchResult]:
+    @property
+    def backend_name(self) -> str:
+        return self._backend.backend_name
+
+    async def search_with_info(
+        self, query: str, num_results: int = 5
+    ) -> tuple[list[SearchResult], SearchInfo]:
+        """Search and return results with full provenance metadata.
+
+        Returns (results, search_info) so the caller can record transparency data.
+        """
         if not self.enabled:
             logger.warning("Search is disabled in config")
-            return []
-        return await self._backend.search(query, num_results)
+            return [], SearchInfo(backend=self.backend_name, query=query, results=[])
+        raw_query = sanitize_query(query)
+        results = await self._backend.search(raw_query, num_results)
+        info = SearchInfo(
+            backend=self.backend_name,
+            query=raw_query,
+            results=results,
+        )
+        return results, info
+
+    async def search(
+        self, query: str, num_results: int = 5
+    ) -> list[SearchResult]:
+        """Legacy compat: returns results only. Prefer search_with_info()."""
+        results, _ = await self.search_with_info(query, num_results)
+        return results

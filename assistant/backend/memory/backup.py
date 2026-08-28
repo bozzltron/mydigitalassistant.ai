@@ -1,23 +1,24 @@
 """Encrypted backup and restore for the assistant brain.
 
-Produces AES-256-GCM encrypted JSON bundles. The DB_KEY is used as a
-HKDF-derived AES-256 key. Backup format:
+Two formats are supported:
+1. **JSON bundle backup** (version 1): exports all DB tables as encrypted JSON.
+   Used by ``create_encrypted_backup`` / ``restore_encrypted_backup``.
+2. **Portable brain** (version 3): encrypts the raw SQLCipher database file
+   as a single portable blob. Used by ``export_portable_brain`` /
+   ``restore_portable_brain``. This preserves everything exactly —
+   embeddings, tombstones, working memory — as a renameable file.
 
-{
-  "version": 1,
-  "key_id": "<first 16 chars of SHA-256 of key>",
-  "iv": "<base64>",          # 12-byte random IV per backup
-  "ciphertext": "<base64>",  # AES-256-GCM ciphertext of UTF-8 JSON
-  "tag": "<base64>",         # GCM auth tag (16 bytes)
-}
-
-The inner JSON contains all tables exported from SQLite as rows.
+The DB_KEY is used via SHA-256 to derive an AES-256-GCM key. The key_id
+field lets the UI warn when the wrong key is present before attempting
+a destructive import.
 """
 
 import hashlib
 import json
 import secrets
+import shutil
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 
 from assistant.backend.config import settings
@@ -330,4 +331,210 @@ async def migrate_to_encrypted(unencrypted_src: str | Path, *, db_path: str | No
         "new_encrypted_db": db_path,
         "old_db_moved_to": backup_path,
         "tables_migrated": len(tables),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Portable brain — encrypted SQLCipher file as a renameable blob
+# ---------------------------------------------------------------------------
+
+
+def get_key_id(key: str) -> str:
+    """Return a short SHA-256 identifier for a key (used in envelope headers)."""
+    return hashlib.sha256(key.encode()).hexdigest()[:16]
+
+
+def _encrypt_sqlcipher_dump(raw_bytes: bytes, key: str) -> dict:
+    """Wrap raw SQLCipher bytes in an AES-256-GCM encrypted version-3 envelope.
+
+    Returns the envelope dict (not yet saved to disk).
+    """
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+    aes_key = _derive_key(key)
+    iv = secrets.token_bytes(12)
+    ciphertext = AESGCM(aes_key).encrypt(iv, raw_bytes, None)
+    return {
+        "version": 3,
+        "encrypted": True,
+        "key_id": get_key_id(key),
+        "cipher": "SQLCipher",
+        "iv": iv.hex(),
+        "payload": ciphertext.hex(),
+    }
+
+
+def _decrypt_sqlcipher_dump(envelope: dict, key: str) -> bytes:
+    """Decrypt a version-3 portable brain envelope back to raw SQLCipher bytes.
+
+    Validates ``key_id`` before attempting decryption to avoid corrupting
+    the live database with a wrong key.
+    """
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+    expected_key_id = envelope.get("key_id")
+    if expected_key_id and expected_key_id != get_key_id(key):
+        raise ValueError(
+            "Portable brain was encrypted with a different key. "
+            f"Expected key ID {expected_key_id!r} but current DB_KEY produces "
+            f"{get_key_id(key)!r}. Please set the correct DB_KEY."
+        )
+
+    aes_key = _derive_key(key)
+    iv = bytes.fromhex(envelope["iv"])
+    ciphertext = bytes.fromhex(envelope["payload"])
+
+    try:
+        return AESGCM(aes_key).decrypt(iv, ciphertext, None)
+    except Exception as exc:
+        raise ValueError(
+            f"Decryption failed (wrong key or corrupted file): {exc}"
+        ) from None
+
+
+async def export_portable_brain(dest_path: str | Path, *, db_path: str | None = None) -> dict:
+    """Export the live brain as a version-3 encrypted portable brain file.
+
+    The exported file is a self-contained SQLCipher database, encrypted with
+    ``DB_KEY``, that can be renamed, copied, and restored on any local
+    instance sharing the same ``DB_KEY``.
+
+    Args:
+        dest_path: Output file path (e.g. ``brain-20260826.assistant-brain``).
+        db_path: Source database path. Defaults to ``settings.database_path``.
+
+    Returns:
+        dict with ``version``, ``key_id``, ``exported_at``, and counts.
+
+    Raises:
+        ValueError: if DB_KEY is not set.
+        FileNotFoundError: if the source database does not exist.
+    """
+    db_path_str = db_path or settings.database_path
+    if not Path(db_path_str).exists():
+        raise FileNotFoundError(f"Database not found at {db_path_str}")
+
+    if not settings.db_key:
+        raise ValueError(
+            "DB_KEY is not set. Cannot create portable brain export. "
+            "Set DB_KEY in .env first."
+        )
+
+    # Read the raw SQLCipher file as binary
+    raw_bytes = Path(db_path_str).read_bytes()
+
+    envelope = _encrypt_sqlcipher_dump(raw_bytes, settings.db_key)
+
+    # Add metadata for UI feedback
+    import asyncio
+
+    from assistant.backend.memory.store import MemoryStore
+
+    store = MemoryStore(db_path_str)
+    frames = await store.list_frames()
+    slot_lists = await asyncio.gather(*[store.get_slots_for_frame(f.id) for f in frames])
+    total_slots = sum(len(sl) for sl in slot_lists)
+    associations = await store.get_all_associations()
+
+    envelope["exported_at"] = datetime.now(UTC).isoformat()
+    envelope["frame_count"] = len(frames)
+    envelope["slot_count"] = total_slots
+    envelope["association_count"] = len(associations)
+
+    # Write to temp file first, then atomically rename
+    dest = Path(dest_path)
+    tmp_path = dest.with_suffix(dest.suffix + ".tmp")
+    tmp_path.write_bytes(json.dumps(envelope, indent=2).encode())
+    tmp_path.rename(dest)  # atomic on POSIX
+
+    return {
+        "version": 3,
+        "key_id": envelope["key_id"],
+        "exported_at": envelope["exported_at"],
+        "frame_count": envelope["frame_count"],
+        "slot_count": envelope["slot_count"],
+        "association_count": envelope["association_count"],
+        "file_size_bytes": dest.stat().st_size,
+        "path": str(dest),
+    }
+
+
+async def restore_portable_brain(
+    src_path: str | Path,
+    *,
+    db_path: str | None = None,
+) -> dict:
+    """Restore a version-3 portable brain, replacing the current live database.
+
+    This operation is destructive. Before overwriting the live database,
+    a backup of the current state is created at
+    ``<db_path>.pre-portable-restore``.
+
+    Args:
+        src_path: Path to the portable brain JSON file.
+        db_path: Target database path. Defaults to ``settings.database_path``.
+
+    Returns:
+        dict with restore metadata.
+
+    Raises:
+        ValueError: if DB_KEY is not set, key_id mismatch, or decryption fails.
+        FileNotFoundError: if the source file does not exist.
+    """
+    if not settings.db_key:
+        raise ValueError(
+            "DB_KEY is not set. Cannot restore portable brain. "
+            "Set DB_KEY in .env first."
+        )
+
+    src = Path(src_path)
+    if not src.exists():
+        raise FileNotFoundError(f"Portable brain not found at {src_path}")
+
+    envelope = json.loads(src.read_bytes().decode())
+    version = envelope.get("version")
+    if version != 3:
+        raise ValueError(f"Unsupported portable brain version: {version}. Expected 3.")
+
+    # Validate key_id BEFORE touching the live DB
+    expected_key_id = envelope.get("key_id")
+    if expected_key_id and expected_key_id != get_key_id(settings.db_key):
+        raise ValueError(
+            f"Portable brain was created with a different key (key_id={expected_key_id!r}). "
+            f"Current DB_KEY has key_id={get_key_id(settings.db_key)!r}. "
+            "Cannot import — this would leave the brain unreadable. "
+            "Set the correct DB_KEY to restore this brain."
+        )
+
+    # Decrypt — will raise ValueError on wrong key before any DB is modified
+    raw_bytes = _decrypt_sqlcipher_dump(envelope, settings.db_key)
+
+    db_path_str = db_path or settings.database_path
+    live_db = Path(db_path_str)
+
+    # Atomic swap: write to temp, rename on top of live DB.
+    # Use copy for the pre-restore backup so live_db is preserved independently.
+    tmp_path = live_db.with_suffix(live_db.suffix + ".tmp")
+    pre_restore_backup_path = Path(db_path_str + ".pre-portable-restore")
+    try:
+        if live_db.exists():
+            shutil.copy2(live_db, pre_restore_backup_path)
+        tmp_path.write_bytes(raw_bytes)
+        tmp_path.rename(live_db)
+    except Exception:
+        if tmp_path.exists():
+            tmp_path.unlink()
+        raise
+
+    return {
+        "restored_from": str(src),
+        "key_id": envelope.get("key_id"),
+        "exported_at": envelope.get("exported_at"),
+        "frame_count": envelope.get("frame_count"),
+        "slot_count": envelope.get("slot_count"),
+        "association_count": envelope.get("association_count"),
+        "db_path": db_path_str,
+        "pre_restore_backup": (
+            str(pre_restore_backup_path) if pre_restore_backup_path.exists() else None
+        ),
     }

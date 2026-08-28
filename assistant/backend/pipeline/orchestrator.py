@@ -1,11 +1,16 @@
 """Orchestrator: runs the cognitive loop for chat turns."""
 
+import asyncio
 import logging
+import re
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from html.parser import HTMLParser
+from urllib.parse import urlparse
 
+import httpx
 from pydantic import BaseModel
 
 from assistant.backend.config import settings
@@ -13,11 +18,91 @@ from assistant.backend.memory.retrieval import Retriever
 from assistant.backend.memory.store import MemoryStore
 from assistant.backend.pipeline.llm_client import ChatMessage, OllamaClient, build_system_prompt
 from assistant.backend.pipeline.reasoner import Action, classify_intent, format_plan_for_prompt
-from assistant.backend.pipeline.search import SearchResult, WebSearchTool
+from assistant.backend.pipeline.search import SearchInfo, SearchResult, WebSearchTool
 from assistant.backend.pipeline.task_router import TaskType, route
 from assistant.backend.pipeline.tools import builtin_tools, run_tool_loop
 
 logger = logging.getLogger(__name__)
+
+MAX_FETCH_BYTES = 500_000
+FETCH_TIMEOUT_SECONDS = 4.0
+
+
+class _HTMLTextExtractor(HTMLParser):
+    """Strip HTML tags and return plain text."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._text: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag in ("br", "hr", "p", "div", "li"):
+            self._text.append("\n")
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in ("p", "div"):
+            self._text.append("\n")
+
+    def handle_data(self, data: str) -> None:
+        text = data.strip()
+        if text:
+            self._text.append(text)
+
+    @property
+    def text(self) -> str:
+        joined = "".join(self._text)
+        return " ".join(
+            " ".join(line.split())
+            for line in joined.split("\n")
+            if line.strip()
+        )
+
+
+def _strip_html(html: str) -> str:
+    try:
+        extractor = _HTMLTextExtractor()
+        extractor.feed(html)
+        text = extractor.text
+    except Exception:
+        text = re.sub(r"<[^>]+>", " ", html)
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+async def _fetch_url_body(url: str) -> str | None:
+    """Fetch a URL and return stripped plain text. Returns None on failure."""
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            return None
+    except Exception:
+        return None
+
+    try:
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(FETCH_TIMEOUT_SECONDS, read=8.0),
+            follow_redirects=True,
+            headers={"User-Agent": "Mozilla/5.0 (compatible; AssistantBot/1.0)"},
+        ) as client:
+            r = await client.get(url)
+            content_type = r.headers.get("content-type", "")
+            if "text/html" not in content_type and "text/plain" not in content_type:
+                return r.text[:2000]
+
+            raw = r.content[:MAX_FETCH_BYTES]
+            try:
+                raw = raw.decode(r.encoding or "utf-8", errors="replace")
+            except Exception:
+                raw = raw.decode("utf-8", errors="replace")
+
+            text = _strip_html(raw)
+            if not text.strip():
+                return None
+            return text[:8000]
+    except Exception as e:
+        logger.warning("Failed to fetch %s: %s", url[:80], e)
+        return None
 
 
 class ChatRequest(BaseModel):
@@ -36,6 +121,7 @@ class ChatResponse(BaseModel):
     extraction_summary: dict | None = None  # conversation extraction (async, may be None)
     search_extraction_summary: dict | None = None  # search extraction (sync, available immediately)
     citations: list[str] = []  # source URLs for the response
+    search_info: SearchInfo | None = None  # which backend + query + results (for UI transparency)
 
 
 @dataclass
@@ -116,6 +202,57 @@ class Orchestrator:
             logger.warning("Episode embedding deferred (id=%s): %s", episode.id, exc)
         return episode
 
+    async def _acknowledge_correction(
+        self,
+        frame_name: str,
+        slot_key: str,
+        new_value: str,
+        contradicted: bool,
+        current_value: str | None,
+    ) -> str:
+        """Generate a natural correction acknowledgment via the model."""
+        if contradicted:
+            prompt = (
+                f"The user corrected a stored fact but third-party evidence contradicts the new value.\n"
+                f"Frame: {frame_name}\nSlot: {slot_key}\n"
+                f"User's claimed value: {new_value}\n"
+                f"Current stored value (confirmed by sources): {current_value}\n"
+                f"Generate a brief, honest response that:\n"
+                f"1. Acknowledges the user's correction attempt\n"
+                f"2. Explains that sources suggest the current value is still accurate\n"
+                f"3. Notes the correction has been flagged for review\n"
+                f"Keep it to 1-2 sentences. Do not use a template like 'Got it — I've updated...'."
+            )
+        else:
+            prompt = (
+                f"The user corrected a stored fact and it has been accepted.\n"
+                f"Frame: {frame_name}\nSlot: {slot_key}\n"
+                f"New value: {new_value}\n"
+                f"Generate a brief, natural acknowledgment. "
+                f"Keep it to 1 sentence. Do not use a template like 'Got it — I've updated...'."
+            )
+        messages = [ChatMessage(role="user", content=prompt)]
+        resp = await self.llm_client.chat(
+            messages,
+            model=self.llm_client.chat_model,
+            temperature=0.6,
+            think=False,
+        )
+        return resp.content or f"Updated {frame_name}.{slot_key} to '{new_value}'."
+
+    async def _generate_fallback_response(self, original_message: str) -> str:
+        """Generate a fallback response when the model returned empty."""
+        for _attempt in range(2):
+            resp = await self.llm_client.chat(
+                [ChatMessage(role="user", content=f"I need to respond to: {original_message[:200]}")],
+                model=self.llm_client.chat_model,
+                temperature=0.7,
+                think=False,
+            )
+            if resp.content and resp.content.strip():
+                return resp.content
+        return "I'm not sure how to respond to that."
+
     @staticmethod
     async def _report(
         progress: "Callable[[str, str], Awaitable[None]] | None",
@@ -156,11 +293,16 @@ class Orchestrator:
         self,
         request: ChatRequest,
         progress: "Callable[[str, str], Awaitable[None]] | None" = None,
+        skip_route: bool = False,
     ) -> ChatResponse:
         """Run the full cognitive loop for a chat turn.
 
         progress: optional async callback (stage, detail) for live UI status;
         stage is a stable key, detail is human-readable phrasing.
+
+        skip_route: when True, skip the task-type router and treat the message
+        as functional. Used by internal callers (e.g. scheduled-task management
+        responses) that already know the intent.
         """
         # 1. Session
         session_id = request.session_id or str(uuid.uuid4())
@@ -175,11 +317,14 @@ class Orchestrator:
 
         # 3. Classify task type + search intent (single LLM pass when needed)
         await self._report(progress, "routing", "reading your message")
-        classification = await route(request.message, self.llm_client)
-        task_type = classification.task_type
+        if skip_route:
+            task_type = TaskType.FUNCTIONAL
+        else:
+            classification = await route(request.message, self.llm_client)
+            task_type = classification.task_type
 
         # 3b. Handle scheduled task intent
-        if task_type == TaskType.SCHEDULED:
+        if task_type == TaskType.SCHEDULED and not skip_route:
             return await self._handle_scheduled_task(request, session_id)
 
         # 4. Retrieve memory context
@@ -242,12 +387,6 @@ class Orchestrator:
                 )
 
                 if validation.contradicted:
-                    response_text = (
-                        f"I checked third-party sources and found evidence that "
-                        f"{correction.frame_name}.{correction.slot_key} may still be "
-                        f"'{current_value}' rather than '{correction.new_value}'. "
-                        f"I've flagged this for your review rather than updating automatically."
-                    )
                     logger.info(
                         "Correction contradicted by third party: frame=%s slot=%s "
                         "current=%s attempted=%s",
@@ -255,6 +394,13 @@ class Orchestrator:
                         correction.slot_key,
                         current_value,
                         correction.new_value,
+                    )
+                    response_text = await self._acknowledge_correction(
+                        correction.frame_name,
+                        correction.slot_key,
+                        correction.new_value,
+                        contradicted=True,
+                        current_value=current_value,
                     )
                 else:
                     correction_summary = await apply_correction(
@@ -268,24 +414,22 @@ class Orchestrator:
                         correction_summary.get("new_value"),
                         validation.corroborated,
                     )
-                    if validation.corroborated:
-                        response_text = (
-                            f"Got it — I've updated {correction.frame_name}.{correction.slot_key} "
-                            f"to '{correction.new_value}'. "
-                            f"(Third-party sources corroborate this.)"
-                        )
-                    else:
-                        response_text = (
-                            f"Got it — I've updated {correction.frame_name}.{correction.slot_key} "
-                            f"to '{correction.new_value}'. Thanks for the correction!"
-                        )
+                    response_text = await self._acknowledge_correction(
+                        correction.frame_name,
+                        correction.slot_key,
+                        correction.new_value,
+                        contradicted=False,
+                        current_value=None,
+                    )
             else:
-                logger.info("Correction detected but could not be parsed")
-                response_text = (
-                    "I understand you're saying something was wrong, but I couldn't "
-                    "parse exactly what needs to be corrected. Could you rephrase? "
-                    "(e.g. 'Actually, the guitar has 12 strings, not 6')"
+                logger.info("Correction could not be parsed — generating natural response")
+                natural_response = await self.llm_client.chat(
+                    [ChatMessage(role="user", content=request.message)],
+                    model=self.llm_client.chat_model,
+                    temperature=0.7,
+                    think=True,
                 )
+                response_text = natural_response.content
 
             await self._log_episode(
                 request.user_id,
@@ -302,6 +446,7 @@ class Orchestrator:
                 extraction_summary=None,
                 search_extraction_summary=None,
                 citations=[],
+                search_info=None,
             )
 
         # 6. Extract user-stated facts BEFORE generation so the reply can
@@ -341,6 +486,7 @@ class Orchestrator:
         # 7b. Execute search if reasoner says it's needed
         search_results: list[SearchResult] = []
         search_extraction_summary: dict = {}
+        search_info: SearchInfo | None = None
         if plan.search_needed:
             await self._report(progress, "searching", "searching the web")
             # Prefer the router's keyword query; fall back to a sanitized
@@ -352,16 +498,24 @@ class Orchestrator:
 
             query = classification.search_query or sanitize_query(request.message)
             logger.info("Reasoner triggered search for: %s", query[:80])
+            backend_name = self.search_tool.backend_name
+            extraction_budget = self.search_tool.max_results_for_extraction
+            relevance_threshold = (
+                0.20 if backend_name == "brave" else settings.search_min_relevance
+            )
             try:
-                search_results = await self.search_tool.search(query, num_results=5)
+                search_results, search_info = await self.search_tool.search_with_info(
+                    query, num_results=extraction_budget
+                )
             except Exception as e:
                 logger.warning("Search failed, continuing without results: %s", e)
                 search_results = []
+                search_info = None
 
             # Relevance gate: drop links that don't belong to the query
             # before they can pollute the system prompt or citations.
             search_results = await filter_relevant(
-                search_results, query, self._embed_fn()
+                search_results, query, self._embed_fn(), min_relevance=relevance_threshold
             )
 
             if search_results:
@@ -375,14 +529,43 @@ class Orchestrator:
                 # stored (same fact often lands under a different key).
                 from assistant.backend.pipeline.extractor import (
                     apply_search_extraction,
+                    extract_facts_from_document,
                     extract_facts_from_search,
                     filter_duplicate_slots,
+                    merge_extractions,
                 )
 
+                snippet_extraction = await extract_facts_from_search(
+                    request.message, search_results, self.llm_client
+                )
+
+                # Brave: fetch top 3 result bodies in parallel for richer extraction
+                if backend_name == "brave" and search_results:
+                    try:
+                        bodies = await asyncio.gather(
+                            *[
+                                _fetch_url_body(r.url)
+                                for r in search_results[:3]
+                            ],
+                            return_exceptions=True,
+                        )
+                        document_extractions: list = []
+                        for result, body in zip(search_results[:3], bodies, strict=True):
+                            if isinstance(body, Exception) or not body:
+                                continue
+                            doc_extraction = await extract_facts_from_document(
+                                body, result.url, self.llm_client
+                            )
+                            document_extractions.append(doc_extraction)
+                        if document_extractions:
+                            snippet_extraction = merge_extractions(
+                                snippet_extraction, *document_extractions
+                            )
+                    except Exception as e:
+                        logger.warning("Brave full-page fetch failed: %s", e)
+
                 search_extraction = filter_duplicate_slots(
-                    await extract_facts_from_search(
-                        request.message, search_results, self.llm_client
-                    ),
+                    snippet_extraction,
                     stored_slots,
                 )
                 search_extraction_summary = await apply_search_extraction(
@@ -390,6 +573,7 @@ class Orchestrator:
                     search_results,
                     self.store,
                     embed_fn=self._embed_fn(),
+                    backend_name=backend_name,
                 )
                 logger.info(
                     "Search extraction: %d slots, %d assocs",
@@ -471,6 +655,7 @@ class Orchestrator:
                     self.search_tool,
                     store=self.store,
                     llm_client=self.llm_client,
+                    embed_fn=self._embed_fn,
                 )
                 llm_response = await run_tool_loop(
                     self.llm_client,
@@ -508,6 +693,7 @@ class Orchestrator:
                 extraction_summary=extraction_summary,
                 search_extraction_summary=search_extraction_summary,
                 citations=[],
+                search_info=None,
             )
 
         # 8. Log assistant episode
@@ -519,7 +705,10 @@ class Orchestrator:
         )
 
         # 9. Append sources to response — only for informational/search tasks
-        response_text = llm_response.content or llm_response.thinking
+        response_text = llm_response.content or llm_response.thinking or ""
+        if not response_text:
+            response_text = "I'm not sure how to respond to that."
+            logger.warning("Empty LLM response for: " + repr(request.message[:50]))
         if citations and task_type.value == "search":
             unique_citations = list(dict.fromkeys(citations))
             sources_block = "\n\n**Sources:**\n" + "\n".join(f"- {url}" for url in unique_citations)
@@ -548,18 +737,249 @@ class Orchestrator:
             extraction_summary=extraction_summary or None,
             search_extraction_summary=search_extraction_summary or None,
             citations=citations,
+            search_info=search_info,
         )
 
-    async def execute_task(self, prompt: str, user_id: int) -> str:
-        """Execute a scheduled task: run the prompt through the cognitive loop.
+    async def _handle_scheduled_task(
+        self, request: ChatRequest, session_id: str
+    ) -> ChatResponse:
+        """Handle scheduled task requests: create, list, delete, pause, run-now.
 
-        Synthesizes a session, runs retrieval + search + LLM + extraction,
-        then returns the response text. Results are stored as an assistant episode
-        so they become memory normally.
+        All responses are generated by the model — no hardcoded response strings.
         """
-        session_id = f"scheduled-{uuid.uuid4().hex[:8]}"
+        from assistant.backend.pipeline.extractor import extract_scheduled_task_fields
 
-        task_type_val = "functional"
+        try:
+            fields = await extract_scheduled_task_fields(request.message, self.llm_client)
+        except Exception as e:
+            logger.error("Failed to extract scheduled task fields: %s", e)
+            request.message = (
+                "I couldn't understand the task details. Try phrasing it like: "
+                "'set up a daily briefing on AI news at 9am' or "
+                "'list my scheduled tasks'."
+            )
+            return await self.chat(request, skip_route=True)
+
+        intent = fields.get("intent", "create")
+        task_name = fields.get("task_name") or fields.get("name", "")
+
+        if intent == "run_now":
+            if task_name:
+                tasks = await self.store.get_scheduled_tasks(
+                    owner_user_id=request.user_id
+                )
+                for t in tasks:
+                    if t["name"] == task_name:
+                        result = await self.run_scheduled_task(
+                            t["prompt"], request.user_id, t["name"]
+                        )
+                        now_str = datetime.now(UTC).isoformat()
+                        summary = result[:2000] if result else ""
+                        await self.store.update_scheduled_task_run(
+                            frame_id=t["id"],
+                            last_run=now_str,
+                            last_result_summary=summary,
+                        )
+                        return ChatResponse(
+                            response=result,
+                            session_id=str(uuid.uuid4()),
+                            task_type="scheduled",
+                            memory_context="",
+                            extraction_summary=None,
+                            search_extraction_summary=None,
+                            citations=[],
+                        )
+                else:
+                    request.message = f"I couldn't find a task named '{task_name}'."
+                    return await self.chat(request, skip_route=True)
+            else:
+                request.message = "Which task do you want to run now?"
+                return await self.chat(request, skip_route=True)
+
+        elif intent in ("list", "delete", "pause", "resume", "create"):
+            return await self._scheduled_task_management_response(
+                request, intent, task_name, fields, session_id
+            )
+
+        else:
+            request.message = (
+                "I'm not sure what to do with that. Try something like "
+                "'set up a daily AI news briefing' or 'list my scheduled tasks'."
+            )
+            return await self.chat(request, skip_route=True)
+
+    async def _scheduled_task_management_response(
+        self,
+        request: ChatRequest,
+        intent: str,
+        task_name: str,
+        fields: dict,
+        session_id: str,
+    ) -> ChatResponse:
+        """Generate a natural-language response for scheduled-task management ops.
+
+        Performs the operation (list/delete/pause/resume/create) and asks the
+        model to describe what happened — no hardcoded strings.
+        """
+        from ..scheduler.schedule import format_next_run, next_daily_run
+        op_details = ""
+
+        if intent == "list":
+            tasks = await self.store.get_scheduled_tasks(
+                owner_user_id=request.user_id
+            )
+            if not tasks:
+                op_details = "no tasks"
+            else:
+                lines = []
+                for t in tasks:
+                    enabled = "enabled" if t["enabled"] else "paused"
+                    last = t.get("last_run") or "never run"
+                    next_ts = _parse_iso_ts_safe(t.get("next_run"))
+                    next_r = format_next_run(next_ts) if next_ts else "unknown"
+                    lines.append(
+                        f"- {t['name']} ({t.get('schedule_cron', '?')}, {enabled}; "
+                        f"last: {last}, next: {next_r})"
+                    )
+                op_details = "tasks:\n" + "\n".join(lines)
+
+        elif intent == "delete":
+            if task_name:
+                tasks = await self.store.get_scheduled_tasks(
+                    owner_user_id=request.user_id
+                )
+                for t in tasks:
+                    if t["name"] == task_name:
+                        await self.store.delete_scheduled_task(t["id"])
+                        op_details = f"deleted {task_name}"
+                        break
+                else:
+                    op_details = f"not found: {task_name}"
+            else:
+                op_details = "no task name provided"
+
+        elif intent == "pause":
+            if task_name:
+                tasks = await self.store.get_scheduled_tasks(
+                    owner_user_id=request.user_id
+                )
+                for t in tasks:
+                    if t["name"] == task_name:
+                        await self.store.upsert_scheduled_task(
+                            name=task_name,
+                            description=t.get("description", ""),
+                            schedule_cron=t.get("schedule_cron", "daily"),
+                            prompt=t.get("prompt", ""),
+                            enabled=False,
+                            owner_user_id=request.user_id,
+                        )
+                        op_details = f"paused {task_name}"
+                        break
+                else:
+                    op_details = f"not found: {task_name}"
+            else:
+                op_details = "no task name provided"
+
+        elif intent == "resume":
+            if task_name:
+                tasks = await self.store.get_scheduled_tasks(
+                    owner_user_id=request.user_id
+                )
+                for t in tasks:
+                    if t["name"] == task_name:
+                        next_tick = next_daily_run()
+                        await self.store.upsert_scheduled_task(
+                            name=task_name,
+                            description=t.get("description", ""),
+                            schedule_cron=t.get("schedule_cron", "daily"),
+                            prompt=t.get("prompt", ""),
+                            enabled=True,
+                            owner_user_id=request.user_id,
+                            next_run=next_tick.astimezone(UTC).isoformat(),
+                        )
+                        when = format_next_run(next_tick)
+                        op_details = f"resumed {task_name}, next run {when}"
+                        break
+                else:
+                    op_details = f"not found: {task_name}"
+            else:
+                op_details = "no task name provided"
+
+        elif intent == "create":
+            name = fields.get("name") or f"task_{uuid.uuid4().hex[:6]}"
+            description = fields.get("description", "")
+            repeat = bool(fields.get("repeat", True))
+            frequency = "daily" if repeat else "once"
+            prompt = fields.get("prompt") or request.message
+            next_tick = next_daily_run()
+            await self.store.upsert_scheduled_task(
+                name=name,
+                description=description,
+                schedule_cron=frequency,
+                prompt=prompt,
+                enabled=True,
+                owner_user_id=request.user_id,
+                next_run=next_tick.astimezone(UTC).isoformat(),
+            )
+            when = format_next_run(next_tick)
+            repeat_word = "daily" if repeat else "once"
+            op_details = (
+                f"created {name} ({repeat_word}): {description[:100]}. "
+                f"Prompt: {prompt[:80]}. Next run: {when}."
+            )
+
+        prompt_text = (
+            f"The user asked to manage their scheduled task list: '{request.message}'.\n"
+            f"The operation was: {intent}.\n"
+            f"Details: {op_details}.\n"
+            f"Write a natural, conversational response telling the user what happened. "
+            f"Be concise but informative. If a task wasn't found, say so clearly."
+        )
+
+        system_msg = (
+            "You are a helpful assistant. The user is managing their daily task list. "
+            "Their request has already been processed. Write a brief, natural response "
+            "confirming what happened. Do not add unnecessary details."
+        )
+
+        from assistant.backend.pipeline.llm_client import ChatMessage
+
+        messages = [
+            ChatMessage(role="system", content=system_msg),
+            ChatMessage(role="user", content=prompt_text),
+        ]
+        llm_resp = await self.llm_client.chat(
+            messages,
+            model=self.llm_client.chat_model,
+            think=False,
+        )
+        response_text = llm_resp.content or ""
+
+        await self._log_episode(
+            request.user_id, session_id, role="assistant", content=response_text
+        )
+        return ChatResponse(
+            response=response_text,
+            session_id=session_id,
+            task_type="scheduled",
+            memory_context="",
+            extraction_summary=None,
+            search_extraction_summary=None,
+            citations=[],
+        )
+
+    async def run_scheduled_task(
+        self, prompt: str, user_id: int, task_name: str
+    ) -> str:
+        """Execute a scheduled task: full cognitive loop, output as string.
+
+        Called by the scheduler for due tasks and by _handle_scheduled_task
+        for run-now requests. Logs an assistant episode so the output is
+        queryable memory.
+        """
+        date_str = datetime.now(UTC).strftime("%Y_%m_%d")
+        session_id = f"scheduled-{task_name}-{date_str}"
+
         memory_context = await self.retriever.retrieve(
             query=prompt,
             user_id=user_id,
@@ -568,14 +988,14 @@ class Orchestrator:
 
         plan = classify_intent(
             query=prompt,
-            task_type=task_type_val,
+            task_type="functional",
             memory=memory_context,
         )
 
         plan_instructions = format_plan_for_prompt(plan)
         system_prompt = build_system_prompt(
             memory_context=memory_context.formatted,
-            task_type=task_type_val,
+            task_type="functional",
             planinstructions=plan_instructions,
             self_context=await self._get_self_context(),
         )
@@ -590,7 +1010,9 @@ class Orchestrator:
             query = sanitize_query(prompt)
             logger.info("Scheduled task triggering search: %s", query[:80])
             try:
-                search_results = await self.search_tool.search(query, num_results=5)
+                search_results, _search_info = await self.search_tool.search_with_info(
+                    query, num_results=5
+                )
             except Exception as e:
                 logger.warning("Task search failed: %s", e)
                 search_results = []
@@ -609,6 +1031,7 @@ class Orchestrator:
                     apply_search_extraction,
                     extract_facts_from_search,
                 )
+
                 try:
                     extraction = await extract_facts_from_search(
                         prompt, search_results, self.llm_client
@@ -622,15 +1045,17 @@ class Orchestrator:
 
         messages = [ChatMessage(role="system", content=system_prompt)]
         messages.append(ChatMessage(role="user", content=prompt))
-        # Scheduled-task execution is latency-tolerant background work with
-        # multi-constraint prompts — always run it in thinking mode (§6.2).
         llm_response = await self.llm_client.chat(
             messages,
             think=True,
             num_predict=settings.think_num_predict_cap,
         )
 
-        response_text = llm_response.content or llm_response.thinking
+        response_text = (
+            llm_response.content
+            or llm_response.thinking
+            or "Task completed."
+        )
 
         await self._log_episode(
             user_id,
@@ -639,7 +1064,6 @@ class Orchestrator:
             content=response_text,
         )
 
-        # Learn from the task output: extract facts and store in memory
         try:
             from assistant.backend.pipeline.extractor import (
                 apply_extraction,
@@ -660,7 +1084,7 @@ class Orchestrator:
                     source_reliability=0.6,
                 )
                 logger.info(
-                    "execute_task: extracted %d slots, %d assocs",
+                    "run_scheduled_task: extracted %d slots, %d assocs",
                     len(extraction.slots),
                     len(extraction.associations),
                 )
@@ -668,201 +1092,6 @@ class Orchestrator:
             logger.warning("Scheduled task extraction failed: %s", e)
 
         return response_text
-
-    async def _handle_scheduled_task(
-        self, request: ChatRequest, session_id: str
-    ) -> ChatResponse:
-        """Handle scheduled task requests: create, list, delete, pause, run-now."""
-
-        from assistant.backend.pipeline.extractor import extract_scheduled_task_fields
-
-        try:
-            fields = await extract_scheduled_task_fields(request.message, self.llm_client)
-        except Exception as e:
-            logger.error("Failed to extract scheduled task fields: %s", e)
-            fallback = (
-                "I couldn't understand the task details. Try phrasing it like: "
-                "'set up a daily briefing on AI news at 9am' or "
-                "'list my scheduled tasks'."
-            )
-            await self._log_episode(
-                request.user_id, session_id, role="assistant", content=fallback
-            )
-            return ChatResponse(
-                response=fallback,
-                session_id=session_id,
-                task_type="scheduled",
-                memory_context="",
-                extraction_summary=None,
-                search_extraction_summary=None,
-                citations=[],
-            )
-
-        intent = fields.get("intent", "create")
-        response_text = ""
-
-        if intent == "list":
-            tasks = await self.store.get_scheduled_tasks(
-                owner_user_id=request.user_id
-            )
-            if not tasks:
-                response_text = (
-                    "You don't have any scheduled tasks yet. "
-                    "Say something like 'set up a daily AI news briefing' to create one."
-                )
-            else:
-                from ..scheduler.schedule import format_next_run
-
-                lines = ["Your scheduled tasks:"]
-                for t in tasks:
-                    enabled = "enabled" if t["enabled"] else "paused"
-                    last = t.get("last_run") or "never run"
-                    next_ts = _parse_iso_ts_safe(t.get("next_run"))
-                    next_r = format_next_run(next_ts) if next_ts else "unknown"
-                    lines.append(
-                        f"- **{t['name']}** ({t.get('schedule_cron', '?')}, {enabled})\n"
-                        f"  Last: {last}  |  Next: {next_r}"
-                    )
-                response_text = "\n".join(lines)
-
-        elif intent == "delete":
-            task_name = fields.get("task_name") or fields.get("name", "")
-            if task_name:
-                tasks = await self.store.get_scheduled_tasks(
-                    owner_user_id=request.user_id
-                )
-                for t in tasks:
-                    if t["name"] == task_name:
-                        await self.store.delete_scheduled_task(t["id"])
-                        response_text = f"Deleted task '{task_name}'."
-                        break
-                else:
-                    response_text = f"I couldn't find a task named '{task_name}'."
-            else:
-                response_text = "Which task do you want to delete?"
-
-        elif intent == "pause":
-            task_name = fields.get("task_name") or fields.get("name", "")
-            if task_name:
-                tasks = await self.store.get_scheduled_tasks(
-                    owner_user_id=request.user_id
-                )
-                for t in tasks:
-                    if t["name"] == task_name:
-                        await self.store.upsert_scheduled_task(
-                            name=task_name,
-                            description=t.get("description", ""),
-                            schedule_cron=t.get("schedule_cron", "0 9 * * *"),
-                            prompt=t.get("prompt", ""),
-                            enabled=False,
-                            owner_user_id=request.user_id,
-                        )
-                        response_text = (
-                            f"Paused task '{task_name}'. "
-                            f"Say 'resume {task_name}' to enable it again."
-                        )
-                        break
-                else:
-                    response_text = f"I couldn't find a task named '{task_name}'."
-            else:
-                response_text = "Which task do you want to pause?"
-
-        elif intent == "resume":
-            task_name = fields.get("task_name") or fields.get("name", "")
-            if task_name:
-                tasks = await self.store.get_scheduled_tasks(
-                    owner_user_id=request.user_id
-                )
-                for t in tasks:
-                    if t["name"] == task_name:
-                        from ..scheduler.schedule import format_next_run, next_daily_run
-
-                        next_tick = next_daily_run()
-                        # Restore the ORIGINAL prompt/description — the extractor
-                        # returns no fields for resume, and upsert would
-                        # otherwise overwrite them with the literal request.
-                        await self.store.upsert_scheduled_task(
-                            name=task_name,
-                            description=t.get("description", ""),
-                            schedule_cron=t.get("schedule_cron", "daily"),
-                            prompt=t.get("prompt", ""),
-                            enabled=True,
-                            owner_user_id=request.user_id,
-                            next_run=next_tick.astimezone(UTC).isoformat(),
-                        )
-                        when = format_next_run(next_tick)
-                        response_text = (
-                            f"Resumed **{task_name}**. Back on your list — "
-                            f"next run {when}."
-                        )
-                        break
-                else:
-                    response_text = f"I couldn't find a task named '{task_name}'."
-            else:
-                response_text = "Which task do you want to resume?"
-
-        elif intent == "run_now":
-            task_name = fields.get("task_name") or fields.get("name", "")
-            if task_name:
-                tasks = await self.store.get_scheduled_tasks(
-                    owner_user_id=request.user_id
-                )
-                for t in tasks:
-                    if t["name"] == task_name:
-                        response_text = await self.execute_task(t["prompt"], request.user_id)
-                        break
-                else:
-                    response_text = f"I couldn't find a task named '{task_name}'."
-            else:
-                response_text = "Which task do you want to run now?"
-
-        else:
-            name = fields.get("name") or f"task_{uuid.uuid4().hex[:6]}"
-            description = fields.get("description", "")
-            repeat = bool(fields.get("repeat", True))
-            frequency = "daily" if repeat else "once"
-            prompt = fields.get("prompt") or request.message
-
-            from ..scheduler.schedule import format_next_run, next_daily_run
-
-            next_tick = next_daily_run()
-            await self.store.upsert_scheduled_task(
-                name=name,
-                description=description,
-                schedule_cron=frequency,
-                prompt=prompt,
-                enabled=True,
-                owner_user_id=request.user_id,
-                next_run=next_tick.astimezone(UTC).isoformat(),
-            )
-
-            when = format_next_run(next_tick)
-            if repeat:
-                response_text = (
-                    f"Added **{name}** to your daily list. I'll take care of it "
-                    f"every morning — first run {when}. Say the word anytime if "
-                    "you want it off the list."
-                )
-            else:
-                response_text = (
-                    f"Got it — I'll handle **{name}** once, at my next daily "
-                    f"run ({when}), and then it's done."
-                )
-
-        # Every scheduled-task interaction pairs the user turn with an
-        # assistant episode — same contract as every other chat path.
-        await self._log_episode(
-            request.user_id, session_id, role="assistant", content=response_text
-        )
-        return ChatResponse(
-            response=response_text,
-            session_id=session_id,
-            task_type="scheduled",
-            memory_context="",
-            extraction_summary=None,
-            search_extraction_summary=None,
-            citations=[],
-        )
 
 
 def _parse_iso_ts_safe(value: str | None):

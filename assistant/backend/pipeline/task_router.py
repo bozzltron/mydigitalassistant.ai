@@ -52,35 +52,19 @@ INTROSPECTIVE_PATTERNS = [
     r"\bthat (was|is) (about|on|related to) \w+\b",
 ]
 
-# Heuristic patterns for scheduled task intents
-SCHEDULED_TASK_PATTERNS = [
-    r"\bschedule\b",
-    r"\bscheduled\b",
-    r"\bset up a daily\b",
-    r"\bset up a weekly\b",
-    r"\bset up an? \w+ task\b",
-    r"\bcreate a (daily|weekly|monthly|recurring)\b",
-    r"\bevery \w+ (minute|hour|day|week|month)\b",
-    r"\b(remind|notify) me (to|every|at|daily|weekly)\b",
-    r"\bautomat(e|ically) (remind|run|check)\b",
-    r"\bperiodic(al)?(ly)?\b",
-    r"\brun (every|daily|weekly|monthly)\b",
-    r"\bhave a (daily|weekly|monthly) (briefing|task|check|report)\b",
-    r"\btrack (daily|weekly|monthly)\b",
-]
-
 _COMPILED_INTROSPECTIVE = [re.compile(p, re.IGNORECASE) for p in INTROSPECTIVE_PATTERNS]
-_COMPILED_SCHEDULED = [re.compile(p, re.IGNORECASE) for p in SCHEDULED_TASK_PATTERNS]
 
 
 def classify_heuristic(text: str) -> TaskType | None:
-    """Return TaskType.INTROSPECTIVE or TaskType.SCHEDULED if a heuristic match is found."""
+    """Return TaskType.INTROSPECTIVE if a heuristic match is found.
+
+    SCHEDULED intent is not heuristic-matched — the LLM classifies it with full
+    context to avoid false positives from ambiguous words like "schedule" or
+    "remind" in everyday sentences.
+    """
     for pattern in _COMPILED_INTROSPECTIVE:
         if pattern.search(text):
             return TaskType.INTROSPECTIVE
-    for pattern in _COMPILED_SCHEDULED:
-        if pattern.search(text):
-            return TaskType.SCHEDULED
     return None
 
 

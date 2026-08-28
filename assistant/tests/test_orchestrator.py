@@ -372,62 +372,57 @@ async def test_orchestrator_handles_correction(store, stub_llm):
         stub_llm.chat = original_chat
 
 
-async def test_orchestrator_correction_rejected_when_vague(store, stub_llm):
-    """When user says 'that's wrong' but can't be parsed, graceful handling."""
-    from assistant.backend.pipeline.llm_client import ChatResponse
+async def test_orchestrator_correction_when_utility_returns_null(store):
+    """When utility model returns all-null correction, chat model handles it naturally."""
+    from unittest.mock import AsyncMock, MagicMock
 
-    async def vague_chat(
-        messages, model=None, temperature=0.7, format=None, stream=False, **kwargs
-    ):
-        system = messages[0].content.lower()
-        if "classify" in system:
-            return ChatResponse(
-                content='{"task_type": "correction"}',
-                model="qwen2.5:3b",
-                done=True,
-            )
-        if "correct" in system:
-            return ChatResponse(
-                content=json.dumps({
-                    "frame_name": None,
-                    "slot_key": None,
-                    "new_value": None,
-                }),
-                model="qwen2.5:3b",
-                done=True,
-            )
-        return ChatResponse(content="I don't understand.", model="qwen2.5:3b", done=True)
+    from assistant.backend.pipeline.llm_client import OllamaClient
+
+    mock_llm = MagicMock(spec=OllamaClient)
+    mock_llm.utility_model = "qwen2.5:3b"
+    mock_llm.chat_model = "qwen2.5:7b"
+
+    classify_response = MagicMock()
+    classify_response.content = '{"task_type": "correction"}'
+
+    extract_response = MagicMock()
+    extract_response.content = '{"frame_name": null, "slot_key": null, "new_value": null}'
+
+    chat_response = MagicMock()
+    chat_response.content = (
+        "I apologize — I may have gotten something wrong. "
+        "Could you clarify which fact needs correcting?"
+    )
+
+    mock_llm.chat = AsyncMock(
+        side_effect=[classify_response, extract_response, chat_response]
+    )
+    mock_llm.embed = AsyncMock(return_value=MagicMock(embedding=[0.1] * 768))
 
     user = await store.create_user("alice")
-
-    retriever = Retriever(store=store, llm_client=stub_llm)
+    retriever = Retriever(store=store, llm_client=mock_llm)
     stub_search = WebSearchTool(enabled=False)
     orchestrator = Orchestrator(
         deps=OrchestratorDeps(
             store=store,
             retriever=retriever,
-            llm_client=stub_llm,
+            llm_client=mock_llm,
             search_tool=stub_search,
         )
     )
 
-    original_chat = stub_llm.chat
-    stub_llm.chat = vague_chat
+    request = ChatRequest(
+        user_id=user.id,
+        message="That's wrong",
+        session_id="vague-correction",
+    )
 
-    try:
-        request = ChatRequest(
-            user_id=user.id,
-            message="That's wrong",
-            session_id="vague-correction",
-        )
+    response = await orchestrator.chat(request)
 
-        response = await orchestrator.chat(request)
-
-        assert response.task_type == "correction"
-        assert response.response
-        assert "couldn't" in response.response.lower() or "parse" in response.response.lower()
-    finally:
-        stub_llm.chat = original_chat
+    assert response.task_type == "correction"
+    assert response.response
+    assert mock_llm.chat.call_count == 3
+    assert "apologize" in response.response.lower() or "clarify" in response.response.lower()
 
 
 async def test_generation_failure_degrades_gracefully(store):
@@ -486,3 +481,64 @@ async def test_progress_stages_reported_in_order(store):
     assert "learning" in stages
     assert stages[-1] in ("responding", "reasoning")
     assert len(stages) == len(set(stages)), "no stage repeats"
+
+
+async def test_orchestrator_correction_contradicted_flagged_not_applied(store):
+    """When search contradicts a correction, the slot is NOT updated and response explains why."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    from assistant.backend.pipeline.llm_client import ChatResponse, OllamaClient
+
+    mock_llm = MagicMock(spec=OllamaClient)
+    mock_llm.utility_model = "qwen2.5:3b"
+    mock_llm.chat_model = "qwen2.5:7b"
+
+    async def mock_chat(messages, **kwargs):
+        system = messages[0].content.lower()
+        if "classify" in system:
+            return ChatResponse(content='{"task_type": "correction"}', model="fake", done=True)
+        if "parse a user correction" in system:
+            return ChatResponse(
+                content='{"frame_name": "guitar", "slot_key": "strings", "new_value": "12"}',
+                model="fake",
+                done=True,
+            )
+        return ChatResponse(content="I see.", model="fake", done=True)
+
+    mock_llm.chat = mock_chat
+    mock_llm.embed = AsyncMock(return_value=MagicMock(embedding=[0.1] * 768))
+
+    guitar = await store.create_frame("guitar", "entity")
+    await store.upsert_slot(guitar.id, "strings", "6")
+    await store.store_frame_embedding(guitar.id, [1.0] * 768)
+
+    user = await store.create_user("alice")
+    retriever = Retriever(store=store, llm_client=mock_llm)
+
+    mock_search = AsyncMock()
+    mock_search.search.return_value = [
+        MagicMock(url="https://example.com/strings", snippet="Most guitars have 6 strings"),
+    ]
+
+    orchestrator = Orchestrator(
+        deps=OrchestratorDeps(
+            store=store,
+            retriever=retriever,
+            llm_client=mock_llm,
+            search_tool=mock_search,
+        )
+    )
+
+    request = ChatRequest(
+        user_id=user.id,
+        message="Actually, the guitar has 12 strings, not 6.",
+        session_id="contradicted-correction",
+    )
+
+    response = await orchestrator.chat(request)
+
+    assert response.task_type == "correction"
+    assert "flagged" in response.response.lower() or "review" in response.response.lower()
+
+    updated_slot = await store.get_slot(guitar.id, "strings")
+    assert updated_slot.value == "6", "Slot must NOT be updated when correction is contradicted"

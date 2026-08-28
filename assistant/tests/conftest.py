@@ -170,6 +170,26 @@ class StubLLMClient(OllamaClient):
                 done=True,
             )
 
+        if "daily task list" in system_lower:
+            # Management response: the orchestrator already processed the operation.
+            # Return a simple confirmation based on op_details in the user message.
+            user_msg = messages[1].content if len(messages) > 1 else ""
+            if "resumed" in user_msg.lower():
+                content = "Done — weather_check is back on your list."
+            elif "paused" in user_msg.lower():
+                content = "Paused — say 'resume weather_check' to bring it back."
+            elif "deleted" in user_msg.lower():
+                content = "Deleted."
+            elif "created" in user_msg.lower():
+                content = "Added to your daily list."
+            elif "not found" in user_msg.lower():
+                content = "I couldn't find that task."
+            elif "no task" in user_msg.lower():
+                content = "You don't have any scheduled tasks yet."
+            else:
+                content = "Got it."
+            return ChatResponse(content=content, model=self.chat_model, done=True)
+
         return ChatResponse(
             content="Got it — tell me more.",
             model=self.chat_model,

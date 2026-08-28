@@ -5,21 +5,59 @@ FastAPI backend + CLI client. Ollama for LLM inference (role-based fleet: chat, 
 embedding; coder reserved). SQLite + sqlite-vec for local memory storage.
 Web search for retrieval-only; learned facts stored locally in memory frames/slots.
 
+## Performance / latency
+- Response latency is a first-class user-experience goal. Keep chat response time as low
+  as possible; a slow assistant feels broken even when the answer is correct.
+- Avoid synchronous model switching on the hot path. Loading/unloading models in Ollama
+  adds noticeable overhead; prefer batching, caching, and design choices that stay within
+  the already-loaded model set.
+- Parallelize external work (e.g. fetching multiple result bodies) and cap timeouts so a
+  slow source cannot block the user.
+- Measure before adding new models, new network calls, or new LLM invocations to the
+  synchronous response path.
+
 ## Web Search
-- Uses SearXNG (privacy-friendly meta-search engine) for external retrieval.
-- Search results are **retrieval-only** unless explicitly worth learning.
-- The LLM decides which facts to retain from search results.
-- Always on by design — no feature flag; point `SEARCH_BASE_URL` at your local SearXNG.
-- Engine roster is curated in `searxng/settings.yml`. Engines that serve
-  CAPTCHAs on every request are removed outright (they retry-and-fail on
-  each query); rate-limited engines that self-heal (e.g. Brave 429s) stay.
+- **Default backend:** local SearXNG instance at `SEARCH_BASE_URL`. No query leaves
+  the machine in the default configuration.
+- **Optional backend:** Brave Search API. The only permitted non-local search
+  provider because it does not profile users or sell query data. Disabled by
+  default; requires both `BRAVE_ENABLED=true` and `BRAVE_API_KEY` to activate.
+  When enabled, sanitized query text and the user's IP address are sent to
+  Brave's servers.
+- Search results are **retrieval-only** unless they pass extraction as
+  high-signal, corroborated facts.
+- Always on by design — no feature flag for search itself; only the backend is
+  configurable.
+- SearXNG engine roster is curated in `searxng/settings.yml`. Engines that serve
+  CAPTCHAs on every request are removed outright; rate-limited engines that
+  self-heal (e.g. Brave 429s) stay.
+
+## Search Learning
+Search-derived facts enter memory only when they are accurate and useful:
+
+1. **Extract from snippets first.** The utility model extracts slots/associations
+   from result titles and snippets.
+2. **Fetch top result bodies when quality supports it.** For Brave results,
+   fetch the top 2–3 pages in parallel and extract additional facts from full
+   content. Degrade gracefully on fetch failure or timeout.
+3. **Corroborate.** A fact mentioned by multiple independent sources gets a
+   source-reliability bonus.
+4. **Backend-aware reliability.** Brave facts start with higher source reliability
+   than SearXNG/Bing facts because Brave's index is measurably cleaner.
+5. **Deduplicate across channels.** Search-extracted facts are deduped against
+   conversational slots by `(frame_name, value)` so the same fact does not
+   inflate memory under two different keys.
+6. **Conflict and audit.** Conflicting search facts are auto-resolved by the
+   standard confidence ladder and preserved in `slot_history`. The UI surfaces
+   auto-resolved conflicts in the trace panel and “What I learned” indicator.
 
 ## The cognitive loop
 1. Task Router classifies input: functional (goal-directed) vs introspective (reflective).
    Heuristic first; LLM fallback (utility model) for ambiguous cases. The same LLM pass
    also returns `wants_search` — false for storage-style turns and general-knowledge
    questions, so personal facts are never forwarded to external search.
-2. For functional queries requiring external info: fetch via search engine (SearXNG).
+2. For functional queries requiring external info: fetch via the configured search
+   backend (SearXNG by default, optional Brave Search API).
 3. Retrieve: embed query → sqlite-vec similarity → graph-walk associations →
    memory context. Past conversations are also searched semantically
    (`episode_embeddings`): turns from other sessions matching the query land in
@@ -45,6 +83,54 @@ Actual ordering inside `orchestrator.chat()`:
 - Search extraction runs only when a search actually happened, and is deduped
   against conversational slots by (frame_name, value) — cross-key duplicates like
   "strings"/"number_of_strings" are dropped in favor of the earlier channel's key.
+
+## Design principles
+
+### Model-first correction
+When the utility model cannot parse a user correction (or any ambiguous input), pass the
+user's message to the chat model rather than generating a scripted fallback. The model's own
+reasoning should determine the response — no hardcoded text branches keyed on what the user
+might have typed. This applies everywhere: corrections, clarifications, reframing, and any
+other case where parsing fails.
+
+### No templated responses
+The model speaks for itself. Avoid hardcoded acknowledgment templates ("Got it, I've updated...")
+in favor of letting the model generate responses from the facts it has access to.
+
+### Lean on the model's flexibility
+Everywhere the design allows a choice between "scripted logic" and "model reasoning," prefer
+the model. For example: extract facts from search via the model rather than keyword rules;
+route ambiguous inputs via the model rather than heuristic classifiers; respond to corrections
+via the model rather than fixed response templates.
+
+### Scheduled tasks are memory
+Scheduled tasks, their outputs, and the fact that a daily run occurred are all first-class
+memory objects — frames, slots, associations, episodes. There are no scheduler-only hidden
+columns. A task is a `scheduled_task` frame whose `prompt`, `frequency`, `enabled`, `next_run`,
+and `last_run` are slots. Each morning's run is an `event` frame associated with the tasks that
+ran and their output episodes. The user can ask "What did my briefing find?" because the
+answer is ordinary memory.
+
+### Clean ship
+Dead code is a liability. Unused imports, dead helper functions, and commented-out
+snippets make the codebase harder to reason about and increase the risk of breaking
+something that still matters. Before shipping a change:
+- Run `ruff check --select=F401,F811` to surface unused imports and variables.
+- Before removing any function or class, verify it has zero callers across the entire
+  codebase — including tests. If in doubt, add a test proving it can be removed rather
+  than deleting blind.
+- A periodic "dead code audit" is fine; a blanket "delete unused code" without tooling
+  verification is not. The goal is a codebase where nothing exists without purpose.
+
+### Stability: no regressions while adding features
+Every non-trivial change should be accompanied by a regression test — a test that would
+have caught the bug before the fix ships. This builds the suite in the direction of
+real bugs rather than abstract coverage.
+Critical paths that need regression tests (in priority order):
+1. **Voice recording flow**: silence detection → stopRecording → transcription → sendMessage.
+2. **run_now**: scheduled task found by name → executed → last_run updated → once disabled.
+3. **Correction pipeline**: parse → validate → apply → response.
+4. **Search extraction + merge**: snippet extract → deduplication → document extract → merge.
 
 ## Memory model
 - Frames: entities/concepts/events with confidence.
@@ -76,10 +162,13 @@ Actual ordering inside `orchestrator.chat()`:
   `POST /correction` (the LLM correction pipeline above).
 
 ## Brain portability
-- `POST /brain/export`: serializes all frames, slots, associations, conflicts, episodes,
-  and feedbacks to JSON.
-- `POST /brain/import`: loads JSON, supports merge (accumulate) and overwrite (replace) modes.
-- Overwrite mode auto-backs up existing DB via `shutil.copy2`.
+- **Portable brains**: `POST /brain/export-portable` and `POST /brain/import-portable` API
+  endpoints; `assistant db export-portable` and `assistant db import-portable` CLI commands.
+  Exports the live SQLCipher database as an encrypted, version-3 `.assistant-brain` file
+  that can be renamed, copied, and restored on any instance sharing the same `DB_KEY`.
+  A pre-restore backup of the current brain is created automatically before import.
+- **Full-DB backup/restore**: `assistant db backup` and `assistant db restore` CLI commands
+  create and restore encrypted JSON bundles. Still useful for point-in-time snapshots.
 
 ## Confidence rules (assistant/backend/memory/confidence.py)
 - New slot value: confidence 0.5.
@@ -108,24 +197,36 @@ Role-based model selection. Configurable in `.env`: `CHAT_MODEL`, `UTILITY_MODEL
   (probed via `/api/show`). Fleet details live in `backend/config.py`.
 
 ## Scheduled tasks — the daily list
-- One clock: the agent wakes once a day at `DAILY_TASKS_TIME` (default `09:00`, 24h)
+- **Enabled by default.** The scheduler starts with the backend unless `SCHEDULER_ENABLED=false`.
+- **One clock:** the agent wakes once a day at `DAILY_TASKS_TIME` (default `09:00`, 24h)
   in `DAILY_TASKS_TZ` (default: `TZ` env or host-local zone).
-- Chat is the only interface. "Add an AI briefing to my mornings" → task stored;
+- **Chat is the only interface.** "Add an AI briefing to my mornings" → task stored;
   "stop doing X" → removed; "run my briefing now" → immediate execution.
-- Task kinds: `daily` (runs every tick until the user asks to stop) and `once`
-  (next tick, then auto-disabled). Stored on scheduled_task frames in the
-  `schedule_cron` column (legacy column name; now holds the frequency tag).
-- Extraction: utility model returns `{intent, name, description, prompt, repeat}`
-  (`repeat: false` for one-shots like "remind me tomorrow"). No cron generation —
-  the old NL→cron parser and croniter dependency were removed.
-- Runner (`scheduler/runner.py`): 20s poll loop; fires due tasks through the full
-  orchestrator (search + thinking + extraction) so results become memory.
-  Housekeeping timers: heartbeat every 30 min, memory GC weekly (ISO-week change
-  detection), embedding consolidation every 12h (tops up frame + episode embedding
-  coverage, calls the embedding model). No chat/reasoning LLM calls in housekeeping.
-- Missed ticks (backend down at 09:00) fire once late on restart, then reschedule.
-- API: `GET /tasks`, `DELETE /tasks/{id}`, `GET /tasks/{id}/result`.
-- Tests: `assistant/tests/test_daily_schedule.py`.
+- **Tasks are memory.** Each task is a `scheduled_task` frame with slots for `prompt`,
+  `frequency` (`daily`/`once`), `enabled`, `next_run`, `last_run`, and `description`.
+  No hidden scheduler-only columns.
+- **Execution uses the full chat loop.** When a task fires, the scheduler calls
+  `orchestrator.chat()` with the task prompt as the user message. The task gets the
+  same retrieval, search, reasoning, extraction, conflict resolution, and episode
+  logging as any chat turn.
+- **Daily-run event frames.** Each morning the scheduler creates/updates an `event`
+  frame named `daily_run_YYYY_MM_DD`. It records `date`, `tasks_run`, and `status`,
+  and associations link each task frame to the run and to its output episode.
+- **Outputs are queryable.** The assistant's response from a task run is a normal
+  assistant episode. The user can later ask "What did my morning briefing find?"
+  and retrieval will surface it.
+- **Task kinds:** `daily` (runs every tick until stopped) and `once` (next tick, then
+  disabled). No cron expressions — one shared daily tick.
+- **Extraction:** utility model returns `{intent, name, description, prompt, repeat}`
+  (`repeat: false` for one-shots). The old NL→cron parser and `croniter` dependency
+  were removed.
+- **Runner (`scheduler/runner.py`):** 20s poll loop; fires due tasks, creates the daily-run
+  event frame, links associations, and reschedules. Housekeeping timers: heartbeat every
+  30 min, memory GC weekly, embedding consolidation every 12h.
+- **Missed ticks** (backend down at 09:00) fire once late on restart, then reschedule.
+- **API:** `GET /tasks`, `DELETE /tasks/{id}`, `GET /tasks/{id}/result`.
+- **Tests:** `assistant/tests/test_daily_schedule.py` plus a new integration test for
+  end-to-end task execution.
 
 ## Key files
 - `backend/memory/store.py` — MemoryStore CRUD over SQLite; `export_brain`/`import_brain`.
@@ -141,11 +242,13 @@ Role-based model selection. Configurable in `.env`: `CHAT_MODEL`, `UTILITY_MODEL
 - `backend/memory/confidence.py` — confidence + conflict math. Single source of truth.
 - `backend/memory/retrieval.py` — embed + sqlite-vec + graph-walk.
 - `backend/pipeline/task_router.py` — functional/introspective/scheduled classification.
-- `backend/pipeline/search.py` — `SearchBackend` ABC + `SearXNGBackend`; `WebSearchTool` wraps it.
+- `backend/pipeline/search.py` — `SearchBackend` ABC + `SearXNGBackend` + optional
+  `BraveBackend`; `WebSearchTool` wraps backend selection and exposes `SearchInfo`.
 - `backend/pipeline/tools.py` — `builtin_tools()` registry; `_make_fetch_url_handler()` for `fetch_url`.
 - `backend/pipeline/extractor.py` — fact extraction + correction pipeline + scheduled task extraction.
 - `backend/pipeline/reasoner.py` — planning + self-correction (`Action.CORRECT`).
-- `backend/pipeline/orchestrator.py` — coordinates full cognitive loop; `execute_task()`.
+- `backend/pipeline/orchestrator.py` — coordinates full cognitive loop; scheduled tasks
+  execute via `chat()`.
 - `backend/pipeline/llm_client.py` — Ollama client (chat + embeddings).
 - `backend/scheduler/schedule.py` — the daily clock (tick computation, tz handling).
 - `backend/scheduler/runner.py` — scheduler loop (daily-list firing + housekeeping timers).

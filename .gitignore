@@ -52,6 +52,7 @@ assistant-data/
 # ----- Backups -----
 *.tar.gz
 *.zip
+brain-backups/
 backups/
 tmp/
 temp/

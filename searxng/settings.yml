@@ -20,6 +20,7 @@ use_default_settings:
       - mojeek
       - bing
       - wikipedia
+      - startpage
 
 # keep_only trims the set but inherits each engine's default `disabled`
 # flag (most are off by default). Explicitly enable all of them.
@@ -31,6 +32,8 @@ engines:
   - name: bing
     disabled: false
   - name: wikipedia
+    disabled: false
+  - name: startpage
     disabled: false
 
 server:

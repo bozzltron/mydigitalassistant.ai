@@ -21,9 +21,11 @@ services:
       # break Caddy's appnet proxy.
       - BACKEND_HOST=0.0.0.0
       - SEARCH_BASE_URL=http://searxng:8080
+      - BRAVE_ENABLED=${BRAVE_ENABLED:-false}
+      - BRAVE_API_KEY=${BRAVE_API_KEY:-}
       - WHISPER_MODEL=base
       - WHISPER_DEVICE=cpu
-      - SCHEDULER_ENABLED=${SCHEDULER_ENABLED:-false}
+      - SCHEDULER_ENABLED=${SCHEDULER_ENABLED:-true}
       - DAILY_TASKS_TIME=${DAILY_TASKS_TIME:-09:00}
       - DAILY_TASKS_TZ=${DAILY_TASKS_TZ:-}
       - TZ=${TZ:-}
