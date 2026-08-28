@@ -89,6 +89,59 @@
       padding: 0.25rem;
     }
 
+    .voice-status-bar {
+      display: none;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.8rem;
+      color: var(--text-dim);
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.3rem 0.6rem;
+    }
+
+    .voice-status-bar.active {
+      display: flex;
+    }
+
+    .voice-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent);
+      animation: voice-pulse 1.2s ease-in-out infinite;
+      flex-shrink: 0;
+    }
+
+    .voice-dot.processing {
+      background: var(--warning);
+    }
+
+    .voice-dot.speaking {
+      background: var(--accent2);
+      animation: none;
+    }
+
+    @keyframes voice-pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(0.85); }
+    }
+
+    .voice-btn-small {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 4px;
+      padding: 0.15rem 0.5rem;
+      font-size: 0.75rem;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .voice-btn-small:hover { background: var(--border); }
+    .voice-btn-small.danger { color: var(--error); border-color: var(--error); }
+
     #main {
       display: flex;
       flex: 1;
@@ -487,6 +540,18 @@
       overflow-y: auto;
     }
 
+    .badge {
+      display: inline-block;
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+    .badge-brave { background: #ff7733; color: #fff; }
+    .badge-searxng { background: #4a9eff; color: #fff; }
+
     /* Settings panel (slide-in) */
     #settings-panel {
       position: fixed;
@@ -536,6 +601,10 @@
     input[type="checkbox"] {
       width: 16px;
       height: 16px;
+      accent-color: var(--accent);
+    }
+
+    input[type="range"] {
       accent-color: var(--accent);
     }
 
@@ -846,6 +915,12 @@
   <h1 id="agent-name">Cognitive Assistant</h1>
   <div class="header-right">
     <span class="user-badge" id="user-badge">Loading...</span>
+    <span class="voice-status-bar" id="voice-status-bar">
+      <span class="voice-dot" id="voice-status-dot"></span>
+      <span id="voice-status-text">Listening</span>
+      <button class="voice-btn-small" id="voice-stop-inline">Stop</button>
+      <button class="voice-btn-small danger" id="voice-cancel-inline">Cancel</button>
+    </span>
     <button id="voice-mode-btn" class="voice-btn" title="Voice conversation mode">
       Voice
     </button>
@@ -903,6 +978,10 @@
         <div class="trace-label">Citations</div>
         <div class="trace-value" id="trace-citations">-</div>
       </div>
+      <div class="trace-section" id="trace-search-section" style="display:none">
+        <div class="trace-label">Search</div>
+        <div class="trace-value" id="trace-search-info">-</div>
+      </div>
     </div>
   </div>
 </div>
@@ -926,6 +1005,21 @@
         <option value="">Loading voices...</option>
       </select>
     </div>
+    <div class="settings-section">
+      <label for="voice-speed">Speed</label>
+      <input type="range" id="voice-speed" min="0.5" max="2" step="0.1" value="1">
+      <span id="voice-speed-value">1.0x</span>
+    </div>
+    <div class="settings-section">
+      <label for="voice-pitch">Pitch</label>
+      <input type="range" id="voice-pitch" min="0" max="2" step="0.1" value="1">
+      <span id="voice-pitch-value">1.0x</span>
+    </div>
+    <div class="settings-section">
+      <label for="voice-volume">Volume</label>
+      <input type="range" id="voice-volume" min="0" max="1" step="0.1" value="1">
+      <span id="voice-volume-value">1.0</span>
+    </div>
   </div>
 
   <div class="settings-section">
@@ -934,6 +1028,17 @@
       <span class="toggle-label">Show trace panel</span>
       <input type="checkbox" id="trace-visible" checked />
     </div>
+  </div>
+
+  <div class="settings-section" id="search-settings-section" style="display:none">
+    <label>Search backend</label>
+    <div class="toggle-row">
+      <span class="toggle-label">Use Brave Search API</span>
+      <input type="checkbox" id="brave-enabled" />
+    </div>
+    <p style="font-size:0.75rem;color:var(--text-dim);margin-top:0.25rem;">
+      When enabled, queries are sent to Brave's servers. Only available when a Brave API key is configured.
+    </p>
   </div>
 </div>
 
@@ -982,6 +1087,8 @@
     isTurnActive: false,
     messageQueue: [],  // {text, el} — sent sequentially after the active turn
     dictation: false,  // one-shot mic recording → populate input (no auto-send)
+    braveEnabled: false,
+    braveConfigured: false,
   };
 
   // ---- DOM refs ----
@@ -997,10 +1104,16 @@
   const traceTaskType = $('#trace-task-type');
   const traceMemory = $('#trace-memory');
   const traceCitations = $('#trace-citations');
+  const traceSearchSection = $('#trace-search-section');
+  const traceSearchInfo = $('#trace-search-info');
   const voiceOverlay = $('#voice-overlay');
   const voiceStatus = $('#voice-status');
   const voiceStopBtn = $('#voice-stop');
   const voiceCancelBtn = $('#voice-cancel');
+  const voiceStatusBar = $('#voice-status-bar');
+  const voiceStatusDot = $('#voice-status-dot');
+  const voiceStopInline = $('#voice-stop-inline');
+  const voiceCancelInline = $('#voice-cancel-inline');
   const voiceModeBtn = $('#voice-mode-btn');
   const stopSpeakingBtn = $('#stop-speaking-btn');
   const settingsPanel = $('#settings-panel');
@@ -1231,7 +1344,16 @@
         if (conflictCount > 0) label += ` (${conflictCount} auto-resolved)`;
         if (isSearch) label = 'Found from search';
 
-        indicator.innerHTML = `<summary>${label}</summary><div class="learned-items"></div>`;
+        // Backend indicator badge for search-driven messages
+        let backendBadge = '';
+        if (isSearch && meta.search_info) {
+          const backend = meta.search_info.backend;
+          const badgeClass = backend === 'brave' ? 'badge-brave' : 'badge-searxng';
+          const badgeLabel = backend === 'brave' ? 'Searched via Brave' : 'Searched via local SearXNG';
+          backendBadge = `<span class="badge ${badgeClass}" style="margin-left:0.4rem;font-size:0.65rem;">${badgeLabel}</span>`;
+        }
+
+        indicator.innerHTML = `<summary>${label}${backendBadge}</summary><div class="learned-items"></div>`;
         const itemsDiv = indicator.querySelector('.learned-items');
 
         slots.forEach(slot => {
@@ -1318,6 +1440,18 @@
       traceCitations.textContent = '-';
     }
 
+    // Search transparency: backend + query + per-result engines
+    if (meta.search_info && role === 'assistant') {
+      const si = meta.search_info;
+      const badge = `<span class="badge badge-${si.backend}">${si.backend}</span>`;
+      const engines = [...new Set(si.results.map(r => r.engine))];
+      const engineBadges = engines.map(e => `<span class="badge badge-${si.backend}">${e}</span>`).join(' ');
+      traceSearchInfo.innerHTML = `${badge} <strong>${si.query}</strong><br/><small>Engines: ${engineBadges || '-'}</small>`;
+      traceSearchSection.style.display = 'block';
+    } else {
+      traceSearchSection.style.display = 'none';
+    }
+
     return div;
   }
 
@@ -1376,9 +1510,12 @@
   function getSettings() {
     return {
       ttsEnabled: localStorage.getItem('tts_enabled') === 'true',
-      voiceUri: localStorage.getItem('voice_uri') || '',
+      voiceUri: localStorage.getItem('voice_uri'),
       traceVisible: localStorage.getItem('trace_visible') !== 'false',
       voiceMode: localStorage.getItem('voice_mode') === 'true',
+      voiceSpeed: parseFloat(localStorage.getItem('voice_speed')) || 1.0,
+      voicePitch: parseFloat(localStorage.getItem('voice_pitch')) || 1.0,
+      voiceVolume: parseFloat(localStorage.getItem('voice_volume')) || 1.0,
     };
   }
 
@@ -1396,6 +1533,22 @@
     traceVisible.checked = s.traceVisible;
     tracePanel.classList.toggle('hidden', !s.traceVisible);
     voiceModeBtn.classList.toggle('active', s.voiceMode);
+    
+    // Apply voice settings
+    const voiceSpeed = $('#voice-speed');
+    const voicePitch = $('#voice-pitch'); 
+    const voiceVolume = $('#voice-volume');
+    const speedValue = $('#voice-speed-value');
+    const pitchValue = $('#voice-pitch-value');
+    const volumeValue = $('#voice-volume-value');
+    
+    if (voiceSpeed) voiceSpeed.value = s.voiceSpeed;
+    if (voicePitch) voicePitch.value = s.voicePitch;
+    if (voiceVolume) voiceVolume.value = s.voiceVolume;
+    
+    if (speedValue) speedValue.textContent = `${s.voiceSpeed}x`;
+    if (pitchValue) pitchValue.textContent = `${s.voicePitch}x`;
+    if (volumeValue) volumeValue.textContent = s.voiceVolume;
   }
 
   // ---- Voice / TTS state machine ----
@@ -1437,33 +1590,44 @@
     if (oldState === newState) return;
     voiceState = newState;
 
-    // Update overlay and UI
-    voiceOverlay.classList.toggle('active', newState !== VoiceState.IDLE);
+    const isActive = newState !== VoiceState.IDLE;
+
+    // Update inline status bar
+    voiceStatusBar.classList.toggle('active', isActive);
+    voiceStatusDot.classList.remove('processing', 'speaking');
+    if (newState === VoiceState.LISTENING) {
+      voiceStatusDot.classList.remove('processing', 'speaking');
+    } else if (newState === VoiceState.PROCESSING) {
+      voiceStatusDot.classList.add('processing');
+    } else if (newState === VoiceState.SPEAKING) {
+      voiceStatusDot.classList.add('speaking');
+    }
+
+    const statusTexts = {
+      [VoiceState.IDLE]: '',
+      [VoiceState.LISTENING]: 'Listening',
+      [VoiceState.PROCESSING]: reason || 'Thinking...',
+      [VoiceState.SPEAKING]: 'Speaking',
+    };
+    $('#voice-status-text').textContent = statusTexts[newState] || '';
+
+    // Mic button recording indicator
     micBtn.classList.toggle('recording', newState === VoiceState.LISTENING);
 
-    const bubble = voiceOverlay.querySelector('.voice-bubble');
-    if (bubble) {
-      bubble.classList.remove('listening', 'processing', 'speaking');
-      if (newState !== VoiceState.IDLE) {
-        bubble.classList.add(newState);
-      }
-    }
+    // Legacy overlay — keep in DOM, hidden
+    voiceOverlay.classList.toggle('active', false);
 
     switch (newState) {
       case VoiceState.IDLE:
-        voiceStatus.textContent = '';
         stopSpeakingBtn.style.display = 'none';
         break;
       case VoiceState.LISTENING:
-        voiceStatus.textContent = 'Listening';
         stopSpeakingBtn.style.display = 'none';
         break;
       case VoiceState.PROCESSING:
-        voiceStatus.textContent = reason || 'Thinking...';
         stopSpeakingBtn.style.display = 'none';
         break;
       case VoiceState.SPEAKING:
-        voiceStatus.textContent = 'Speaking';
         stopSpeakingBtn.style.display = 'inline-block';
         break;
     }
@@ -1596,8 +1760,9 @@
 
     const u = new SpeechSynthesisUtterance(plain);
     u.voice = voice;
-    u.rate = 1.1;
-    u.pitch = 1.0;
+    u.rate = s.voiceSpeed;
+    u.pitch = s.voicePitch;
+    u.volume = s.voiceVolume;
     currentUtterance = u;
     const myGen = gen;
     u.onstart = () => {
@@ -1874,9 +2039,8 @@
           state.audioChunks = [];
           console.log('[voice] sending blob size:', blob.size, 'mime:', state.currentMimeType);
           await sendAudioForTranscription(blob);
-        } finally {
-          recordingStartTime = null;
-          loudFrameCount = 0;
+        } catch (err) {
+          console.error('[voice] onstop error:', err);
         }
       };
 
@@ -1932,10 +2096,15 @@
     } else {
       if (!silenceAfterLoud && loudFrameCount > 0) {
         silenceAfterLoud = true;
+        console.log('[voice] silence detected after loud audio, will timeout in', SILENCE_DURATION, 'ms');
       }
       if (!silenceTimeout && metMinDuration && loudFrameCount >= MIN_AUDIO_FRAMES) {
+        console.log('[voice] setting silence timeout:', SILENCE_DURATION, 'ms, loudFrames:', loudFrameCount);
         silenceTimeout = setTimeout(() => {
-          if (state.isRecording) stopRecording();
+          if (state.isRecording) {
+            console.log('[voice] silence timeout fired — stopping');
+            stopRecording();
+          }
         }, SILENCE_DURATION);
       }
     }
@@ -1953,17 +2122,29 @@
     }
   }
 
+  let _stopping = false;
   function stopRecording() {
     if (!state.isRecording || !state.mediaRecorder) return;
+    if (_stopping) {
+      console.log('[voice] stopRecording called while already stopping — ignore');
+      return;
+    }
+    _stopping = true;
     clearTimeout(recordingTimeoutId);
     recordingTimeoutId = null;
-    if (silenceTimeout) {
-      clearTimeout(silenceTimeout);
-      silenceTimeout = null;
-    }
+    clearTimeout(silenceTimeout);
+    silenceTimeout = null;
     stopAudioMonitor();
+    const mr = state.mediaRecorder;
+    state.mediaRecorder = null;
+    state.isRecording = false;
+    silenceAfterLoud = false;
+    // Reset counters immediately so _checkAudioLevels sees clean state
+    // if it fires during the async onstop handler.
+    loudFrameCount = 0;
+    recordingStartTime = null;
     try {
-      state.mediaRecorder.stop();
+      mr.stop();
     } catch (e) {
       console.warn('Error stopping recorder:', e);
     }
@@ -1976,10 +2157,7 @@
       audioContext = null;
       analyser = null;
     }
-    state.isRecording = false;
-    silenceAfterLoud = false;
-    // NOTE: recordingStartTime and loudFrameCount are reset inside onstop
-    // after they have been read, because onstop fires asynchronously.
+    _stopping = false;
   }
 
   function startBargeInMonitor() {
@@ -2139,6 +2317,17 @@
       populateVoices();
     }
 
+    // Fetch backend settings ( Brave toggle visibility)
+    try {
+      const backendSettings = await api('/settings');
+      state.braveConfigured = backendSettings.brave_configured;
+      state.braveEnabled = backendSettings.brave_enabled;
+      if (state.braveConfigured) {
+        document.getElementById('search-settings-section').style.display = 'block';
+        document.getElementById('brave-enabled').checked = state.braveEnabled;
+      }
+    } catch (_) {}
+
     // Apply settings
     applySettings();
 
@@ -2228,6 +2417,10 @@
       }
     });
 
+    // Inline voice status bar buttons — same actions as overlay buttons
+    voiceStopInline.addEventListener('click', () => voiceStopBtn.click());
+    voiceCancelInline.addEventListener('click', () => voiceCancelBtn.click());
+
     settingsToggle.addEventListener('click', () => {
       settingsPanel.classList.toggle('open');
     });
@@ -2242,6 +2435,40 @@
 
     voiceSelect.addEventListener('change', () => {
       saveSettings({ voiceUri: voiceSelect.value });
+    });
+
+    // Voice speed, pitch, volume controls
+    const voiceSpeed = $('#voice-speed');
+    const voicePitch = $('#voice-pitch');
+    const voiceVolume = $('#voice-volume');
+    const speedValue = $('#voice-speed-value');
+    const pitchValue = $('#voice-pitch-value');
+    const volumeValue = $('#voice-volume-value');
+
+    // Update displayed values
+    voiceSpeed.addEventListener('input', () => {
+      speedValue.textContent = `${voiceSpeed.value}x`;
+    });
+    
+    voicePitch.addEventListener('input', () => {
+      pitchValue.textContent = `${voicePitch.value}x`;
+    });
+    
+    voiceVolume.addEventListener('input', () => {
+      volumeValue.textContent = voiceVolume.value;
+    });
+
+    // Save settings when controls change
+    voiceSpeed.addEventListener('change', () => {
+      saveSettings({ voiceSpeed: parseFloat(voiceSpeed.value) });
+    });
+    
+    voicePitch.addEventListener('change', () => {
+      saveSettings({ voicePitch: parseFloat(voicePitch.value) });
+    });
+    
+    voiceVolume.addEventListener('change', () => {
+      saveSettings({ voiceVolume: parseFloat(voiceVolume.value) });
     });
 
     traceVisible.addEventListener('change', () => {
