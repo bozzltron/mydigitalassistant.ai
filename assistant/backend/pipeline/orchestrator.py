@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import re
+import time
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -306,6 +307,7 @@ class Orchestrator:
         """
         # 1. Session
         session_id = request.session_id or str(uuid.uuid4())
+        turn_start = time.monotonic()
 
         # 2. Log user episode
         user_episode = await self._log_episode(
@@ -314,14 +316,19 @@ class Orchestrator:
             role="user",
             content=request.message,
         )
+        episode_log_time = time.monotonic() - turn_start
+        logger.debug("Episode logging: %.3fs", episode_log_time)
 
         # 3. Classify task type + search intent (single LLM pass when needed)
         await self._report(progress, "routing", "reading your message")
+        routing_start = time.monotonic()
         if skip_route:
             task_type = TaskType.FUNCTIONAL
         else:
             classification = await route(request.message, self.llm_client)
             task_type = classification.task_type
+        routing_time = time.monotonic() - routing_start
+        logger.debug("Routing: %.3fs", routing_time)
 
         # 3b. Handle scheduled task intent
         if task_type == TaskType.SCHEDULED and not skip_route:
@@ -329,18 +336,24 @@ class Orchestrator:
 
         # 4. Retrieve memory context
         await self._report(progress, "recall", "checking my memory")
+        recall_start = time.monotonic()
         memory_context = await self.retriever.retrieve(
             query=request.message,
             user_id=request.user_id,
             session_id=session_id,
         )
+        recall_time = time.monotonic() - recall_start
+        logger.debug("Memory recall: %.3fs", recall_time)
 
         # 5. Reason: decide action based on memory sufficiency
+        plan_start = time.monotonic()
         plan = classify_intent(
             query=request.message,
             task_type=task_type.value,
             memory=memory_context,
         )
+        plan_time = time.monotonic() - plan_start
+        logger.debug("Reasoner: %.3fs", plan_time)
 
         # 5a. Storage statements must not trigger external search: the user is
         # giving information, not requesting a lookup. The router's wants_search
@@ -363,6 +376,7 @@ class Orchestrator:
             )
 
             await self._report(progress, "correcting", "updating what I know")
+            correction_start = time.monotonic()
             correction = await extract_correction(request.message, self.llm_client)
             correction_summary: dict = {}
 
@@ -438,6 +452,9 @@ class Orchestrator:
                 content=response_text,
             )
 
+            correction_time = time.monotonic() - correction_start
+            logger.debug("Correction pipeline: %.3fs", correction_time)
+
             return ChatResponse(
                 response=response_text,
                 session_id=session_id,
@@ -487,6 +504,7 @@ class Orchestrator:
         search_results: list[SearchResult] = []
         search_extraction_summary: dict = {}
         search_info: SearchInfo | None = None
+        search_start = time.monotonic() if plan.search_needed else None
         if plan.search_needed:
             await self._report(progress, "searching", "searching the web")
             # Prefer the router's keyword query; fall back to a sanitized
@@ -539,18 +557,18 @@ class Orchestrator:
                     request.message, search_results, self.llm_client
                 )
 
-                # Brave: fetch top 3 result bodies in parallel for richer extraction
+                # Brave: fetch top 1 result body in parallel for richer extraction
                 if backend_name == "brave" and search_results:
                     try:
                         bodies = await asyncio.gather(
                             *[
                                 _fetch_url_body(r.url)
-                                for r in search_results[:3]
+                                for r in search_results[:1]
                             ],
                             return_exceptions=True,
                         )
                         document_extractions: list = []
-                        for result, body in zip(search_results[:3], bodies, strict=True):
+                        for result, body in zip(search_results[:1], bodies, strict=True):
                             if isinstance(body, Exception) or not body:
                                 continue
                             doc_extraction = await extract_facts_from_document(
@@ -591,6 +609,13 @@ class Orchestrator:
                         search_extraction_summary["frame_ids"],
                         get_embedding,
                     )
+
+                search_time = (
+                time.monotonic() - search_start
+                if search_start is not None
+                else 0.0
+            )
+                logger.debug("Search pipeline: %.3fs", search_time)
 
                 if search_extraction_summary.get("slots_applied", 0) > 0:
                     conflicts = search_extraction_summary.get("conflicts_created", 0)

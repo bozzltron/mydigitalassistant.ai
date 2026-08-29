@@ -503,6 +503,13 @@ async def test_orchestrator_correction_contradicted_flagged_not_applied(store):
                 model="fake",
                 done=True,
             )
+        if "contradicts the new value" in system or "flagged for review" in system:
+            return ChatResponse(
+                content="I acknowledge your correction, but third-party sources suggest "
+                        "the current value is still accurate. I've flagged this for review.",
+                model="fake",
+                done=True,
+            )
         return ChatResponse(content="I see.", model="fake", done=True)
 
     mock_llm.chat = mock_chat

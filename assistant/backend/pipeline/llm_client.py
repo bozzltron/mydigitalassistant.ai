@@ -102,6 +102,9 @@ class OllamaClient:
         self.keep_alive = keep_alive
         self._client: httpx.AsyncClient | None = None
         self._capabilities_cache: dict[str, list[str]] = {}
+        # Cache query->embedding to avoid recomputing the same embedding
+        self._embed_cache: dict[str, list[float]] = {}
+        self._cache_max_size = 128
 
     def _keep_alive_param(self) -> str | int:
         """Normalize the keep_alive config into an Ollama API value.
@@ -251,15 +254,30 @@ class OllamaClient:
     ) -> EmbeddingResponse:
         """Generate embedding for text. Uses embedding_model by default."""
         model = model or self.embedding_model
+        cache_key = f"{model}:{text}"
+        if cache_key in self._embed_cache:
+            cached = self._embed_cache[cache_key]
+            # Trim cache if it grows too large
+            if len(self._embed_cache) > self._cache_max_size:
+                # Remove oldest entries (simple FIFO-like trim)
+                keys = list(self._embed_cache.keys())[:-self._cache_max_size // 2]
+                for k in keys:
+                    self._embed_cache.pop(k, None)
+            return EmbeddingResponse(embedding=cached, model=model)
+
         client = await self._get_client()
         payload = {"model": model, "prompt": text, "keep_alive": self._keep_alive_param()}
         r = await client.post("/api/embeddings", json=payload)
         r.raise_for_status()
         data = r.json()
-        return EmbeddingResponse(
-            embedding=data["embedding"],
-            model=model,
-        )
+        embedding = data["embedding"]
+        # Cache the result (evict if needed)
+        self._embed_cache[cache_key] = embedding
+        if len(self._embed_cache) > self._cache_max_size:
+            keys = list(self._embed_cache.keys())[:-self._cache_max_size // 2]
+            for k in keys:
+                self._embed_cache.pop(k, None)
+        return EmbeddingResponse(embedding=embedding, model=model)
 
 
 def build_system_prompt(
