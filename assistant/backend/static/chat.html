@@ -223,6 +223,32 @@
       border-bottom-left-radius: 2px;
     }
 
+    /* Confidence score tooltips */
+    .confidence-tooltip {
+      position: relative;
+      text-decoration: underline dotted;
+      text-underline-offset: 3px;
+      cursor: help;
+    }
+
+    .confidence-tooltip:hover::after {
+      content: attr(data-confidence);
+      position: absolute;
+      bottom: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--surface2);
+      color: var(--text);
+      padding: 0.4rem 0.6rem;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      white-space: nowrap;
+      z-index: 10;
+      border: 1px solid var(--border);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+      margin-bottom: 0.5rem;
+    }
+
     .msg-assistant .content img { max-width: 100%; border-radius: 6px; }
     .msg-assistant .content code {
       background: rgba(255,255,255,0.1);
