@@ -187,7 +187,7 @@ app = FastAPI(
 # Mount static files for the web UI
 _static_path = Path(__file__).parent / "static"
 _static_path.mkdir(exist_ok=True)
-app.mount("/static", StaticFiles(directory=str(_static_path), cachecontrol=False), name="static")
+app.mount("/static", StaticFiles(directory=str(_static_path)), name="static")
 
 
 def get_store() -> MemoryStore:
