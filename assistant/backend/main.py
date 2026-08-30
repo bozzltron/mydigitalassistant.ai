@@ -6,8 +6,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
-from fastapi import Depends as _Depends
-from fastapi import FastAPI, HTTPException, UploadFile
+from fastapi import Depends as _Depends, FastAPI, HTTPException, UploadFile
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -1260,3 +1259,88 @@ async def get_task_result(
                 "last_result_summary": t.get("last_result_summary"),
             }
     raise HTTPException(status_code=404, detail="Task not found")
+
+@app.get("/users/{user_id}/sessions", response_model=list[dict])
+async def list_user_sessions(
+    user_id: int,
+    store: MemoryStore = _Depends(get_store),
+):
+    """List all conversation sessions for a user.
+
+    Each session has a name (first user message or a given title),
+    a creation timestamp, and episode count.
+    """
+    return await store.get_sessions_for_user(user_id)
+
+
+@app.post("/conversations/new", response_model=dict)
+async def new_conversation(
+    user_id: int,
+    store: MemoryStore = _Depends(get_store),
+):
+    """Create a new conversation session for a user.
+
+    Returns the new session_id. The user can then send messages with
+    this session_id, and episodes will be stored under this session.
+    """
+    import uuid
+    session_id = f"conv_{uuid.uuid4().hex[:12]}"
+    # Verify user exists
+    user = await store.get_user(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    # Create session record
+    await store.create_session(session_id, user_id)
+    return {"session_id": session_id, "message": "New conversation created"}
+
+
+@app.get("/conversations/{session_id}/details", response_model=dict)
+async def conversation_details(
+    session_id: str,
+    user_id: int,
+    store: MemoryStore = _Depends(get_store),
+):
+    """Get details for a conversation session.
+
+    Includes episode count, first message, and whether the session
+    has any stored facts/frames.
+    """
+    episodes = await store.get_episodes_for_session(session_id)
+    user_episodes = [e for e in episodes if e.user_id == user_id];
+    
+    # Get first user message
+    first_msg = None
+    for ep in user_episodes:
+        if ep.role == "user" and ep.content:
+            first_msg = ep.content[:80]
+            break
+    
+    # Check if session has contributed any frames/slots
+    # by looking at frames that were touched by this session
+    # (we check if any frame has this session's episodes in frame_ids)
+    frame_count = 0  # Placeholder - would need more complex query
+    
+    return {
+        "session_id": session_id,
+        "episode_count": len(user_episodes),
+        "first_message": first_msg,
+        "frame_contributions": frame_count,
+    }
+
+
+from pydantic import BaseModel
+
+class ConversationTitleUpdate(BaseModel):
+    user_id: int
+    title: str
+
+
+@app.patch("/conversations/{session_id}/title")
+async def update_conversation_title(
+    session_id: str,
+    body: ConversationTitleUpdate,
+    store: MemoryStore = _Depends(get_store),
+):
+    """Update conversation title."""
+    await store.update_session_title(session_id, body.user_id, body.title)
+    return {"session_id": session_id, "title": body.title}

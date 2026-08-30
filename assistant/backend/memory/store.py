@@ -1083,6 +1083,59 @@ class MemoryStore:
             )
             return [Episode(**self._episode_dict(row)) for row in rows]
 
+    async def get_sessions_for_user(self, user_id: int) -> list[dict]:
+        """Get all sessions for a user with episode counts and last message."""
+        async with self._connect() as db:
+            rows = await db.execute_fetchall(
+                """
+                SELECT s.id, s.user_id, s.title, s.created_at, s.updated_at,
+                       COUNT(e.id) as episode_count,
+                       MAX(e.timestamp) as last_activity,
+                       MAX(CASE WHEN e.role = 'user' THEN e.content END) as first_user_message
+                FROM sessions s
+                LEFT JOIN episodes e ON e.session_id = s.id AND e.user_id = s.user_id
+                WHERE s.user_id = ?
+                GROUP BY s.id, s.user_id, s.title, s.created_at, s.updated_at
+                ORDER BY last_activity DESC
+                """,
+                (user_id,),
+            )
+            sessions = []
+            for row in rows:
+                sid, uid, title, created_at, updated_at, episode_count, last_activity, first_user_msg = row
+                # Use title if available, otherwise first user message, otherwise generic
+                if title:
+                    label = title
+                elif first_user_msg:
+                    label = first_user_msg[:80]
+                else:
+                    label = f"Conversation {episode_count}"
+                sessions.append({
+                    "id": sid,
+                    "episode_count": episode_count or 0,
+                    "last_activity": last_activity,
+                    "last_message": label,
+                })
+            return sessions
+
+    async def create_session(self, session_id: str, user_id: int, title: str = None) -> None:
+        """Create a new session record."""
+        async with self._connect() as db:
+            await db.execute(
+                "INSERT INTO sessions (id, user_id, title, created_at, updated_at) VALUES (?, ?, ?, datetime('now'), datetime('now'))",
+                (session_id, user_id, title),
+            )
+            await db.commit()
+
+    async def update_session_title(self, session_id: str, user_id: int, title: str) -> None:
+        """Update session title."""
+        async with self._connect() as db:
+            await db.execute(
+                "UPDATE sessions SET title = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?",
+                (title, session_id, user_id),
+            )
+            await db.commit()
+
     async def get_episodes_for_session(self, session_id: str) -> list[Episode]:
         async with self._connect() as db:
             rows = await db.execute_fetchall(

@@ -951,6 +951,13 @@
 
 <header>
   <h1 id="agent-name">Cognitive Assistant</h1>
+<!-- Conversation dropdown -->
+<div class="conversation-switcher" style="white-space: nowrap;">
+  <select id="conversation-select" class="select" style="font-size:0.8rem;padding:0.2rem 0.4rem;">
+    <option value="">-- New Conversation --</option>
+  </select>
+  <button id="new-conversation-btn" class="voice-btn-small" style="padding:0.2rem 0.4rem;font-size:0.75rem;margin-left:0.3rem;">New</button>
+</div>
   <div class="header-right">
     <span class="user-badge" id="user-badge">Loading...</span>
     <span class="voice-status-bar" id="voice-status-bar">
@@ -1128,6 +1135,108 @@
     braveEnabled: false,
     braveConfigured: false,
   };
+
+  // ---- Conversation management ----
+  let conversationsInitialized = false;
+
+  function initConversations() {
+    // Populate conversation dropdown with user sessions
+    if (state.userId) {
+      api(`/users/${state.userId}/sessions`).then(sessions => {
+        const select = $('#conversation-select');
+        if (select) {
+          // Clear existing options (except the default)
+          const existingOptions = select.querySelectorAll('option:not(:first-child)');
+          existingOptions.forEach(opt => opt.remove());
+          
+          // Add sessions to dropdown
+          sessions.forEach(sess => {
+            const label = sess.last_message || `Conversation ${sess.episode_count}`;
+            const option = document.createElement('option');
+            option.value = sess.id;
+            option.textContent = label;
+            select.appendChild(option);
+          });
+          
+          // Select the current conversation if set, otherwise first one
+          if (state.conversationId) {
+            select.value = state.conversationId;
+          } else if (sessions.length > 0) {
+            select.value = sessions[0].id;
+          }
+        }
+      }).catch(_ => { /* best-effort */ });
+    }
+    
+    // Event listeners for conversation management (only once)
+    if (!conversationsInitialized) {
+      const select = $('#conversation-select');
+      if (select) {
+        select.addEventListener('change', (e) => {
+          const convId = e.target.value;
+          if (convId) {
+            switchConversation(convId);
+          }
+        });
+      }
+      
+      const newBtn = $('#new-conversation-btn');
+      if (newBtn) {
+        newBtn.addEventListener('click', createNewConversation);
+      }
+      conversationsInitialized = true;
+    }
+  }
+
+  async function switchConversation(convId) {
+    state.conversationId = convId;
+    state.sessionId = convId;  // Keep in sync
+    localStorage.setItem('session_id', convId);
+    if (state.userId) {
+      try {
+        const history = await api(
+          `/chat/session/${encodeURIComponent(convId)}/messages?user_id=${state.userId}&limit=50`
+        );
+        state.messages = [];
+        // Clear all messages from DOM except welcome
+        const messagesContainer = $('#messages');
+        if (messagesContainer) {
+          const msgs = messagesContainer.querySelectorAll('.msg');
+          msgs.forEach(m => m.remove());
+        }
+        const welcome = $('#welcome');
+        if (welcome) welcome.remove();
+        for (const m of history) {
+          state.messages.push({ role: m.role, content: m.content });
+          addMessage(m.role, m.content);
+        }
+        if (history.length) messagesEl.scrollTop = messagesEl.scrollHeight;
+      } catch (_) { /* best-effort */ }
+    }
+  }
+
+  function createNewConversation() {
+    if (!state.userId) return;
+    const name = prompt('Conversation name (optional):');
+    api(`/conversations/new?user_id=${state.userId}`, {
+      method: 'POST',
+    }).then(resp => {
+      const sessionId = resp.session_id;
+      if (name && name.trim()) {
+        // Update session title via API
+        fetch(`${BASE}/conversations/${encodeURIComponent(sessionId)}/title`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_id: state.userId, title: name.trim() })
+        }).catch(_ => {});
+      }
+      state.sessionId = sessionId;
+      localStorage.setItem('session_id', sessionId);
+      state.conversationId = sessionId;
+      switchConversation(sessionId);
+      initConversations();  // Refresh dropdown to show new session
+    }).catch(_ => {});
+  }
 
   // ---- DOM refs ----
   const $ = (sel) => document.querySelector(sel);
@@ -2344,6 +2453,8 @@
         state.userName = user.name;
         localStorage.setItem('user_id', user.id);
         userBadge.textContent = user.name;
+        // Load conversations after user is set
+        initConversations();
       }
     } catch (e) {
       userBadge.textContent = 'Error loading user';
@@ -2515,9 +2626,9 @@
 
     $('#trace-close').addEventListener('click', () => {
       saveSettings({ traceVisible: false });
-    });
+});
 
-    // Auto-resize textarea
+// Auto-resize textarea
     msgInput.addEventListener('input', () => {
       msgInput.style.height = 'auto';
       msgInput.style.height = Math.min(msgInput.scrollHeight, 140) + 'px';

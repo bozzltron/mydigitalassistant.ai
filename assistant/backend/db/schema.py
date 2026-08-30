@@ -102,6 +102,16 @@ CREATE TABLE IF NOT EXISTS associations (
     FOREIGN KEY (to_frame_id) REFERENCES frames(id) ON DELETE CASCADE
 );
 
+-- Sessions (conversation sessions per user)
+CREATE TABLE IF NOT EXISTS sessions (
+    id TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    title TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
 -- Episodes (conversation turns, per-user)
 CREATE TABLE IF NOT EXISTS episodes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -142,6 +152,7 @@ CREATE TABLE IF NOT EXISTS feedback (
 CREATE INDEX IF NOT EXISTS idx_slots_frame ON slots(frame_id);
 CREATE INDEX IF NOT EXISTS idx_associations_from ON associations(from_frame_id);
 CREATE INDEX IF NOT EXISTS idx_associations_to ON associations(to_frame_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_episodes_user ON episodes(user_id);
 CREATE INDEX IF NOT EXISTS idx_episodes_session ON episodes(session_id);
 CREATE INDEX IF NOT EXISTS idx_slot_history_slot ON slot_history(slot_id);
@@ -339,6 +350,31 @@ async def _migrate_add_deleted_at_and_last_accessed(db) -> None:
         logger.debug("Migration: idx_frames_next_run index created")
 
 
+async def _migrate_add_sessions_table(db) -> None:
+    """Add sessions table if it doesn't exist (for existing databases)."""
+    tables = await db.execute_fetchall(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='sessions'"
+    )
+    if not tables:
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS sessions (
+                id TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                title TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+            """
+        )
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)"
+        )
+        await db.commit()
+        logger.debug("Migration: sessions table created")
+
+
 async def init_db(db_path: str) -> None:
     """Open connection, apply schema, enable foreign keys + WAL, load sqlite-vec.
 
@@ -359,3 +395,4 @@ async def init_db(db_path: str) -> None:
         await _migrate_add_embedding_model_and_metadata(db)
         await _migrate_add_feedback(db)
         await _migrate_add_deleted_at_and_last_accessed(db)
+        await _migrate_add_sessions_table(db)
