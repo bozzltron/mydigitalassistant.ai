@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
-from fastapi import Depends as _Depends
+from fastapi import Depends as _Depends, File
 from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -1406,3 +1406,146 @@ async def update_conversation_title(
     """Update conversation title."""
     await store.update_session_title(session_id, body.user_id, body.title)
     return {"session_id": session_id, "title": body.title}
+
+
+@app.post("/files/upload", response_model=dict)
+async def upload_file(
+    file: UploadFile = File(...),
+    store: MemoryStore = _Depends(get_store),
+):
+    """Upload and process a file.
+
+    Supported formats: .txt, .csv, .json, .xml, .html
+    Returns file metadata and extracted content.
+    """
+    # Validate file type
+    filename = file.filename or "unknown"
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    allowed_types = {"txt", "csv", "json", "xml", "html"}
+    
+    if ext not in allowed_types:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type: .{ext}. Allowed: .txt, .csv, .json, .xml, .html",
+        )
+    
+    # Size limit (10MB)
+    content = await file.read()
+    if len(content) > 10_000_000:
+        raise HTTPException(
+            status_code=400,
+            detail="File too large. Maximum size: 10MB",
+        )
+    
+    # Store file in data directory
+    import tempfile
+    import os
+    from pathlib import Path
+    
+    data_dir = Path("/app/data")
+    data_dir.mkdir(exist_ok=True)
+    
+    # Secure filename
+    safe_filename = f"upload_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{secure_filename(filename)}"
+    file_path = data_dir / safe_filename
+    
+    # Save file
+    with open(file_path, "wb") as f:
+        f.write(content)
+    
+    # Extract content based on type
+    from assistant.backend.pipeline.files import extract_file_content
+    extraction_result = await extract_file_content(file_path, ext, content)
+    
+    # Store file metadata and content in memory
+    # Get or create a user context - use user_id=1 as default
+    user_id = 1
+    
+    # Create a frame for this file
+    frame_name = f"file_{safe_filename}"
+    existing_frame = await store.get_frame_by_name(frame_name)
+    
+    if not existing_frame:
+        frame = await store.create_frame(
+            frame_name,
+            "entity",
+            source_type="file_upload",
+            owner_user_id=user_id,
+            source_reliability=0.7,
+        )
+    else:
+        frame = existing_frame
+    
+    # Store file content as a slot
+    content_text = extraction_result.get("text", "")
+    content_preview = content_text[:200] + ("..." if len(content_text) > 200 else "")
+    
+    await store.upsert_slot(
+        frame_id=frame.id,
+        key="file_name",
+        value=filename,
+        essential=0,
+        priority=0.5,
+        source_type="file_upload",
+        source_reliability=0.8,
+    )
+    
+    await store.upsert_slot(
+        frame_id=frame.id,
+        key="file_content_preview",
+        value=content_preview,
+        essential=0,
+        priority=0.5,
+        source_type="file_upload",
+        source_reliability=0.8,
+    )
+    
+    await store.upsert_slot(
+        frame_id=frame.id,
+        key="file_size",
+        value=str(len(content)),
+        essential=0,
+        priority=0.5,
+        source_type="file_upload",
+        source_reliability=0.8,
+    )
+    
+    await store.upsert_slot(
+        frame_id=frame.id,
+        key="file_ext",
+        value=ext,
+        essential=0,
+        priority=0.5,
+        source_type="file_upload",
+        source_reliability=0.8,
+    )
+    
+    # Store extracted facts/slots if any
+    if extraction_result.get("key_entities"):
+        for entity in extraction_result["key_entities"]:
+            await store.upsert_slot(
+                frame_id=frame.id,
+                key=f"entity_{entity}",
+                value=entity,
+                essential=0,
+                priority=0.5,
+                source_type="file_upload",
+                source_reliability=0.8,
+            )
+    
+    # Clean up temp file
+    try:
+        file_path.unlink(missing_ok=True)
+    except Exception:
+        pass
+    
+    return {
+        "status": "ok",
+        "file_name": filename,
+        "file_size": len(content),
+        "file_ext": ext,
+        "content_preview": content_preview,
+        "key_entities": extraction_result.get("key_entities", []),
+        "open_questions": extraction_result.get("open_questions", []),
+        "frame_name": frame_name,
+    }
