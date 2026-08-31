@@ -1537,6 +1537,96 @@ async def upload_file(
     except Exception:
         pass
     
+    # Store file content in memory
+    user_id = 1  # Default primary user
+    frame_name = f"file_{safe_filename}"
+    
+    # Create or get the file frame
+    existing_frame = await store.get_frame_by_name(frame_name)
+    if not existing_frame:
+        frame = await store.create_frame(
+            frame_name,
+            "entity",
+            source_type="file_upload",
+            owner_user_id=user_id,
+            source_reliability=0.7,
+        )
+    else:
+        frame = existing_frame
+    
+    # Store file metadata as slots
+    await store.upsert_slot(
+        frame_id=frame.id,
+        key="file_name",
+        value=filename,
+        essential=0,
+        priority=0.5,
+        source_type="file_upload",
+        source_reliability=0.7,
+    )
+    
+    await store.upsert_slot(
+        frame_id=frame.id,
+        key="file_ext",
+        value=ext,
+        essential=0,
+        priority=0.5,
+        source_type="file_upload",
+        source_reliability=0.7,
+    )
+    
+    await store.upsert_slot(
+        frame_id=frame.id,
+        key="file_size",
+        value=str(len(content)),
+        essential=0,
+        priority=0.5,
+        source_type="file_upload",
+        source_reliability=0.7,
+    )
+    
+    # Store extracted content preview
+    content_preview = extraction_result.get("text", "")[:200]
+    await store.upsert_slot(
+        frame_id=frame.id,
+        key="file_content_preview",
+        value=content_preview,
+        essential=0,
+        priority=0.5,
+        source_type="file_upload",
+        source_reliability=0.7,
+    )
+    
+    # Store key entities if any
+    if extraction_result.get("key_entities"):
+        for entity in extraction_result["key_entities"]:
+            await store.upsert_slot(
+                frame_id=frame.id,
+                key=f"entity_{entity}",
+                value=entity,
+                essential=0,
+                priority=0.5,
+                source_type="file_upload",
+                source_reliability=0.7,
+            )
+    
+    # Store open questions if any
+    if extraction_result.get("open_questions"):
+        for q in extraction_result["open_questions"]:
+            await store.upsert_slot(
+                frame_id=frame.id,
+                key=f"question_{q}",
+                value=q,
+                essential=0,
+                priority=0.3,
+                source_type="file_upload",
+                source_reliability=0.7,
+            )
+    
+    # Associate file frame with any relevant existing frames
+    # Simple cross-reference: if file mentions concepts that exist in other frames
+    await store.associate_frames(frame_id=frame.id, related_frame_ids=[])
+    
     return {
         "status": "ok",
         "file_name": filename,
@@ -1546,4 +1636,5 @@ async def upload_file(
         "key_entities": extraction_result.get("key_entities", []),
         "open_questions": extraction_result.get("open_questions", []),
         "frame_name": frame_name,
+        "frame_id": frame.id,
     }
