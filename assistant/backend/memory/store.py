@@ -1102,7 +1102,16 @@ class MemoryStore:
             )
             sessions = []
             for row in rows:
-                sid, uid, title, created_at, updated_at, episode_count, last_activity, first_user_msg = row
+                (
+                    sid,
+                    uid,
+                    title,
+                    created_at,
+                    updated_at,
+                    episode_count,
+                    last_activity,
+                    first_user_msg,
+                ) = row
                 # Use title if available, otherwise first user message, otherwise generic
                 if title:
                     label = title
@@ -1121,19 +1130,21 @@ class MemoryStore:
     async def create_session(self, session_id: str, user_id: int, title: str = None) -> None:
         """Create a new session record."""
         async with self._connect() as db:
-            await db.execute(
-                "INSERT INTO sessions (id, user_id, title, created_at, updated_at) VALUES (?, ?, ?, datetime('now'), datetime('now'))",
-                (session_id, user_id, title),
+            sql = (
+                "INSERT INTO sessions (id, user_id, title, created_at, updated_at) "
+                "VALUES (?, ?, ?, datetime('now'), datetime('now'))"
             )
+            await db.execute(sql, (session_id, user_id, title))
             await db.commit()
 
     async def update_session_title(self, session_id: str, user_id: int, title: str) -> None:
         """Update session title."""
         async with self._connect() as db:
-            await db.execute(
-                "UPDATE sessions SET title = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?",
-                (title, session_id, user_id),
+            sql = (
+                "UPDATE sessions SET title = ?, updated_at = datetime('now') "
+                "WHERE id = ? AND user_id = ?"
             )
+            await db.execute(sql, (title, session_id, user_id))
             await db.commit()
 
     async def get_episodes_for_session(self, session_id: str) -> list[Episode]:

@@ -6,7 +6,8 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
-from fastapi import Depends as _Depends, FastAPI, HTTPException, UploadFile
+from fastapi import Depends as _Depends
+from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -1145,9 +1146,11 @@ async def submit_correction(
                 temperature=0.7,
                 think=False,
             )
+            frame_slot = f"{correction.frame_name}.{correction.slot_key}"
+            base_msg = f"Updated {frame_slot} to '{correction.new_value}'."
+            fallback_msg = "Correction applied but no slots were updated."
             conversational_status = resp.content or (
-                f"Updated {correction.frame_name}.{correction.slot_key} "
-                f"to '{correction.new_value}'." if slots_corrected > 0 else "Correction applied but no slots were updated."
+                base_msg if slots_corrected > 0 else fallback_msg
             )
         except Exception:
             # Fallback to simple natural-language prompt-based response
@@ -1162,9 +1165,11 @@ async def submit_correction(
                     temperature=0.7,
                     think=False,
                 )
+                frame_slot = f"{correction.frame_name}.{correction.slot_key}"
+                base_msg = f"Updated {frame_slot} to '{correction.new_value}'."
+                fallback_msg = "Correction applied but no slots were updated."
                 conversational_status = fallback_resp.content or (
-                    f"Updated {correction.frame_name}.{correction.slot_key} "
-                    f"to '{correction.new_value}'." if slots_corrected > 0 else "Correction applied but no slots were updated."
+                    base_msg if slots_corrected > 0 else fallback_msg
                 )
             except Exception:
                 # Final absolute fallback (this should be extremely rare)
@@ -1306,7 +1311,7 @@ async def conversation_details(
     has any stored facts/frames.
     """
     episodes = await store.get_episodes_for_session(session_id)
-    user_episodes = [e for e in episodes if e.user_id == user_id];
+    user_episodes = [e for e in episodes if e.user_id == user_id]
     
     # Get first user message
     first_msg = None
@@ -1327,8 +1332,6 @@ async def conversation_details(
         "frame_contributions": frame_count,
     }
 
-
-from pydantic import BaseModel
 
 class ConversationTitleUpdate(BaseModel):
     user_id: int

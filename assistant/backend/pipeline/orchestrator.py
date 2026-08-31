@@ -214,7 +214,8 @@ class Orchestrator:
         """Generate a natural correction acknowledgment via the model."""
         if contradicted:
             prompt = (
-                f"The user corrected a stored fact but third-party evidence contradicts the new value.\n"
+                "The user corrected a stored fact but third-party evidence "
+                f"contradicts the new value.\n"
                 f"Frame: {frame_name}\nSlot: {slot_key}\n"
                 f"User's claimed value: {new_value}\n"
                 f"Current stored value (confirmed by sources): {current_value}\n"
@@ -244,8 +245,9 @@ class Orchestrator:
     async def _generate_fallback_response(self, original_message: str) -> str:
         """Generate a fallback response when the model returned empty."""
         for _attempt in range(2):
+            content = f"I need to respond to: {original_message[:200]}"
             resp = await self.llm_client.chat(
-                [ChatMessage(role="user", content=f"I need to respond to: {original_message[:200]}")],
+                [ChatMessage(role="user", content=content)],
                 model=self.llm_client.chat_model,
                 temperature=0.7,
                 think=False,

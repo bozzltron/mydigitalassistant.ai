@@ -4,7 +4,8 @@ This verifies that extraction summaries now include confidence and source_type i
 """
 
 import pytest
-from assistant.backend.pipeline.extractor import ExtractionResult, ExtractedSlot
+
+from assistant.backend.pipeline.extractor import ExtractedSlot, ExtractionResult
 
 
 def test_extraction_result_has_source_info():
