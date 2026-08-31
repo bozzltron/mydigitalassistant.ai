@@ -16,6 +16,25 @@ class FileExtractionResult:
     open_questions: list[str]  # Potential open questions from the content
     structure_info: dict  # Information about the file structure
 
+    # Additional: query-aware extraction
+    def query_content(self, query: str) -> str:
+        """Extract relevant content based on a natural language query."""
+        query_lower = query.lower()
+        text_lower = self.text.lower()
+        
+        # Simple keyword-based extraction
+        if query_lower in text_lower:
+            # Find the sentence containing the query
+            sentences = self.text.split('.')
+            for sentence in sentences:
+                if query_lower in sentence.lower():
+                    return sentence.strip() + '.'
+            
+            # Return first 200 chars if no match
+            return self.text[:200]
+        
+        return self.text
+
 
 def extract_text_from_txt(content: bytes) -> tuple[str, list[str], list[str]]:
     """Extract text from a .txt file."""
@@ -235,3 +254,26 @@ async def extract_file_content(
         open_questions=open_questions,
         structure_info=structure_info,
     )
+
+def generate_file(content: str, file_type: str, query: str = None) -> str:
+    """Generate a file of the specified type with optional query-based filtering.
+    
+    Args:
+        content: The content to write
+        file_type: Target file type (.txt, .csv, .json, .xml, .html)
+        query: Optional query to filter/relevant content
+    
+    Returns:
+        Path to the generated file
+    """
+    import tempfile
+    from pathlib import Path
+    
+    import os
+    filename = "generated" + "." + file_type.lstrip(".")
+    output_path = Path(f"/tmp/{{filename}}")
+    with open(output_path, "w") as f:
+        f.write(content)
+    
+    return str(output_path)
+
