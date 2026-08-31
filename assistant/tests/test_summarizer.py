@@ -2,9 +2,9 @@
 
 import pytest
 
-from assistant.backend.scheduler.summarizer import Summarizer, SummaryResult
 from assistant.backend.memory.store import MemoryStore
 from assistant.backend.pipeline.llm_client import OllamaClient
+from assistant.backend.scheduler.summarizer import Summarizer
 
 
 class StubLLMClient(OllamaClient):
@@ -17,7 +17,18 @@ class StubLLMClient(OllamaClient):
     def set_summary(self, summary: dict):
         self._next_summary = summary
 
-    async def chat(self, messages, model=None, temperature=0.7, format=None, stream=False, think=None, num_predict=None, num_ctx=None, tools=None):
+    async def chat(
+        self,
+        messages,
+        model=None,
+        temperature=0.7,
+        format=None,
+        stream=False,
+        think=None,
+        num_predict=None,
+        num_ctx=None,
+        tools=None,
+    ):
         from assistant.backend.pipeline.llm_client import ChatResponse
         if self._next_summary:
             import json
@@ -56,11 +67,21 @@ async def test_summarizer_creates_frame(store, tmp_path):
     session_id = "test_session_123"
 
     # Add enough episodes
-    await store.create_episode(user.id, session_id, "user", "Hello, I want to research festivals", frame_ids=[])
-    await store.create_episode(user.id, session_id, "assistant", "Sure, let me help", frame_ids=[])
-    await store.create_episode(user.id, session_id, "user", "Focus on Texas indie festivals", frame_ids=[])
-    await store.create_episode(user.id, session_id, "assistant", "Found several options", frame_ids=[])
-    await store.create_episode(user.id, session_id, "user", "Let's write a bio", frame_ids=[])
+    await store.create_episode(
+        user.id, session_id, "user", "Hello, I want to research festivals", frame_ids=[]
+    )
+    await store.create_episode(
+        user.id, session_id, "assistant", "Sure, let me help", frame_ids=[]
+    )
+    await store.create_episode(
+        user.id, session_id, "user", "Focus on Texas indie festivals", frame_ids=[]
+    )
+    await store.create_episode(
+        user.id, session_id, "assistant", "Found several options", frame_ids=[]
+    )
+    await store.create_episode(
+        user.id, session_id, "user", "Let's write a bio", frame_ids=[]
+    )
 
     # Setup stub LLM
     llm = StubLLMClient()
@@ -70,7 +91,9 @@ async def test_summarizer_creates_frame(store, tmp_path):
         "open_questions": ["Which festivals have open applications?"]
     })
 
-    summarizer = Summarizer(store=MemoryStore(str(tmp_path / "test.db")), llm_client=StubLLMClient())
+    summarizer = Summarizer(
+        store=MemoryStore(str(tmp_path / "test.db")), llm_client=StubLLMClient()
+    )
     # Need to use the same store
     summarizer.store = store
     summarizer.llm_client = StubLLMClient()

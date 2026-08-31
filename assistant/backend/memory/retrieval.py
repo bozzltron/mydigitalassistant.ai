@@ -52,7 +52,36 @@ def format_memory_context(context: "MemoryContext") -> str:
     lines: list[str] = []
     if context.retrieved_frames:
         lines.append("## Relevant memory")
-        for rf in context.retrieved_frames[: settings.max_frames_in_prompt]:
+        # Separate conversation summaries from other frames
+        summary_type = "conversation_summary"
+        summary_frames = [
+            rf for rf in context.retrieved_frames if rf.frame.type == summary_type
+        ]
+        other_frames = [
+            rf for rf in context.retrieved_frames if rf.frame.type != summary_type
+        ]
+
+        if summary_frames:
+            lines.append("\n## Conversation summaries")
+            for rf in summary_frames[: settings.max_frames_in_prompt]:
+                lines.append(f"\n### {rf.frame.name} [relevance: {rf.relevance:.2f}]")
+                for slot in rf.slots:
+                    source_note = ""
+                    if slot.source_url:
+                        if "//" in slot.source_url:
+                            domain = slot.source_url.split("/")[2]
+                        else:
+                            domain = slot.source_url
+                        source_note = f", src: {slot.source_type or 'unknown'} ({domain})"
+                        if slot.source_reliability:
+                            source_note += f", reliability: {slot.source_reliability:.2f}"
+                    slot_line = (
+                        f"  - {slot.key} = {slot.value} "
+                        f"(conf: {slot.confidence:.2f}{source_note})"
+                    )
+                    lines.append(slot_line)
+
+        for rf in other_frames[: settings.max_frames_in_prompt]:
             lines.append(
                 f"\n### {rf.frame.name} ({rf.frame.type}) [relevance: {rf.relevance:.2f}]"
             )
@@ -76,6 +105,7 @@ def format_memory_context(context: "MemoryContext") -> str:
                     f"{a.relation_type}\u2192frame:{a.to_frame_id}" for a in rf.associations[:3]
                 )
                 lines.append(f"  relations: {assoc_str}")
+
     if context.past_conversations:
         lines.append("\n## Related past conversations")
         for ep, sim in context.past_conversations:

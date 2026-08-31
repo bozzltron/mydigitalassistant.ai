@@ -200,6 +200,10 @@ Produce a JSON object with these fields:
                     source_type="summarization",
                     source_reliability=0.8,
                 )
+            # Update embedding
+            await self.store.embed_frames(
+                [existing.id], self.llm_client.embed, settings.embedding_model
+            )
             logger.info("Updated summary frame for session %s", session_id)
             return False
         else:
@@ -222,5 +226,9 @@ Produce a JSON object with these fields:
                     source_type="summarization",
                     source_reliability=0.8,
                 )
+            # Generate embedding for new summary frame
+            await self.store.embed_frames(
+                [frame.id], self.llm_client.embed, settings.embedding_model
+            )
             logger.info("Created summary frame for session %s", session_id)
             return True
