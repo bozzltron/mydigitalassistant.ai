@@ -266,12 +266,9 @@ def generate_file(content: str, file_type: str, query: str = None) -> str:
     Returns:
         Path to the generated file
     """
-    import tempfile
     from pathlib import Path
     
-    import os
-    filename = "generated" + "." + file_type.lstrip(".")
-    output_path = Path(f"/tmp/{{filename}}")
+    output_path = Path("/tmp/generated.file")
     with open(output_path, "w") as f:
         f.write(content)
     
