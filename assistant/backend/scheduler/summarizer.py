@@ -4,15 +4,13 @@ Periodically compresses conversation episodes into structured frame summaries
 using the utility model. Runs as a scheduled task off the hot path.
 """
 
-import logging
 import json
-from datetime import datetime
-from typing import Optional
+import logging
 from dataclasses import dataclass
 
-from assistant.backend.memory.store import MemoryStore
-from assistant.backend.pipeline.llm_client import OllamaClient, ChatMessage
 from assistant.backend.config import settings
+from assistant.backend.memory.store import MemoryStore
+from assistant.backend.pipeline.llm_client import ChatMessage, OllamaClient
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +42,7 @@ class Summarizer:
         self,
         session_id: str,
         user_id: int,
-    ) -> Optional[SummaryResult]:
+    ) -> SummaryResult | None:
         """Summarize a single session's episodes into a structured frame.
 
         Returns None if session has insufficient turns or doesn't exist.
@@ -115,7 +113,7 @@ class Summarizer:
         first_ts: str,
         last_ts: str,
         episodes_text: str,
-    ) -> Optional[dict]:
+    ) -> dict | None:
         """Call utility model to generate structured summary."""
         prompt = f"""Summarize the following conversation session into a structured summary.
 
@@ -178,7 +176,6 @@ Produce a JSON object with these fields:
 
         # Check if frame exists
         existing = await self.store.get_frame_by_name(frame_name)
-        now = datetime.utcnow().isoformat()
 
         slots = {
             "summary": summary,

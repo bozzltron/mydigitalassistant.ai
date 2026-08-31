@@ -9,8 +9,8 @@ from fastapi.testclient import TestClient
 from assistant.backend.config import settings
 from assistant.backend.main import _state, app, get_orchestrator, get_store
 from assistant.backend.memory.retrieval import Retriever
-from assistant.backend.pipeline.orchestrator import Orchestrator, OrchestratorDeps
 from assistant.backend.memory.store import MemoryStore
+from assistant.backend.pipeline.orchestrator import Orchestrator, OrchestratorDeps
 
 
 @pytest.fixture
@@ -175,12 +175,20 @@ async def test_switch_conversation_loads_correct_history(store: MemoryStore):
 
     # Create two sessions with different messages
     await store.create_session("sess_switch_1", user.id, title="First")
-    await store.create_episode(user.id, "sess_switch_1", "user", "Message in first", frame_ids=[])
-    await store.create_episode(user.id, "sess_switch_1", "assistant", "Reply to first", frame_ids=[])
+    await store.create_episode(
+        user.id, "sess_switch_1", "user", "Message in first", frame_ids=[]
+    )
+    await store.create_episode(
+        user.id, "sess_switch_1", "assistant", "Reply to first", frame_ids=[]
+    )
 
     await store.create_session("sess_switch_2", user.id, title="Second")
-    await store.create_episode(user.id, "sess_switch_2", "user", "Message in second", frame_ids=[])
-    await store.create_episode(user.id, "sess_switch_2", "assistant", "Reply to second", frame_ids=[])
+    await store.create_episode(
+        user.id, "sess_switch_2", "user", "Message in second", frame_ids=[]
+    )
+    await store.create_episode(
+        user.id, "sess_switch_2", "assistant", "Reply to second", frame_ids=[]
+    )
 
     # Verify each session has its own episodes
     eps_1 = await store.get_episodes_for_session("sess_switch_1")

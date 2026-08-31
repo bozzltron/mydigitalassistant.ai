@@ -668,14 +668,14 @@ class Orchestrator:
                 history_messages.append(ChatMessage(role=ep.role, content=ep.content))
 
         # Hard limit on system prompt to prevent OOM/timeout
-        MAX_SYSTEM_PROMPT_CHARS = settings.max_system_prompt_chars
+        max_system_prompt_chars = settings.max_system_prompt_chars
         truncated = False
-        if len(system_prompt) > MAX_SYSTEM_PROMPT_CHARS:
+        if len(system_prompt) > max_system_prompt_chars:
             logger.warning(
                 "System prompt truncated from %d to %d chars",
-                len(system_prompt), MAX_SYSTEM_PROMPT_CHARS
+                len(system_prompt), max_system_prompt_chars
             )
-            system_prompt = system_prompt[:MAX_SYSTEM_PROMPT_CHARS] + "\n\n[... truncated ...]"
+            system_prompt = system_prompt[:max_system_prompt_chars] + "\n\n[... truncated ...]"
             truncated = True
 
         # Structured logging for context transparency
@@ -1097,14 +1097,14 @@ class Orchestrator:
                 except Exception as e:
                     logger.error("Search extraction failed: %s", e)
 
-        MAX_SYSTEM_PROMPT_CHARS = settings.max_system_prompt_chars
+        max_system_prompt_chars = settings.max_system_prompt_chars
         truncated = False
-        if len(system_prompt) > MAX_SYSTEM_PROMPT_CHARS:
+        if len(system_prompt) > max_system_prompt_chars:
             logger.warning(
                 "System prompt truncated from %d to %d chars",
-                len(system_prompt), MAX_SYSTEM_PROMPT_CHARS
+                len(system_prompt), max_system_prompt_chars
             )
-            system_prompt = system_prompt[:MAX_SYSTEM_PROMPT_CHARS] + "\n\n[... truncated ...]"
+            system_prompt = system_prompt[:max_system_prompt_chars] + "\n\n[... truncated ...]"
             truncated = True
 
         logger.info(

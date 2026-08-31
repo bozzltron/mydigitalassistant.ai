@@ -77,10 +77,19 @@ _NON_INFO_PATTERNS = [
     r"^what'?s up[?!.]*$",
     r"^(?:i )?(?:just|sorry|apologies?)",
     # Creative/writing follow-ups after research - don't need web search
-    r"^let'?s (write|draft|compose|summarize) (the|a|my) (bio|summary|email|post|blog|article|story|poem|script|report)[!.?]*$",
-    r"^(write|draft|compose|summarize) (the|a|my) (bio|summary|email|post|blog|article|story|poem|script|report)[!.?]*$",
-    r"^can you (write|draft|compose|summarize) (the|a|my) (bio|summary|email|post|blog|article|story|poem|script|report)[!.?]*$",
-    r"^based on (that|the research|what we found),? (write|draft|compose) (the|a|my) (bio|summary|email|post|blog|article|story|poem|script|report)[!.?]*$",
+    r"^let'?s (write|draft|compose|summarize) "
+    r"(the|a|my) "
+    r"(bio|summary|email|post|blog|article|story|poem|script|report)[!.?]*$",
+    r"^(write|draft|compose|summarize) "
+    r"(the|a|my) "
+    r"(bio|summary|email|post|blog|article|story|poem|script|report)[!.?]*$",
+    r"^can you (write|draft|compose|summarize) "
+    r"(the|a|my) "
+    r"(bio|summary|email|post|blog|article|story|poem|script|report)[!.?]*$",
+    r"^based on (that|the research|what we found),? "
+    r"(write|draft|compose) "
+    r"(the|a|my) "
+    r"(bio|summary|email|post|blog|article|story|poem|script|report)[!.?]*$",
 ]
 
 

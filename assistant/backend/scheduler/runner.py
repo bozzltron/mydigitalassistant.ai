@@ -60,7 +60,7 @@ async def _run_summarization(
         return
 
     try:
-        summarizer = Summarizer(
+        Summarizer(
             store=store,
             llm_client=orchestrator.llm_client,
         )

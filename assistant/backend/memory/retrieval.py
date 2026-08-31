@@ -283,10 +283,16 @@ class Retriever:
             if len(session_episodes) >= 2:
                 recent_episodes = session_episodes[-settings.max_episodes_in_prompt :]
             else:
-                user_episodes = await self.store.get_episodes_for_user(user_id, limit=settings.max_episodes_in_prompt * 2)
-                recent_episodes = (session_episodes + user_episodes)[-settings.max_episodes_in_prompt :]
+                user_episodes = await self.store.get_episodes_for_user(
+                    user_id, limit=settings.max_episodes_in_prompt * 2
+                )
+                recent_episodes = (session_episodes + user_episodes)[
+                    -settings.max_episodes_in_prompt :
+                ]
         else:
-            recent_episodes = await self.store.get_episodes_for_user(user_id, limit=settings.max_episodes_in_prompt)
+            recent_episodes = await self.store.get_episodes_for_user(
+                user_id, limit=settings.max_episodes_in_prompt
+            )
 
          # Build and return context
         past_conversations = await self._search_past_conversations(
