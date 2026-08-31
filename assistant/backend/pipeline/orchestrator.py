@@ -559,18 +559,18 @@ class Orchestrator:
                     request.message, search_results, self.llm_client
                 )
 
-                # Brave: fetch top 2 result bodies in parallel for richer extraction
+                # Brave: fetch top 3 result bodies in parallel for richer extraction
                 if backend_name == "brave" and search_results:
                     try:
                         bodies = await asyncio.gather(
                             *[
                                 _fetch_url_body(r.url)
-                                for r in search_results[:1]
+                                for r in search_results[:3]
                             ],
                             return_exceptions=True,
                         )
                         document_extractions: list = []
-                        for result, body in zip(search_results[:2], bodies, strict=True):
+                        for result, body in zip(search_results[:3], bodies, strict=True):
                             if isinstance(body, Exception) or not body:
                                 continue
                             doc_extraction = await extract_facts_from_document(
