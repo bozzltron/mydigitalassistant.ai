@@ -27,6 +27,7 @@ from assistant.backend.db.sqlcipher import aiosqlite_connect
 from assistant.backend.memory.gc import run_gc
 from assistant.backend.memory.store import MemoryStore
 from assistant.backend.pipeline.orchestrator import Orchestrator
+from assistant.backend.scheduler.summarizer import Summarizer
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,71 @@ POLL_SECONDS = 20
 HEARTBEAT_INTERVAL_S = 30 * 60
 GC_INTERVAL_S = 7 * 24 * 60 * 60
 CONSOLIDATION_BACKUPS_TO_KEEP = 5
+
+# Summarization: runs at configured interval (default 24h)
+SUMMARIZATION_INTERVAL_S = 0  # will be set from settings in _scheduler_loop
+
+
+def _is_new_day(last: datetime | None, now: datetime) -> bool:
+    """UTC date comparison so summarization runs once per calendar day."""
+    if last is None:
+        return True
+    local_last = last.astimezone()
+    local_now = now.astimezone()
+    return local_last.date() != local_now.date()
+
+
+async def _run_summarization(
+    store: MemoryStore,
+    orchestrator: Orchestrator,
+) -> None:
+    """Run conversation summarization for all users with eligible sessions."""
+    if not settings.summarization_enabled:
+        return
+
+    try:
+        summarizer = Summarizer(
+            store=store,
+            llm_client=orchestrator.llm_client,
+        )
+
+        users = await store.list_users()
+        for user in users:
+            sessions = await store.get_sessions_for_user(user.id)
+            summarized = 0
+            for sess in sessions:
+                if summarized >= settings.summarization_max_sessions_per_run:
+                    break
+
+                # Check if session has enough turns
+                episodes = await store.get_episodes_for_session(sess["id"])
+                user_episodes = [e for e in episodes if e.user_id == user.id]
+                if len(user_episodes) < settings.summarization_min_turns:
+                    continue
+
+                try:
+                    result = await Summarizer(
+                        store=store,
+                        llm_client=orchestrator.llm_client,
+                    ).summarize_session(
+                        session_id=sess["id"],
+                        user_id=user.id,
+                    )
+                    if result:
+                        logger.info(
+                            "Summarized session %s (created=%s, turns=%d, chars=%d)",
+                            sess["id"],
+                            result.created,
+                            result.turn_count,
+                            len(result.summary),
+                        )
+                except Exception as exc:
+                    logger.warning("Summarization failed for session %s: %s", sess["id"], exc)
+
+                summarized += 1
+
+    except Exception as exc:
+        logger.warning("Summarization run failed: %s", exc)
 
 
 def _signal_handler(signum, frame):
@@ -245,8 +311,10 @@ async def _scheduler_loop(store: MemoryStore, orchestrator: Orchestrator) -> Non
     await _run_memory_gc(store)
     last_hb = datetime.now(UTC)
     last_gc = last_hb
+    last_summarization: datetime | None = None
     consolidation_interval_s = max(0, settings.consolidation_interval_hours) * 3600
     last_consolidation: datetime | None = None
+    summarization_interval_s = settings.summarization_interval_hours * 3600
 
     while not SHUTDOWN:
         try:
@@ -268,6 +336,17 @@ async def _scheduler_loop(store: MemoryStore, orchestrator: Orchestrator) -> Non
             ):
                 await _run_consolidation(store, orchestrator)
                 last_consolidation = datetime.now(UTC)
+            if (
+                summarization_interval_s
+                and settings.summarization_enabled
+                and (
+                    last_summarization is None
+                    or (now - last_summarization).total_seconds()
+                    >= summarization_interval_s
+                )
+            ):
+                await _run_summarization(store, orchestrator)
+                last_summarization = datetime.now(UTC)
 
             due = await store.get_due_scheduled_tasks()
             if due:

@@ -115,6 +115,14 @@ class Settings(BaseSettings):
     # Fallback display name until the user sets the assistant's identity name.
     assistant_name: str = "Cognitive Assistant"
 
+    # Background summarization (episodic -> semantic compression)
+    summarization_enabled: bool = True
+    summarization_interval_hours: int = 24
+    summarization_min_turns: int = 10
+    summarization_max_sessions_per_run: int = 5
+    summarization_max_chars: int = 4000
+    summarization_timeout_seconds: int = 60
+
     # Working memory (LRU cache for retrieval bias)
     working_memory_max_size: int = 50   # max entries in working memory
     working_memory_boost: float = 1.5  # relevance multiplier for working memory frames
