@@ -1,0 +1,37 @@
+/* Cognitive Assistant - Interface Styles
+   Users can override these variables or add their own rules */
+:root {
+  --bg: #0f1117;
+  --surface: #1a1d27;
+  --surface2: #242836;
+  --border: #2e3347;
+  --user-msg: #1e3a5f;
+  --assistant-msg: #1a2420;
+  --text: #e8e9ed;
+  --text-dim: #8b8fa3;
+  --accent: #14b8a6;
+  --accent2: #4ec9a0;
+  --error: #f47070;
+  --warning: #f0b97c;
+  --font: system-ui, -apple-system, BlinkMacSystemFont, 'SF Pro Text',
+          'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+  --mono: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas,
+          'Liberation Mono', monospace;
+}
+
+/* Basic resets and globals */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: var(--font);
+  background-color: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+}
+
+/* Link styles */
+a { color: var(--accent); text-decoration: none; }
+a:hover { color: var(--accent2); }
+
+/* Focus styles */
+*:focus { outline: 2px solid var(--accent); outline-offset: 2px; }
