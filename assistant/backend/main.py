@@ -1333,9 +1333,68 @@ async def conversation_details(
     }
 
 
+class SummarizeRequest(BaseModel):
+    session_id: str
+
+
+class SummarizeResponse(BaseModel):
+    status: str
+    session_id: str
+    summary: str | None = None
+    key_entities: list[str] | None = None
+    open_questions: list[str] | None = None
+    turn_count: int | None = None
+    created: bool | None = None
+    detail: str | None = None
+
+
 class ConversationTitleUpdate(BaseModel):
     user_id: int
     title: str
+
+
+@app.post("/summarize", response_model=SummarizeResponse)
+async def summarize_session(
+    request: SummarizeRequest,
+    store: MemoryStore = _Depends(get_store),
+):
+    """User-initiated summarization of a conversation session.
+
+    Triggers the summarizer to compress the conversation episodes
+    into a structured summary frame. Useful for manually triggering
+    summarization or after significant conversation changes.
+
+    Returns the summary result including entities and open questions.
+    """
+    from assistant.backend.scheduler.summarizer import Summarizer
+
+    llm_client: OllamaClient = _state["llm_client"]
+
+    # Use user_id=1 as default (the first/primary user)
+    # The summarizer will filter episodes by this user_id
+    summarizer = Summarizer(store=store, llm_client=llm_client)
+
+    result = await summarizer.summarize_session(
+        session_id=request.session_id,
+        user_id=1,
+    )
+
+    if result is None:
+        return SummarizeResponse(
+            status="skipped",
+            session_id=request.session_id,
+            detail="Session has insufficient turns or doesn't exist",
+        )
+
+    return SummarizeResponse(
+        status="ok",
+        session_id=request.session_id,
+        summary=result.summary,
+        key_entities=result.key_entities,
+        open_questions=result.open_questions,
+        turn_count=result.turn_count,
+        created=result.created,
+    )
 
 
 @app.patch("/conversations/{session_id}/title")
