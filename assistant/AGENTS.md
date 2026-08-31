@@ -128,6 +128,8 @@ have caught the bug before the fix ships. This builds the suite in the direction
 real bugs rather than abstract coverage.
 Critical paths that need regression tests (in priority order):
 1. **Voice recording flow**: silence detection → stopRecording → transcription → sendMessage.
+   *Note: No automated tests exist for this path. Voice/audio I/O with silence detection
+   and transcription is inherently flaky in CI. Manual verification recommended.*
 2. **run_now**: scheduled task found by name → executed → last_run updated → once disabled.
 3. **Correction pipeline**: parse → validate → apply → response.
 4. **Search extraction + merge**: snippet extract → deduplication → document extract → merge.
@@ -227,6 +229,88 @@ Role-based model selection. Configurable in `.env`: `CHAT_MODEL`, `UTILITY_MODEL
 - **API:** `GET /tasks`, `DELETE /tasks/{id}`, `GET /tasks/{id}/result`.
 - **Tests:** `assistant/tests/test_daily_schedule.py` plus a new integration test for
   end-to-end task execution.
+
+## Background Conversation Summarization
+
+The agent runs a daily background summarization job that compresses conversation episodes into structured frame summaries. This enables "learning slowly but effectively" — compressing raw episodic memory into structured semantic frames, reducing prompt pressure while preserving long-term knowledge.
+
+### Architecture
+
+**New Files:**
+```
+assistant/backend/scheduler/summarizer.py      # Core summarization logic
+assistant/backend/scheduler/__init__.py        # Export public API
+```
+
+**Modified Files:**
+```
+assistant/backend/config.py                    # New Settings fields
+assistant/backend/scheduler/runner.py          # Register summarization task
+assistant/backend/memory/store.py              # Helper: upsert_summary_frame
+assistant/backend/memory/retrieval.py          # Include summary frames in retrieval
+```
+
+### Database Schema (no migration needed)
+- Uses existing `frames` table: `name="conversation_summary_{session_id}"`
+- Slots: `summary`, `key_entities`, `open_questions`, `session_id`, `turn_count`, `date_range`, `created_at`, `updated_at`
+- Associations: `summarizes` relation from summary frame → episode frames
+
+### Functional Requirements
+1. **Periodic summarization**: Runs as a scheduled task (configurable interval, default daily via `DAILY_TASKS_TIME`)
+2. **Session-scoped**: Summarizes episodes per session; produces one summary frame per session
+3. **Model-driven**: Uses utility model (qwen2.5:3b) — cheap, fast, already loaded
+4. **Structured output**: Generates frames with slots: `summary`, `key_entities`, `open_questions`, `session_id`, `turn_count`, `date_range`
+5. **Frame integration**: Summaries stored as frames (`conversation_summary_{session_id}`) with embeddings for retrieval
+6. **Episodic linkage**: Link summary frame to source episodes via associations (`summarizes` relation)
+7. **Idempotent**: Re-running on same session updates existing summary frame (upsert)
+
+### Non-Functional Requirements
+1. **Off-hot-path**: Runs in scheduler background; never blocks chat response
+2. **Timeout-safe**: Utility model call has 60s timeout; max 3 retries
+3. **Configurable**: Interval, max sessions per run, min turns to trigger via `.env`
+4. **Observable**: Logs `summary_created` / `summary_updated` with turn count, char count
+5. **Testable**: Unit + integration tests for summarization pipeline
+
+### Configuration (`.env`)
+```bash
+SUMMARIZATION_ENABLED=true
+SUMMARIZATION_INTERVAL_HOURS=24          # daily
+SUMMARIZATION_MIN_TURNS=10               # minimum turns before summarizing
+SUMMARIZATION_MAX_SESSIONS_PER_RUN=5     # limit per scheduler tick
+SUMMARIZATION_MAX_CHARS=4000             # max input chars to utility model
+SUMMARIZATION_TIMEOUT_SECONDS=60
+```
+
+### Design Principle Alignment
+| Principle | Application |
+|-----------|-------------|
+| **Model-first correction** | Utility model for summarization (not scripted rules) |
+| **No templated responses** | Summaries are model-generated narratives, not templates |
+| **Lean on model flexibility** | Utility model decides what's salient, not hardcoded rules |
+| **Scheduled tasks are memory** | Summarization runs as a scheduled task; output is frames/slots |
+| **Clean ship** | New module with tests; no dead code |
+| **Stability: no regressions** | Unit tests for summarizer; integration tests for pipeline |
+
+### Retrieval Integration
+Summary frames are included in memory context retrieval with a dedicated "## Conversation summaries" section, separate from regular frames. This keeps the prompt organized and lets the model reference past conversation summaries when relevant.
+
+### User-Initiated Summarization
+Endpoint: `POST /summarize` with body `{"session_id": "..."}`
+- Triggers immediate summarization of a session
+- Returns summary, key_entities, open_questions, turn_count, created status
+- Useful for manually triggering summarization after significant conversation changes
+
+### Tests
+- `assistant/tests/test_summarizer.py`: unit tests (create, update, skip)
+- `assistant/tests/test_api.py`: `test_correction_endpoint_basic` regression test for correction pipeline
+
+### Risk Mitigation
+| Risk | Mitigation |
+|------|------------|
+| Utility model timeout | 60s timeout + 3 retries; skip session on failure |
+| Prompt overflow | Truncate input to `SUMMARIZATION_MAX_CHARS` (4000) |
+| Duplicate summaries | Upsert by session_id; idempotent |
+| Prompt cache pollution | Summaries retrieved separately, not in hot prompt path |
 
 ## Key files
 - `backend/memory/store.py` — MemoryStore CRUD over SQLite; `export_brain`/`import_brain`.
