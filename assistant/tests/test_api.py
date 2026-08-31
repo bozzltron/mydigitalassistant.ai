@@ -526,3 +526,38 @@ def test_topic_search_finds_frames_by_keyword_and_semantic(client, stub_llm):
 
     empty_q = client.get("/memory/search", params={"q": "   "})
     assert empty_q.status_code == 400
+
+
+
+@pytest.mark.asyncio
+async def test_correction_endpoint_basic(client, stub_llm, store):
+    """POST /correction basic flow - verify correction pipeline runs.
+
+    Regression test: ensure the correction pipeline doesn't crash and
+    basic flow works (parse → validate → apply → response).
+    """
+    stub_llm.set_extraction_result(
+        slots=[{"frame_name": "guitar", "slot_key": "strings", "value": "12"}],
+        associations=[],
+    )
+
+    r = client.post("/correction", json={
+        "message_id": "test-basic-1",
+        "episode_id": None,
+        "correction_text": "The guitar has 12 strings.",
+    })
+    assert r.status_code == 200
+    data = r.json()
+    assert data["slots_corrected"] == 1
+    assert data["frame_name"] == "guitar"
+    assert data["slot_key"] == "strings"
+    assert data["new_value"] == "12"
+
+    # Correction should be recorded as feedback
+    async with store._connect() as db:
+        feedbacks = await db.execute_fetchall(
+            "SELECT kind, comment FROM feedback WHERE message_id = ?",
+            ("test-basic-1",),
+        )
+    assert len(feedbacks) == 1
+    assert feedbacks[0][0] == "correction"
