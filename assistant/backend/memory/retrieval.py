@@ -76,7 +76,18 @@ def format_memory_context(context: "MemoryContext") -> str:
                     f"{a.relation_type}\u2192frame:{a.to_frame_id}" for a in rf.associations[:3]
                 )
                 lines.append(f"  relations: {assoc_str}")
-    # Past conversations omitted from system prompt (available in chat history)
+    if context.past_conversations:
+        lines.append("\n## Related past conversations")
+        for ep, sim in context.past_conversations:
+            content = " ".join(ep.content.split())
+            if len(content) > settings.max_episode_digest_chars:
+                content = (
+                    content[: settings.max_episode_digest_chars].rsplit(" ", 1)[0] + "…"
+                )
+            when = (ep.timestamp or "")[:10]
+            lines.append(
+                f"   [{when} · {ep.role} · {round(sim * 100)}% match] {content}"
+            )
     if context.recent_episodes:
         lines.append("\n## Recent conversation (this session)")
         for ep in context.recent_episodes[-settings.max_episodes_in_prompt :]:

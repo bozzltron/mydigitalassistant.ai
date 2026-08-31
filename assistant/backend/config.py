@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     # Cap applies to thinking AND answer combined (Ollama has no separate
     # think budget). 1024 truncated long answers mid-sentence once the model
     # spent its budget reasoning; 4096 leaves room for both.
-    think_num_predict_cap: int = 2048
+    think_num_predict_cap: int = 4096
     # Native tool-calling on the chat model (Phase 6 M5). The web_search tool
     # additionally depends on SearXNG availability.
     tools_enabled: bool = False
