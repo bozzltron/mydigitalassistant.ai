@@ -6,8 +6,8 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
-from fastapi import Depends as _Depends, File
-from fastapi import FastAPI, HTTPException, UploadFile
+from fastapi import Depends as _Depends
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -1438,15 +1438,13 @@ async def upload_file(
         )
     
     # Store file in data directory
-    import tempfile
-    import os
     from pathlib import Path
     
     data_dir = Path("/app/data")
     data_dir.mkdir(exist_ok=True)
     
-    # Secure filename
-    safe_filename = f"upload_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{secure_filename(filename)}"
+    # Secure filename - use timestamp-based name
+    safe_filename = "upload_" + datetime.now().strftime('%Y%m%d_%H%M%S') + '.file'
     file_path = data_dir / safe_filename
     
     # Save file
