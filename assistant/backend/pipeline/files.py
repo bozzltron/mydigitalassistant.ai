@@ -5,9 +5,7 @@ and integrates with the memory system.
 """
 
 import json
-import re
 from dataclasses import dataclass
-from typing import Any, Optional
 
 
 @dataclass
@@ -47,7 +45,7 @@ def extract_text_from_csv(content: bytes) -> tuple[str, list[str], list[str]]:
             # Extract entities from data rows
             for line in lines[1:]:
                 values = [v.strip() for v in line.split(",")]
-                for i, (header, value) in enumerate(zip(headers, values)):
+                for _i, (header, value) in enumerate(zip(headers, values, strict=True)):
                     if value and value not in ("NA", "N/A", "", "null"):
                         entity_key = f"{header}_{value}"
                         if entity_key not in key_entities:
