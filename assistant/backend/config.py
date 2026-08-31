@@ -76,6 +76,14 @@ class Settings(BaseSettings):
     # episode recall). 0 disables episode search entirely.
     retrieval_episode_limit: int = 3
 
+    # System prompt budget (context window protection)
+    # Limits total prompt chars before LLM call; truncates least-relevant first
+    max_system_prompt_chars: int = 12000
+    max_search_results_in_prompt: int = 3
+    max_frames_in_prompt: int = 5
+    max_episodes_in_prompt: int = 10
+    max_episode_digest_chars: int = 240
+
     # Canonical frame resolution (Phase 9A): max embedding distance at which a
     # near-duplicate name reuses an existing frame instead of creating one.
     # Conservative by design — consolidation (Phase 9B) loosens with evidence.

@@ -539,7 +539,7 @@ class Orchestrator:
             )
 
             if search_results:
-                display_results = search_results[:2]
+                display_results = search_results[: settings.max_search_results_in_prompt]
                 search_text = "\n".join(
                     f"- [{r.title}]({r.url}) - {r.snippet}" for r in display_results
                 )
@@ -560,18 +560,22 @@ class Orchestrator:
                     request.message, search_results, self.llm_client
                 )
 
-                # Brave: fetch top 3 result bodies in parallel for richer extraction
+                # Brave: fetch top result bodies in parallel for richer extraction
                 if backend_name == "brave" and search_results:
                     try:
                         bodies = await asyncio.gather(
                             *[
                                 _fetch_url_body(r.url)
-                                for r in search_results[:2]
+                                for r in search_results[: settings.max_search_results_in_prompt]
                             ],
                             return_exceptions=True,
                         )
                         document_extractions: list = []
-                        for result, body in zip(search_results[:2], bodies, strict=True):
+                        for result, body in zip(
+                            search_results[: settings.max_search_results_in_prompt],
+                            bodies,
+                            strict=True,
+                        ):
                             if isinstance(body, Exception) or not body:
                                 continue
                             doc_extraction = await extract_facts_from_document(
@@ -664,13 +668,25 @@ class Orchestrator:
                 history_messages.append(ChatMessage(role=ep.role, content=ep.content))
 
         # Hard limit on system prompt to prevent OOM/timeout
-        MAX_SYSTEM_PROMPT_CHARS = 8000
+        MAX_SYSTEM_PROMPT_CHARS = settings.max_system_prompt_chars
+        truncated = False
         if len(system_prompt) > MAX_SYSTEM_PROMPT_CHARS:
             logger.warning(
                 "System prompt truncated from %d to %d chars",
                 len(system_prompt), MAX_SYSTEM_PROMPT_CHARS
             )
             system_prompt = system_prompt[:MAX_SYSTEM_PROMPT_CHARS] + "\n\n[... truncated ...]"
+            truncated = True
+
+        # Structured logging for context transparency
+        logger.info(
+            "context_stats: prompt_chars=%d frames=%d episodes=%d search_results=%d truncated=%s",
+            len(system_prompt),
+            len(memory_context.retrieved_frames),
+            len(memory_context.recent_episodes),
+            len(search_results),
+            truncated,
+        )
 
         # Call LLM — fast path uses configured default (think off for
         # thinking-capable models); escalated plans flip thinking on with a
@@ -1059,8 +1075,9 @@ class Orchestrator:
             )
 
             if search_results:
+                display_results = search_results[: settings.max_search_results_in_prompt]
                 search_text = "\n".join(
-                    f"- [{r.title}]({r.url}) - {r.snippet}" for r in search_results
+                    f"- [{r.title}]({r.url}) - {r.snippet}" for r in display_results
                 )
                 system_prompt += f"\n\n**Search Results:**\n{search_text}"
 
@@ -1080,13 +1097,24 @@ class Orchestrator:
                 except Exception as e:
                     logger.error("Search extraction failed: %s", e)
 
-        MAX_SYSTEM_PROMPT_CHARS = 8000
+        MAX_SYSTEM_PROMPT_CHARS = settings.max_system_prompt_chars
+        truncated = False
         if len(system_prompt) > MAX_SYSTEM_PROMPT_CHARS:
             logger.warning(
                 "System prompt truncated from %d to %d chars",
                 len(system_prompt), MAX_SYSTEM_PROMPT_CHARS
             )
             system_prompt = system_prompt[:MAX_SYSTEM_PROMPT_CHARS] + "\n\n[... truncated ...]"
+            truncated = True
+
+        logger.info(
+            "context_stats: prompt_chars=%d frames=%d episodes=%d search_results=%d truncated=%s",
+            len(system_prompt),
+            0,  # no frames in this path
+            0,  # no episodes in this path
+            len(search_results),
+            truncated,
+        )
 
         messages = [ChatMessage(role="system", content=system_prompt)]
         llm_response = await self.llm_client.chat(

@@ -5,5 +5,9 @@
 
 https://localhost {
     tls /etc/caddy/certs/localhost.crt /etc/caddy/certs/localhost.key
-    reverse_proxy assistant:8000
+    reverse_proxy assistant:8000 {
+        transport http {
+            response_header_timeout 300s
+        }
+    }
 }

@@ -52,7 +52,7 @@ def format_memory_context(context: "MemoryContext") -> str:
     lines: list[str] = []
     if context.retrieved_frames:
         lines.append("## Relevant memory")
-        for rf in context.retrieved_frames[:3]:
+        for rf in context.retrieved_frames[: settings.max_frames_in_prompt]:
             lines.append(
                 f"\n### {rf.frame.name} ({rf.frame.type}) [relevance: {rf.relevance:.2f}]"
             )
@@ -79,16 +79,16 @@ def format_memory_context(context: "MemoryContext") -> str:
     # Past conversations omitted from system prompt (available in chat history)
     if context.recent_episodes:
         lines.append("\n## Recent conversation (this session)")
-        for ep in context.recent_episodes[-5:]:
+        for ep in context.recent_episodes[-settings.max_episodes_in_prompt :]:
             # Digests, not verbatim text. The orchestrator passes the most
             # recent turns as proper history messages, so full content here
             # duplicated the conversation and inflated every prompt's
             # prefill by thousands of tokens. Full episode text stays in
             # the DB; these digest lines keep older context citable.
             content = " ".join(ep.content.split())
-            if len(content) > EPISODE_DIGEST_CHARS:
+            if len(content) > settings.max_episode_digest_chars:
                 content = (
-                    content[:EPISODE_DIGEST_CHARS].rsplit(" ", 1)[0] + "…"
+                    content[: settings.max_episode_digest_chars].rsplit(" ", 1)[0] + "…"
                 )
             lines.append(f"   [{ep.role}] {content}")
     return "\n".join(lines) if lines else "(no relevant memory found)"
@@ -270,12 +270,12 @@ class Retriever:
         if session_id:
             session_episodes = await self.store.get_episodes_for_session(session_id)
             if len(session_episodes) >= 2:
-                recent_episodes = session_episodes
+                recent_episodes = session_episodes[-settings.max_episodes_in_prompt :]
             else:
-                user_episodes = await self.store.get_episodes_for_user(user_id, limit=20)
-                recent_episodes = session_episodes + user_episodes
+                user_episodes = await self.store.get_episodes_for_user(user_id, limit=settings.max_episodes_in_prompt * 2)
+                recent_episodes = (session_episodes + user_episodes)[-settings.max_episodes_in_prompt :]
         else:
-            recent_episodes = await self.store.get_episodes_for_user(user_id, limit=10)
+            recent_episodes = await self.store.get_episodes_for_user(user_id, limit=settings.max_episodes_in_prompt)
 
          # Build and return context
         past_conversations = await self._search_past_conversations(
