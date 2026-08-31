@@ -539,8 +539,9 @@ class Orchestrator:
             )
 
             if search_results:
+                display_results = search_results[:2]
                 search_text = "\n".join(
-                    f"- [{r.title}]({r.url}) - {r.snippet}" for r in search_results
+                    f"- [{r.title}]({r.url}) - {r.snippet}" for r in display_results
                 )
                 system_prompt += f"\n\n**Search Results:**\n{search_text}"
 
@@ -565,12 +566,12 @@ class Orchestrator:
                         bodies = await asyncio.gather(
                             *[
                                 _fetch_url_body(r.url)
-                                for r in search_results[:3]
+                                for r in search_results[:2]
                             ],
                             return_exceptions=True,
                         )
                         document_extractions: list = []
-                        for result, body in zip(search_results[:3], bodies, strict=True):
+                        for result, body in zip(search_results[:2], bodies, strict=True):
                             if isinstance(body, Exception) or not body:
                                 continue
                             doc_extraction = await extract_facts_from_document(
@@ -661,6 +662,15 @@ class Orchestrator:
             prior_turns = prior_turns[-max_turns:] if max_turns > 0 else []
             for ep in prior_turns:
                 history_messages.append(ChatMessage(role=ep.role, content=ep.content))
+
+        # Hard limit on system prompt to prevent OOM/timeout
+        MAX_SYSTEM_PROMPT_CHARS = 8000
+        if len(system_prompt) > MAX_SYSTEM_PROMPT_CHARS:
+            logger.warning(
+                "System prompt truncated from %d to %d chars",
+                len(system_prompt), MAX_SYSTEM_PROMPT_CHARS
+            )
+            system_prompt = system_prompt[:MAX_SYSTEM_PROMPT_CHARS] + "\n\n[... truncated ...]"
 
         # Call LLM — fast path uses configured default (think off for
         # thinking-capable models); escalated plans flip thinking on with a
@@ -1070,8 +1080,15 @@ class Orchestrator:
                 except Exception as e:
                     logger.error("Search extraction failed: %s", e)
 
+        MAX_SYSTEM_PROMPT_CHARS = 8000
+        if len(system_prompt) > MAX_SYSTEM_PROMPT_CHARS:
+            logger.warning(
+                "System prompt truncated from %d to %d chars",
+                len(system_prompt), MAX_SYSTEM_PROMPT_CHARS
+            )
+            system_prompt = system_prompt[:MAX_SYSTEM_PROMPT_CHARS] + "\n\n[... truncated ...]"
+
         messages = [ChatMessage(role="system", content=system_prompt)]
-        messages.append(ChatMessage(role="user", content=prompt))
         llm_response = await self.llm_client.chat(
             messages,
             think=True,

@@ -76,6 +76,11 @@ _NON_INFO_PATTERNS = [
     r"^how('s| is) it going[?!.]*$",
     r"^what'?s up[?!.]*$",
     r"^(?:i )?(?:just|sorry|apologies?)",
+    # Creative/writing follow-ups after research - don't need web search
+    r"^let'?s (write|draft|compose|summarize) (the|a|my) (bio|summary|email|post|blog|article|story|poem|script|report)[!.?]*$",
+    r"^(write|draft|compose|summarize) (the|a|my) (bio|summary|email|post|blog|article|story|poem|script|report)[!.?]*$",
+    r"^can you (write|draft|compose|summarize) (the|a|my) (bio|summary|email|post|blog|article|story|poem|script|report)[!.?]*$",
+    r"^based on (that|the research|what we found),? (write|draft|compose) (the|a|my) (bio|summary|email|post|blog|article|story|poem|script|report)[!.?]*$",
 ]
 
 

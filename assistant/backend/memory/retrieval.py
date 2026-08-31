@@ -44,7 +44,7 @@ def frame_to_text(frame: Frame, slots: list[Slot]) -> str:
 # Max chars of any single episode shown in the memory-context digest.
 # Recent turns still arrive verbatim as chat history; this only bounds the
 # older tail so one verbose answer can't inflate every future prompt.
-EPISODE_DIGEST_CHARS = 240
+EPISODE_DIGEST_CHARS = 160
 
 
 def format_memory_context(context: "MemoryContext") -> str:
@@ -52,7 +52,7 @@ def format_memory_context(context: "MemoryContext") -> str:
     lines: list[str] = []
     if context.retrieved_frames:
         lines.append("## Relevant memory")
-        for rf in context.retrieved_frames[:5]:
+        for rf in context.retrieved_frames[:3]:
             lines.append(
                 f"\n### {rf.frame.name} ({rf.frame.type}) [relevance: {rf.relevance:.2f}]"
             )
@@ -76,21 +76,10 @@ def format_memory_context(context: "MemoryContext") -> str:
                     f"{a.relation_type}\u2192frame:{a.to_frame_id}" for a in rf.associations[:3]
                 )
                 lines.append(f"  relations: {assoc_str}")
-    if context.past_conversations:
-        lines.append("\n## Related past conversations")
-        for ep, sim in context.past_conversations:
-            content = " ".join(ep.content.split())
-            if len(content) > EPISODE_DIGEST_CHARS:
-                content = (
-                    content[:EPISODE_DIGEST_CHARS].rsplit(" ", 1)[0] + "…"
-                )
-            when = (ep.timestamp or "")[:10]
-            lines.append(
-                f"   [{when} · {ep.role} · {round(sim * 100)}% match] {content}"
-            )
+    # Past conversations omitted from system prompt (available in chat history)
     if context.recent_episodes:
         lines.append("\n## Recent conversation (this session)")
-        for ep in context.recent_episodes[-10:]:
+        for ep in context.recent_episodes[-5:]:
             # Digests, not verbatim text. The orchestrator passes the most
             # recent turns as proper history messages, so full content here
             # duplicated the conversation and inflated every prompt's
@@ -121,7 +110,7 @@ class Retriever:
         store: "MemoryStore",
         llm_client: "OllamaClient",
         embedding_model: str = "nomic-embed-text",
-        top_k_direct: int = 5,
+        top_k_direct: int = 3,
         graph_hops: int = 2,
         graph_decay: float = 0.5,  # relevance decay per hop
         min_relevance: float = 0.3,
