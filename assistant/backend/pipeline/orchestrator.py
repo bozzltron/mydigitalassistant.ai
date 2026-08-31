@@ -565,7 +565,7 @@ class Orchestrator:
                         bodies = await asyncio.gather(
                             *[
                                 _fetch_url_body(r.url)
-                                for r in search_results[:2]
+                                for r in search_results[:1]
                             ],
                             return_exceptions=True,
                         )
@@ -682,7 +682,7 @@ class Orchestrator:
                     self.search_tool,
                     store=self.store,
                     llm_client=self.llm_client,
-                    embed_fn=self._embed_fn,
+                    embed_fn=self._embed_fn(),
                 )
                 llm_response = await run_tool_loop(
                     self.llm_client,

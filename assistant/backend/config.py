@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     think_num_predict_cap: int = 4096
     # Native tool-calling on the chat model (Phase 6 M5). The web_search tool
     # additionally depends on SearXNG availability.
-    tools_enabled: bool = True
+    tools_enabled: bool = False
 
     # Context windows per call class (Phase 6 plan §4.4). Without these,
     # Ollama defaults to 32K context on large-RAM hosts and allocates a
@@ -43,7 +43,7 @@ class Settings(BaseSettings):
 
     # Web search settings (always enabled - core requirement)
     search_base_url: str = "http://127.0.0.1:8080"    # SearXNG default
-    search_timeout: float = 30.0
+    search_timeout: float = 90.0
     # Result-quality controls (search hardening). safesearch follows
     # SearXNG's 0=off..2=strict scale; min_relevance is the cosine similarity
     # between query and title+snippet below which results are dropped.
