@@ -2577,11 +2577,6 @@ import { $, $$, api, scrollBottom, formatBytes, showToast } from '/static/shared
     // Apply settings
     applySettings();
 
-    // Restore voice mode if it was active before reload
-    if (getSettings().voiceMode && state.userId) {
-      enterVoiceMode();
-    }
-
     // Restore the previous conversation so a refresh or a detour to the
     // brain page doesn't lose the visible thread. session_id already persists
     // in localStorage (memory continuity); this restores what was said.
