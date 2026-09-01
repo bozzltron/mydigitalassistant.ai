@@ -2382,10 +2382,11 @@ import { $, $$, api, scrollBottom, formatBytes, showToast } from '/static/shared
     state.mediaRecorder = null;
     state.isRecording = false;
     silenceAfterLoud = false;
-    // Reset counters immediately so _checkAudioLevels sees clean state
+    // Reset loudFrameCount so _checkAudioLevels sees clean state
     // if it fires during the async onstop handler.
+    // recordingStartTime is intentionally NOT cleared here so the
+    // onstop handler can calculate the correct elapsed time.
     loudFrameCount = 0;
-    recordingStartTime = null;
     try {
       mr.stop();
     } catch (e) {
