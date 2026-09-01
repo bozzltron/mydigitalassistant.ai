@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Cognitive Assistant</title>
+  <link rel="stylesheet" href="/static/shared/components.css">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -500,6 +501,82 @@
       border-color: var(--accent);
     }
 
+    #input-row .file-attach {
+      position: relative;
+      flex-shrink: 0;
+    }
+
+    /* File attach button uses shared .btn class from components.css */
+#input-row .file-attach-btn {
+  padding-left: 0.75rem;
+  padding-right: 0.75rem;
+}
+
+#input-row .mic-btn {
+  padding-right: 0.75rem;
+}
+
+    #input-row .file-chips {
+      display: flex;
+      gap: 0.4rem;
+      margin-left: 0.5rem;
+      flex-wrap: wrap;
+    }
+
+    #input-row .file-chip {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 0.2rem 0.5rem;
+      font-size: 0.75rem;
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+      color: var(--text);
+    }
+
+    #input-row .file-chip.remove {
+      cursor: pointer;
+      color: var(--error);
+    }
+
+    #input-row .file-chip.remove:hover { color: var(--error); }
+
+    #input-row .file-chip.remove:hover { color: var(--error); }
+
+    #input-row .file-icon {
+      width: 12px;
+      height: 12px;
+    }
+
+    .msg .file-attachment {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 0.75rem;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+    }
+
+    .msg .file-attachment svg {
+      flex-shrink: 0;
+    }
+
+    .msg .file-name {
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 200px;
+    }
+
+    .msg .file-size {
+      font-size: 0.75rem;
+      color: var(--text-dim);
+    }
+
     #send-btn {
       background: var(--accent);
       border: none;
@@ -991,7 +1068,16 @@
 
     <div id="input-row">
       <textarea id="msg-input" rows="1" placeholder="Type a message..."></textarea>
-      <button id="mic-btn" title="Dictate into message box">
+      <div class="file-attach">
+        <button class="file-attach-btn btn" title="Attach file" id="file-attach-btn">
+          <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10 2C9.44772 2 9 2.44772 9 3V12H7V3C7 1.34315 8.34315 0 10 0C11.6569 0 13 1.34315 13 3V11C13 13.7614 10.7614 16 8 16C5.23858 16 3 13.7614 3 11V3.5H5V11C5 12.6569 6.34315 14 8 14C9.65685 14 11 12.6569 11 11V3C11 2.44772 10.5523 2 10 2Z"/>
+          </svg>
+        </button>
+        <input type="file" id="file-input" multiple accept=".txt,.csv,.json,.xml,.html,.ics" style="position: absolute; left: -9999px; top: -9999px;">
+        <div class="file-chips" id="file-chips-preview"></div>
+      </div>
+      <button class="mic-btn btn" id="mic-btn" title="Dictate into message box">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
           <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
@@ -1112,7 +1198,9 @@
     }
   });
 </script>
-<script>
+<script type="module">
+import { $, $$, api, scrollBottom, formatBytes, showToast } from '/static/shared/utils.js';
+
 (function() {
   'use strict';
 
@@ -1135,6 +1223,59 @@
     braveEnabled: false,
     braveConfigured: false,
   };
+
+  // ---- Settings (localStorage) ----
+  function getSettings() {
+    return {
+      ttsEnabled: localStorage.getItem('tts_enabled') === 'true',
+      voiceUri: localStorage.getItem('voice_uri'),
+      traceVisible: localStorage.getItem('trace_visible') !== 'false',
+      voiceMode: localStorage.getItem('voice_mode') === 'true',
+      voiceSpeed: parseFloat(localStorage.getItem('voice_speed')) || 1.0,
+      voicePitch: parseFloat(localStorage.getItem('voice_pitch')) || 1.0,
+      voiceVolume: parseFloat(localStorage.getItem('voice_volume')) || 1.0,
+    };
+  }
+
+  function saveSettings(s) {
+    if ('ttsEnabled' in s) localStorage.setItem('tts_enabled', String(s.ttsEnabled));
+    if ('voiceUri' in s) localStorage.setItem('voice_uri', s.voiceUri);
+    if ('traceVisible' in s) localStorage.setItem('trace_visible', String(s.traceVisible));
+    if ('voiceMode' in s) localStorage.setItem('voice_mode', String(s.voiceMode));
+    if ('voiceSpeed' in s) localStorage.setItem('voice_speed', String(s.voiceSpeed));
+    if ('voicePitch' in s) localStorage.setItem('voice_pitch', String(s.voicePitch));
+    if ('voiceVolume' in s) localStorage.setItem('voice_volume', String(s.voiceVolume));
+    applySettings();
+  }
+
+  function applySettings() {
+    const s = getSettings();
+    const ttsEnabled = $('#tts-enabled');
+    const traceVisible = $('#trace-visible');
+    const tracePanel = $('#trace-panel');
+    const voiceModeBtn = $('#voice-mode-btn');
+    
+    if (ttsEnabled) ttsEnabled.checked = s.ttsEnabled;
+    if (traceVisible) traceVisible.checked = s.traceVisible;
+    if (tracePanel) tracePanel.classList.toggle('hidden', !s.traceVisible);
+    if (voiceModeBtn) voiceModeBtn.classList.toggle('active', s.voiceMode);
+    
+    // Apply voice settings
+    const voiceSpeed = $('#voice-speed');
+    const voicePitch = $('#voice-pitch'); 
+    const voiceVolume = $('#voice-volume');
+    const speedValue = $('#voice-speed-value');
+    const pitchValue = $('#voice-pitch-value');
+    const volumeValue = $('#voice-volume-value');
+    
+    if (voiceSpeed) voiceSpeed.value = s.voiceSpeed;
+    if (voicePitch) voicePitch.value = s.voicePitch;
+    if (voiceVolume) voiceVolume.value = s.voiceVolume;
+    
+    if (speedValue) speedValue.textContent = `${s.voiceSpeed}x`;
+    if (pitchValue) pitchValue.textContent = `${s.voicePitch}x`;
+    if (volumeValue) volumeValue.textContent = s.voiceVolume;
+  }
 
   // ---- Conversation management ----
   let conversationsInitialized = false;
@@ -1239,9 +1380,6 @@
   }
 
   // ---- DOM refs ----
-  const $ = (sel) => document.querySelector(sel);
-  const $$ = (sel) => document.querySelectorAll(sel);
-
   const messagesEl = $('#messages');
   const msgInput = $('#msg-input');
   const sendBtn = $('#send-btn');
@@ -1272,16 +1410,6 @@
 
   // ---- Backend URL ----
   const BASE = window.location.origin;
-
-  // ---- Helpers ----
-  async function api(path, opts = {}) {
-    const res = await fetch(BASE + path, opts);
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ detail: res.statusText }));
-      throw new Error(err.detail || 'Request failed');
-    }
-    return res.json();
-  }
 
   async function fetchLinkPreviews(urls, containerId) {
     const container = document.getElementById(containerId);
@@ -1351,10 +1479,6 @@
         </div>
       </a>`;
     }).join('');
-  }
-
-  function scrollBottom() {
-    messagesEl.scrollTop = messagesEl.scrollHeight;
   }
 
   function copyMessage(div, btn, text) {
@@ -1602,11 +1726,28 @@
     return div;
   }
 
+  function appendFileMessage(file) {
+    const div = document.createElement('div');
+    div.className = 'msg msg-user';
+    div.innerHTML = `
+      <div class="content">
+        <div class="file-attachment">
+          <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10 2C9.44772 2 9 2.44772 9 3V12H7V3C7 1.34315 8.34315 0 10 0C11.6569 0 13 1.34315 13 3V11C13 13.7614 10.7614 16 8 16C5.23858 16 3 13.7614 3 11V3.5H5V11C5 12.6569 6.34315 14 8 14C9.65685 14 11 12.6569 11 11V3C11 2.44772 10.5523 2 10 2Z"/>
+          </svg>
+          <span class="file-name">${file.name}</span>
+          <span class="file-size">(${formatBytes(file.size)})</span>
+        </div>
+      </div>
+    `;
+    messagesEl.appendChild(div);
+    scrollBottom();
+    state.messages.push({ role: 'user', content: `[File attached: ${file.name}]` });
+  }
+
   function setLoading(loading) {
-    // Input stays enabled while a turn runs: typed messages are queued
-    // and auto-sent when the turn completes.
-    sendBtn.disabled = false;
-    msgInput.disabled = false;
+    sendBtn.disabled = loading;
+    msgInput.disabled = loading;
     sendBtn.title = loading ? 'Queue message' : 'Send';
     if (loading) {
       const div = document.createElement('div');
@@ -1651,51 +1792,6 @@
     if (!next) return;
     next.el.remove();
     sendMessage(next.text);
-  }
-
-  // ---- Settings (localStorage) ----
-  function getSettings() {
-    return {
-      ttsEnabled: localStorage.getItem('tts_enabled') === 'true',
-      voiceUri: localStorage.getItem('voice_uri'),
-      traceVisible: localStorage.getItem('trace_visible') !== 'false',
-      voiceMode: localStorage.getItem('voice_mode') === 'true',
-      voiceSpeed: parseFloat(localStorage.getItem('voice_speed')) || 1.0,
-      voicePitch: parseFloat(localStorage.getItem('voice_pitch')) || 1.0,
-      voiceVolume: parseFloat(localStorage.getItem('voice_volume')) || 1.0,
-    };
-  }
-
-  function saveSettings(s) {
-    if ('ttsEnabled' in s) localStorage.setItem('tts_enabled', String(s.ttsEnabled));
-    if ('voiceUri' in s) localStorage.setItem('voice_uri', s.voiceUri);
-    if ('traceVisible' in s) localStorage.setItem('trace_visible', String(s.traceVisible));
-    if ('voiceMode' in s) localStorage.setItem('voice_mode', String(s.voiceMode));
-    applySettings();
-  }
-
-  function applySettings() {
-    const s = getSettings();
-    ttsEnabled.checked = s.ttsEnabled;
-    traceVisible.checked = s.traceVisible;
-    tracePanel.classList.toggle('hidden', !s.traceVisible);
-    voiceModeBtn.classList.toggle('active', s.voiceMode);
-    
-    // Apply voice settings
-    const voiceSpeed = $('#voice-speed');
-    const voicePitch = $('#voice-pitch'); 
-    const voiceVolume = $('#voice-volume');
-    const speedValue = $('#voice-speed-value');
-    const pitchValue = $('#voice-pitch-value');
-    const volumeValue = $('#voice-volume-value');
-    
-    if (voiceSpeed) voiceSpeed.value = s.voiceSpeed;
-    if (voicePitch) voicePitch.value = s.voicePitch;
-    if (voiceVolume) voiceVolume.value = s.voiceVolume;
-    
-    if (speedValue) speedValue.textContent = `${s.voiceSpeed}x`;
-    if (pitchValue) pitchValue.textContent = `${s.voicePitch}x`;
-    if (volumeValue) volumeValue.textContent = s.voiceVolume;
   }
 
   // ---- Voice / TTS state machine ----
@@ -2488,6 +2584,7 @@
     // Restore the previous conversation so a refresh or a detour to the
     // brain page doesn't lose the visible thread. session_id already persists
     // in localStorage (memory continuity); this restores what was said.
+    // Only restore if a user is logged in (state.userId is set).
     if (state.sessionId && state.userId) {
       try {
         const history = await api(
@@ -2498,6 +2595,10 @@
         }
         if (history.length) messagesEl.scrollTop = messagesEl.scrollHeight;
       } catch (_) { /* history restore is best-effort */ }
+    } else if (!state.userId) {
+      // No user logged in — prompt to create one. Conversation restore
+      // is scoped per-user, so it can't happen without a user identity.
+      userBadge.textContent = 'No user — create one via CLI or use API';
     }
 
     // Events
@@ -2628,10 +2729,217 @@
       saveSettings({ traceVisible: false });
 });
 
-// Auto-resize textarea
-    msgInput.addEventListener('input', () => {
-      msgInput.style.height = 'auto';
-      msgInput.style.height = Math.min(msgInput.scrollHeight, 140) + 'px';
+// File attachment state
+    let attachedFiles = [];
+
+    // Initialize file attachment UI
+    initFileAttach();
+
+    function initFileAttach() {
+      const fileAttachBtn = $('#file-attach-btn');
+      const fileInput = $('#file-input');
+      const fileChipsPreview = $('#file-chips-preview');
+
+      // Click button to open file picker
+      fileAttachBtn.addEventListener('click', () => {
+        fileInput.click();
+      });
+
+      // Handle file selection
+      fileInput.addEventListener('change', handleFileSelect);
+
+      // Drag-and-drop support
+      const inputRow = $('#input-row');
+      inputRow.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        inputRow.style.borderColor = 'var(--accent)';
+      });
+
+      inputRow.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        inputRow.style.borderColor = 'var(--border)';
+      });
+
+      inputRow.addEventListener('drop', (e) => {
+        e.preventDefault();
+        inputRow.style.borderColor = 'var(--border)';
+        const files = e.dataTransfer.files;
+        if (files.length > 0) {
+          handleFiles(files);
+        }
+      });
+
+      function handleFileSelect(e) {
+        handleFiles(e.target.files);
+      }
+
+      function handleFiles(files) {
+        const validTypes = ['.txt', '.csv', '.json', '.xml', '.html', '.ics'];
+        const maxSize = 10 * 1024 * 1024; // 10MB
+
+        for (const file of files) {
+          const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+          if (!validTypes.includes(ext)) {
+            showToast(`Unsupported file type: ${ext}`, 'error');
+            continue;
+          }
+
+          if (file.size > maxSize) {
+            showToast(`File too large: ${formatBytes(file.size)} (max 10MB)`, 'error');
+            continue;
+          }
+
+          // Check for duplicates
+          const exists = attachedFiles.some(f => f.name === file.name && f.size === file.size);
+          if (exists) {
+            showToast(`File already attached: ${file.name}`, 'warning');
+            continue;
+          }
+
+          // Read file content as text
+          const reader = new FileReader();
+          reader.onload = (e) => {
+            const content = e.target.result;
+            attachedFiles.push({
+              name: file.name,
+              size: file.size,
+              type: ext,
+              content: content,
+              element: null
+            });
+            renderFileChips();
+            updateSendButtonState();
+          };
+          reader.onerror = () => {
+            showToast(`Error reading file: ${file.name}`, 'error');
+          };
+          reader.readAsText(file);
+        }
+      }
+
+      function renderFileChips() {
+        const chipsContainer = $('#file-chips-preview');
+        chipsContainer.innerHTML = '';
+
+        attachedFiles.forEach((file, index) => {
+          const chip = document.createElement('div');
+          chip.className = 'file-chip';
+          chip.innerHTML = `
+            <span class="file-icon">📄</span>
+            <span>${file.name}</span>
+            <button class="remove" data-index="${index}" title="Remove">×</button>
+          `;
+          chip.querySelector('.remove').addEventListener('click', (e) => {
+            e.stopPropagation();
+            removeFile(index);
+          });
+          chipsContainer.appendChild(chip);
+        });
+      }
+
+      function removeFile(index) {
+        attachedFiles.splice(index, 1);
+        renderFileChips();
+        updateSendButtonState();
+      }
+
+      function updateSendButtonState() {
+        const sendBtn = $('#send-btn');
+        if (attachedFiles.length > 0) {
+          sendBtn.disabled = false;
+          // Can add a badge showing attached file count
+        } else {
+          sendBtn.disabled = true;
+        }
+      }
+    }
+
+    // Handle form submission with files
+    const originalSend = async () => {
+      // ... existing send logic
+    };
+
+    // Override send to include files
+    const sendForm = async () => {
+      const text = msgInput.value.trim();
+      if (!text && attachedFiles.length === 0) return;
+
+      // Show attached files in chat thread first
+      if (attachedFiles.length > 0) {
+        attachedFiles.forEach(file => {
+          appendFileMessage(file);
+        });
+      }
+
+      // Show queued state
+      const sendBtn = $('#send-btn');
+      const queuedDiv = document.createElement('div');
+      queuedDiv.className = 'msg-queued';
+      queuedDiv.innerHTML = `
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M20 6L9 17l-5-5"/>
+        </svg>
+        Sending...
+      `;
+      sendBtn.parentNode.appendChild(queuedDiv);
+      sendBtn.disabled = true;
+
+      try {
+        // Build JSON body with attached files
+        const body = {
+          user_id: 1,
+          message: text,
+          attached_files: attachedFiles.map(f => ({
+            name: f.name,
+            ext: f.type,
+            preview: f.content.slice(0, 500),
+            content: f.content,
+            text: f.content,
+            key_entities: [],
+            open_questions: []
+          }))
+        };
+
+        // Send via fetch
+        const response = await fetch('/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+          credentials: 'include'
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+          // Append assistant message
+          appendAssistantMessage(data.response || '');
+
+          // Clear input
+          msgInput.value = '';
+          attachedFiles = [];
+          renderFileChips();
+          updateSendButtonState();
+          msgInput.focus();
+        } else {
+          showToast(data.detail || 'Error sending message', 'error');
+        }
+      } catch (err) {
+        showToast('Error sending message: ' + err.message, 'error');
+      } finally {
+        // Remove queued state
+        queuedDiv.remove();
+        sendBtn.disabled = attachedFiles.length > 0 ? false : true;
+      }
+    };
+
+    $('#send-btn').addEventListener('click', sendForm);
+
+    // Allow sending with Enter+Shift for multi-line
+    msgInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendForm();
+      }
     });
   }
 
