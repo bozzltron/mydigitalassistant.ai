@@ -1,72 +1,86 @@
-# File Input/Output Support - Master Plan
+# File Input/Output Support - Master Plan (Fact-Checked)
 
 ## Overview
-Implement file-based input/output capabilities for MyDigitalAssistant, enabling users to upload text-based files (TXT, CSV, JSON, XML, HTML, iCalendar) for processing and generate new files as outputs. This enhancement integrates with the existing memory system while maintaining the project's privacy-first architecture.
+Implement file-based input/output capabilities for MyDigitalAssistant, enabling users to upload text-based files for processing and generate new files as outputs. This enhancement integrates with the existing memory system while maintaining the project's privacy-first architecture.
 
 All processing occurs locally via the Ollama instance at `localhost:11434`. No external APIs or cloud services are involved.
+
+**Status Legend**: ✅ Implemented | 🟡 Partial | ❌ Not Started | ⚠️ Inaccurate in previous version
 
 ---
 
 ## 1. Supported File Types
 
 ### Input Formats
-- **.txt** - Plain text documents
-- **.csv** - Comma-separated values for tabular data
-- **.json** - JavaScript Object Notation for structured data
-- **.xml** - Extensible Markup Language for hierarchical data
-- **.html, .htm** - HTML documents for web scraping or analysis
-- **.ics** - iCalendar files for scheduling/events (Phase 2+)
+| Format | Status | Notes |
+|--------|--------|-------|
+| **.txt** | ✅ | Plain text documents |
+| **.csv** | ✅ | Comma-separated values |
+| **.json** | ✅ | JavaScript Object Notation |
+| **.xml** | ✅ | Extensible Markup Language |
+| **.html, .htm** | ✅ | HTML documents |
+| **.ics** | ❌ | iCalendar - **NOT IMPLEMENTED** (in accept attr but not in allowed_types, no extractor) |
 
 ### Output Formats
-- Generated `.csv`, `.json`, `.txt` files from processing results
-- Enhanced versions of uploaded documents with modifications
-- New iCalendar files with VEVENT/VTODO components
+| Format | Status | Notes |
+|--------|--------|-------|
+| Generated `.csv`, `.json`, `.txt` | ❌ | Via `file_write` tool - tool exists but no API endpoint |
+| Enhanced uploaded documents | ❌ | Via `file_update` tool - tool exists but no API endpoint |
+| New iCalendar files | ❌ | Not implemented |
 
 ---
 
 ## 2. Privacy Requirements
-
-All file processing must occur:
-- **Locally only** using the local Ollama instance at `localhost:11434`
-- **Never** transfer data to external services or cloud APIs
-- **Secure storage** within user's local file system directory (`/app/data/`)
-- **Respect user privacy** with no tracking or logging of file contents
+✅ **All met by design:**
+- Locally only using Ollama at `localhost:11434`
+- Never transfer data to external services or cloud APIs
+- Secure storage in `/app/data/`
+- No tracking or logging of file contents
 
 ---
 
 ## 3. Core System Integration
 
 ### Memory System Integration
-- Extract file content into existing memory slots/associations
-- Store source metadata with `source_type="file"` and reliability score (0.7)
-- Enable cross-referencing between file content and other memory items
-- Files are first-class memory frames with embeddings for retrieval
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Extract file content into slots/associations | ✅ | In `/files/upload` endpoint |
+| Store source metadata with `source_type="file"` | ✅ | Reliability 0.7 |
+| Cross-referencing file content with memory | ✅ | Frames have embeddings |
+| Files as first-class memory frames | ✅ | Created in `/files/upload` |
 
 ### Tool System Integration
-- Extend `fetch_url` concept to local file processing
-- Add new file processing tools that integrate seamlessly with existing pipeline
-- Maintain consistency with document extraction methods used for URLs
-- Agent tools registered in `builtin_tools()`: `file_lookup`, `file_read`, `file_write`, `file_update`, `file_delete`, `file_search`
+| Feature | Status | Notes |
+|---------|--------|-------|
+| File tools registered in `builtin_tools()` | ✅ | 6 tools: lookup, read, write, update, delete, search |
+| Native Ollama tool-calling | ✅ | All tools return string results |
+| Extend `fetch_url` concept to local files | ✅ | Similar pattern with auto-extraction |
 
 ### API Endpoints
-| Endpoint | Method | Purpose |
-|----------|--------|---------|
-| `/files/upload` | POST | Upload and process new files |
-| `/files/list` | GET | List all user files (frame IDs, names, types, sizes) |
-| `/files/{frame_id}` | GET | Get file details and content |
-| `/files/{frame_id}/content` | GET | Download file as text |
-| `/files/{frame_id}` | DELETE | Delete file from memory and data directory |
-| `/files/search` | GET | Search file content for query term |
-| `/chat` | POST | Send message with attached files |
 
-### Data Flow
+| Endpoint | Method | Status | Notes |
+|----------|--------|--------|-------|
+| `/files/upload` | POST | ✅ **Implemented** | Upload + extract + store in memory |
+| `/files/list` | GET | ❌ **Missing** | List all user files |
+| `/files/{frame_id}` | GET | ❌ **Missing** | Get file details and content |
+| `/files/{frame_id}/content` | GET | ❌ **Missing** | Download file as text |
+| `/files/{frame_id}` | DELETE | ❌ **Missing** | Delete file from memory and disk |
+| `/files/search` | GET | ❌ **Missing** | Search file content for query |
+| `/files/lookup` | POST | ❌ **Missing** | Tool-only, no REST endpoint |
+| `/files/read` | POST | ❌ **Missing** | Tool-only, no REST endpoint |
+| `/files/write` | POST | ❌ **Missing** | Tool-only, no REST endpoint |
+| `/files/update` | POST | ❌ **Missing** | Tool-only, no REST endpoint |
+| `/files/delete` | POST | ❌ **Missing** | Tool-only, no REST endpoint |
+| `/chat` | POST | 🟡 **Partial** | Accepts `attached_files` but UI doesn't send properly |
+
+### Data Flow (Actual)
 ```
-1. User uploads file via UI → API /files/upload stores locally
-2. System parses file content → Extracts meaningful text/structure
-3. Content stored in agent memory (frames/slots with embeddings)
-4. User queries or commands can reference file data via agent tools
-5. Output generation creates new files from processed results via file_write
-6. Generated files stored and available for download via /files/{id}/content
+1. User uploads file via UI → API /files/upload stores locally ✅
+2. System parses file content → Extracts meaningful text/structure ✅
+3. Content stored in agent memory (frames/slots with embeddings) ✅
+4. User queries reference file data via agent tools ✅ (tools exist)
+5. Output generation creates new files via file_write tool 🟡 (tool exists, no API)
+6. Generated files available for download ❌ (no download endpoint)
 ```
 
 ---
@@ -74,94 +88,101 @@ All file processing must occur:
 ## 4. UI/UX Requirements
 
 ### File Upload Interface
-- **Dedicated "Files" tab** in main application interface (new `files.html` route)
-- **Drag-and-drop file upload** functionality in chat input
-- **File type validation** and size limit enforcement (max 10MB)
-- **Visual feedback** during upload progress
-- **File browser component** with previews where appropriate
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Dedicated "Files" tab (`files.html`) | ❌ **Missing** | No route, no file |
+| Drag-and-drop in chat input | ✅ | Works on input-row |
+| File type validation | ✅ | In `/files/upload` |
+| Size limit (10MB) | ✅ | In `/files/upload` |
+| Visual feedback during upload | ❌ | No progress indicator |
+| File browser with previews | ❌ | No Files tab |
 
 ### File Management
-- **Local file system directory** for user files (`/app/data/`)
-- **Upload/download capabilities** with proper access controls
-- **File naming conventions**: `upload_YYYYMMDD_HHMMSS.file` (timestamp-based, secure)
-- **Cleanup procedures** for old temporary files (GC during consolidation)
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Local directory `/app/data/` | ✅ | Created on upload |
+| Timestamp-based naming | ✅ | `upload_YYYYMMDD_HHMMSS.file` |
+| Cleanup procedures | ❌ | No GC for old files |
 
 ### Input Row Integration (chat.html)
-- **File attach button** (`📎`) consistent padding/sizing with send/mic buttons
-- **File chips preview** horizontally next to attach button (not vertical stack)
-- **Send with files**: User message + file chips appear in chat thread
-- **Drag-and-drop** onto chat input area with visual feedback
+
+| Feature | Status | Actual State |
+|---------|--------|--------------|
+| **Button consistency** | ❌ **NOT DONE** | file-attach-btn has custom CSS (lines 510-525); mic-btn has custom CSS; send-btn has NO btn class |
+| **Horizontal file chips** | ❌ **NOT DONE** | file-chips INSIDE .file-attach div → renders vertically |
+| **Send with files** | ❌ **NOT DONE** | Custom `sendForm()` still used (line 2870); doesn't call `sendMessage()` |
+| **Drag-and-drop** | ✅ | Works on input-row |
 
 ### Files Tab (`/files-ui`)
-- **File list view**: Grid of all user files with type icon, name, size, upload date, source badge
-- **File detail view**: Text/code syntax highlighting, JSON tree, CSV table, iCal formatted events
-- **Actions per file**: View content, Copy, Download, Delete
-- **Bulk actions**: Select multiple, delete, download zip
+| Feature | Status |
+|---------|--------|
+| File list view | ❌ Missing |
+| File detail view | ❌ Missing |
+| Actions: View, Copy, Download, Delete | ❌ Missing |
+| Bulk actions | ❌ Missing |
 
 ### Search & Filter
-- Filter by file type, date range, source (uploaded/generated/extracted)
-- Search by filename or content using `file_search` tool
+| Feature | Status |
+|---------|--------|
+| Filter by type/date/source | ❌ Missing |
+| Search by filename/content | 🟡 Tool exists (`file_search`), no UI |
 
 ---
 
-## 5. Processing Pipeline Requirements
+## 5. Processing Pipeline
 
 ### Input Processing
-1. **Validation**: Verify supported file types against whitelist
-2. **Content Extraction**: Parse files to extract meaningful text:
-   - CSV: Convert to structured format, preserve headers
-   - JSON/XML/HTML: Extract text content while maintaining context
-   - TXT: Direct processing with formatting preservation
-   - iCal: Parse VEVENT components, extract events
+| Format | Extractor Status | Notes |
+|--------|------------------|-------|
+| .txt | ✅ | `extract_text_from_txt` |
+| .csv | ✅ | `extract_text_from_csv` |
+| .json | ✅ | `extract_text_from_json` |
+| .xml | ✅ | `extract_text_from_xml` |
+| .html | ✅ | `extract_text_from_html` |
+| .ics | ❌ | **NO EXTRACTOR** - only in accept attr |
 
 ### Output Generation
-1. **Data Transformation**: Support LLMs to modify or generate new file contents
-2. **Format Conversion**: Allow conversion between supported formats
-3. **Natural Language Queries**: Enable processing of structured data through natural language prompts
-4. **iCalendar generation**: Create VEVENT/VTODO components from natural language requests
+| Feature | Status |
+|---------|--------|
+| Data transformation via LLM | 🟡 Tool `file_write` exists |
+| Format conversion | ❌ Not implemented |
+| Natural language queries | 🟡 Tools exist, no UI integration |
+| iCalendar generation | ❌ Not implemented |
 
 ### LLM Integration
-- Modify memory modules to handle document-based queries
-- Enable LLMs to reference and modify file contents
-- Support natural language queries against structured data
-- Allow generation of new documents/tables from analysis
-- Agent uses tools (file_read/file_write/file_update) rather than scripted logic
+| Feature | Status |
+|---------|--------|
+| Agent uses file tools | ✅ Tools registered in `builtin_tools()` |
+| Model decides file operations | ✅ Native Ollama tool-calling |
+| No scripted logic | ✅ Tools called by model |
 
 ---
 
 ## 6. Technical Implementation Details
 
 ### Backend Components
-- **File handler module**: `assistant/backend/pipeline/files.py` - extraction for .txt, .csv, .json, .xml, .html, .ics
-- **Parser library**: Support for CSV, JSON, XML, HTML, iCal parsing
-- **Memory adapter**: Integration with existing document extraction system
-- **Security middleware**: Validate all file operations against privacy policy
+| Component | Status | Location |
+|-----------|--------|----------|
+| File handler module | ✅ | `assistant/backend/pipeline/files.py` |
+| Parser library | ✅ | txt, csv, json, xml, html (no ics) |
+| Memory adapter | ✅ | Uses existing extraction system |
+| Security middleware | ❌ | No dedicated middleware |
 
-### File Tools (in `pipeline/tools.py`)
-All tools are native Ollama tool-calling, local-only:
-
-| Tool | When to Use |
-|------|-------------|
-| `file_lookup` | User refers to "the file called X" or "the ical file" |
-| `file_read` | After file_lookup to get file content |
-| `file_write` | User says "create a new file called X" or "write Y to file Z" |
-| `file_update` | After file_lookup to update existing file content |
-| `file_delete` | User wants to remove a file |
-| `file_search` | User wants to find specific information inside their files |
+### File Tools (in `pipeline/tools.py`) - ALL ✅ IMPLEMENTED
+| Tool | Handler | Description |
+|------|---------|-------------|
+| `file_lookup` | `_handle_file_lookup` | Search frames by name pattern + optional type |
+| `file_read` | `_handle_file_read` | Read content by frame ID |
+| `file_write` | `_handle_file_write` | Create new file + frame |
+| `file_update` | `_handle_file_update` | Update existing file content |
+| `file_delete` | `_handle_file_delete` | Delete frame + file |
+| `file_search` | `_handle_file_search` | Search content for query term |
 
 ### Configuration (`.env`)
 ```bash
-# File support
-MAX_FILE_SIZE=10485760  # 10MB
-SUPPORTED_EXTENSIONS=txt,csv,json,xml,html,ics
-
-# Search backend
-SEARCH_BASE_URL=http://127.0.0.1:8080
-SEARCH_MIN_RELEVANCE=0.30  # for SearXNG
-
-# Brave Search (optional)
-BRAVE_ENABLED=false
-BRAVE_API_KEY=
+# File support - NOT YET CONFIGURABLE (hardcoded)
+# MAX_FILE_SIZE=10485760  # 10MB - hardcoded in main.py:1482
+# SUPPORTED_EXTENSIONS=txt,csv,json,xml,html,ics - hardcoded in main.py:1472
 ```
 
 ---
@@ -169,204 +190,254 @@ BRAVE_API_KEY=
 ## 7. Security Considerations
 
 ### Access Controls
-- File operations restricted to user's designated local directory (`/app/data/`)
-- No external file system access permitted
-- Read-only operations for file content in memory
-- Secure deletion of temporary processing files
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Restricted to `/app/data/` | ✅ | Upload saves there |
+| No external FS access | ✅ | Paths resolved relative |
+| Read-only in memory | ✅ | Slots are read for retrieval |
+| Secure deletion | ❌ | No GC/cleanup implemented |
 
 ### Data Protection
-- All file contents processed locally only
-- No metadata or content stored beyond current session (except frames/slots for retrieval)
-- Encryption for sensitive file data where appropriate
-- Compliance with existing privacy policies
+| Feature | Status |
+|---------|--------|
+| Local-only processing | ✅ |
+| No metadata beyond session | 🟡 Frames persist for retrieval |
+| Encryption | ❌ Not implemented |
+| Privacy compliance | ✅ By design |
 
 ### Sandboxing
-- All file paths resolved relative to `/app/data/`
-- No access to parent directories or system files
-- Timestamp-based safe filenames prevent path traversal
+| Feature | Status |
+|---------|--------|
+| Paths relative to `/app/data/` | ✅ |
+| No parent directory access | ✅ |
+| Timestamp-safe filenames | ✅ |
 
 ---
 
 ## 8. Performance Requirements
 
-### Processing Limits
-- **Maximum file size**: 10MB per upload
-- **Timeout limits**: 30 seconds for processing large files
-- **Memory usage**: Optimized parsing to prevent memory leaks
-- **Concurrent operations**: Support for multiple simultaneous file uploads
-
-### User Experience
-- **Real-time upload progress indicators**
-- **Instant response** to query commands on loaded files
-- **Visual feedback** for processing completion
-- **Error handling** with clear user messages
+| Requirement | Status | Notes |
+|-------------|--------|-------|
+| Max file size 10MB | ✅ | Enforced in upload |
+| Timeout 30s | ❌ | Not enforced for processing |
+| Memory optimization | 🟡 | Basic parsing, no streaming |
+| Concurrent uploads | ❌ | Not tested |
 
 ---
 
 ## 9. Testing Requirements
 
-### Unit Tests
-- File type validation checks
-- Parsing functionality for each supported format (txt, csv, json, xml, html, ics)
-- Memory storage integration tests
-- Security boundary enforcement
-
-### Integration Tests
-- End-to-end file upload → processing → download workflow
-- Memory integration verification
-- Privacy compliance checks
-- Performance benchmarks
-
-### User Acceptance Tests
-- UI navigation and functionality testing
-- Real-world file processing scenarios
-- Cross-format conversion validation
+| Test Category | Status | Notes |
+|---------------|--------|-------|
+| Unit: file type validation | ❌ | No tests for file tools |
+| Unit: parsing each format | ❌ | No tests for extractors |
+| Unit: memory integration | ❌ | No tests for file→slots |
+| Unit: security boundaries | ❌ | No tests |
+| Integration: upload→process→download | ❌ | No download endpoint |
+| Integration: memory verification | ❌ | No tests |
+| Integration: privacy compliance | ❌ | No tests |
+| UAT: UI navigation | ❌ | No Files tab |
+| UAT: real-world scenarios | ❌ | Not tested |
+| UAT: cross-format conversion | ❌ | Not implemented |
 
 ### Critical Path Tests (per AGENTS.md)
-1. **Learn-a-fact-then-recall**: Upload fact, query it back
-2. **Contradiction-then-auto-resolve**: Upload conflicting data, verify auto-resolution
-3. **File upload then recall**: Upload file, ask assistant about it, verify response
+| Test | Status |
+|------|--------|
+| Learn-a-fact-then-recall | ❌ Not tested for files |
+| Contradiction-then-auto-resolve | ❌ Not tested for files |
+| File upload then recall | ❌ Not tested |
 
 ---
 
 ## 10. Future Extensibility
 
-### Additional File Types
-- Support for additional formats (.pdf, .docx, .xlsx) in future releases
-- Custom format handlers for specific user needs
-- Plugin architecture for third-party file type support
-
-### Advanced Features
-- **Batch processing** of multiple files
-- **Scheduled automation workflows** (daily/weekly file processing)
-- **Collaborative file sharing** capabilities (per-user isolation)
-- **Version control tracking** for file modifications
+| Feature | Status |
+|---------|--------|
+| .pdf, .docx, .xlsx support | ❌ Future |
+| Custom format handlers | ❌ Future |
+| Plugin architecture | ❌ Future |
+| Batch processing | ❌ Future |
+| Scheduled automation | ❌ Future |
+| Collaborative sharing | ❌ Future |
+| Version control tracking | ❌ Future |
 
 ---
 
-## 11. Implementation Phases
+## 11. Implementation Phases (Corrected)
 
-### Phase 1: Core File Support (Completed)
+### Phase 1: Core File Support ✅ **COMPLETED**
 - File upload endpoint (`POST /files/upload`)
-- Basic file parsing for supported formats (.txt, .csv, .json, .xml, .html)
-- Local storage integration in `/app/data/`
+- Basic file parsing for .txt, .csv, .json, .xml, .html
+- Local storage in `/app/data/`
 - Memory integration (frames/slots with reliability 0.7)
 
-### Phase 2: Agent Tools (Completed in this commit)
-- File tools in `pipeline/tools.py`: `file_lookup`, `file_read`, `file_write`, `file_update`, `file_delete`, `file_search`
-- Registration in `builtin_tools()`
-- API endpoints: `/files/list`, `/files/search`, `/files/{id}`, `/files/{id}/content`, `/files/{id}`
-- .ics extractor added to `files.py`
+### Phase 2: Agent Tools ✅ **COMPLETED** (tools only)
+- File tools in `pipeline/tools.py`: 6 tools registered in `builtin_tools()`
+- ⚠️ **NO API endpoints** for these tools (list, search, read, write, update, delete)
+- ⚠️ **NO .ics extractor** in files.py
+- ⚠️ **NO .ics in allowed_types** for upload
 
-### Phase 3: UI Integration (Pending)
-- File selector in chat input (horizontal chips, consistent buttons)
-- Dedicated "Files" tab (`/files-ui` route + `files.html`)
-- File list/detail views with actions
+### Phase 3: UI Integration ❌ **PENDING** (NOT DONE)
+- [ ] Fix button consistency (use `.btn-icon` for all 3 buttons)
+- [ ] Horizontal file chips (move outside `.file-attach`)
+- [ ] Fix send with files (use `sendMessage()` with `attached_files`)
+- [ ] Create `/files-ui` route + `files.html`
+- [ ] File list/detail views with actions
 
-### Phase 4: Integration & Testing (Pending)
-- Wire file tools into agent reasoning flow
-- End-to-end iCalendar Mozworth test case
-- E2E test: upload → query → generate
-- Regression tests per critical path priority
+### Phase 4: API Endpoints ❌ **PENDING**
+- [ ] `GET /files/list`
+- [ ] `GET /files/search`
+- [ ] `GET /files/{frame_id}`
+- [ ] `GET /files/{frame_id}/content`
+- [ ] `DELETE /files/{frame_id}`
 
----
+### Phase 5: iCalendar Support ❌ **PENDING**
+- [ ] Add `.ics` to allowed_types
+- [ ] Add `extract_text_from_ics` to files.py
+- [ ] Add iCal generation helper
 
-## 12. Success Metrics
-
-1. **Functionality**: All supported file types process correctly (txt, csv, json, xml, html, ics)
-2. **Privacy**: No external data transfer in any workflow (verified by design)
-3. **Performance**: Processing time under 30 seconds for typical files (<1MB)
-4. **Usability**: Intuitive UI with clear feedback during operations
-5. **Reliability**: 99%+ success rate for file operations
-6. **Agent usability**: Agent can lookup/read/write files via natural language prompts
-
----
-
-## 13. Design Principle Alignment
-
-| Principle | Application |
-|-----------|-------------|
-| **Model-first correction** | Agent decides file operations via tools, not scripted logic |
-| **No templated responses** | Model generates file content (iCal, CSV, JSON) |
-| **Lean on model flexibility** | Agent reasons about which file tool to use |
-| **Scheduled tasks are memory** | Files stored as frames/slots with embeddings |
-| **Clean ship** | No dead code, shared components, lint clean (ruff passes) |
-| **Stability: no regressions** | Critical path tests pass; bounded tool loops |
+### Phase 6: Integration & Testing ❌ **PENDING**
+- [ ] Wire file tools into agent reasoning flow (verify they're called)
+- [ ] End-to-end iCalendar Mozworth test case
+- [ ] E2E test: upload → query → generate
+- [ ] Regression tests per critical path
 
 ---
 
-## 14. Files Modified/Created
+## 12. Success Metrics (Updated)
 
-### Modified
+| Metric | Target | Current |
+|--------|--------|---------|
+| Supported file types | 6 (txt, csv, json, xml, html, ics) | 5 (no ics) |
+| Privacy: no external transfer | 100% | ✅ |
+| Processing time <30s | Typical files | Unknown |
+| UI usability | Intuitive with feedback | ❌ Broken |
+| File operations success rate | 99%+ | Unknown |
+| Agent can use files via NL | Yes | 🟡 Tools exist, no API |
+
+---
+
+## 13. Design Principle Alignment (Verified)
+
+| Principle | Verified |
+|-----------|----------|
+| **Model-first correction** | ✅ Agent decides via tools |
+| **No templated responses** | ✅ Model generates content |
+| **Lean on model flexibility** | ✅ Tools not scripted |
+| **Scheduled tasks are memory** | ✅ Files as frames/slots |
+| **Clean ship** | 🟡 Ruff passes, but dead code in chat.html (custom sendForm, custom btn styles) |
+| **Stability: no regressions** | ❌ No regression tests for file features |
+
+---
+
+## 14. Files Modified/Created (Accurate)
+
+### Modified (in commits e7a789f, f7822f2)
 - `assistant/backend/pipeline/tools.py` - Added 6 file tools + datetime, calculate, fetch_url, web_search
-- `assistant/backend/main.py` - /chat endpoint processes attached_files
+- `assistant/backend/main.py` - /chat endpoint processes attached_files; /files/upload endpoint
 - `assistant/backend/pipeline/orchestrator.py` - ChatRequest has attached_files field
-- `assistant/backend/pipeline/files.py` - Added .ics extractor
-- `assistant/backend/static/chat.html` - Button consistency, horizontal file chips, send with files
+- `assistant/backend/pipeline/files.py` - **NO .ics extractor added**
+- `assistant/backend/static/chat.html` - **NO UI fixes applied yet**
 - `assistant/AGENTS.md` - Added "Clean Code & Modularity" section
 
 ### Created
 - `TOOLS_DOCUMENTATION.md` - Comprehensive tool docs
-- `FILE_SUPPORT_ANALYSIS_AND_PLAN.md` - Analysis + plan (supersedes old redundant docs)
-- `FILE_UI_INTEGRATION_PLAN.md` - UI plan (fact-checked v2)
-- `FILE_UI_INTEGRATION_PLAN_v2.md` - Fact-checked & enriched version
+- `FILE_SUPPORT_ANALYSIS_AND_PLAN.md` - Analysis + plan
+- `FILE_UI_INTEGRATION_PLAN_v2.md` - Fact-checked UI plan
 
 ### Deleted
-- `plans/HANDOFF.md` - Old plan, removed per clean ship principle
+- `plans/HANDOFF.md` - Old plan
+- `file_input_output_requirements.md` - Superseded
+- `FILE_UI_INTEGRATION_PLAN.md` - Superseded by v2
 
 ---
 
-## 15. Quick Reference: Tool Commands
+## 15. Quick Reference: Actual Tool Commands
 
-### Upload a file
+### Via Agent Tools (native Ollama tool-calling)
+These work when the agent calls them during chat:
+
+```python
+# Agent calls these internally - no REST API
+file_lookup("mozworth", "ics")    # Search by name pattern
+file_read(42)                      # Read by frame ID
+file_write("calendar", content, "ics")  # Create file
+file_update(42, new_content)       # Update file
+file_delete(42)                    # Delete file
+file_search("query", "csv")        # Search content
+```
+
+### Via REST API (only upload works)
 ```bash
+# Upload a file - WORKS
 curl -X POST http://127.0.0.1:8080/files/upload -F "file=@document.txt"
-```
 
-### List user files
-```bash
+# List files - DOESN'T EXIST
 curl http://127.0.0.1:8080/files/list?user_id=1
-```
 
-### Search files
-```bash
+# Search files - DOESN'T EXIST
 curl "http://127.0.0.1:8080/files/search?query=mozworth&user_id=1"
 ```
 
-### Read a file (after lookup)
-```bash
-# First lookup
-curl "http://127.0.0.1:8080/files/lookup?name_pattern=mozworth&user_id=1"
-
-# Then read
-curl http://127.0.0.1:8080/files/read?file_id=42
-```
-
-### Create a new file
-```bash
-curl -X POST http://127.0.0.1:8080/files/write -d '{"name": "calendar", "content": "BEGIN:VCALENDAR...", "file_type": "ics"}' -H "Content-Type: application/json"
-```
-
-### Update a file
-```bash
-curl -X POST http://127.0.0.1:8080/files/update -d '{"file_id": 42, "new_content": "BEGIN:VCALENDAR...UPDATED"}' -H "Content-Type: application/json"
-```
-
-### Delete a file
-```bash
-curl -X DELETE http://127.0.0.1:8080/files/delete?file_id=42
-```
-
 ---
 
-## 16. Agent Natural Language Examples
+## 16. Agent Natural Language Examples (Tool Sequences)
 
-| User Prompt | Agent Tool Sequence |
-|-------------|---------------------|
-| "Let's create a new icalendar for mozworth and add Oct event that is the release of Why Not" | `file_lookup("mozworth", "ics")` → if found: `file_read()` → parse → add VEVENT → `file_update()`; if not found: generate iCal → `file_write()` |
+| User Prompt | Expected Agent Tool Sequence |
+|-------------|------------------------------|
+| "Create icalendar for mozworth with Oct event: Why Not release" | `file_lookup("mozworth", "ics")` → if found: `file_read()` → parse → add VEVENT → `file_update()`; else: generate iCal → `file_write()` |
 | "Read the CSV we uploaded last week" | `file_search("mozworth", "csv")` → `file_read(file_id)` |
 | "What's in the JSON file about mozworth?" | `file_search("mozworth", "json")` → `file_read(file_id)` |
-| "Create a summary of the data in my CSV file" | `file_lookup("csv", "csv")` → `file_read()` → LLM processes → `file_write("summary", summary_content, "txt")` |
-| "Delete the file I uploaded earlier" | `file_search("*.txt", user_context)` → identify file_id → `file_delete(file_id)` |
+| "Summarize data in my CSV file" | `file_lookup("csv", "csv")` → `file_read()` → LLM processes → `file_write("summary", content, "txt")` |
+| "Delete the file I uploaded earlier" | `file_search("*.txt", context)` → identify file_id → `file_delete(file_id)` |
 
 ---
+
+## 17. Immediate Next Steps (Priority Order)
+
+### Priority 1: Fix Chat Input UI (1-2 hours)
+1. **Button consistency**: Update chat.html to use `.btn-icon` for file-attach, mic, and `.btn-primary` for send
+2. **Horizontal file chips**: Move `#file-chips-preview` outside `.file-attach`, into `#input-row` flex container
+3. **Fix send with files**: Replace custom `sendForm()` with `sendMessage()` + `attached_files` in body
+
+### Priority 2: Add Missing API Endpoints (2-4 hours)
+4. `GET /files/list` - return all file frames for user
+5. `GET /files/search` - search by query + optional type
+6. `GET /files/{frame_id}` - return file details + content
+7. `GET /files/{frame_id}/content` - download as text
+8. `DELETE /files/{frame_id}` - delete frame + file
+
+### Priority 3: iCalendar Support (2-4 hours)
+9. Add `.ics` to `allowed_types` in main.py
+10. Add `extract_text_from_ics()` to files.py
+11. Add iCal generation helper for `file_write`
+
+### Priority 4: Files Tab UI (4-8 hours)
+12. Create `/files-ui` route in main.py
+13. Create `files.html` with list/detail views
+14. Add "Files" nav item in header
+
+### Priority 5: Testing & Integration (4-8 hours)
+15. Unit tests for file tools + extractors
+16. Integration test: upload → query via agent → verify response
+17. iCalendar Mozworth E2E test
+18. Regression tests per AGENTS.md critical paths
+
+---
+
+## 18. Known Issues to Fix
+
+| Issue | Location | Fix |
+|-------|----------|-----|
+| Custom CSS overrides `.btn` | chat.html:510-525 | Remove, use `.btn-icon` |
+| file-chips vertical | chat.html:1090 | Move to input-row flex |
+| Custom sendForm | chat.html:2870 | Remove, use sendMessage |
+| No /files/list endpoint | main.py | Add endpoint |
+| No /files/search endpoint | main.py | Add endpoint |
+| No .ics extractor | files.py | Add extract_text_from_ics |
+| .ics not in allowed_types | main.py:1472 | Add "ics" |
+| No cleanup/GC | - | Add to scheduler |
+
+---
+
+This plan now accurately reflects the current implementation state. Use this as the source of truth for handoff to the next agent.
