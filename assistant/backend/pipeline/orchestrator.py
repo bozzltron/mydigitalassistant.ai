@@ -112,6 +112,8 @@ class ChatRequest(BaseModel):
     session_id: str | None = None  # if None, generate one
     # Client-generated id for live stage progress (see /chat/status/{turn_id}).
     turn_id: str | None = None
+    # Optional attached files from file upload UI
+    attached_files: list[dict] = []
 
 
 class ChatResponse(BaseModel):

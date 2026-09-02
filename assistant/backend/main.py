@@ -336,9 +336,14 @@ def _prune_turn_progress() -> None:
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat(
-    request: ChatRequest, orch: Orchestrator = _Depends(get_orchestrator)
+    request: ChatRequest,
+    orch: Orchestrator = _Depends(get_orchestrator),
+    store: MemoryStore = _Depends(get_store),
 ):
-    """Send a message to the assistant. Returns the response with trace info."""
+    """Send a message to the assistant. Returns the response with trace info.
+
+    Supports JSON body {user_id, message, session_id, turn_id, attached_files}.
+    """
     turn_id = request.turn_id
     if turn_id:
         _prune_turn_progress()
@@ -349,18 +354,61 @@ async def chat(
             "done": False,
         }
 
-        async def progress(stage: str, detail: str) -> None:
-            entry = _turn_progress.get(turn_id)
-            if entry is not None:
-                entry["stage"] = stage
-                entry["detail"] = detail
+    async def progress(stage: str, detail: str) -> None:
+        entry = _turn_progress.get(turn_id)
+        if entry is not None:
+            entry["stage"] = stage
+            entry["detail"] = detail
 
-        try:
-            return await orch.chat(request, progress=progress)
-        finally:
-            entry = _turn_progress.get(turn_id)
-            if entry is not None:
-                entry["done"] = True
+    # Process any attached files from the request
+    file_contents = []
+    if request.attached_files:
+        for fc in request.attached_files:
+            file_contents.append({
+                "name": fc.get("name", "unknown"),
+                "ext": fc.get("ext", "txt"),
+                "preview": fc.get("preview", "")[:500],
+                "text": fc.get("text", ""),
+                "key_entities": fc.get("key_entities", []),
+                "open_questions": fc.get("open_questions", []),
+            })
+
+    # Build the enhanced message with file context
+    enhanced_message = request.message
+    if file_contents:
+        file_summaries = []
+        for fc in file_contents:
+            entities_str = (
+                ", ".join(fc.get("key_entities", [])[:3]) if fc.get("key_entities") else ""
+            )
+            questions_str = (
+                " ".join(fc.get("open_questions", [])[:2]) if fc.get("open_questions") else ""
+            )
+            file_summaries.append(f"File: {fc['name']} ({fc['ext']}) - {fc['preview']}")
+            if entities_str:
+                file_summaries[-1] += f" [entities: {entities_str}]"
+            if questions_str:
+                file_summaries[-1] += f" [questions: {questions_str}]"
+        if request.message:
+            enhanced_message = request.message + "\n\n" + "\n".join(file_summaries)
+        else:
+            enhanced_message = "\n\n" + "\n".join(file_summaries)
+
+    try:
+        return await orch.chat(
+            ChatRequest(
+                user_id=request.user_id,
+                message=enhanced_message,
+                session_id=request.session_id,
+                turn_id=request.turn_id,
+                attached_files=[fc for fc in file_contents],
+            ),
+            progress=progress,
+        )
+    finally:
+        entry = _turn_progress.get(turn_id)
+        if entry is not None:
+            entry["done"] = True
     return await orch.chat(request)
 
 

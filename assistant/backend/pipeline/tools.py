@@ -5,6 +5,8 @@ decides when to call them; results are fed back until it answers in prose.
 No cloud APIs — web_search goes through the local SearXNG instance only.
 """
 
+import asyncio
+import json
 import logging
 import re
 import urllib.parse
@@ -12,9 +14,11 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
 from html.parser import HTMLParser
+from pathlib import Path
 
 import httpx
 
+from assistant.backend.memory.store import MemoryStore
 from assistant.backend.pipeline.llm_client import ChatMessage, ChatResponse
 from assistant.backend.pipeline.search import WebSearchTool
 
@@ -356,6 +360,145 @@ def builtin_tools(
                 handler=_make_search_handler(search_tool, embed_fn=embed_fn),
             )
         )
+    # File tools are always available (local file operations only)
+    tools.extend([
+        AssistantTool(
+            name="file_lookup",
+            description=(
+                "Search for files by name pattern and optional file type. "
+                "Use when the user refers to 'the file called X' or 'the ical file'. "
+                "Returns matching files with name, extension, size, and content preview."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "name_pattern": {
+                        "type": "string",
+                        "description": "Name pattern or keyword to match against file names",
+                    },
+                    "file_type": {
+                        "type": "string",
+                        "description": "Optional file extension filter (e.g. 'ics', 'csv', 'json')",
+                    },
+                },
+                "required": ["name_pattern"],
+            },
+            handler=_handle_file_lookup,
+        ),
+        AssistantTool(
+            name="file_read",
+            description=(
+                "Read the full content of a file by its frame ID. Use after file_lookup "
+                "to get the ID of a file the user is referencing. Returns stored metadata "
+                "and actual file content."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "file_id": {
+                        "type": "integer",
+                        "description": "The frame ID of the file to read",
+                    },
+                },
+                "required": ["file_id"],
+            },
+            handler=_handle_file_read,
+        ),
+        AssistantTool(
+            name="file_write",
+            description=(
+                "Create a new file and store it in memory. Provide a name, content, and "
+                "file type (extension). The file will be saved to the data directory and "
+                "a frame will be created with metadata slots. Use when the user says "
+                "'create a new file called X' or 'write Y to file Z'."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Name of the file (without extension)",
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "The full content to write to the file",
+                    },
+                    "file_type": {
+                        "type": "string",
+                        "description": "File extension without dot (e.g. 'ics', 'csv', 'txt')",
+                    },
+                },
+                "required": ["name", "content", "file_type"],
+            },
+            handler=_handle_file_write,
+        ),
+        AssistantTool(
+            name="file_update",
+            description=(
+                "Update the content of an existing file by its frame ID. Use after "
+                "file_lookup to find the file, then provide new content. The file in the "
+                "data directory will be overwritten and memory slots updated."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "file_id": {
+                        "type": "integer",
+                        "description": "The frame ID of the file to update",
+                    },
+                    "new_content": {
+                        "type": "string",
+                        "description": "The new content to write to the file",
+                    },
+                },
+                "required": ["file_id", "new_content"],
+            },
+            handler=_handle_file_update,
+        ),
+        AssistantTool(
+            name="file_delete",
+            description=(
+                "Delete a file by its frame ID. Use after file_lookup to find the file "
+                "the user wants to remove. The file in the data directory will be removed "
+                "and the memory frame deleted."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "file_id": {
+                        "type": "integer",
+                        "description": "The frame ID of the file to delete",
+                    },
+                },
+                "required": ["file_id"],
+            },
+            handler=_handle_file_delete,
+        ),
+        AssistantTool(
+            name="file_search",
+            description=(
+                "Search file content for a query term. Use when the user wants to find "
+                "specific information inside their files. Returns matching files with "
+                "snippets showing where the term appears."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The text term to search for inside file contents",
+                    },
+                    "file_type": {
+                        "type": "string",
+                        "description": "Optional file extension filter (e.g. 'ics', 'csv')",
+                    },
+                },
+                "required": ["query"],
+            },
+            handler=_handle_file_search,
+        ),
+    ])
+
     return tools
 
 
@@ -455,3 +598,380 @@ async def run_tool_loop(
     final = await llm_client.chat(convo, think=think, num_predict=num_predict)
     final.thinking = final.thinking or thinking
     return final
+
+
+# ──────────────────────────────────────────────────────────────────────
+# File Tools
+# ──────────────────────────────────────────────────────────────────────
+
+async def _handle_file_lookup(name_pattern: str, file_type: str | None = None) -> str:
+    """Search for files matching a name pattern and optional file type.
+
+    Returns a JSON summary of matching files.
+    """
+    from assistant.backend.main import get_store
+
+    store: MemoryStore = get_store()
+    # Search frames with "file_" prefix and matching pattern
+    all_frames = await store.list_frames()
+    matches = []
+    for frame in all_frames:
+        frame_name = frame.name
+        if not frame_name.startswith("file_"):
+            continue
+        # Extract the original filename from the slot
+        file_name_slot = await store.get_slot(frame.id, "file_name")
+        file_ext_slot = await store.get_slot(frame.id, "file_ext")
+        if not file_name_slot or not file_ext_slot:
+            continue
+        file_name_val = (
+            file_name_slot.value if hasattr(file_name_slot, 'value') else str(file_name_slot)
+        )
+        file_ext_val = (
+            file_ext_slot.value if hasattr(file_ext_slot, 'value') else str(file_ext_slot)
+        )
+        file_name = file_name_val
+        file_ext = file_ext_val
+        # Match pattern
+        pattern_match = True
+        if name_pattern and name_pattern.lower() not in file_name.lower():
+            pattern_match = False
+        if file_type and file_type != file_ext:
+            pattern_match = False
+        if pattern_match:
+            # Read content preview
+            content_slot = await store.get_slot(frame.id, "file_content_preview")
+            content = content_slot.value if content_slot else ""
+            matches.append({
+                "file_name": file_name,
+                "file_ext": file_ext,
+                "file_size": await _get_slot_value(frame.id, "file_size"),
+                "content_preview": content[:100] if content else "",
+            })
+    return json.dumps(matches)
+
+
+async def _handle_file_read(file_id: int) -> str:
+    """Read the full content of a file by its frame ID.
+
+    Returns the stored content or an error message.
+    """
+    from assistant.backend.main import get_store
+
+    store: MemoryStore = get_store()
+    frame = await store.get_frame_by_id(file_id)
+    if not frame:
+        return f"Error: File frame {file_id} not found"
+
+    # Get the content from slots
+    content_slot = await store.get_slot(frame.id, "file_content_preview")
+    name_slot = await store.get_slot(frame.id, "file_name")
+
+    content = content_slot.value if content_slot else "(no content stored)"
+
+    # Try to read the actual file from data directory
+    from pathlib import Path
+    data_dir = Path("/app/data")
+    # Look for the file - try various names
+    actual_content = ""
+    if data_dir.exists():
+        # Try to find matching file
+        for fp in data_dir.iterdir():
+            if fp.is_file():
+                fp_ext = fp.suffix.lstrip(".").lower()
+                if (fp_ext == (
+                    name_slot.value.rsplit(".", 1)[-1] if "." in name_slot.value else ""
+                ) and name_slot.value in fp.name):
+                    async with httpx.AsyncClient() as client:
+                        try:
+                            resp = await client.get(f"file://{fp}", timeout=10)
+                            actual_content = resp.text[:5000] if hasattr(resp, 'text') else ""
+                        except Exception:
+                            pass
+
+    # Combine stored content with actual file content
+    combined = f"{content}\n---Actual File Content (first 5000 chars)---:{actual_content}"
+    return combined[:10000] if combined else ""
+
+
+async def _handle_file_write(name: str, content: str, file_type: str) -> str:
+    """Create a new file and store it in memory.
+
+    Saves to data directory and creates a file frame with slots.
+    """
+    from assistant.backend.main import get_store
+
+    store: MemoryStore = get_store()
+    data_dir = Path("/app/data")
+    data_dir.mkdir(exist_ok=True)
+
+    # Generate safe filename
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    safe_name = f"file_{timestamp}.{file_type}"
+    file_path = data_dir / safe_name
+
+    # Write content to file
+    async with asyncio.open(file_path, 'w') as f:
+        await f.write(content)
+
+    # Create frame for this file
+    frame_name = f"file_{safe_name}"
+    existing_frame = await store.get_frame_by_name(frame_name)
+    if not existing_frame:
+        frame = await store.create_frame(
+            frame_name,
+            "entity",
+            source_type="file_write",
+            owner_user_id=1,
+            source_reliability=0.7,
+        )
+    else:
+        frame = existing_frame
+
+    # Store file metadata as slots
+    await store.upsert_slot(
+        frame_id=frame.id,
+        key="file_name",
+        value=name,
+        essential=0,
+        priority=0.5,
+        source_type="file_write",
+        source_reliability=0.8,
+    )
+
+    await store.upsert_slot(
+        frame_id=frame.id,
+        key="file_ext",
+        value=file_type,
+        essential=0,
+        priority=0.5,
+        source_type="file_write",
+        source_reliability=0.8,
+    )
+
+    await store.upsert_slot(
+        frame_id=frame.id,
+        key="file_size",
+        value=str(len(content)),
+        essential=0,
+        priority=0.5,
+        source_type="file_write",
+        source_reliability=0.8,
+    )
+
+    # Store content preview
+    content_preview = content[:200] if len(content) > 200 else content
+    await store.upsert_slot(
+        frame_id=frame.id,
+        key="file_content_preview",
+        value=content_preview,
+        essential=0,
+        priority=0.5,
+        source_type="file_write",
+        source_reliability=0.8,
+    )
+
+    # Store the full content path hint
+    await store.upsert_slot(
+        frame_id=frame.id,
+        key="file_path",
+        value=str(file_path),
+        essential=0,
+        priority=0.5,
+        source_type="file_write",
+        source_reliability=0.8,
+    )
+
+    # Associate with any relevant existing frames mentioning the name
+    # Simple: if name contains keywords, find related frames
+    related = await _find_related_frames(store, name)
+    if related:
+        await store.associate_frames(frame_id=frame.id, related_frame_ids=[r.id for r in related])
+
+    return json.dumps({
+        "status": "created",
+        "file_name": name,
+        "file_ext": file_type,
+        "file_path": str(file_path),
+        "frame_id": frame.id,
+    })
+
+
+async def _handle_file_update(file_id: int, new_content: str) -> str:
+    """Update an existing file's content.
+
+    Reads the file from data directory, overwrites content, updates memory slots.
+    """
+    import json
+    from pathlib import Path
+
+    from assistant.backend.main import get_store
+    from assistant.backend.memory.store import MemoryStore
+
+    store: MemoryStore = get_store()
+    frame = await store.get_frame_by_id(file_id)
+    if not frame:
+        return f"Error: File frame {file_id} not found"
+
+    # Get current file name to locate the file
+    name_slot = await store.get_slot(frame.id, "file_name")
+    ext_slot = await store.get_slot(frame.id, "file_ext")
+
+    file_name = name_slot.value if name_slot else f"file_{file_id}"
+    file_ext = ext_slot.value if ext_slot else "txt"
+    file_path = Path("/app/data") / f"file_{file_id}.{file_ext}"
+
+    # Write new content to file
+    try:
+        async with asyncio.open(file_path, 'w') as f:
+            await f.write(new_content)
+    except Exception as e:
+        return f"Error writing file: {e}"
+
+    # Update slots
+    content_preview = new_content[:200] if len(new_content) > 200 else new_content
+    await store.upsert_slot(
+        frame_id=file_id,
+        key="file_content_preview",
+        value=content_preview,
+        essential=0,
+        priority=0.8,
+        source_type="file_update",
+        source_reliability=0.8,
+    )
+    await store.upsert_slot(
+        frame_id=file_id,
+        key="file_size",
+        value=str(len(new_content)),
+        essential=0,
+        priority=0.8,
+        source_type="file_update",
+        source_reliability=0.8,
+    )
+
+    return json.dumps({
+        "status": "updated",
+        "file_name": file_name,
+        "file_ext": file_ext,
+        "file_size": str(len(new_content)),
+        "frame_id": file_id,
+    })
+
+
+async def _handle_file_delete(file_id: int) -> str:
+    """Delete a file by its frame ID.
+
+    Removes from data directory and memory.
+    """
+    import json
+    from pathlib import Path
+
+    from assistant.backend.main import get_store
+    from assistant.backend.memory.store import MemoryStore
+
+    store: MemoryStore = get_store()
+    frame = await store.get_frame_by_id(file_id)
+    if not frame:
+        return f"Error: File frame {file_id} not found"
+
+    # Get file name to attempt deletion
+    name_slot = await store.get_slot(frame.id, "file_name")
+    ext_slot = await store.get_slot(frame.id, "file_ext")
+    file_name = name_slot.value if name_slot else f"file_{file_id}"
+
+    # Attempt to delete from data directory
+    data_dir = Path("/app/data")
+    file_to_delete = data_dir / f"{file_name}.{ext_slot.value if ext_slot else 'txt'}"
+
+    try:
+        if file_to_delete.exists():
+            file_to_delete.unlink()
+    except Exception:
+        pass
+
+    # Delete the frame
+    try:
+        await store.delete_frame(file_id)
+    except Exception:
+        pass
+
+    return json.dumps({
+        "status": "deleted",
+        "file_name": file_name,
+        "frame_id": file_id,
+    })
+
+
+async def _handle_file_search(query: str, file_type: str | None = None) -> str:
+    """Search file content for a query term.
+
+    Returns matching file info with content snippets.
+    """
+    import json
+
+    from assistant.backend.main import get_store
+    from assistant.backend.memory.store import MemoryStore
+
+    store: MemoryStore = get_store()
+    all_frames = await store.list_frames()
+    matches = []
+
+    for frame in all_frames:
+        if not frame.name.startswith("file_"):
+            continue
+        # Get content preview
+        content_slot = await store.get_slot(frame.id, "file_content_preview")
+        if not content_slot:
+            continue
+        content = content_slot.value or ""
+        # Simple text search
+        if query.lower() in content.lower():
+            name_slot = await store.get_slot(frame.id, "file_name")
+            ext_slot = await store.get_slot(frame.id, "file_ext")
+            size_slot = await store.get_slot(frame.id, "file_size")
+            matches.append({
+                "file_name": name_slot.value if name_slot else f"file_{frame.id}",
+                "file_ext": ext_slot.value if ext_slot else "txt",
+                "file_size": size_slot.value if size_slot else "0",
+                "match_snippet": _make_snippet(content, query) if query in content else "",
+            })
+
+    return json.dumps(matches)
+
+
+async def _make_snippet(content: str, query: str) -> str:
+    """Create a content snippet showing the query match position."""
+    idx = content.lower().index(query.lower())
+    start = max(0, idx - 20)
+    end = min(len(content), idx + len(query) + 20)
+    return content[start:end]
+
+
+async def _get_slot_value(frame_id: int, key: str) -> str:
+    """Helper to get a slot value from a frame."""
+    from assistant.backend.main import get_store
+    from assistant.backend.memory.store import MemoryStore
+
+    store: MemoryStore = get_store()
+    slot = await store.get_slot(frame_id, key)
+    if slot and hasattr(slot, 'value'):
+        return slot.value
+    return ""
+
+
+async def _find_related_frames(store: MemoryStore, name: str) -> list:
+    """Find frames related to a given name/keyword."""
+    all_frames = await store.list_frames()
+    related = []
+    for frame in all_frames:
+        # Check slots for name matches
+        slots = await store.list_slots(frame.id)
+        for slot in slots:
+            try:
+                val = slot.value if hasattr(slot, 'value') else str(slot)
+                if name.lower() in str(val).lower():
+                    related.append(frame)
+                    break
+            except Exception:
+                pass
+    return related[:5]  # Limit to 5 related frames

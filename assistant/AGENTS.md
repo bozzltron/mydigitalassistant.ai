@@ -345,3 +345,14 @@ Endpoint: `POST /summarize` with body `{"session_id": "..."}`
   All SVG icons should be inlined as `<svg>` elements in HTML — no external icon font dependencies.
 - **Links:** All links must open in a new tab (`target="_blank"`) so users don't lose their session.
 - **Interactions:** Show feedback on user actions (copied toast, loading states, confirmation messages).
+
+## Clean Code & Modularity
+Dead code is a liability. Unused functions, duplicate logic, and monolithic files make the codebase harder to reason about and increase the risk of breaking something that still matters. Before shipping a change:
+
+- **Extract shared utilities** before duplicating logic across files (see `static/shared/utils.js`, `static/shared/components.css`).
+- **Delete unused code** — run `grep -r "functionName" .` to verify zero callers across the entire codebase before removing.
+- **Prefer composition over monoliths** — split files by responsibility (see `static/shared/`, `static/chat/`, `static/brain/`).
+- **Shared utilities first** — before writing similar logic twice, check `shared/` first.
+- **Modular CSS** — component-scoped styles with shared base classes (see `static/shared/components.css`).
+- **Testable modules** — pure functions over side-effect-heavy IIFEs.
+- **ES Modules** — use `<script type="module">` for native browser modules (no build step required).
