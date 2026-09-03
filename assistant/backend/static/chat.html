@@ -516,6 +516,7 @@
   font-size: 0.9rem;
   cursor: pointer;
   transition: background 0.15s;
+  height: 52px;
 }
 
 #input-row .file-attach-btn:hover {
@@ -1342,6 +1343,7 @@ import { $, $$, api, scrollBottom, formatBytes, showToast } from '/static/shared
   }
 
   async function switchConversation(convId) {
+    state.isTurnActive = false;
     state.conversationId = convId;
     state.sessionId = convId;  // Keep in sync
     localStorage.setItem('session_id', convId);
@@ -2925,7 +2927,7 @@ import { $, $$, api, scrollBottom, formatBytes, showToast } from '/static/shared
           localStorage.setItem('session_id', data.session_id);
 
           // Append assistant message
-          appendAssistantMessage(data.response || '');
+          addMessage('assistant', data.response || '');
 
           // Clear input
           msgInput.value = '';
@@ -2937,7 +2939,15 @@ import { $, $$, api, scrollBottom, formatBytes, showToast } from '/static/shared
           showToast(data.detail || 'Error sending message', 'error');
         }
       } catch (err) {
-        showToast('Error sending message: ' + err.message, 'error');
+        // Log detailed error information for debugging
+        console.error('Send form error:', err);
+        console.error('attachedFiles count:', attachedFiles.length);
+        if (attachedFiles.length > 0) {
+          attachedFiles.forEach((f, i) => {
+            console.error(`File ${i}: name=${f.name}, type=${f.type}, content length=${f.content ? f.content.length : 'undefined'}, has content=${!!f.content}`);
+          });
+        }
+        showToast('Error sending message: ' + (err.message || 'Unknown error'), 'error');
       } finally {
         // Remove queued state
         queuedDiv.remove();
