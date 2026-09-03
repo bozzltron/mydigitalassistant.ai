@@ -6,6 +6,7 @@ and integrates with the memory system.
 
 import json
 from dataclasses import dataclass
+from datetime import datetime
 
 
 @dataclass
@@ -205,6 +206,76 @@ def extract_text_from_html(content: bytes) -> tuple[str, list[str], list[str]]:
         return []
 
 
+def extract_text_from_ics(content: bytes) -> tuple[str, list[str], list[str]]:
+    """Extract text from a .ics (iCalendar) file.
+
+    Returns: (plain_text, key_entities, open_questions)
+    """
+    try:
+        import re
+
+        text = content.decode("utf-8", errors="replace")
+
+        # Extract VEVENT components
+        events = re.findall(
+            r"BEGIN:VEVENT(.*?)END:VEVENT",
+            text,
+            re.DOTALL,
+        )
+
+        event_summaries = []
+        key_entities = []
+        open_questions = []
+
+        for event in events:
+            # Extract summary/title
+            summary_match = re.search(r"SUMMARY:(.+?)\n", event)
+            summary = summary_match.group(1).strip() if summary_match else "Untitled event"
+
+            # Extract date/time
+            dtstart_match = re.search(r"DTSTART:(.+?)\n", event)
+            dtend_match = re.search(r"DTEND:(.+?)\n", event)
+
+            event_info = f"Event: {summary}"
+            if dtstart_match:
+                event_info += f" on {dtstart_match.group(1).strip()}"
+            if dtend_match:
+                event_info += f" to {dtend_match.group(1).strip()}"
+
+            event_summaries.append(event_info)
+
+            # Extract summary as key entity
+            if summary and summary != "Untitled event":
+                entity_key = f"event_{summary[:50]}"
+                if entity_key not in key_entities:
+                    key_entities.append(entity_key)
+
+            # Extract open questions about the event
+            open_questions.append(f"Review event: {summary[:50]}")
+
+        # Plain text representation - first few events
+        if event_summaries:
+            plain_text = "\n\n".join(event_summaries[:5])
+        else:
+            plain_text = "No iCalendar events found"
+
+        # If no events found, try to extract any meaningful text
+        if not event_summaries:
+            # Look for other common iCalendar components
+            other_lines = [
+                line for line in text.split("\n") 
+                if not line.strip().startswith(("BEGIN:", "END:"))
+            ]
+            if other_lines:
+                plain_text = " ".join(other_lines[:200])
+            else:
+                plain_text = "No iCalendar events found"
+
+        return plain_text, key_entities, open_questions
+    except Exception:
+        return "Error parsing iCalendar file", [], []
+
+
 async def extract_file_content(
     file_path: str,
     ext: str,
@@ -230,6 +301,7 @@ async def extract_file_content(
         "json": extract_text_from_json,
         "xml": extract_text_from_xml,
         "html": extract_text_from_html,
+        "ics": extract_text_from_ics,
     }
 
     extractor = extractors.get(ext)
@@ -260,7 +332,7 @@ def generate_file(content: str, file_type: str, query: str = None) -> str:
     
     Args:
         content: The content to write
-        file_type: Target file type (.txt, .csv, .json, .xml, .html)
+        file_type: Target file type (.txt, .csv, .json, .xml, .html, .ics)
         query: Optional query to filter/relevant content
     
     Returns:
@@ -273,4 +345,28 @@ def generate_file(content: str, file_type: str, query: str = None) -> str:
         f.write(content)
     
     return str(output_path)
+
+
+def generate_ical_content(summary: str, desc: str = "", start: str = "", end: str = "") -> str:
+    """Generate iCalendar content."""
+    ical = []
+    ical.append("BEGIN:VCALENDAR")
+    ical.append("VERSION:2.0")
+    ical.append("PRODID:-//MyDigitalAssistant//EN//EN")
+    ical.append("CALSCALE:GREGORIAN")
+    ical.append("METHOD:PUBLISH")
+    ical.append("")
+    ical.append("BEGIN:VEVENT")
+    ical.append(f"UID:{datetime.now().strftime('%Y%m%dT%H%M%S')}-assistant@example.com")
+    ical.append(f"DTSTAMP:{datetime.now().strftime('%Y%m%dT%H%M%S')}")
+    if start:
+        ical.append(f"DTSTART:{start}")
+    if end:
+        ical.append(f"DTEND:{end}")
+    ical.append(f"SUMMARY:{summary}")
+    if desc:
+        ical.append(f"DESCRIPTION:{desc}")
+    ical.append("END:VEVENT")
+    ical.append("END:VCALENDAR")
+    return "\r\n".join(ical)
 

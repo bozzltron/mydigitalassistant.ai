@@ -1469,7 +1469,7 @@ async def upload_file(
     # Validate file type
     filename = file.filename or "unknown"
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
-    allowed_types = {"txt", "csv", "json", "xml", "html"}
+    allowed_types = {"txt", "csv", "json", "xml", "html", "ics"}
     
     if ext not in allowed_types:
         raise HTTPException(
@@ -1566,6 +1566,17 @@ async def upload_file(
         source_reliability=0.8,
     )
     
+    # Store the safe filename for file lookup
+    await store.upsert_slot(
+        frame_id=frame.id,
+        key="file_safe_name",
+        value=safe_filename,
+        essential=0,
+        priority=0.5,
+        source_type="file_upload",
+        source_reliability=0.7,
+    )
+    
     # Store extracted facts/slots if any
     if extraction_result.get("key_entities"):
         for entity in extraction_result["key_entities"]:
@@ -1585,96 +1596,6 @@ async def upload_file(
     except Exception:
         pass
     
-    # Store file content in memory
-    user_id = 1  # Default primary user
-    frame_name = f"file_{safe_filename}"
-    
-    # Create or get the file frame
-    existing_frame = await store.get_frame_by_name(frame_name)
-    if not existing_frame:
-        frame = await store.create_frame(
-            frame_name,
-            "entity",
-            source_type="file_upload",
-            owner_user_id=user_id,
-            source_reliability=0.7,
-        )
-    else:
-        frame = existing_frame
-    
-    # Store file metadata as slots
-    await store.upsert_slot(
-        frame_id=frame.id,
-        key="file_name",
-        value=filename,
-        essential=0,
-        priority=0.5,
-        source_type="file_upload",
-        source_reliability=0.7,
-    )
-    
-    await store.upsert_slot(
-        frame_id=frame.id,
-        key="file_ext",
-        value=ext,
-        essential=0,
-        priority=0.5,
-        source_type="file_upload",
-        source_reliability=0.7,
-    )
-    
-    await store.upsert_slot(
-        frame_id=frame.id,
-        key="file_size",
-        value=str(len(content)),
-        essential=0,
-        priority=0.5,
-        source_type="file_upload",
-        source_reliability=0.7,
-    )
-    
-    # Store extracted content preview
-    content_preview = extraction_result.get("text", "")[:200]
-    await store.upsert_slot(
-        frame_id=frame.id,
-        key="file_content_preview",
-        value=content_preview,
-        essential=0,
-        priority=0.5,
-        source_type="file_upload",
-        source_reliability=0.7,
-    )
-    
-    # Store key entities if any
-    if extraction_result.get("key_entities"):
-        for entity in extraction_result["key_entities"]:
-            await store.upsert_slot(
-                frame_id=frame.id,
-                key=f"entity_{entity}",
-                value=entity,
-                essential=0,
-                priority=0.5,
-                source_type="file_upload",
-                source_reliability=0.7,
-            )
-    
-    # Store open questions if any
-    if extraction_result.get("open_questions"):
-        for q in extraction_result["open_questions"]:
-            await store.upsert_slot(
-                frame_id=frame.id,
-                key=f"question_{q}",
-                value=q,
-                essential=0,
-                priority=0.3,
-                source_type="file_upload",
-                source_reliability=0.7,
-            )
-    
-    # Associate file frame with any relevant existing frames
-    # Simple cross-reference: if file mentions concepts that exist in other frames
-    await store.associate_frames(frame_id=frame.id, related_frame_ids=[])
-    
     return {
         "status": "ok",
         "file_name": filename,
@@ -1686,3 +1607,256 @@ async def upload_file(
         "frame_name": frame_name,
         "frame_id": frame.id,
     }
+
+
+# --- File API Endpoints ---
+
+
+class FileFrameResponse(BaseModel):
+    id: int
+    name: str
+    type: str
+    confidence: float
+    essential: int
+    priority: float
+    source_type: str | None
+    source_url: str | None
+    source_reliability: float
+    created_at: datetime
+    updated_at: datetime
+
+
+class FileSearchResponse(BaseModel):
+    frames: list[FileFrameResponse]
+    query: str
+
+
+class FileContentResponse(BaseModel):
+    frame_id: int
+    frame_name: str
+    content: str
+    file_name: str | None
+    file_ext: str | None
+    file_size: int | None
+
+
+# List all file frames for the user
+@app.get("/files/list", response_model=list[FileFrameResponse])
+async def list_files(
+    user_id: int = 1,
+    store: MemoryStore = _Depends(get_store),
+):
+    """List all file frames for a user."""
+    frames = await store.list_frames(owner_user_id=user_id)
+    return [
+        FileFrameResponse(
+            id=frame.id,
+            name=frame.name,
+            type=frame.type,
+            confidence=frame.confidence,
+            essential=frame.essential,
+            priority=frame.priority,
+            source_type=frame.source_type,
+            source_url=frame.source_url,
+            source_reliability=frame.source_reliability,
+            created_at=frame.created_at,
+            updated_at=frame.updated_at,
+        )
+        for frame in frames
+    ]
+
+
+# Search file content by query and optional type
+@app.get("/files/search", response_model=FileSearchResponse)
+async def search_files(
+    query: str,
+    file_type: str | None = None,
+    user_id: int = 1,
+    store: MemoryStore = _Depends(get_store),
+):
+    """Search file content by query and optional type filter."""
+    # Search similar frames using embeddings
+    # First, we need to get the query embedding
+    from assistant.backend.config import settings
+    from assistant.backend.pipeline.llm_client import OllamaClient
+
+    client = OllamaClient(
+        url=settings.ollama_url,
+        model=settings.embedding_model,
+    )
+    embedding = await client.embed_query(query)
+
+    results = await store.search_similar_frames(
+        embedding=embedding,
+        user_id=user_id if user_id else None,
+        embedding_model=settings.embedding_model,
+        limit=20,
+        min_distance=0.3,
+    )
+
+    frames = []
+    for frame, slots, _similarity in results:
+        # Filter by file type if specified
+        if file_type:
+            # Check if frame has file_ext slot
+            file_ext_slot = next(
+                (s for s in slots if s.key == "file_ext"), None
+            )
+            if file_ext_slot and file_ext_slot.value != file_type:
+                continue
+
+        frames.append(
+            FileFrameResponse(
+                id=frame.id,
+                name=frame.name,
+                type=frame.type,
+                confidence=frame.confidence,
+                essential=frame.essential,
+                priority=frame.priority,
+                source_type=frame.source_type,
+                source_url=frame.source_url,
+                source_reliability=frame.source_reliability,
+                created_at=frame.created_at,
+                updated_at=frame.updated_at,
+            )
+        )
+
+    return FileSearchResponse(frames=frames, query=query)
+
+
+# Get file content by frame ID (download as text)
+@app.get("/files/{frame_id}/content", response_model=FileContentResponse)
+async def get_file_content(
+    frame_id: int,
+    store: MemoryStore = _Depends(get_store),
+):
+    """Get file content by frame ID for download."""
+    frame = await store.get_frame(frame_id)
+    if not frame:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    # Read slots for this frame
+    async with store._connect() as db:
+        query = ("SELECT id, key, value, confidence, essential, priority, source_type, source_episode_id "
+                 "FROM slots WHERE frame_id = ?")
+        rows = await db.execute_fetchall(query, (frame_id,))
+
+    slots_dict = {}
+    for row in rows:
+        slots_dict[row[1]] = row[2]  # key -> value
+
+    # Extract file metadata from slots
+    file_name = slots_dict.get("file_name")
+    file_ext = slots_dict.get("file_ext")
+    file_size = slots_dict.get("file_size")
+    file_safe_name = slots_dict.get("file_safe_name")
+
+    # Build content from the actual file on disk
+    from pathlib import Path
+
+    data_dir = Path("/app/data")
+    content = ""
+
+    if file_safe_name:
+        file_path = data_dir / file_safe_name
+        if file_path.exists():
+            try:
+                content = file_path.read_text(encoding="utf-8", errors="replace")
+            except Exception:
+                content = ""
+
+    return FileContentResponse(
+        frame_id=frame.id,
+        frame_name=frame.name,
+        content=content,
+        file_name=file_name,
+        file_ext=file_ext,
+        file_size=int(file_size) if file_size else None,
+    )
+
+
+# Get file details and content by frame ID
+@app.get("/files/{frame_id}", response_model=FileContentResponse)
+async def get_file(
+    frame_id: int,
+    store: MemoryStore = _Depends(get_store),
+):
+    """Get file details and content by frame ID."""
+    frame = await store.get_frame(frame_id)
+    if not frame:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    # Read slots for this frame
+    async with store._connect() as db:
+        query = ("SELECT id, key, value, confidence, essential, priority, source_type, source_episode_id "
+                 "FROM slots WHERE frame_id = ?")
+        rows = await db.execute_fetchall(query, (frame_id,))
+
+    slots_dict = {}
+    for row in rows:
+        slots_dict[row[1]] = row[2]  # key -> value
+
+    # Extract file metadata from slots
+    file_name = slots_dict.get("file_name")
+    file_ext = slots_dict.get("file_ext")
+    file_size = slots_dict.get("file_size")
+    file_safe_name = slots_dict.get("file_safe_name")
+
+    # Build content from the actual file on disk
+    from pathlib import Path
+
+    data_dir = Path("/app/data")
+    content = ""
+
+    if file_safe_name:
+        file_path = data_dir / file_safe_name
+        if file_path.exists():
+            try:
+                content = file_path.read_text(encoding="utf-8", errors="replace")
+            except Exception:
+                content = ""
+
+    return FileContentResponse(
+        frame_id=frame.id,
+        frame_name=frame.name,
+        content=content,
+        file_name=file_name,
+        file_ext=file_ext,
+        file_size=int(file_size) if file_size else None,
+    )
+
+
+# Delete a file frame and its associated file
+@app.delete("/files/{frame_id}")
+async def delete_file(
+    frame_id: int,
+    store: MemoryStore = _Depends(get_store),
+):
+    """Delete a file frame and its associated file."""
+    frame = await store.get_frame(frame_id)
+    if not frame:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    # Get file safe name from slots before deleting
+    async with store._connect() as db:
+        row = await db.execute_fetchone(
+            "SELECT value FROM slots WHERE frame_id = ? AND key = 'file_safe_name'",
+            (frame_id,),
+        )
+        file_safe_name = row[0] if row else None
+
+    # Soft-delete the frame (set priority to 0)
+    await store.forget_frame(frame_id)
+
+    # Try to remove the physical file
+    from pathlib import Path
+    data_dir = Path("/app/data")
+    if file_safe_name:
+        file_path = data_dir / file_safe_name
+        if file_path.exists():
+            try:
+                file_path.unlink()
+            except Exception:
+                pass
+
+    return {"status": "ok", "message": "File deleted successfully"}
