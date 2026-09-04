@@ -1,0 +1,51 @@
+{
+  "query": "artificial intelligence",
+  "total_brave_results": 10,
+  "thresholds_tested": [
+    0.1,
+    0.15,
+    0.2,
+    0.25,
+    0.3
+  ],
+  "results": [
+    {
+      "threshold": 0.1,
+      "total_results": 10,
+      "passed": 10,
+      "dropped": 0,
+      "keep_percentage": 100.0
+    },
+    {
+      "threshold": 0.15,
+      "total_results": 10,
+      "passed": 10,
+      "dropped": 0,
+      "keep_percentage": 100.0
+    },
+    {
+      "threshold": 0.2,
+      "total_results": 10,
+      "passed": 10,
+      "dropped": 0,
+      "keep_percentage": 100.0
+    },
+    {
+      "threshold": 0.25,
+      "total_results": 10,
+      "passed": 10,
+      "dropped": 0,
+      "keep_percentage": 100.0
+    },
+    {
+      "threshold": 0.3,
+      "total_results": 10,
+      "passed": 10,
+      "dropped": 0,
+      "keep_percentage": 100.0
+    }
+  ],
+  "current_config": 0.2,
+  "recommendation_quality": 0.3,
+  "recommendation_coverage": 0.15
+}

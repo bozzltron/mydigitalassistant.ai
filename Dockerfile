@@ -20,6 +20,7 @@ RUN pip install --no-cache-dir --upgrade pip \
         "numpy>=1.26" \
         "aiosqlite>=0.20" \
         "sqlite-vec>=0.1.0" \
+        "sqlalchemy>=2.0" \
         "faster-whisper>=1.0" \
         "croniter>=2.0" \
         "python-multipart>=0.0.9" \
@@ -60,6 +61,7 @@ RUN pip install --no-cache-dir --no-index --find-links /wheels \
         pytest-asyncio \
         sqlcipher3 \
         cryptography \
+        sqlalchemy>=2.0 \
     && rm -rf /wheels
 
 COPY --chown=assistant:assistant assistant/ /app/assistant/

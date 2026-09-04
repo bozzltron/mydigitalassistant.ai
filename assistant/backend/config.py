@@ -56,6 +56,7 @@ class Settings(BaseSettings):
     # disabled by default; set BRAVE_ENABLED=true AND provide BRAVE_API_KEY to use it.
     brave_enabled: bool = False
     brave_api_key: str = ""  # required when brave_enabled is true
+    brave_search_min_relevance: float = 0.20
 
     # Ollama request timeout in seconds. Local 27B-class models with large
     # context prefills (tool loops) can legitimately take minutes; the default

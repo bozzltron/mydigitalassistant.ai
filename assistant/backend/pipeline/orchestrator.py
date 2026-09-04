@@ -523,7 +523,9 @@ class Orchestrator:
             backend_name = self.search_tool.backend_name
             extraction_budget = self.search_tool.max_results_for_extraction
             relevance_threshold = (
-                0.20 if backend_name == "brave" else settings.search_min_relevance
+                settings.brave_search_min_relevance
+                if backend_name == "brave"
+                else settings.search_min_relevance
             )
             try:
                 search_results, search_info = await self.search_tool.search_with_info(
