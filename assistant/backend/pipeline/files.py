@@ -5,8 +5,11 @@ and integrates with the memory system.
 """
 
 import json
+import logging
 from dataclasses import dataclass
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -16,6 +19,7 @@ class FileExtractionResult:
     key_entities: list[str]  # Key entities/concepts found
     open_questions: list[str]  # Potential open questions from the content
     structure_info: dict  # Information about the file structure
+    row_data: list[dict] | None = None  # Parsed CSV rows: [{col: value}, ...]
 
     # Additional: query-aware extraction
     def query_content(self, query: str) -> str:
@@ -46,40 +50,63 @@ def extract_text_from_txt(content: bytes) -> tuple[str, list[str], list[str]]:
         return "", [], []
 
 
-def extract_text_from_csv(content: bytes) -> tuple[str, list[str], list[str]]:
+def extract_text_from_csv(content: bytes) -> tuple[str, list[str], list[str], list[dict] | None]:
     """Extract text from a .csv file.
 
-    Returns: (plain_text, key_entities, open_questions)
+    Returns: (plain_text, key_entities, open_questions, row_data)
+    row_data: List of dicts, one per row {column: value}, or None if not a CSV
     """
+    import csv
+    from io import StringIO
+
     try:
         text = content.decode("utf-8", errors="replace")
-        lines = text.strip().split("\n")
+        lines = [line for line in text.strip().split("\n") if line.strip()]
+
+        if not lines:
+            return "", [], [], None
+
+        # Parse using csv module for proper handling of quoted fields
+        reader = csv.reader(StringIO(text))
+        all_rows = list(reader)
+
+        if not all_rows:
+            return "", [], [], None
+
+        headers = [h.strip() for h in all_rows[0]]
+        row_data = []
 
         key_entities = []
         open_questions = []
 
-        # Parse header row if present
-        if lines:
-            headers = [h.strip() for h in lines[0].split(",")]
+        for row_vals in all_rows[1:]:
+            # Pad row if fewer columns than headers
+            row_vals = list(row_vals) + [""] * (len(headers) - len(row_vals))
+            row = {headers[i]: row_vals[i].strip() for i in range(len(headers))}
+            row_data.append(row)
 
-            # Extract entities from data rows
-            for line in lines[1:]:
-                values = [v.strip() for v in line.split(",")]
-                for _i, (header, value) in enumerate(zip(headers, values, strict=True)):
-                    if value and value not in ("NA", "N/A", "", "null"):
-                        entity_key = f"{header}_{value}"
-                        if entity_key not in key_entities:
-                            key_entities.append(entity_key)
+            # Extract entities
+            for header, value in row.items():
+                if value and value not in ("NA", "N/A", "", "null", "None"):
+                    entity_key = f"{header}_{value}"
+                    if entity_key not in key_entities:
+                        key_entities.append(entity_key)
 
-            # Simple open question detection
-            if len(lines) > 1:
-                open_questions.append("Review data for patterns and insights")
+        open_questions = []
+        if row_data:
+            open_questions.append(f"Analyze {len(row_data)} rows for patterns and insights")
+            # Detect potential ID columns
+            for h in headers:
+                if h.lower() in ('id', 'uuid', 'key', 'pk'):
+                    open_questions.append(f"Column '{h}' appears to be an identifier")
 
         # Plain text representation
-        plain_text = "\n".join(lines)
-        return plain_text, key_entities, open_questions
-    except Exception:
-        return ""
+        plain_text = "\n".join(",".join(r) for r in all_rows)
+        return plain_text, key_entities, open_questions, row_data
+
+    except Exception as e:
+        logger.warning(f"CSV extraction failed: {e}")
+        return "", [], [], None
 
 
 def extract_text_from_json(content: bytes) -> tuple[str, list[str], list[str]]:
@@ -310,8 +337,14 @@ async def extract_file_content(
         plain_text = content_str
         key_entities = []
         open_questions = ["Review file content"]
+        row_data = None
     else:
-        plain_text, key_entities, open_questions = extractor(content)
+        result = extractor(content)
+        if len(result) == 4:
+            plain_text, key_entities, open_questions, row_data = result
+        else:
+            plain_text, key_entities, open_questions = result
+            row_data = None
 
     # Structure info
     structure_info = {
@@ -325,6 +358,7 @@ async def extract_file_content(
         key_entities=key_entities,
         open_questions=open_questions,
         structure_info=structure_info,
+        row_data=row_data,
     )
 
 def generate_file(content: str, file_type: str, query: str = None) -> str:

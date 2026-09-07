@@ -5,7 +5,17 @@
 
 https://localhost {
     tls /etc/caddy/certs/localhost.crt /etc/caddy/certs/localhost.key
-    reverse_proxy assistant:8000 {
+    
+    # Route API requests to backend
+    @api path /api/* /health
+    reverse_proxy @api assistant:8000 {
+        transport http {
+            response_header_timeout 300s
+        }
+    }
+    
+    # Route all other requests to frontend dev server
+    reverse_proxy solid-dev-server:3000 {
         transport http {
             response_header_timeout 300s
         }

@@ -1,69 +1,72 @@
-# Cognitive Digital Assistant
+# MyDigitalAssistant.ai
 
-A privacy-first digital assistant that **remembers, learns, and error-corrects**.
+A privacy-first cognitive digital assistant that remembers, learns, and error-corrects.
 
-Unlike a typical chatbot that just queries an LLM, this assistant maintains a structured
-**world model** that grows from every conversation. It extracts concepts into frame/slot
-memory, builds associations, reconciles contradictions, and recalls relevant context in
-future interactions. Inspired by cognitive architecture concepts from HCI (Minsky frames,
-ACT-R/SOAR's functional/introspective task distinction).
+## Architecture Overview
 
-## Features
+This project uses:
+- FastAPI backend with local Ollama inference 
+- SolidJS frontend with Vite development server
+- SearXNG for web search
+- Docker Compose for orchestration  
 
-- **Structured memory** — frames, slots, associations, episodic memory, confidence scores
-- **Error correction** — contradictions are auto-resolved with full audit trail
-- **Multi-user** — per-user private episodic memory + shared household knowledge
-- **Local-first** — Ollama for inference, local embeddings, SQLite for storage
-- **Web search** — privacy-first retrieval via local SearXNG instance
-- **Optional Brave Search API** — higher-quality results with explicit opt-in
-- **Scheduled tasks** — daily list runs automatically; tasks and their outputs are memory
-- **No cloud LLM calls** — never leaks conversations to tech giants; safe for kids
+## Core Services
 
-## Quick Start
+### Built-in services (run by default)
+1. `assistant-backend` - The main FastAPI backend serving the assistant and processing
+2. `caddy` - Reverse proxy for HTTPS 
+3. `searxng` - Local search engine
 
-### Option 1: Using Docker (Recommended)
+### Development services (added via Docker compose)
+4. `solid-dev-server` - SolidJS/Vite frontend development server running on localhost:5173  
+
+## Quickstart
+
+1. Start all services:
+   ```bash
+   docker compose up -d
+   ```
+
+2. View logs to ensure services are healthy:
+   ```bash
+   docker compose logs -f
+   ```
+
+3. Access the assistant frontend at:
+   - Dev mode (with hot-reloading): http://localhost:5173
+   - Production mode via Caddy proxy: https://localhost:8443
+
+## Development Workflow
+
+### For Back-End / API Development
+- Use Docker containers directly 
+- Build changes with `docker compose build`
+
+### For Front-End / UI Development
+- The SolidJS dev server now runs on port 5173 for hot-reloading
+- Direct Vite development server is available at http://localhost:5173  
+- All services can be accessed through the Docker network as before
+
+## Security & Privacy
+
+This setup:
+- Keeps all data local (no external cloud storage)
+- Binds only to localhost interfaces  
+- Uses Ollama on 127.0.0.1
+- SearXNG search is also bound to localhost only
+- No telemetry or analytics
+
+## Configuration 
+
+Environment variables are set in `.env`. Create a copy:
 ```bash
-# Build the image
-docker build -t assistant .
-
-# Start all services
-docker compose up
-
-# Chat via CLI
-assistant chat
+cp .env.example .env
 ```
 
-### Option 2: Manual Setup
-```bash
-# 1. Install Ollama and pull models
-ollama pull qwen2.5:7b
-ollama pull qwen2.5:3b
-ollama pull nomic-embed-text
+## Troubleshooting
 
-# Tip: keep models warm between turns (see .env.example)
-#   OLLAMA_KEEP_ALIVE=-1  OLLAMA_MAX_LOADED_MODELS=2
-
-# 2. Install the assistant
-pip install -e ./assistant
-
-# 3. Start the backend
-uvicorn assistant.backend.main:app --host 127.0.0.1 --port 8000
-
-# 4. Chat via CLI
-assistant chat
-```
-
-## Architecture
-
-See `/assistant/AGENTS.md` for the cognitive architecture and memory model details.
-
-## Security
-
-See `SECURITY.md` for the threat model and data-flow details.
-All inference is local via Ollama. Web search defaults to local SearXNG.
-An optional Brave Search API backend is available with explicit opt-in;
-no other cloud providers are used.
-
-## License
-
-MIT
+### Common Issues
+- If frontend doesn't load after changes: 
+  - Check Vite dev server at http://localhost:5173  
+  - Restart `solid-dev-server` container: `docker compose restart solid-dev-server`
+- Ensure all containers are running: `docker compose ps`

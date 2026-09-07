@@ -1,0 +1,20 @@
+# Use Node.js as base image for the dev environment
+FROM node:20-alpine
+
+# Set working directory
+WORKDIR /app
+
+# Copy package files first (for better caching)
+COPY frontend/package*.json ./
+
+# Install dependencies
+RUN npm install
+
+# Copy frontend code (after installing deps to avoid reinstalling on code change)
+COPY frontend/ .
+
+# Expose port 5173 for Vite dev server 
+EXPOSE 5173
+
+# Make sure the dev server is started with proper host binding instead of hardcoding static path
+CMD ["sh", "-c", "cd frontend && npm run dev -- --host 0.0.0.0 --port 5173"]

@@ -12,7 +12,7 @@ services:
       - OLLAMA_TIMEOUT=${OLLAMA_TIMEOUT:-600}
       - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:--1}
       - CHAT_MODEL=${CHAT_MODEL:-qwen2.5:7b}
-      - UTILITY_MODEL=${UTILITY_MODEL:-qwen2.5:3b}
+      - UTILITY_MODEL=${UTILITY_MODEL:-qwen2.5:3}
       - EMBEDDING_MODEL=${EMBEDDING_MODEL:-nomic-embed-text}
       - CODER_MODEL=${CODER_MODEL:-}
       # Binds inside the container only. Exposure is controlled by port
@@ -83,6 +83,27 @@ services:
       - SEARXNG_SECRET=${SEARXNG_SECRET:-$(head -c 32 /dev/urandom | base64)}
     volumes:
       - ./searxng:/etc/searxng
+    restart: unless-stopped
+    networks:
+      - appnet
+
+  # SolidJS dev server for hot-reloading
+  solid-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: solid-dev-server
+    ports:
+      - "3000:5173"
+    volumes:
+      - ./frontend:/app/frontend
+      - ./assistant/backend/static:/app/assistant/backend/static
+    environment:
+      - NODE_ENV=development
+      - PORT=5173
+      - REACT_APP_API_URL=http://assistant-backend:8000
+    depends_on:
+      - assistant
     restart: unless-stopped
     networks:
       - appnet

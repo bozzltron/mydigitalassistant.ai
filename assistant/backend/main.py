@@ -7,7 +7,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from fastapi import Depends as _Depends
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, HTTPException
+from fastapi import UploadFile, File
+from fastapi.staticfiles import StaticFiles
+from pathlib import Path
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -1347,6 +1350,9 @@ async def new_conversation(
     return {"session_id": session_id, "message": "New conversation created"}
 
 
+
+# Serve static files (JS, CSS, favicon, etc.) directly from the static directory
+app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
 @app.get("/conversations/{session_id}/details", response_model=dict)
 async def conversation_details(
     session_id: str,
@@ -1860,3 +1866,57 @@ async def delete_file(
                 pass
 
     return {"status": "ok", "message": "File deleted successfully"}
+
+
+
+# --- SolidJS SPA catch-all (must be last) ---
+# Serves the SPA index.html for any path that doesn't match an API route or static file.
+# This enables client-side routing: /chat, /brain, /files, /settings
+# all render the same SPA, and SolidJS handles navigation in the browser.
+@app.get("/{path:path}")
+async def spa_catch_all(path: str):
+    """Serve the SolidJS SPA for any unmatched path."""
+    from fastapi.responses import FileResponse
+    from pathlib import Path
+    # Don't serve SPA for asset file types or API routes
+    asset_extensions = ['.js', '.css', '.svg', '.png', '.jpg', '.ico', '.wasm', '.json']
+    api_prefixes = ["/api/", "/memory/", "/brain/", "/chat/", "/files/", "/settings/", "/tasks/", "/db/", "/feedback/", "/correction/", "/conversations/", "/users/", "/assistant/name", "/search/", "/health", "/og-preview", "/transcribe/", "/uploads/", "/embeddings/", "/show/", "/tags/"]
+    if any(path.endswith(ext) for ext in asset_extensions):
+        raise HTTPException(status_code=404, detail="Asset not found - use /static/path")
+    if any(path.startswith(prefix.lstrip("/")) for prefix in api_prefixes):
+        raise HTTPException(status_code=404, detail="API route not found")
+    index_path = Path(__file__).parent / "static" / "index.html"
+    if index_path.exists():
+        return FileResponse(str(index_path))
+    # Fallback to a simple 200 response for any other assets
+    from fastapi.responses import PlainTextResponse
+    return PlainTextResponse("Assistant frontend loaded", status_code=200)
+
+# Log that app is loaded
+logger = logging.getLogger(__name__)
+logger.info("Assistant backend initialized")
+
+app = FastAPI(
+    title="Assistant API",
+    version="0.1.0",
+    openapi_url="/openapi.json",
+    docs_url="/docs",
+    redoc_url="/redoc"
+)
+
+# Add explicit debug logging
+@app.get("/")
+async def root():
+    logger.info("Root endpoint accessed - serving index.html")
+    from fastapi.responses import FileResponse
+    try:
+        return FileResponse(os.path.join(os.path.dirname(__file__), "static", "index.html"))
+    except Exception as e:
+        logger.error(f"Failed to serve index.html: {e}")
+        raise HTTPException(status_code=500, detail="Frontend not properly built")
+
+# Add this after the spa_catch_all handler
+@app.get("/health")
+async def health():
+    logger.info("Health check endpoint accessed")
+    return {"status": "healthy"}
