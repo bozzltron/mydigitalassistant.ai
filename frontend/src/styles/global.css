@@ -1,0 +1,18 @@
+/* Global styles - CSS variables copied from original chat.html would go here */
+:root {
+  --primary-color: #0066ff;
+  --secondary-color: #66b2ff;
+  --text-color: #111111;
+  --bg-color: #ffffff;
+  --border-color: #dddddd;
+  --error-color: #d32f2f;
+  --success-color: #388e3c;
+}
+
+.dark {
+  --primary-color: #66b2ff;
+  --secondary-color: #99ccff;
+  --text-color: #ffffff;
+  --bg-color: #111111;
+  --border-color: #333333;
+}
