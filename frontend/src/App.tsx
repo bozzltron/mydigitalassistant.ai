@@ -4,7 +4,6 @@ import { fetchUser } from './state/user'
 import { loadSettings } from './state/settings'
 import ChatPage from './components/chat/ChatPage'
 import TopBar from './components/ui/TopBar'
-import TracePanel from './components/chat/TracePanel'
 import SettingsPanel from './components/ui/SettingsPanel'
 import { Session } from './state/session'
 import './App.css'
@@ -94,7 +93,6 @@ export default function App() {
         isLoading={isConversationsLoading()}
       />
       <ChatPage conversation={activeConversation()} />
-      <TracePanel />
       <SettingsPanel />
     </>
   )
