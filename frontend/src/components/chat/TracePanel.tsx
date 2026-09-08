@@ -1,4 +1,4 @@
-import { Show } from 'solid-js'
+import { Show, createSignal } from 'solid-js'
 
 interface TracePanelProps {
   taskType?: string
@@ -8,10 +8,15 @@ interface TracePanelProps {
 }
 
 export default function TracePanel(props: TracePanelProps) {
+  const [isVisible, setIsVisible] = createSignal(false)
+  
   return (
-    <div class="trace-panel">
+    <div class="trace-panel" style={{ display: isVisible() ? 'block' : 'none' }}>
       <div class="panel-header">
         <h3>Trace Information</h3>
+        <button onClick={() => setIsVisible(!isVisible())}>
+          {isVisible() ? 'Hide' : 'Show'} Trace
+        </button>
       </div>
       
       <Show when={props.taskType}>
