@@ -54,7 +54,7 @@ export default function InputBar(props: InputBarProps) {
   })
 
   return (
-    <div id="input-row">
+    <>
       <textarea
         id="msg-input"
         rows={1}
@@ -117,6 +117,6 @@ export default function InputBar(props: InputBarProps) {
       >
         {props.isSending ? 'Sending...' : 'Send'}
       </button>
-    </div>
+    </>
   )
 }

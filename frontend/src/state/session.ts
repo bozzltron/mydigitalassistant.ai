@@ -30,3 +30,22 @@ export const fetchSession = async (id: string) => {
     setIsSessionLoading(false)
   }
 }
+
+// Fetch messages for a session from the API
+export const fetchSessionMessages = async (sessionId: string, userId: number) => {
+  try {
+    const resp = await fetch(`/chat/session/${encodeURIComponent(sessionId)}/messages?user_id=${userId}&limit=50`, {
+      credentials: 'include'
+    })
+    if (!resp.ok) return []
+    const data = await resp.json()
+    // Convert API response to message objects
+    return (data.messages || []).map((m: any) => ({
+      role: m.role,
+      content: m.content
+    }))
+  } catch (error) {
+    console.error('Failed to fetch session messages:', error)
+    return []
+  }
+}

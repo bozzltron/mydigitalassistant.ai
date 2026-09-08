@@ -1,43 +1,31 @@
-import { createEffect } from 'solid-js'
-import { voice, enterVoiceMode, exitVoiceMode, startProcessing, startSpeaking } from '../../state/voice'
+import { Show } from 'solid-js'
 
-export default function VoiceControls() {
-  const handleVoiceClick = () => {
-    if (voice().isListening) {
-      exitVoiceMode()
-    } else {
-      enterVoiceMode()
-      
-      // Simulate voice processing
-      setTimeout(() => {
-        startProcessing()
-        
-        setTimeout(() => {
-          startSpeaking()
-          
-          setTimeout(() => {
-            exitVoiceMode()
-          }, 1000)
-        }, 1000)
-      }, 500)
-    }
-  }
+interface VoiceControlsProps {
+  isOpen?: boolean
+  onClose?: () => void
+  isRecording?: boolean
+  onStartRecording?: () => void
+  onStopRecording?: () => void
+}
 
+export default function VoiceControls(props: VoiceControlsProps) {
   return (
-    <div class="voice-controls">
-      <button 
-        class={`voice-button ${voice().isListening ? 'listening' : ''}`}
-        onClick={handleVoiceClick}
-        aria-label={voice().isListening ? "Stop listening" : "Start voice input"}
-      >
-        {voice().isListening ? '🛑' : '🎤'}
-      </button>
-      
-      <Show when={voice().transcript}>
-        <div class="transcript-display">
-          {voice().transcript}
-        </div>
-      </Show>
-    </div>
+    <button 
+      class="mic-btn btn-icon" 
+      title="Dictate into message box"
+      onClick={() => {
+        if (props.isRecording) {
+          props.onStopRecording?.()
+        } else {
+          props.onStartRecording?.()
+        }
+      }}
+    >
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+        <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+        <line x1="12" x2="12" y1="19" y2="22"/>
+      </svg>
+    </button>
   )
 }
