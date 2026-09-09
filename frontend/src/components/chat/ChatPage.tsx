@@ -13,12 +13,10 @@ interface ChatPageProps {
 export default function ChatPage(props: ChatPageProps) {
   const [isSending, setIsSending] = createSignal(false)
   const [showTrace, setShowTrace] = createSignal(false)
-  const [showSettings, setShowSettings] = createSignal(false)
   const [isRecording, setIsRecording] = createSignal(false)
   const [showVoiceOverlay, setShowVoiceOverlay] = createSignal(false)
-  const [voiceModeActive, setVoiceModeActive] = createSignal(false)
+  const [isDictating, setIsDictating] = createSignal(false)
   
-  // Show welcome message when no conversation or no messages
   createEffect(() => {
     const currentMessages = messages()
     const hasMessages = currentMessages.length > 0
@@ -37,7 +35,6 @@ export default function ChatPage(props: ChatPageProps) {
     setIsSending(true)
     
     try {
-      // Add user message immediately
       const userMessage = {
         role: 'user' as const,
         content: message,
@@ -46,17 +43,14 @@ export default function ChatPage(props: ChatPageProps) {
       
       setMessages(prev => [...prev, userMessage])
       
-      // Call the real API
       const currentSessionId = sessionId()
       const result = await postChatMessage(message, currentSessionId || undefined)
       
-      // Update session ID if returned
       if (result.session_id) {
         setSessionId(result.session_id)
         localStorage.setItem('session_id', result.session_id)
       }
       
-      // Add assistant response  
       const assistantMessage = {
         role: 'assistant' as const,
         content: result.response,
@@ -83,6 +77,16 @@ export default function ChatPage(props: ChatPageProps) {
     }
   }
 
+  const handleDictationStart = () => {
+    setIsDictating(true)
+    setShowVoiceOverlay(true)
+  }
+
+  const handleDictationStop = () => {
+    setIsDictating(false)
+    setShowVoiceOverlay(false)
+  }
+
   return (
     <div id="main">
       <div id="chat-area" class="chat-area">
@@ -96,30 +100,31 @@ export default function ChatPage(props: ChatPageProps) {
           </div>
         </div>
 
-      {/* Input row should be outside chat-area at bottom */}
-      <div id="input-row">
-        <InputBar 
-          onSend={handleSendMessage} 
-          isSending={isSending()}
-        />
-        
-        <VoiceControls 
-          isOpen={showVoiceOverlay()} 
-          onClose={() => setShowVoiceOverlay(false)}
-          isRecording={isRecording()}
-          onStartRecording={() => {
-            setIsRecording(true)
-            setShowVoiceOverlay(true)
-          }}
-          onStopRecording={() => {
-            setIsRecording(false)
-            setShowVoiceOverlay(false)
-          }}
-        />
-      </div>
+        <div id="input-row">
+          <InputBar 
+            onSend={handleSendMessage} 
+            isSending={isSending()}
+            onDictationStart={handleDictationStart}
+            onDictationStop={handleDictationStop}
+            isDictating={isDictating()}
+          />
+          
+          <VoiceControls 
+            isOpen={showVoiceOverlay()} 
+            onClose={() => setShowVoiceOverlay(false)}
+            isRecording={isRecording()}
+            onStartRecording={() => {
+              setIsRecording(true)
+              setShowVoiceOverlay(true)
+            }}
+            onStopRecording={() => {
+              setIsRecording(false)
+              setShowVoiceOverlay(false)
+            }}
+          />
+        </div>
       </div>
 
-      {/* Trace Panel - hidden by default like in legacy */}
       <div id="trace-panel" class={`trace-panel ${showTrace() ? '' : 'hidden'}`}>
         <div class="trace-header">
           <span>
@@ -151,64 +156,6 @@ export default function ChatPage(props: ChatPageProps) {
           </div>
         </div>
       </div>
-
-      {/* Settings panel */}
-      <div id="settings-panel" class={`settings-panel ${showSettings() ? 'open' : ''}`}>
-        <div class="settings-title">
-          Settings
-          <button class="settings-close" onClick={() => setShowSettings(false)}>&times;</button>
-        </div>
-
-        <div class="settings-section">
-          <label>Voice settings</label>
-          <div class="toggle-row">
-            <span class="toggle-label">Read responses aloud</span>
-            <input type="checkbox" id="tts-enabled" checked />
-          </div>
-          <div class="settings-section">
-            <label for="voice-select">Voice</label>
-            <select id="voice-select">
-              <option value="">Loading voices...</option>
-            </select>
-          </div>
-          <div class="settings-section">
-            <label for="voice-speed">Speed</label>
-            <input type="range" id="voice-speed" min="0.5" max="2" step="0.1" value="1" />
-            <span id="voice-speed-value">1.0x</span>
-          </div>
-          <div class="settings-section">
-            <label for="voice-pitch">Pitch</label>
-            <input type="range" id="voice-pitch" min="0" max="2" step="0.1" value="1" />
-            <span id="voice-pitch-value">1.0x</span>
-          </div>
-          <div class="settings-section">
-            <label for="voice-volume">Volume</label>
-            <input type="range" id="voice-volume" min="0" max="1" step="0.1" value="1" />
-            <span id="voice-volume-value">1.0</span>
-          </div>
-        </div>
-
-        <div class="settings-section">
-          <label>Interface</label>
-          <div class="toggle-row">
-            <span class="toggle-label">Show trace panel</span>
-            <input type="checkbox" id="trace-visible" checked />
-          </div>
-        </div>
-        
-        <div class="settings-section" id="search-settings-section" style="display:none">
-          <label>Search backend</label>
-          <div class="toggle-row">
-            <span class="toggle-label">Use Brave Search API</span>
-            <input type="checkbox" id="brave-enabled" />
-          </div>
-          <p style="font-size:0.75rem;color:var(--text-dim);margin-top:0.25rem;">
-            When enabled, queries are sent to Brave's servers. Only available when a Brave API key is configured.
-          </p>
-        </div>
-      </div>
-
-      {/* Voice recording overlay - this is rendered by VoiceControls now */}
     </div>
   )
 }
