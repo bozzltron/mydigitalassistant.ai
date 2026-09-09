@@ -113,109 +113,103 @@ export default function TopBar(props: TopBarProps) {
       </header>
 
       {showNewConvModal && (
-        <div class="modal-overlay" onClick={() => setShowNewConvModal(false)} style={{
-          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', 
-          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000
-        }}>
-          <div class="modal" onClick={(e) => e.stopPropagation()} style={{
-            background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: '12px', 
-            padding: '1.5rem', minWidth: '320px', maxWidth: '90vw'
-          }}>
-            <h3 style="margin: 0 0 1rem;">New Conversation</h3>
-            <input
-              id="new-conv-title"
-              type="text"
-              placeholder="Conversation name (optional)"
-              value={newConvTitle()}
-              onInput={(e) => setNewConvTitle(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') handleNewConversation() }}
-              style={{
-                width: '100%', background: 'var(--bg)', border: '1px solid var(--border)',
-                borderRadius: '6px', color: 'var(--text)', padding: '0.6rem 0.75rem',
-                fontSize: '0.95rem', marginBottom: '1rem', boxSizing: 'border-box'
-              }}
-            />
-            <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
+        <div class="modal-overlay" onClick={() => setShowNewConvModal(false)}>
+          <div class="modal" onClick={(e) => e.stopPropagation()}>
+            <div class="modal-header">
+              <h3>New Conversation</h3>
               <button 
-                class="voice-btn-small" 
+                class="modal-close"
                 onClick={() => { setShowNewConvModal(false); setNewConvTitle('') }}
-                style="padding:0.4rem 0.8rem;"
+                aria-label="Close modal"
               >
-                Cancel
+                ✕
               </button>
-              <button 
-                class="btn-primary" 
-                onClick={handleNewConversation}
-                style="padding:0.4rem 0.8rem;"
-              >
-                Create
-              </button>
+            </div>
+            <div class="modal-content">
+              <input
+                id="new-conv-title"
+                type="text"
+                placeholder="Conversation name (optional)"
+                value={newConvTitle()}
+                onInput={(e) => setNewConvTitle(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleNewConversation() }}
+              />
+              <div style="display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 1rem;">
+                <button 
+                  class="voice-btn-small" 
+                  onClick={() => { setShowNewConvModal(false); setNewConvTitle('') }}
+                >
+                  Cancel
+                </button>
+                <button 
+                  class="btn-primary" 
+                  onClick={handleNewConversation}
+                >
+                  Create
+                </button>
+              </div>
             </div>
           </div>
         </div>
       )}
 
-      {showSettings && (
-        <div id="settings-panel" class="settings-panel open" style={{
-          position: 'fixed', top: 0, right: 0, width: '300px', height: '100vh',
-          background: 'var(--surface)', borderLeft: '1px solid var(--border)',
-          zIndex: 1000, padding: '1rem', overflowY: 'auto',
-          transition: 'right 0.25s ease'
-        }}>
-          <div class="settings-title" style="display: flex; justify-content: space-between; align-items: center; marginBottom: 1rem;">
-            Settings
-            <button class="settings-close" onClick={() => setShowSettings(false)}>&times;</button>
-          </div>
+      <div 
+        id="settings-panel" 
+        class={`settings-panel ${showSettings() ? 'open' : ''}`}
+      >
+        <div class="settings-title">
+          Settings
+          <button class="settings-close" onClick={() => setShowSettings(false)}>&times;</button>
+        </div>
 
+        <div class="settings-section">
+          <label>Voice settings</label>
+          <div class="toggle-row">
+            <span class="toggle-label">Read responses aloud</span>
+            <input type="checkbox" id="tts-enabled" />
+          </div>
           <div class="settings-section">
-            <label>Voice settings</label>
-            <div class="toggle-row" style="display: flex; justify-content: space-between; align-items: center; marginBottom: 0.75rem;">
-              <span class="toggle-label">Read responses aloud</span>
-              <input type="checkbox" id="tts-enabled" checked />
-            </div>
-            <div class="settings-section">
-              <label for="voice-select">Voice</label>
-              <select id="voice-select" style="width: 100%; background: var(--surface2); border: 1px solid var(--border); color: var(--text); padding: 0.4rem; borderRadius: 5px; fontSize: 0.85rem;">
-                <option value="">Loading voices...</option>
-              </select>
-            </div>
-            <div class="settings-section" style="marginTop: 0.5rem;">
-              <label for="voice-speed">Speed</label>
-              <input type="range" id="voice-speed" min="0.5" max="2" step="0.1" value="1" style="accent-color: var(--accent);" />
-              <span id="voice-speed-value">1.0x</span>
-            </div>
-            <div class="settings-section" style="marginTop: 0.5rem;">
-              <label for="voice-pitch">Pitch</label>
-              <input type="range" id="voice-pitch" min="0" max="2" step="0.1" value="1" style="accent-color: var(--accent);" />
-              <span id="voice-pitch-value">1.0x</span>
-            </div>
-            <div class="settings-section" style="marginTop: 0.5rem;">
-              <label for="voice-volume">Volume</label>
-              <input type="range" id="voice-volume" min="0" max="1" step="0.1" value="1" style="accent-color: var(--accent);" />
-              <span id="voice-volume-value">1.0</span>
-            </div>
+            <label for="voice-select">Voice</label>
+            <select id="voice-select">
+              <option value="">Loading voices...</option>
+            </select>
           </div>
-
-          <div class="settings-section" style="marginTop: 1.25rem;">
-            <label>Interface</label>
-            <div class="toggle-row" style="display: flex; justify-content: space-between; align-items: center; marginBottom: 0.75rem;">
-              <span class="toggle-label">Show trace panel</span>
-              <input type="checkbox" id="trace-visible" checked />
-            </div>
+          <div class="settings-section">
+            <label for="voice-speed">Speed</label>
+            <input type="range" id="voice-speed" min="0.5" max="2" step="0.1" value="1" />
+            <span id="voice-speed-value">1.0x</span>
           </div>
-
-          <div class="settings-section" id="search-settings-section" style={{ marginTop: '1.25rem', display: 'none' }}>
-            <label>Search backend</label>
-            <div class="toggle-row" style="display: flex; justify-content: space-between; align-items: center; marginBottom: 0.75rem;">
-              <span class="toggle-label">Use Brave Search API</span>
-              <input type="checkbox" id="brave-enabled" />
-            </div>
-            <p style="fontSize: '0.75rem', color: 'var(--text-dim)', marginTop: '0.25rem';">
-              When enabled, queries are sent to Brave's servers. Only available when a Brave API key is configured.
-            </p>
+          <div class="settings-section">
+            <label for="voice-pitch">Pitch</label>
+            <input type="range" id="voice-pitch" min="0" max="2" step="0.1" value="1" />
+            <span id="voice-pitch-value">1.0x</span>
+          </div>
+          <div class="settings-section">
+            <label for="voice-volume">Volume</label>
+            <input type="range" id="voice-volume" min="0" max="1" step="0.1" value="1" />
+            <span id="voice-volume-value">1.0</span>
           </div>
         </div>
-      )}
+
+        <div class="settings-section">
+          <label>Interface</label>
+          <div class="toggle-row">
+            <span class="toggle-label">Show trace panel</span>
+            <input type="checkbox" id="trace-visible" checked />
+          </div>
+        </div>
+
+        <div class="settings-section" id="search-settings-section" style="display:none">
+          <label>Search backend</label>
+          <div class="toggle-row">
+            <span class="toggle-label">Use Brave Search API</span>
+            <input type="checkbox" id="brave-enabled" />
+          </div>
+          <p style="font-size:0.75rem;color:var(--text-dim);margin-top:0.25rem;">
+            When enabled, queries are sent to Brave's servers. Only available when a Brave API key is configured.
+          </p>
+        </div>
+      </div>
     </>
   )
 }
