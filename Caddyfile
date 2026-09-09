@@ -7,15 +7,15 @@ https://localhost {
     tls /etc/caddy/certs/localhost.crt /etc/caddy/certs/localhost.key
     
     # Route API requests to backend
-    @api path /api/* /health
+    @api path /api/* /health /chat* /users* /memory* /brain* /files* /settings* /tasks* /db* /feedback* /correction* /conversations* /assistant* /search* /og-preview /transcribe* /uploads* /embeddings* /show* /tags* /chat-ui /brain-ui /summarize
     reverse_proxy @api assistant:8000 {
         transport http {
             response_header_timeout 300s
         }
     }
     
-    # Route all other requests to frontend dev server
-    reverse_proxy solid-dev-server:3000 {
+    # Route all other requests to frontend dev server (port 5173 inside container)
+    reverse_proxy solid-dev-server:5173 {
         transport http {
             response_header_timeout 300s
         }

@@ -2,18 +2,19 @@ import { Meta } from '@solidjs/meta'
 import { createEffect, createSignal } from 'solid-js'
 import { fetchUser } from './state/user'
 import { loadSettings } from './state/settings'
-import { fetchSessionMessages } from './state/index'
+import { fetchSessionMessages, fetchSessions, createConversation } from './state/index'
 import ChatPage from './components/chat/ChatPage'
 import TopBar from './components/ui/TopBar'
 import SettingsPanel from './components/ui/SettingsPanel'
 import { Session } from './state/session'
+import { user } from './state/user'
 import './App.css'
 
 export default function App() {
   // Initialize on app start - fetch user and settings (runs once)
   createEffect(async () => {
     console.log('APP INIT: Starting initialization...')
-    fetchUser()
+    await fetchUser()
     console.log('APP INIT: fetchUser completed')
     loadSettings()
     console.log('APP INIT: loadSettings completed')
@@ -49,37 +50,27 @@ export default function App() {
   const [activeConversation, setActiveConversation] = createSignal<Session | null>(null)
   const [isConversationsLoading, setIsConversationsLoading] = createSignal(false)
 
-  // Mock function to fetch sessions (in a real implementation, this would be an API call)
-  const fetchSessions = async () => {
+  // Fetch sessions from API
+  const fetchSessionsFromAPI = async () => {
+    const u = user()
+    if (!u) return
+    
     setIsConversationsLoading(true)
     try {
-      // This would normally be an API call
-      await new Promise(resolve => setTimeout(resolve, 500))
-
-      setConversations([
-        {
-          id: '1',
-          title: 'First Conversation',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        },
-        {
-          id: '2', 
-          title: 'Another Conversation',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        },
-        {
-          id: '3',
-          title: 'Yet Another Conversation',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
+      const sessions = await fetchSessions(u.id)
+      setConversations(sessions)
+      
+      // Set first conversation as active by default, or restore from localStorage
+      const savedSessionId = localStorage.getItem('session_id')
+      if (savedSessionId) {
+        const saved = sessions.find(c => c.id === savedSessionId)
+        if (saved) {
+          setActiveConversation(saved)
+        } else if (sessions.length > 0) {
+          setActiveConversation(sessions[0])
         }
-      ])
-
-      // Set first conversation as active by default
-      if (conversations().length > 0) {
-        setActiveConversation(conversations()[0])
+      } else if (sessions.length > 0) {
+        setActiveConversation(sessions[0])
       }
     } catch (error) {
       console.error('Failed to fetch sessions:', error)
@@ -90,8 +81,11 @@ export default function App() {
 
   // Load conversations on app start
   createEffect(() => {
-    fetchSessions()
-  })
+    const u = user()
+    if (u) {
+      fetchSessionsFromAPI()
+    }
+  }, [user])
 
   // Handle conversation selection
   const handleConversationChange = (conversationId: string) => {
@@ -100,16 +94,18 @@ export default function App() {
   }
 
   // Handle creating a new conversation
-  const handleNewConversation = () => {
-    const newConversation: Session = {
-      id: Date.now().toString(),
-      title: 'New Conversation',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+  const handleNewConversation = async () => {
+    const u = user()
+    if (!u) return
+    
+    try {
+      const sessionId = await createConversation(u.id)
+      // Refresh sessions list
+      await fetchSessionsFromAPI()
+      // The new conversation will be selected automatically via the refresh
+    } catch (error) {
+      console.error('Failed to create new conversation:', error)
     }
-
-    setConversations(prev => [newConversation, ...prev])
-    setActiveConversation(newConversation)
   }
 
   return (

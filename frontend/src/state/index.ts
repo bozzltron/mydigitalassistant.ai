@@ -1,3 +1,3 @@
 export { settings } from './settings'
 export { user } from './user'
-export { fetchSessionMessages } from './session'
+export { fetchSessionMessages, fetchSessions, createConversation, updateTitle } from './session'

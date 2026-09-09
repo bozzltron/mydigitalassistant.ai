@@ -1,0 +1,98 @@
+services:
+  assistant:
+    build: .
+    container_name: assistant-backend
+    # Ollama runs on the HOST (see OLLAMA_URL). For model residency (Option A)
+    # the host daemon needs: OLLAMA_KEEP_ALIVE=-1 and
+    # OLLAMA_MAX_LOADED_MODELS>=2 (chat + utility stay warm side-by-side).
+    environment:
+      - DATABASE_PATH=/app/data/assistant.db
+      - DB_KEY=${DB_KEY}
+      - OLLAMA_URL=http://host.docker.internal:11434
+      - OLLAMA_TIMEOUT=${OLLAMA_TIMEOUT:-600}
+      - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:--1}
+      - CHAT_MODEL=${CHAT_MODEL:-qwen2.5:7b}
+      - UTILITY_MODEL=${UTILITY_MODEL:-qwen2.5:3}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-nomic-embed-text}
+      - CODER_MODEL=${CODER_MODEL:-}
+      # Binds inside the container only. Exposure is controlled by port
+      # publishing: the assistant service publishes NO ports; Caddy is the
+      # single published surface (127.0.0.1:8443). Loopback-in-container would
+      # break Caddy's appnet proxy.
+      - BACKEND_HOST=0.0.0.0
+      - SEARCH_BASE_URL=http://searxng:8080
+      - BRAVE_ENABLED=${BRAVE_ENABLED:-false}
+      - BRAVE_API_KEY=${BRAVE_API_KEY:-}
+      - WHISPER_MODEL=base
+      - WHISPER_DEVICE=cpu
+      - SCHEDULER_ENABLED=${SCHEDULER_ENABLED:-true}
+      - DAILY_TASKS_TIME=${DAILY_TASKS_TIME:-09:00}
+      - DAILY_TASKS_TZ=${DAILY_TASKS_TZ:-}
+      - TZ=${TZ:-}
+    volumes:
+      - assistant-data:/app/data
+      - ./assistant/backend/static:/app/assistant/backend/static:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # $${...} = expanded at RUNTIME inside the container (container env wins);
+    # a host-side .env value can no longer silently override the bind.
+    command: ["sh", "-c", "uvicorn assistant.backend.main:app --host $${BACKEND_HOST:-0.0.0.0} --port 8000"]
+    restart: unless-stopped
+    networks:
+      - appnet
+
+  caddy:
+    image: caddy:alpine
+    container_name: caddy
+    ports:
+      - "127.0.0.1:8443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - ./.data/caddy:/etc/caddy/certs
+      - caddy-data:/data
+    depends_on:
+      - assistant
+    restart: unless-stopped
+    networks:
+      - appnet
+
+  cli:
+    build: .
+    container_name: assistant-cli
+    environment:
+      - ASSISTANT_BACKEND=http://assistant-backend:8000
+    depends_on:
+      - assistant
+    volumes:
+      - assistant-data:/app/data:ro
+    entrypoint: ["python", "-m", "assistant.cli.app"]
+    command: ["status"]
+    restart: "no"
+    profiles:
+      - cli
+    networks:
+      - appnet
+
+  searxng:
+    image: searxng/searxng:latest
+    container_name: searxng
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      - SEARXNG_BASE_URL=http://localhost:8080
+      - SEARXNG_SECRET=${SEARXNG_SECRET:-$(head -c 32 /dev/urandom | base64)}
+    volumes:
+      - ./searxng:/etc/searxng
+    restart: unless-stopped
+    networks:
+      - appnet
+
+networks:
+  appnet:
+    driver: bridge
+
+volumes:
+  assistant-data:
+    driver: local
+  caddy-data:
+    driver: local

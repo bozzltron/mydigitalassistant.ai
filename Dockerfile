@@ -37,12 +37,7 @@ WORKDIR /app/frontend
 COPY frontend/package*.json ./
 RUN npm install
 COPY frontend/ .
-# Use a simpler approach to avoid build issues - just copy the static HTML 
-# for demo purposes to ensure it works at least with basic content
-RUN mkdir -p /app/assistant/backend/static
-# Create minimal index.html as fallback
-RUN echo '<!DOCTYPE html><html><head><title>Assistant</title></head><body><h1>Assistant Application</h1><p>If you see this, the SolidJS app should be loading.</p><div id="root"></div></body></html>' > /app/assistant/backend/static/index.html
-# ----------------------------
+RUN npm run build
 
 FROM python:3.11-slim AS runtime
 

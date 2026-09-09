@@ -204,12 +204,12 @@ def get_orchestrator() -> Orchestrator:
 # Web UI
 @app.get("/chat-ui")
 async def chat_ui():
-    """Serve the web chat interface."""
+    """Serve the web chat interface (SolidJS SPA)."""
     from fastapi.responses import FileResponse
-    index_path = Path(__file__).parent / "static" / "chat.html"
+    index_path = Path(__file__).parent / "static" / "index.html"
     if index_path.exists():
         return FileResponse(str(index_path))
-    raise HTTPException(status_code=404, detail="chat.html not found")
+    raise HTTPException(status_code=404, detail="index.html not found")
 
 
 @app.get("/assistant/name")
@@ -227,12 +227,12 @@ async def get_assistant_name(store: MemoryStore = _Depends(get_store)):
 
 @app.get("/brain-ui")
 async def brain_ui():
-    """Serve the brain visualization interface."""
+    """Serve the brain visualization interface (SolidJS SPA)."""
     from fastapi.responses import FileResponse
-    index_path = Path(__file__).parent / "static" / "brain.html"
+    index_path = Path(__file__).parent / "static" / "index.html"
     if index_path.exists():
         return FileResponse(str(index_path))
-    raise HTTPException(status_code=404, detail="brain.html not found")
+    raise HTTPException(status_code=404, detail="index.html not found")
 
 
 # Health
@@ -1895,28 +1895,3 @@ async def spa_catch_all(path: str):
 # Log that app is loaded
 logger = logging.getLogger(__name__)
 logger.info("Assistant backend initialized")
-
-app = FastAPI(
-    title="Assistant API",
-    version="0.1.0",
-    openapi_url="/openapi.json",
-    docs_url="/docs",
-    redoc_url="/redoc"
-)
-
-# Add explicit debug logging
-@app.get("/")
-async def root():
-    logger.info("Root endpoint accessed - serving index.html")
-    from fastapi.responses import FileResponse
-    try:
-        return FileResponse(os.path.join(os.path.dirname(__file__), "static", "index.html"))
-    except Exception as e:
-        logger.error(f"Failed to serve index.html: {e}")
-        raise HTTPException(status_code=500, detail="Frontend not properly built")
-
-# Add this after the spa_catch_all handler
-@app.get("/health")
-async def health():
-    logger.info("Health check endpoint accessed")
-    return {"status": "healthy"}

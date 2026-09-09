@@ -3,7 +3,7 @@ import MessageList from './MessageList'
 import InputBar from './InputBar'
 import TracePanel from './TracePanel'
 import VoiceControls from './VoiceControls'
-import { messages, setMessages, postChat } from '../../state/chat'
+import { messages, setMessages, postChatMessage, sessionId, setSessionId } from '../../state/chat'
 import { Session } from '../../state/session'
 
 interface ChatPageProps {
@@ -18,13 +18,17 @@ export default function ChatPage(props: ChatPageProps) {
   const [showVoiceOverlay, setShowVoiceOverlay] = createSignal(false)
   const [voiceModeActive, setVoiceModeActive] = createSignal(false)
   
-  // Simple example message to make sure UI renders
+  // Show welcome message when no conversation or no messages
   createEffect(() => {
-    setMessages([{
-      role: 'assistant',
-      content: `Welcome to ${props.conversation?.title || 'Chat'}! How can I help you today?`,
-      id: 'welcome'
-    }])
+    const currentMessages = messages()
+    const hasMessages = currentMessages.length > 0
+    if (!hasMessages) {
+      setMessages([{
+        role: 'assistant',
+        content: `Welcome to ${props.conversation?.title || 'Chat'}! How can I help you today?`,
+        id: 'welcome'
+      }])
+    }
   })
 
   const handleSendMessage = async (message: string) => {
@@ -42,16 +46,26 @@ export default function ChatPage(props: ChatPageProps) {
       
       setMessages(prev => [...prev, userMessage])
       
-      // Simulate API call by waiting a bit
-      await new Promise(resolve => setTimeout(resolve, 500))
+      // Call the real API
+      const currentSessionId = sessionId()
+      const result = await postChatMessage(message, currentSessionId || undefined)
+      
+      // Update session ID if returned
+      if (result.session_id) {
+        setSessionId(result.session_id)
+        localStorage.setItem('session_id', result.session_id)
+      }
       
       // Add assistant response  
       const assistantMessage = {
         role: 'assistant' as const,
-        content: `I received your message: "${message}"`,
+        content: result.response,
         id: Date.now().toString() + '-assistant',
         meta: {
-          task_type: 'functional'
+          task_type: result.task_type,
+          extraction_summary: result.extraction_summary,
+          search_extraction_summary: result.search_extraction_summary,
+          search_info: result.search_info,
         }
       }
       

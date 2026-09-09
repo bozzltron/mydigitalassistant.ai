@@ -1,4 +1,5 @@
 import { createSignal } from 'solid-js'
+import { postChat } from '../services/api'
 
 export interface ChatMessage {
   role: 'user' | 'assistant'
@@ -11,6 +12,10 @@ export interface MessageMeta {
   task_type?: string
   memory_context?: string
   citations?: string[]
+  extraction_summary?: any
+  search_extraction_summary?: any
+  search_info?: any
+  ogData?: Record<string, any>
 }
 
 export interface QueuedMessage {
@@ -30,15 +35,30 @@ if (typeof localStorage !== 'undefined') {
   if (saved) setSessionId(saved)
 }
 
-// Define postChat function
-export async function postChat(message: string): Promise<{ response: string; task_type?: string }> {
-  // This is a stub implementation - will be replaced with actual API call
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      resolve({
-        response: `This is a mock response to "${message}"`,
-        task_type: 'default'
-      })
-    }, 1000)
-  })
+export async function postChatMessage(
+  message: string,
+  session_id?: string,
+  attached_files?: any[]
+): Promise<{ 
+  response: string; 
+  task_type?: string;
+  extraction_summary?: any;
+  search_extraction_summary?: any;
+  search_info?: any;
+  session_id?: string;
+}> {
+  try {
+    const result = await postChat(message, session_id, attached_files)
+    return {
+      response: result.response,
+      task_type: result.task_type,
+      extraction_summary: result.extraction_summary,
+      search_extraction_summary: result.search_extraction_summary,
+      search_info: result.search_info,
+      session_id: result.session_id,
+    }
+  } catch (error) {
+    console.error('Error sending message:', error)
+    throw error
+  }
 }

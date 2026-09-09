@@ -1,4 +1,5 @@
 import { createSignal } from 'solid-js'
+import { getUserSessions, createNewConversation, updateConversationTitle, getSessionMessages } from '../services/api'
 
 // Session type definition
 export interface Session {
@@ -6,26 +7,30 @@ export interface Session {
   title?: string
   createdAt: string
   updatedAt: string
+  episode_count?: number
+  last_message?: string
 }
 
 // Create signal for session state
 export const [session, setSession] = createSignal<Session | null>(null)
 export const [isSessionLoading, setIsSessionLoading] = createSignal(false)
 
-// Mock function to simulate fetching session data
-export const fetchSession = async (id: string) => {
+// Fetch user sessions from API
+export const fetchSessions = async (userId: number): Promise<Session[]> => {
   setIsSessionLoading(true)
   try {
-    // This would normally be an API call
-    await new Promise(resolve => setTimeout(resolve, 300))
-    setSession({
-      id,
-      title: 'Test Session',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    })
+    const data = await getUserSessions(userId)
+    return data.map((s: any) => ({
+      id: s.id,
+      title: s.title || s.last_message || `Conversation ${s.episode_count}`,
+      createdAt: s.created_at,
+      updatedAt: s.updated_at,
+      episode_count: s.episode_count,
+      last_message: s.last_message,
+    }))
   } catch (error) {
-    console.error('Failed to fetch session:', error)
+    console.error('Failed to fetch sessions:', error)
+    return []
   } finally {
     setIsSessionLoading(false)
   }
@@ -34,18 +39,38 @@ export const fetchSession = async (id: string) => {
 // Fetch messages for a session from the API
 export const fetchSessionMessages = async (sessionId: string, userId: number) => {
   try {
-    const resp = await fetch(`/chat/session/${encodeURIComponent(sessionId)}/messages?user_id=${userId}&limit=50`, {
-      credentials: 'include'
-    })
-    if (!resp.ok) return []
-    const data = await resp.json()
-    // Convert API response to message objects
-    return (data.messages || []).map((m: any) => ({
+    const data = await getSessionMessages(sessionId, userId, 50)
+    return data.map((m: any) => ({
       role: m.role,
-      content: m.content
+      content: m.content,
+      timestamp: m.timestamp,
     }))
   } catch (error) {
     console.error('Failed to fetch session messages:', error)
     return []
+  }
+}
+
+// Create a new conversation
+export const createConversation = async (userId: number, title?: string) => {
+  try {
+    const result = await createNewConversation(userId)
+    if (title && title.trim()) {
+      await updateConversationTitle(result.session_id, userId, title.trim())
+    }
+    return result.session_id
+  } catch (error) {
+    console.error('Failed to create conversation:', error)
+    throw error
+  }
+}
+
+// Update conversation title
+export const updateTitle = async (sessionId: string, userId: number, title: string) => {
+  try {
+    await updateConversationTitle(sessionId, userId, title)
+  } catch (error) {
+    console.error('Failed to update conversation title:', error)
+    throw error
   }
 }
