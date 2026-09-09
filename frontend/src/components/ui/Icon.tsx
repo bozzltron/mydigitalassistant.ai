@@ -1,5 +1,3 @@
-import { createSignal } from 'solid-js';
-
 export interface IconProps {
   name: string;
   size?: number;

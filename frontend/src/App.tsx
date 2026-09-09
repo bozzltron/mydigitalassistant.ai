@@ -1,8 +1,7 @@
-import { Meta } from '@solidjs/meta'
 import { createEffect, createSignal } from 'solid-js'
 import { fetchUser } from './state/user'
 import { loadSettings } from './state/settings'
-import { fetchSessionMessages, fetchSessions, createConversation } from './state/index'
+import { fetchSessionMessages, fetchSessions } from './state/index'
 import ChatPage from './components/chat/ChatPage'
 import TopBar from './components/ui/TopBar'
 import { Session } from './state/session'
@@ -76,15 +75,11 @@ export default function App() {
     if (u) {
       fetchSessionsFromAPI()
     }
-  }, [user])
+  })
 
   const handleConversationChange = (conversationId: string) => {
     const conversation = conversations().find(c => c.id === conversationId) || null
     setActiveConversation(conversation)
-  }
-
-  const handleNewConversation = async () => {
-    await fetchSessionsFromAPI()
   }
 
   return (

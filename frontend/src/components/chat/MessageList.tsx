@@ -1,7 +1,7 @@
 import { For } from 'solid-js'
 import Message from './Message'
 import { ChatMessage } from '../../state/chat'
-import { postFeedback, postCorrection } from '../../services/api'
+import { postFeedback } from '../../services/api'
 
 interface MessageListProps {
   messages: ChatMessage[]
@@ -25,7 +25,7 @@ export default function MessageList(props: MessageListProps) {
   const handleCopy = (text: string) => {
     const plain = text
       .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-      .replace(/[#*`_\[\]]/g, '')
+      .replace(/[#*`_[\]]/g, '')
       .replace(/\n+/g, ' ')
       .trim()
     navigator.clipboard.writeText(plain).then(() => {
@@ -33,7 +33,7 @@ export default function MessageList(props: MessageListProps) {
     }).catch(() => {})
   }
 
-  const handleCorrect = async (msgId: string) => {
+  const handleCorrect = async () => {
     // This will be handled by the Message component's correction panel
   }
 

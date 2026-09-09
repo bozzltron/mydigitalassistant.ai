@@ -19,28 +19,28 @@ export const Modal = (props: ModalProps) => {
     }, 150);
   };
   
-  if (!props.isOpen) return null;
-  
   return (
-    <div class="modal-overlay">
-      <div 
-        class={`modal ${props.size || 'medium'} ${isAnimating() ? 'closing' : ''}`}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div class="modal-header">
-          {props.title && <h3>{props.title}</h3>}
-          <button 
-            class="modal-close"
-            onClick={handleClose}
-            aria-label="Close modal"
-          >
-            ✕
-          </button>
-        </div>
-        <div class="modal-content">
-          {props.children}
+    <Show when={props.isOpen}>
+      <div class="modal-overlay">
+        <div 
+          class={`modal ${props.size || 'medium'} ${isAnimating() ? 'closing' : ''}`}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div class="modal-header">
+            {props.title && <h3>{props.title}</h3>}
+            <button 
+              class="modal-close"
+              onClick={handleClose}
+              aria-label="Close modal"
+            >
+              ✕
+            </button>
+          </div>
+          <div class="modal-content">
+            {props.children}
+          </div>
         </div>
       </div>
-    </div>
+    </Show>
   );
 };

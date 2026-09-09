@@ -1,7 +1,6 @@
 import { createSignal, createEffect } from 'solid-js'
 import MessageList from './MessageList'
 import InputBar from './InputBar'
-import TracePanel from './TracePanel'
 import VoiceControls from './VoiceControls'
 import { messages, setMessages, postChatMessage, sessionId, setSessionId } from '../../state/chat'
 import { Session } from '../../state/session'
@@ -128,7 +127,7 @@ export default function ChatPage(props: ChatPageProps) {
       <div id="trace-panel" class={`trace-panel ${showTrace() ? '' : 'hidden'}`}>
         <div class="trace-header">
           <span>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;"><line x1="18" x2="18" y1="20" y2="10"/><line x1="12" x2="12" y1="20" y2="4"/><line x1="6" x2="6" y1="20" y2="14"/></svg>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style={{"vertical-align":"middle","margin-right":"4px"}}><line x1="18" x2="18" y1="20" y2="10"/><line x1="12" x2="12" y1="20" y2="4"/><line x1="6" x2="6" y1="20" y2="14"/></svg>
             Trace
           </span>
           <button 
@@ -150,7 +149,7 @@ export default function ChatPage(props: ChatPageProps) {
             <div class="trace-label">Citations</div>
             <div class="trace-value" id="trace-citations">-</div>
           </div>
-          <div class="trace-section" id="trace-search-section" style="display:none">
+          <div class="trace-section" id="trace-search-section" style={{"display":"none"}}>
             <div class="trace-label">Search</div>
             <div class="trace-value" id="trace-search-info">-</div>
           </div>

@@ -1,10 +1,10 @@
-import { Show, createSignal } from 'solid-js'
+import { Show, createSignal, For, Index } from 'solid-js'
 
 interface TracePanelProps {
   taskType?: string
   memory?: string
   citations?: string[]
-  searchInfo?: any
+  searchInfo?: Record<string, unknown>
 }
 
 export default function TracePanel(props: TracePanelProps) {
@@ -37,11 +37,15 @@ export default function TracePanel(props: TracePanelProps) {
           <div class="trace-section">
             <strong>Citations:</strong>
             <div class="citations-list">
-              {props.citations?.map((citation, i) => (
-                <a key={i} href={citation} target="_blank" rel="noopener noreferrer">
-                  [{i + 1}] {citation}
-                </a>
-              ))}
+              <For each={props.citations || []}>
+                {(citation) => (
+                  <Index>{(i) => (
+                    <a  href={citation} target="_blank" rel="noopener noreferrer">
+                      [{i() + 1}] {citation}
+                    </a>
+                  )}</Index>
+                )}
+              </For>
             </div>
           </div>
         </Show>

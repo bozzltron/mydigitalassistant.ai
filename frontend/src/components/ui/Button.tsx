@@ -1,5 +1,3 @@
-import { createSignal } from 'solid-js';
-
 export interface ButtonProps {
   variant?: 'primary' | 'secondary' | 'danger' | 'ghost';
   size?: 'small' | 'medium' | 'large';
@@ -10,8 +8,6 @@ export interface ButtonProps {
 }
 
 export const Button = (props: ButtonProps) => {
-  const [isPressed, setIsPressed] = createSignal(false);
-  
   const handleClick = () => {
     if (!props.disabled && !props.loading && props.onClick) {
       props.onClick();
@@ -27,8 +23,6 @@ export const Button = (props: ButtonProps) => {
       class={className}
       onClick={handleClick}
       disabled={props.disabled || props.loading}
-      onMouseDown={() => setIsPressed(true)}
-      onMouseUp={() => setIsPressed(false)}
     >
       {props.loading ? 'Loading...' : props.children}
     </button>

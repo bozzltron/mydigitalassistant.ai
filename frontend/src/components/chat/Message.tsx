@@ -1,4 +1,4 @@
-import { Show, createSignal, onCleanup } from 'solid-js'
+import { Show, createSignal, For, SetHTML } from 'solid-js'
 import { ChatMessage } from '../../state/chat'
 
 interface MessageProps {
@@ -20,7 +20,7 @@ export default function Message(props: MessageProps) {
   const handleCopy = () => {
     const plain = message.content
       .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-      .replace(/[#*`_\[\]]/g, '')
+      .replace(/[#*`_[\]]/g, '')
       .replace(/\n+/g, ' ')
       .trim()
     onCopy(plain)
@@ -72,7 +72,7 @@ export default function Message(props: MessageProps) {
       onMouseLeave={() => setShowActions(false)}
     >
       <div class="content">
-        <div innerHTML={message.content} />
+        <div use:SetHTML={message.content} />
         
         {message.meta?.task_type && (
           <div class="msg-meta">
@@ -83,36 +83,36 @@ export default function Message(props: MessageProps) {
         {message.meta?.ogData && message.meta.task_type === 'search' && (
           <Show when={Object.entries(message.meta.ogData).some(([, d]) => d && d.image)}>
             <div class="msg-images">
-              {Object.entries(message.meta.ogData)
-                .filter(([, d]) => d && d.image)
-                .map(([url, data]) => {
+              <For each={Object.entries(message.meta.ogData)
+                .filter(([, d]) => d && d.image)}>{([url, data]) => {
                   const siteName = data.site_name || new URL(url).hostname
                   return (
-                    <a href={url} target="_blank" rel="noopener" key={url}>
+                    <a href={url} target="_blank" rel="noopener" >
                       <img src={data.image} alt="" loading="lazy" onError={(e) => { e.currentTarget.remove() }} />
                       <div class="img-site">{siteName}</div>
                     </a>
                   )
-                })}
+                }}</For>
             </div>
           </Show>
         )}
 
         {!isUser && hasLearned && (
           <details class="learned-indicator">
-            <summary>{learnedLabel}{backendBadge && <span dangerouslySetInnerHTML={{ __html: backendBadge }} />}</summary>
-            <div class="learned-items">
-              {learnedSlots.map((slot, i) => (
-                <div 
-                  key={i} 
-                  class={`learned-item ${slot.conflict ? 'kind-conflict' : isSearch ? 'kind-search' : 'kind-learned'}`}
-                >
-                  {slot.conflict 
-                    ? `Auto-resolved: ${slot.frame_name} → ${slot.key}: ${slot.value}`
-                    : `${slot.frame_name} → ${slot.key}: ${slot.value}`
-                  }
-                </div>
-              ))}
+            <summary>{learnedLabel}{backendBadge && <span use:SetHTML={backendBadge} />}</summary>
+<div class="learned-items">
+              <For each={learnedSlots}>
+                {(slot) => (
+                  <div 
+                     
+                    class={`learned-item ${slot.conflict ? 'kind-conflict' : isSearch ? 'kind-search' : 'kind-learned'}`}
+                  >
+                    {slot.conflict 
+                      ? `Auto-resolved: ${slot.frame_name} → ${slot.key}: ${slot.value}`
+                      : `${slot.frame_name} → ${slot.key}: ${slot.value}`}
+                  </div>
+                )}
+              </For>
             </div>
           </details>
         )}
@@ -157,7 +157,7 @@ export default function Message(props: MessageProps) {
         )}
 
         {showCorrection() && (
-          <div class="correction-panel" style={{ marginTop: '0.5rem' }}>
+          <div class="correction-panel" style={{ "margin-top": '0.5rem' }}>
             <textarea 
               placeholder="What should I have said? Or what do you want to correct?"
               value={correctionText()}
@@ -166,18 +166,18 @@ export default function Message(props: MessageProps) {
                 width: '100%', 
                 background: 'var(--bg)', 
                 border: '1px solid var(--border)', 
-                borderRadius: '6px', 
+                "border-radius": '6px', 
                 color: 'var(--text)', 
                 padding: '0.6rem 0.75rem', 
-                fontFamily: 'inherit', 
-                fontSize: '0.95rem', 
+                "font-family": 'inherit', 
+                "font-size": '0.95rem', 
                 resize: 'none', 
-                minHeight: '64px', 
-                lineHeight: '1.6', 
-                marginBottom: '0.5rem' 
+                "min-height": '64px', 
+                "line-height": '1.6', 
+                "margin-bottom": '0.5rem' 
               }}
             />
-            <div class="correction-actions" style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+            <div class="correction-actions" style={{ display: 'flex', gap: '0.5rem', "justify-content": 'flex-end' }}>
               <button 
                 class="correction-cancel" 
                 onClick={() => { setShowCorrection(false); setCorrectionText('') }}
@@ -185,9 +185,9 @@ export default function Message(props: MessageProps) {
                   background: 'var(--surface)', 
                   border: '1px solid var(--border)', 
                   color: '#fff', 
-                  borderRadius: '6px', 
+                  "border-radius": '6px', 
                   padding: '0.4rem 0.8rem', 
-                  fontSize: '0.8rem' 
+                  "font-size": '0.8rem' 
                 }}
               >
                 Cancel
@@ -199,10 +199,10 @@ export default function Message(props: MessageProps) {
                   background: 'var(--accent)', 
                   border: 'none', 
                   color: '#fff', 
-                  borderRadius: '6px', 
+                  "border-radius": '6px', 
                   padding: '0.4rem 0.8rem', 
-                  fontSize: '0.8rem', 
-                  fontWeight: 500 
+                  "font-size": '0.8rem', 
+                  "font-weight": 500 
                 }}
               >
                 Submit Correction

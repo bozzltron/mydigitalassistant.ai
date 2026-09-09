@@ -20,11 +20,11 @@ export const Toast = (props: ToastProps) => {
     onCleanup(() => clearTimeout(timer));
   }
   
-  if (!isVisible()) return null;
-  
   return (
-    <div class={`toast toast-${props.type || 'info'}`}>
-      {props.message}
-    </div>
+    <Show when={isVisible()}>
+      <div class={`toast toast-${props.type || 'info'}`}>
+        {props.message}
+      </div>
+    </Show>
   );
 };

@@ -10,7 +10,7 @@
     "strictNullChecks": true,
     "esModuleInterop": true,
     "moduleResolution": "bundler",
-    "allowImportingExtensions": true,
+    "allowImportingTsExtensions": true,
     "forceConsistentCasingInFileNames": true,
     "isolatedModules": true,
     "declaration": true,

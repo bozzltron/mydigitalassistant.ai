@@ -1,14 +1,44 @@
-import { createSignal, createEffect } from 'solid-js'
+import { createSignal } from 'solid-js'
 import BrainGraph from './BrainGraph'
 import FrameDetail from './FrameDetail'
 import SearchPanel from './SearchPanel'
 
+interface Frame {
+  id: number
+  name: string
+  type: string
+  confidence: number
+  essential: boolean
+  priority: number
+  ownerUserId: number
+  sourceType: string
+  sourceUrl: string
+  sourceReliability: number
+  createdAt: string
+  updatedAt: string
+  slots: Slot[]
+  associations: Association[]
+}
+
+interface Slot {
+  key: string
+  value: string
+  confidence: number
+  sourceType: string
+  updatedAt: string
+}
+
+interface Association {
+  id: number
+  relationType: string
+  targetFrameId: number
+}
+
 export default function BrainPage() {
-  const [selectedFrame, setSelectedFrame] = createSignal<any>(null)
-  const [searchResults, setSearchResults] = createSignal<any[]>([])
+  const [selectedFrame, setSelectedFrame] = createSignal<Frame | null>(null)
 
   // Mock data - in real app this would come from API
-  const mockFrames = [
+  const mockFrames: Frame[] = [
     { id: 1, name: 'Travel Plans', type: 'event' },
     { id: 2, name: 'Flight Booking', type: 'process' },
     { id: 3, name: 'Budget', type: 'concept' }

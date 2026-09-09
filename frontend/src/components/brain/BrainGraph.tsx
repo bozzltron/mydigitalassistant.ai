@@ -1,5 +1,5 @@
 import { createEffect, onCleanup } from 'solid-js'
-import { getFrames, getAssociations } from '../../services/api'
+import { For } from 'solid-js'
 
 interface Node {
   id: number
@@ -64,9 +64,9 @@ export default function BrainGraph(props: BrainGraphProps) {
           
           {/* Node placeholders with styling */}
           <div class="graph-nodes">
-            {mockNodes.map(node => (
+            <For each={mockNodes}>{node => (
               <div 
-                key={node.id}
+                
                 class={`graph-node ${node.type}`}
                 onClick={() => handleNodeClick(node.id)}
                 title={`${node.name} (${node.type}) - Confidence: ${(node.confidence * 100).toFixed(0)}%`}
@@ -74,14 +74,13 @@ export default function BrainGraph(props: BrainGraphProps) {
                 <span class="node-name">{node.name}</span>
                 <span class="node-confidence">{(node.confidence * 100).toFixed(0)}%</span>
               </div>
-            ))}
+            )}</For>
           </div>
           
           {/* Links between nodes */}
           <div class="graph-links">
-            {mockLinks.map((link, index) => (
+            <For each={mockLinks}>{() => (
               <div 
-                key={index}
                 class="graph-link"
                 style={{
                   'transform': `rotate(${Math.atan2(100, 150) * 180 / Math.PI}deg)`,
@@ -89,15 +88,15 @@ export default function BrainGraph(props: BrainGraphProps) {
                   'height': '2px'
                 }}
               />
-            ))}
+            )}</For>
           </div>
         </div>
       </div>
       
       <div class="graph-controls">
-        <button onclick={() => console.log('Zoom in')}>+</button>
-        <button onclick={() => console.log('Zoom out')}>-</button>
-        <button onclick={() => console.log('Reset view')}>Reset</button>
+        <button onClick={() => console.log('Zoom in')}>+</button>
+        <button onClick={() => console.log('Zoom out')}>-</button>
+        <button onClick={() => console.log('Reset view')}>Reset</button>
       </div>
     </div>
   )

@@ -1,4 +1,4 @@
-import { createSignal, onCleanup, onMount } from 'solid-js'
+import { createSignal, onCleanup, onMount, For } from 'solid-js'
 
 interface InputBarProps {
   onSend: (message: string) => void
@@ -27,7 +27,7 @@ export default function InputBar(props: InputBarProps) {
   const handleKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
-      handleSubmit(e as any)
+      handleSubmit(e)
     }
   }
 
@@ -65,7 +65,7 @@ export default function InputBar(props: InputBarProps) {
   })
 
   return (
-    <form onSubmit={handleSubmit} id="input-row" style={{ display: 'flex', gap: '0.65rem', alignItems: 'flex-end', width: '100%' }}>
+    <form onSubmit={handleSubmit} id="input-row" style={{ display: 'flex', gap: '0.65rem', "align-items": 'flex-end', width: '100%' }}>
       <textarea
         ref={setTextareaRef}
         id="msg-input"
@@ -78,19 +78,19 @@ export default function InputBar(props: InputBarProps) {
           flex: 1,
           background: 'var(--surface2)',
           border: '1px solid var(--border)',
-          borderRadius: '10px',
+          "border-radius": '10px',
           color: 'var(--text)',
           padding: '0.8rem 1rem',
-          fontFamily: 'inherit',
-          fontSize: '1rem',
+          "font-family": 'inherit',
+          "font-size": '1rem',
           resize: 'none',
-          minHeight: '48px',
-          maxHeight: '140px',
-          lineHeight: '1.6',
+          "min-height": '48px',
+          "max-height": '140px',
+          "line-height": '1.6',
         }}
       />
       
-      <div class="file-attach" style={{ position: 'relative', flexShrink: 0 }}>
+      <div class="file-attach" style={{ position: 'relative', "flex-shrink": 0 }}>
         <button 
           type="button"
           class="file-attach-btn btn-icon"
@@ -100,9 +100,9 @@ export default function InputBar(props: InputBarProps) {
             background: 'var(--surface2)',
             border: '1px solid var(--border)',
             color: 'var(--text)',
-            borderRadius: '8px',
+            "border-radius": '8px',
             padding: '0 0.75rem',
-            fontSize: '0.9rem',
+            "font-size": '0.9rem',
             cursor: 'pointer',
             transition: 'background 0.15s',
             height: '52px',
@@ -124,43 +124,45 @@ export default function InputBar(props: InputBarProps) {
         />
       </div>
       
-      <div class="file-chips" style={{ display: 'flex', gap: '0.4rem', marginLeft: '0.5rem', flexWrap: 'wrap' }}>
-        {attachedFiles().map((file, i) => (
-          <div class="file-chip" key={i} style={{
-            background: 'var(--surface)',
-            border: '1px solid var(--border)',
-            borderRadius: '4px',
-            padding: '0.2rem 0.5rem',
-            fontSize: '0.75rem',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.3rem',
-            color: 'var(--text)',
-          }}>
-            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M14 2H8a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V4zM14 2v8m-4 2v3M4 2h7.5"/>
-            </svg>
-            <span class="file-name" style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '150px' }}>{file.name}</span>
-            <button 
-              type="button" 
-              class="remove-file-btn"
-              onClick={() => removeFile(i)}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: 'var(--error)',
-                cursor: 'pointer',
-                fontSize: '1rem',
-                lineHeight: 1,
-                padding: 0,
-                display: 'flex',
-                alignItems: 'center',
-              }}
-            >
-              ×
-            </button>
-          </div>
-        ))}
+      <div class="file-chips" style={{ display: 'flex', gap: '0.4rem', "margin-left": '0.5rem', "flex-wrap": 'wrap' }}>
+        <For each={attachedFiles()}>
+          {(file, i) => (
+            <div class="file-chip"  style={{
+              background: 'var(--surface)',
+              border: '1px solid var(--border)',
+              "border-radius": '4px',
+              padding: '0.2rem 0.5rem',
+              "font-size": '0.75rem',
+              display: 'flex',
+              "align-items": 'center',
+              gap: '0.3rem',
+              color: 'var(--text)',
+            }}>
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 2H8a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V4zM14 2v8m-4 2v3M4 2h7.5"/>
+              </svg>
+              <span class="file-name" style={{ "white-space": 'nowrap', overflow: 'hidden', "text-overflow": 'ellipsis', "max-width": '150px' }}>{file.name}</span>
+              <button 
+                type="button" 
+                class="remove-file-btn"
+                onClick={() => removeFile(i)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--error)',
+                  cursor: 'pointer',
+                  "font-size": '1rem',
+                  "line-height": 1,
+                  padding: 0,
+                  display: 'flex',
+                  "align-items": 'center',
+                }}
+              >
+                ×
+              </button>
+            </div>
+          )}
+        </For>
       </div>
       
       <button 
@@ -179,9 +181,9 @@ export default function InputBar(props: InputBarProps) {
           background: props.isDictating ? 'var(--error)' : 'var(--surface2)',
           border: props.isDictating ? '1px solid var(--error)' : '1px solid var(--border)',
           color: props.isDictating ? '#fff' : 'var(--text)',
-          borderRadius: '8px',
+          "border-radius": '8px',
           padding: '0 0.75rem',
-          fontSize: '0.9rem',
+          "font-size": '0.9rem',
           cursor: 'pointer',
           transition: 'background 0.15s',
           height: '52px',
@@ -203,10 +205,10 @@ export default function InputBar(props: InputBarProps) {
           background: 'var(--accent)',
           border: 'none',
           color: '#fff',
-          borderRadius: '8px',
+          "border-radius": '8px',
           padding: '0 1.25rem',
-          fontSize: '0.95rem',
-          fontWeight: 500,
+          "font-size": '0.95rem',
+          "font-weight": 500,
           cursor: props.isSending || !message().trim() ? 'not-allowed' : 'pointer',
           transition: 'opacity 0.15s',
           opacity: props.isSending || !message().trim() ? 0.4 : 1,

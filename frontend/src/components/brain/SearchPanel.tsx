@@ -1,5 +1,5 @@
 import { createSignal } from 'solid-js'
-import { getSearchResults } from '../../services/api'
+import { For, Show } from 'solid-js'
 
 interface SearchResult {
   id: number
@@ -92,9 +92,9 @@ export default function SearchPanel(props: SearchPanelProps) {
           <h4>Search Results ({results().length})</h4>
           
           <div class="results-list">
-            {results().map(result => (
+            <For each={results()}>{result => (
               <div 
-                key={result.id} 
+                 
                 class="search-result"
                 onClick={() => props.onResultClick?.(result.id)}
               >
@@ -113,7 +113,7 @@ export default function SearchPanel(props: SearchPanelProps) {
                   </a>
                 </div>
               </div>
-            ))}
+            )}</For>
           </div>
         </div>
       </Show>
