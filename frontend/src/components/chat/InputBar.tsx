@@ -13,7 +13,7 @@ export default function InputBar(props: InputBarProps) {
   const [message, setMessage] = createSignal('')
   const [attachedFiles, setAttachedFiles] = createSignal<File[]>([])
   const [fileInputRef, setFileInputRef] = createSignal<HTMLInputElement | null>(null)
-  const textareaRef = createSignal<HTMLTextAreaElement | null>(null)
+  const [textareaRef, setTextareaRef] = createSignal<HTMLTextAreaElement | null>(null)
 
   const handleSubmit = (e: Event) => {
     e.preventDefault()
@@ -67,7 +67,7 @@ export default function InputBar(props: InputBarProps) {
   return (
     <form onSubmit={handleSubmit} id="input-row" style={{ display: 'flex', gap: '0.65rem', alignItems: 'flex-end', width: '100%' }}>
       <textarea
-        ref={textareaRef}
+        ref={setTextareaRef}
         id="msg-input"
         rows={1}
         placeholder="Type a message..."
