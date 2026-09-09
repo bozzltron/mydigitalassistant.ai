@@ -1,4 +1,5 @@
 import tjs from '@eslint/js';
+import solid from 'eslint-plugin-solid/configs/recommended';
 
 export default [
   {
@@ -24,4 +25,5 @@ export default [
       },
     },
   },
+  solid,
 ];
