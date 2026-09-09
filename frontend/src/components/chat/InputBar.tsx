@@ -65,7 +65,7 @@ export default function InputBar(props: InputBarProps) {
   })
 
   return (
-    <form onSubmit={handleSubmit} id="input-row" style={{ display: 'flex', gap: '0.65rem', "align-items": 'flex-end', width: '100%' }}>
+    <div id="input-row" style={{ display: 'flex', gap: '0.65rem', "align-items": 'flex-end', width: '100%' }}>
       <textarea
         ref={setTextareaRef}
         id="msg-input"
@@ -197,10 +197,11 @@ export default function InputBar(props: InputBarProps) {
       </button>
       
       <button 
-        type="submit"
+        type="button"
         class="btn-primary"
         id="send-btn"
         disabled={!message().trim() || props.isSending}
+        onClick={handleSubmit}
         style={{
           background: 'var(--accent)',
           border: 'none',
@@ -217,6 +218,6 @@ export default function InputBar(props: InputBarProps) {
       >
         {props.isSending ? 'Sending...' : 'Send'}
       </button>
-    </form>
+    </div>
   )
 }

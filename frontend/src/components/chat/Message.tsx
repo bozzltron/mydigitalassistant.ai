@@ -1,4 +1,4 @@
-import { Show, createSignal, For, SetHTML } from 'solid-js'
+import { Show, createSignal, For, createEffect } from 'solid-js'
 import { ChatMessage } from '../../state/chat'
 
 interface MessageProps {
@@ -14,6 +14,8 @@ export default function Message(props: MessageProps) {
   const [showActions, setShowActions] = createSignal(false)
   const [showCorrection, setShowCorrection] = createSignal(false)
   const [correctionText, setCorrectionText] = createSignal('')
+  const [contentEl, setContentEl] = createSignal<HTMLDivElement | null>(null)
+  const [badgeEl, setBadgeEl] = createSignal<HTMLSpanElement | null>(null)
 
   const msgId = message.id || `msg-${Date.now()}`
 
@@ -65,6 +67,18 @@ export default function Message(props: MessageProps) {
     backendBadge = `<span class="badge ${badgeClass}" style="margin-left:0.4rem;font-size:0.65rem;">${badgeLabel}</span>`
   }
 
+  createEffect(() => {
+    if (contentEl()) {
+      contentEl()!.innerHTML = message.content
+    }
+  })
+
+  createEffect(() => {
+    if (badgeEl() && backendBadge) {
+      badgeEl()!.innerHTML = backendBadge
+    }
+  })
+
   return (
     <div 
       class={`msg ${isUser ? 'msg-user' : 'msg-assistant'}`}
@@ -72,7 +86,7 @@ export default function Message(props: MessageProps) {
       onMouseLeave={() => setShowActions(false)}
     >
       <div class="content">
-        <div use:SetHTML={message.content} />
+        <div ref={setContentEl} />
         
         {message.meta?.task_type && (
           <div class="msg-meta">
@@ -99,7 +113,7 @@ export default function Message(props: MessageProps) {
 
         {!isUser && hasLearned && (
           <details class="learned-indicator">
-            <summary>{learnedLabel}{backendBadge && <span use:SetHTML={backendBadge} />}</summary>
+            <summary>{learnedLabel}{backendBadge && <span ref={setBadgeEl} />}</summary>
 <div class="learned-items">
               <For each={learnedSlots}>
                 {(slot) => (
