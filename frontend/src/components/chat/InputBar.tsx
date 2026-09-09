@@ -52,7 +52,7 @@ export default function InputBar(props: InputBarProps) {
   }
 
   onMount(() => {
-    const textarea = textareaRef()[0] as HTMLTextAreaElement | null
+    const textarea = textareaRef() as HTMLTextAreaElement | null
     if (textarea) {
       textarea.focus()
       const handleResize = () => {
