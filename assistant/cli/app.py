@@ -530,71 +530,6 @@ def cmd_db_restore_encrypted(args: argparse.Namespace, client: BackendClient) ->
         sys.exit(1)
 
 
-def cmd_db_export_portable(args: argparse.Namespace, client: BackendClient) -> None:
-    """Export the brain as an encrypted, version-3 portable brain file (requires DB_KEY)."""
-    try:
-        import asyncio
-
-        from assistant.backend.memory.backup import export_portable_brain
-
-        dest = args.output or f"brain-{datetime.now():%Y%m%d-%H%M%S}.assistant-brain"
-        result = asyncio.run(export_portable_brain(dest))
-        console.print(f"[green]Portable brain exported: {dest}[/green]")
-        console.print(f"  Version: {result['version']}")
-        console.print(f"  Key ID: {result['key_id']}")
-        console.print(
-            f"  Frames: {result.get('frame_count', '?')}, "
-            f"Slots: {result.get('slot_count', '?')}, "
-            f"Associations: {result.get('association_count', '?')}"
-        )
-        console.print(f"  File size: {result.get('file_size_bytes', 0):,} bytes")
-        console.print("[dim]Rename the file freely. To restore:[/dim]")
-        console.print(f"  assistant db import-portable {dest}")
-    except ValueError as e:
-        console.print(f"[red]{e}[/red]")
-        console.print("[yellow]Set DB_KEY in .env to enable portable brain export.[/yellow]")
-        sys.exit(1)
-    except Exception as e:
-        console.print(f"[red]Export failed: {e}[/red]")
-        sys.exit(1)
-
-
-def cmd_db_import_portable(args: argparse.Namespace, client: BackendClient) -> None:
-    """Restore a portable brain from a .assistant-brain file (requires DB_KEY, DESTRUCTIVE)."""
-    try:
-        import asyncio
-
-        from assistant.backend.memory.backup import restore_portable_brain
-
-        if not args.yes:
-            console.print(
-                "[yellow]This will replace your current brain with the portable brain.[/yellow]\n"
-                "A pre-restore backup will be created before overwriting."
-            )
-            confirm = Prompt.ask("Continue?", choices=["y", "n"], default="n")
-            if confirm != "y":
-                console.print("[dim]Cancelled.[/dim]")
-                return
-
-        result = asyncio.run(restore_portable_brain(args.file))
-        console.print(f"[green]Restored from: {result['restored_from']}[/green]")
-        console.print(f"  Key ID: {result.get('key_id', '?')}")
-        console.print(
-            f"  Frames: {result.get('frame_count', '?')}, "
-            f"Slots: {result.get('slot_count', '?')}, "
-            f"Associations: {result.get('association_count', '?')}"
-        )
-        if result.get("pre_restore_backup"):
-            console.print(f"[yellow]Pre-restore backup: {result['pre_restore_backup']}[/yellow]")
-        console.print("[yellow]Restart the backend for the new brain to take effect.[/yellow]")
-    except ValueError as e:
-        console.print(f"[red]{e}[/red]")
-        sys.exit(1)
-    except Exception as e:
-        console.print(f"[red]Import failed: {e}[/red]")
-        sys.exit(1)
-
-
 def cmd_db_migrate_encrypted(args: argparse.Namespace, client: BackendClient) -> None:
     """Migrate an unencrypted DB to encrypted (requires DB_KEY set in .env)."""
     try:
@@ -1061,24 +996,6 @@ def main() -> None:
     p_db_restore_enc.add_argument("file", help="Path to encrypted backup file")
     p_db_restore_enc.add_argument("-y", "--yes", action="store_true", help="Skip confirmation")
     p_db_restore_enc.set_defaults(func=cmd_db_restore_encrypted)
-
-    p_db_export_portable = db_sub.add_parser(
-        "export-portable",
-        help="Export the brain as an encrypted, version-3 portable file (requires DB_KEY)",
-    )
-    p_db_export_portable.add_argument(
-        "-o", "--output",
-        help="Output file path (default: brain-TIMESTAMP.assistant-brain)",
-    )
-    p_db_export_portable.set_defaults(func=cmd_db_export_portable)
-
-    p_db_import_portable = db_sub.add_parser(
-        "import-portable",
-        help="Restore a portable brain from a .assistant-brain file (requires DB_KEY, DESTRUCTIVE)",
-    )
-    p_db_import_portable.add_argument("file", help="Path to the portable brain file")
-    p_db_import_portable.add_argument("-y", "--yes", action="store_true", help="Skip confirmation")
-    p_db_import_portable.set_defaults(func=cmd_db_import_portable)
 
     p_db_gc = db_sub.add_parser("gc", help="Run priority decay garbage collection")
     p_db_gc.add_argument(
