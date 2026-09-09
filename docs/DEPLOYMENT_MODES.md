@@ -81,3 +81,22 @@ export default defineConfig({
 | Port published | 8443 (Caddy) | 8443 (Caddy) |
 | API endpoint | `https://localhost:8443` | `https://localhost:8443` |
 | Frontend edits | Instant | Requires rebuild |
+
+---
+
+## ⚠️ Backup Policy
+
+**Always run a backup before any database operation.** See [Backup System](BACKUP_SYSTEM.md) for details.
+
+```bash
+# Safe pattern for ANY db operation
+assistant db backup                    # 1. Backup (encrypted by default)
+assistant db <operation>               # 2. Run operation
+# If fail:
+assistant db restore-encrypted assistant-backup-<timestamp>.enc.json -y
+```
+
+**Default is encrypted (AES-256-GCM).** Requires `DB_KEY` in `.env`.
+- `assistant db backup` → encrypted JSON bundle (default)
+- `assistant db backup --plain` → raw SQLite copy
+- Auto backups: `/app/data/backups/` (pre-consolidation, every 12h)
