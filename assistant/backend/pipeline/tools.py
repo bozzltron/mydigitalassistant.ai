@@ -425,9 +425,11 @@ def builtin_tools(
         ),
     ]
 
-    # Inject search tool info if provided
-    if search_tool is not None:
+    # Gate web_search on search_tool being enabled
+    if search_tool is not None and getattr(search_tool, "enabled", False):
         pass
+    else:
+        tools = [t for t in tools if t["function"]["name"] != "web_search"]
 
     return tools
 
