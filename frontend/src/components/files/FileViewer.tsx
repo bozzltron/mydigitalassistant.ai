@@ -1,4 +1,4 @@
-import { createSignal, Show } from 'solid-js';
+import { createSignal, Show, createEffect } from 'solid-js';
 
 interface FileData {
   id: number;
@@ -14,7 +14,8 @@ export const FileViewer = (props: { fileId?: number }) => {
   
   // Mock data - in real app this would fetch from API
   const loadFile = async () => {
-    if (!props.fileId) return;
+    const fileId = props.fileId
+    if (!fileId) return;
     
     setIsLoading(true);
     
@@ -23,8 +24,8 @@ export const FileViewer = (props: { fileId?: number }) => {
       await new Promise(resolve => setTimeout(resolve, 500));
       
       const mockData: FileData = {
-        id: props.fileId,
-        name: `document_${props.fileId}.txt`,
+        id: fileId,
+        name: `document_${fileId}.txt`,
         content: "This is mock file content for demonstration purposes.\n\nIn a real implementation, this would contain the actual file content from the system.",
         type: 'text/plain',
         size: 1024
@@ -39,9 +40,12 @@ export const FileViewer = (props: { fileId?: number }) => {
   };
   
   // Load file when component mounts or fileId changes
-  if (props.fileId) {
-    loadFile();
-  }
+  createEffect(() => {
+    const fileId = props.fileId
+    if (fileId) {
+      loadFile();
+    }
+  });
   
   return (
     <div class="file-viewer">

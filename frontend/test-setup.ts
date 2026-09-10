@@ -1,8 +1,19 @@
+import { createRoot } from 'solid-js'
 import '@solidjs/testing-library'
 import { expect, vi } from 'vitest'
 import * as matchers from '@testing-library/jest-dom/matchers'
 
 expect.extend(matchers)
+
+// Create a persistent root for the entire test run
+// This ensures all module-level signals are created inside a root
+let disposeTestRoot: () => void
+createRoot((dispose) => {
+  disposeTestRoot = dispose
+})
+
+// Make dispose function available globally for cleanup if needed
+;(globalThis as any).__disposeTestRoot = disposeTestRoot
 
 Object.defineProperty(window, 'matchMedia', {
   writable: true,

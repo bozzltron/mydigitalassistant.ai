@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach } from 'vitest'
 import { voice, setVoice, enterVoiceMode, exitVoiceMode, startProcessing, startSpeaking, setError } from '../state/voice'
 
 describe('voice state', () => {

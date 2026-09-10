@@ -16,6 +16,11 @@ export default function TopBar(props: TopBarProps) {
   
   const u = user()
 
+  // Update document title when assistant name changes
+  createEffect(() => {
+    document.title = props.assistantName
+  })
+
   createEffect(() => {
     const selectElement = document.getElementById('conversation-select') as HTMLSelectElement | null
     if (selectElement && props.conversations) {
@@ -46,28 +51,7 @@ export default function TopBar(props: TopBarProps) {
     }
   }
 
-  const handleNewConversation = async () => {
-    if (!u) return
-    try {
-      const sessionId = await createConversation(u.id, newConvTitle().trim() || undefined)
-      localStorage.setItem('session_id', sessionId)
-      setShowNewConvModal(false)
-      setNewConvTitle('')
-      props.onConversationCreated?.()
-    } catch (error) {
-      console.error('Failed to create conversation:', error)
-    }
-  }
-
-  const openNewConvModal = () => {
-    setNewConvTitle('')
-    setShowNewConvModal(true)
-    // Focus the input after modal opens
-    setTimeout(() => {
-      const input = document.getElementById('new-conv-title') as HTMLInputElement
-      input?.focus()
-    }, 0)
-  }
+  
 
   return (
     <>
@@ -88,13 +72,13 @@ export default function TopBar(props: TopBarProps) {
             id="new-conversation-btn" 
             class="voice-btn-small" 
             style={{"padding":"0.2rem 0.4rem","font-size":"0.75rem","margin-left":"0.3rem"}}
-            onClick={props.onNewConversationClick}
+            onClick={() => props.onNewConversationClick?.()}
           >New</button>
         </div>
         <div class="header-right">
-          <span class="user-badge" id="user-badge">{u?.name || 'Loading...'}</span>
+          {u && <span class="user-badge" id="user-badge">{u.name}</span>}
           <span class="voice-status-bar" id="voice-status-bar">
-            <span class="voice-dot" id="voice-status-dot"></span>
+            <span class="voice-dot" id="voice-status-dot" />
             <span id="voice-status-text">Listening</span>
             <button class="voice-btn-small" id="voice-stop-inline">Stop</button>
             <button class="voice-btn-small danger" id="voice-cancel-inline">Cancel</button>

@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { messages, setMessages, queue, setQueue, isTurnActive, setTurnActive, sessionId, setSessionId, currentTurnId, setCurrentTurnId, postChatMessage, loadConversationMessages } from '../state/chat'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { messages, queue, setQueue, isTurnActive, setTurnActive, sessionId, setSessionId, currentTurnId, setCurrentTurnId, postChatMessage, loadConversationMessages, initChat } from '../state/chat'
 import * as api from '../services/api'
 import * as status from '../services/status'
 
@@ -13,12 +13,12 @@ vi.mock('../services/status')
 describe('chat state', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    setMessages([])
     setQueue([])
     setTurnActive(false)
     setSessionId(null)
     setCurrentTurnId(null)
     localStorage.clear()
+    initChat()
   })
 
   describe('messages', () => {
@@ -26,10 +26,9 @@ describe('chat state', () => {
       expect(messages()).toEqual([])
     })
 
-    it('updates via setMessages', () => {
-      const newMessages = [{ role: 'user', content: 'Hello', id: '1' }]
-      setMessages(newMessages)
-      expect(messages()).toEqual(newMessages)
+    it('derives messages from conversationMessages store when sessionId is set', () => {
+      setSessionId('session-123')
+      expect(messages()).toEqual([])
     })
   })
 
@@ -70,17 +69,15 @@ describe('chat state', () => {
       expect(sessionId()).toBeNull()
     })
 
-    it('loads from localStorage on init', async () => {
-      localStorage.setItem('session_id', 'session-abc')
-      // Re-import to trigger initialization
-      vi.resetModules()
-      const { sessionId: newSessionId } = await import('../state/chat')
-      expect(newSessionId()).toBe('session-abc')
-    })
-
     it('setSessionId updates state', () => {
       setSessionId('session-new')
       expect(sessionId()).toBe('session-new')
+    })
+
+    it('loads from localStorage via initChat', () => {
+      localStorage.setItem('session_id', 'session-abc')
+      initChat()
+      expect(sessionId()).toBe('session-abc')
     })
   })
 
@@ -111,10 +108,10 @@ describe('chat state', () => {
       vi.mocked(status.stopStatusPolling).mockImplementation(() => {})
 
       const promise = postChatMessage('Hi')
-      
+
       expect(isTurnActive()).toBe(true)
       expect(currentTurnId()).not.toBeNull()
-      
+
       resolvePolling!({ response: 'OK', task_type: 'functional', session_id: 's1' })
       await promise
 
@@ -137,8 +134,8 @@ describe('chat state', () => {
     it('loads messages from API and maps them with metadata', async () => {
       const mockMessages = [
         { role: 'user', content: 'Hello' },
-        { 
-          role: 'assistant', 
+        {
+          role: 'assistant',
           content: 'Hi there!',
           task_type: 'functional',
           memory_context: 'some context',
@@ -150,6 +147,8 @@ describe('chat state', () => {
         },
       ]
       vi.mocked(api.getSessionMessages).mockResolvedValue(mockMessages)
+
+      setSessionId('session-123')
 
       await loadConversationMessages('session-123', 1)
 
@@ -177,7 +176,7 @@ describe('chat state', () => {
 
     it('clears messages on error', async () => {
       vi.mocked(api.getSessionMessages).mockRejectedValue(new Error('Failed'))
-      setMessages([{ role: 'user', content: 'old', id: '1' }])
+      setSessionId('session-123')
 
       await loadConversationMessages('session-123', 1)
 

@@ -1,5 +1,4 @@
-import { createSignal, createEffect, onCleanup } from 'solid-js'
-import { api } from './api'
+import { createSignal, onCleanup } from 'solid-js'
 
 export interface TurnStatus {
   stage: string
@@ -24,48 +23,84 @@ export function getStageLabel(stage: string, detail?: string): string {
   return STAGE_LABELS[stage] || detail || stage
 }
 
-let pollInterval: ReturnType<typeof setInterval> | null = null
-let currentTurnId: string | null = null
+const turnStatusMap = new Map<string, {
+  status: [() => TurnStatus | null, (v: TurnStatus | null) => void];
+  polling: [() => boolean, (v: boolean) => void];
+  interval: ReturnType<typeof setInterval> | null;
+}>()
 
-const [turnStatus, setTurnStatus] = createSignal<TurnStatus | null>(null)
-const [isPolling, setIsPolling] = createSignal(false)
+let activeTurnId: string | null = null
 
-export function useTurnStatus() {
+function getOrCreateTurnStatus(turnId: string) {
+  let entry = turnStatusMap.get(turnId)
+  if (!entry) {
+    const [status, setStatus] = createSignal<TurnStatus | null>(null)
+    const [polling, setPolling] = createSignal(false)
+    entry = { status: [status, setStatus], polling: [polling, setPolling], interval: null }
+    turnStatusMap.set(turnId, entry)
+  }
+  return entry
+}
+
+export function clearTurnStatus(turnId: string): void {
+  turnStatusMap.delete(turnId)
+}
+
+export function useTurnStatus(turnId?: string) {
+  if (turnId) {
+    const entry = getOrCreateTurnStatus(turnId)
+    onCleanup(() => {
+      if (!turnStatusMap.get(turnId)?.interval) {
+        clearTurnStatus(turnId)
+      }
+    })
+    return {
+      turnStatus: entry.status[0],
+      isPolling: entry.polling[0],
+    }
+  }
+  const entry = activeTurnId ? getOrCreateTurnStatus(activeTurnId) : (() => {
+    const [status, setStatus] = createSignal<TurnStatus | null>(null)
+    const [polling, setPolling] = createSignal(false)
+    return { status: [status, setStatus], polling: [polling, setPolling], interval: null }
+  })()
   return {
-    turnStatus,
-    isPolling,
+    turnStatus: entry.status[0],
+    isPolling: entry.polling[0],
   }
 }
 
 export function startStatusPolling(turnId: string) {
-  if (pollInterval) {
-    clearInterval(pollInterval)
+  const entry = getOrCreateTurnStatus(turnId)
+
+  if (entry.interval) {
+    clearInterval(entry.interval)
   }
-  
-  currentTurnId = turnId
-  setIsPolling(true)
-  setTurnStatus({
+
+  activeTurnId = turnId
+  entry.polling[1](true)
+  entry.status[1]({
     stage: 'queued',
     detail: 'getting started',
     elapsed_s: 0,
     done: false,
   })
 
-  pollInterval = setInterval(async () => {
+  entry.interval = setInterval(async () => {
     try {
       const response = await fetch(`/chat/status/${turnId}`)
       if (!response.ok) {
         if (response.status === 404) {
-          stopStatusPolling()
+          stopStatusPolling(turnId)
         }
         return
       }
-      
+
       const status: TurnStatus = await response.json()
-      setTurnStatus(status)
-      
+      entry.status[1](status)
+
       if (status.done) {
-        stopStatusPolling()
+        stopStatusPolling(turnId)
       }
     } catch (error) {
       console.warn('Status polling error:', error)
@@ -73,18 +108,28 @@ export function startStatusPolling(turnId: string) {
   }, 600)
 }
 
-export function stopStatusPolling() {
-  if (pollInterval) {
-    clearInterval(pollInterval)
-    pollInterval = null
+export function stopStatusPolling(turnId?: string) {
+  const targetTurnId = turnId || activeTurnId
+  if (!targetTurnId) return
+
+  const entry = turnStatusMap.get(targetTurnId)
+  if (entry) {
+    if (entry.interval) {
+      clearInterval(entry.interval)
+      entry.interval = null
+    }
+    entry.polling[1](false)
+    entry.status[1](null)
+    clearTurnStatus(targetTurnId)
   }
-  currentTurnId = null
-  setIsPolling(false)
-  setTurnStatus(null)
+
+  if (activeTurnId === targetTurnId) {
+    activeTurnId = null
+  }
 }
 
 export function getCurrentTurnId() {
-  return currentTurnId
+  return activeTurnId
 }
 
 export function createTurnId(): string {

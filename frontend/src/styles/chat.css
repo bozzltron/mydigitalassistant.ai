@@ -326,35 +326,6 @@
 }
 
 /* Voice controls */
-.voice-status-bar {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.3rem;
-}
-
-.voice-dot {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: var(--text-dim);
-  animation: pulse 1.2s infinite;
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
-}
-
-.voice-dot.listening {
-  background: var(--accent);
-  animation: pulse-listen 1.2s infinite;
-}
-
-@keyframes pulse-listen {
-  0%, 100% { transform: scale(1); opacity: 1; }
-  50% { transform: scale(1.4); opacity: 0.6; }
-}
 
 /* Voice overlay */
 #voice-overlay {
@@ -844,20 +815,45 @@ select {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.5rem 0.75rem;
+  padding: 0.3rem 0.6rem;
   background: var(--surface2);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 6px;
   color: var(--text);
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   max-width: min(80%, 46rem);
   align-self: flex-start;
   animation: fadeInUp 0.2s ease-out forwards;
 }
 
-.status-spinner {
+.status-indicator.voice-status-bar {
+  display: none;
+}
+
+.status-indicator.voice-status-bar.active {
+  display: flex;
+}
+
+.voice-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  animation: voice-pulse 1.2s ease-in-out infinite;
   flex-shrink: 0;
-  color: var(--accent);
+}
+
+.voice-dot.listening {
+  background: var(--accent);
+}
+
+.voice-dot.processing {
+  background: var(--warning);
+}
+
+@keyframes voice-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.85); }
 }
 
 .status-label {
@@ -865,16 +861,17 @@ select {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  color: var(--text);
 }
 
 .status-elapsed {
   color: var(--text-dim);
   font-size: 0.78rem;
-  font-style: italic;
+  font-style: normal;
   margin-left: 0.35rem;
 }
 
-/* Loading dots animation for status */
+/* Loading dots animation for status label */
 .status-label::after {
   content: '';
   animation: dots 1.2s steps(4, end) infinite;

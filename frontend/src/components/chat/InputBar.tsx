@@ -56,8 +56,11 @@ export default function InputBar(props: InputBarProps) {
     if (textarea) {
       textarea.focus()
       const handleResize = () => {
-        textarea.style.height = 'auto'
-        textarea.style.height = Math.min(textarea.scrollHeight, 140) + 'px'
+        const currentTextarea = textareaRef()
+        if (currentTextarea) {
+          currentTextarea.style.height = 'auto'
+          currentTextarea.style.height = Math.min(currentTextarea.scrollHeight, 140) + 'px'
+        }
       }
       textarea.addEventListener('input', handleResize)
       onCleanup(() => textarea.removeEventListener('input', handleResize))

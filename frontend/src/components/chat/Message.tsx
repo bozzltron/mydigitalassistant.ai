@@ -1,4 +1,4 @@
-import { Show, createSignal, For, createEffect } from 'solid-js'
+import { Show, createSignal, For, createEffect, createMemo } from 'solid-js'
 import { ChatMessage } from '../../state/chat'
 import { marked } from 'marked'
 
@@ -21,40 +21,44 @@ interface MessageProps {
 }
 
 export default function Message(props: MessageProps) {
-  const { message, onReact, onCopy, onCorrect } = props
-  const isUser = message.role === 'user'
+  const message = createMemo(() => props.message)
+  // Access props in event handlers to ensure reactivity
+  const getOnReact = () => props.onReact
+  const getOnCopy = () => props.onCopy
+  const getOnCorrect = () => props.onCorrect
+  const isUser = createMemo(() => message().role === 'user')
   const [showActions, setShowActions] = createSignal(false)
   const [showCorrection, setShowCorrection] = createSignal(false)
   const [correctionText, setCorrectionText] = createSignal('')
   const [contentEl, setContentEl] = createSignal<HTMLDivElement | null>(null)
   const [badgeEl, setBadgeEl] = createSignal<HTMLSpanElement | null>(null)
 
-  const msgId = message.id || `msg-${Date.now()}`
+  const msgId = message().id || `msg-${Date.now()}`
 
   const handleCopy = () => {
-    const plain = message.content
+    const plain = message().content
       .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
       .replace(/[#*`_[\]]/g, '')
       .replace(/\n+/g, ' ')
       .trim()
-    onCopy(plain)
+    getOnCopy()(plain)
   }
 
   const handleReact = (kind: 'positive' | 'negative' | 'correction') => {
-    onReact(kind, msgId)
+    getOnReact()(kind, msgId)
   }
 
   const handleCorrect = () => {
     if (correctionText().trim()) {
-      onCorrect(msgId)
+      getOnCorrect()(msgId)
       setShowCorrection(false)
       setCorrectionText('')
     }
   }
 
-  const extractionSummary = message.meta?.extraction_summary
-  const searchExtractionSummary = message.meta?.search_extraction_summary
-  const hasLearned = (!isUser) && (
+  const extractionSummary = message().meta?.extraction_summary
+  const searchExtractionSummary = message().meta?.search_extraction_summary
+  const hasLearned = (!isUser()) && (
     (extractionSummary?.slots && extractionSummary.slots.length > 0) ||
     (searchExtractionSummary?.slots && searchExtractionSummary.slots.length > 0)
   )
@@ -72,8 +76,8 @@ export default function Message(props: MessageProps) {
   if (isSearch) learnedLabel = 'Found from search'
 
   let backendBadge = ''
-  if (isSearch && message.meta?.search_info) {
-    const backend = message.meta.search_info.backend
+  if (isSearch && message().meta?.search_info) {
+    const backend = message().meta.search_info.backend
     const badgeClass = backend === 'brave' ? 'badge-brave' : 'badge-searxng'
     const badgeLabel = backend === 'brave' ? 'Searched via Brave' : 'Searched via local SearXNG'
     backendBadge = `<span class="badge ${badgeClass}" style="margin-left:0.4rem;font-size:0.65rem;">${badgeLabel}</span>`
@@ -81,7 +85,7 @@ export default function Message(props: MessageProps) {
 
   createEffect(() => {
     if (contentEl()) {
-      contentEl()!.innerHTML = marked.parse(message.content || '') as string
+      contentEl()!.innerHTML = marked.parse(message().content || '') as string
     }
   })
 
@@ -93,23 +97,23 @@ export default function Message(props: MessageProps) {
 
   return (
     <div 
-      class={`msg ${isUser ? 'msg-user' : 'msg-assistant'}`}
+      class={`msg ${isUser() ? 'msg-user' : 'msg-assistant'}`}
       onMouseEnter={() => setShowActions(true)}
       onMouseLeave={() => setShowActions(false)}
     >
       <div class="content">
         <div ref={setContentEl} />
         
-        {message.meta?.task_type && (
+        {message().meta?.task_type && (
           <div class="msg-meta">
-            type: {message.meta.task_type}
+            type: {message().meta.task_type}
           </div>
         )}
 
-        {message.meta?.ogData && message.meta.task_type === 'search' && (
-          <Show when={Object.entries(message.meta.ogData).some(([, d]) => d && d.image)}>
+        {message().meta?.ogData && message().meta.task_type === 'search' && (
+          <Show when={Object.entries(message().meta.ogData).some(([, d]) => d && d.image)}>
             <div class="msg-images">
-              <For each={Object.entries(message.meta.ogData)
+              <For each={Object.entries(message().meta.ogData)
                 .filter(([, d]) => d && d.image)}>{([url, data]) => {
                   const siteName = data.site_name || new URL(url).hostname
                   return (
@@ -123,7 +127,7 @@ export default function Message(props: MessageProps) {
           </Show>
         )}
 
-        {!isUser && hasLearned && (
+        {!isUser() && hasLearned && (
           <details class="learned-indicator">
             <summary>{learnedLabel}{backendBadge && <span ref={setBadgeEl} />}</summary>
 <div class="learned-items">
@@ -156,28 +160,37 @@ export default function Message(props: MessageProps) {
           </svg>
         </button>
 
-        {!isUser && (
+        {!isUser() && (
           <>
             <button 
               class="reaction-btn" 
               title="This was good"
               onClick={() => handleReact('positive')}
             >
-              👍
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M7 10v12"/>
+                <path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/>
+              </svg>
             </button>
             <button 
               class="reaction-btn" 
               title="This was bad"
               onClick={() => handleReact('negative')}
             >
-              👎
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M17 14V2"/>
+                <path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/>
+              </svg>
             </button>
             <button 
               class="reaction-btn" 
               title="Correct this response"
               onClick={() => setShowCorrection(true)}
             >
-              ✏️
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/>
+                <line x1="4" x2="4" y1="22" y2="15"/>
+              </svg>
             </button>
           </>
         )}

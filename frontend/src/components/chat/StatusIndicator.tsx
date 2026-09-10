@@ -1,37 +1,40 @@
 import { createMemo, Show } from 'solid-js'
-import { useTurnStatus, getStageLabel } from '../../services/status'
+import { getStageLabel } from '../../services/status'
 
-export default function StatusIndicator() {
-  const { turnStatus, isPolling } = useTurnStatus()
+interface StatusIndicatorProps {
+  turnStatus: () => import('../../services/status').TurnStatus | null
+  isPolling: () => boolean
+}
 
+export default function StatusIndicator(props: StatusIndicatorProps) {
   const label = createMemo(() => {
-    const status = turnStatus()
-    if (!status || !isPolling()) return ''
+    const status = props.turnStatus()
+    if (!status || !props.isPolling()) return ''
     return getStageLabel(status.stage, status.detail)
   })
 
   const elapsed = createMemo(() => {
-    const status = turnStatus()
+    const status = props.turnStatus()
     if (!status) return ''
     return `${Math.round(status.elapsed_s)}s`
   })
 
   const isDone = createMemo(() => {
-    const status = turnStatus()
+    const status = props.turnStatus()
     return status?.done === true
   })
 
+  const dotClass = createMemo(() => {
+    const status = props.turnStatus()
+    if (!status) return 'voice-dot'
+    if (status.stage === 'searching' || status.stage === 'reasoning') return 'voice-dot processing'
+    return 'voice-dot listening'
+  })
+
   return (
-    <Show when={isPolling() && !isDone()}>
-      <div class="status-indicator">
-        <span class="status-spinner" aria-hidden="true">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="10" stroke-opacity="0.25" />
-            <path d="M12 2a10 10 0 0 1 10 10" stroke-opacity="1">
-              <animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="1s" repeatCount="indefinite" />
-            </path>
-          </svg>
-        </span>
+    <Show when={props.isPolling() && !isDone()}>
+      <div class="status-indicator voice-status-bar active">
+        <span class={dotClass()} aria-hidden="true" />
         <span class="status-label">{label()}</span>
         <span class="status-elapsed">{elapsed()}</span>
       </div>

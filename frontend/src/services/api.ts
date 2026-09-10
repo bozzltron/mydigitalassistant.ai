@@ -3,6 +3,21 @@
  * Uses Zod schemas for request/response validation.
  */
 import { z } from 'zod'
+import type {
+  AttachedFile,
+  ChatResponse,
+  ExtractionSummary,
+  Slot,
+  SearchInfo,
+  Frame,
+  Association,
+  SearchResult,
+  FileEntry,
+  User,
+  Session,
+  SessionMessage,
+  OgPreviewResponse,
+} from '../../types'
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
 
@@ -23,25 +38,34 @@ export const ChatRequestSchema = z.object({
   })).optional(),
 })
 
+export const ExtractionSummarySchema = z.object({
+  slots_applied: z.number(),
+  associations_created: z.number(),
+  conflicts_created: z.number(),
+  frame_ids: z.array(z.number()),
+  slots: z.array(z.object({
+    frame_name: z.string(),
+    key: z.string(),
+    value: z.string(),
+    conflict: z.boolean().optional(),
+  })),
+})
+
+export const SearchInfoSchema = z.object({
+  backend: z.string(),
+  query: z.string(),
+  engines: z.array(z.string()),
+})
+
 export const ChatResponseSchema = z.object({
   session_id: z.string().uuid(),
   response: z.string(),
   task_type: z.enum(['functional', 'introspective', 'search', 'scheduled', 'correction']),
   memory_context: z.string().optional(),
   citations: z.array(z.string()).optional(),
-  extraction_summary: z.object({
-    slots_applied: z.number(),
-    associations_created: z.number(),
-    conflicts_created: z.number(),
-    frame_ids: z.array(z.number()),
-    slots: z.array(z.any()),
-  }).optional(),
-  search_extraction_summary: z.object({}).optional(),
-  search_info: z.object({
-    backend: z.string(),
-    query: z.string(),
-    engines: z.array(z.string()),
-  }).optional(),
+  extraction_summary: ExtractionSummarySchema.optional(),
+  search_extraction_summary: ExtractionSummarySchema.optional(),
+  search_info: SearchInfoSchema.optional(),
 })
 
 export const FrameSchema = z.object({
@@ -117,6 +141,23 @@ export const SessionMessageSchema = z.object({
   timestamp: z.string().optional(),
 })
 
+// Re-export types from shared types
+export type {
+  AttachedFile,
+  ChatResponse,
+  ExtractionSummary,
+  Slot,
+  SearchInfo,
+  Frame,
+  Association,
+  SearchResult,
+  FileEntry,
+  User,
+  Session,
+  SessionMessage,
+  OgPreviewResponse,
+}
+
 // API functions with types
 export async function api<T>(
   path: string,
@@ -143,9 +184,9 @@ export async function api<T>(
 export async function postChat(
   message: string,
   session_id?: string,
-  attached_files?: any[],
+  attached_files?: AttachedFile[],
   turn_id?: string
-) {
+): Promise<ChatResponse> {
   const requestBody = {
     user_id: 1,
     message,
@@ -156,16 +197,7 @@ export async function postChat(
 
   console.log('Sending chat request:', requestBody)
 
-  return api<{
-    session_id: string
-    response: string
-    task_type: string
-    memory_context?: string
-    citations?: string[]
-    extraction_summary?: any
-    search_extraction_summary?: any
-    search_info?: any
-  }>('/chat', {
+  return api<ChatResponse>('/chat', {
     method: 'POST',
     body: JSON.stringify(requestBody),
   })
@@ -175,31 +207,31 @@ export function createTurnId(): string {
   return crypto.randomUUID()
 }
 
-export async function getFrames(user_id: number) {
+export async function getFrames(user_id: number): Promise<Frame[]> {
   console.log('Fetching frames for user:', user_id)
-  return api<any[]>(`/memory/frames?user_id=${user_id}`)
+  return api<Frame[]>(`/memory/frames?user_id=${user_id}`)
 }
 
-export async function getAssociations(frame_id: number) {
+export async function getAssociations(frame_id: number): Promise<Association[]> {
   console.log('Fetching associations for frame:', frame_id)
-  return api<any[]>(`/memory/frames/${frame_id}/associations`)
+  return api<Association[]>(`/memory/frames/${frame_id}/associations`)
 }
 
-export async function getSearchResults(query: string, minRelevance?: number) {
+export async function getSearchResults(query: string, minRelevance?: number): Promise<SearchResult> {
   console.log('Searching:', { query, minRelevance })
   const params = new URLSearchParams({ q: query })
   if (minRelevance !== undefined) {
     params.append('min_relevance', String(minRelevance))
   }
-  return api<any>(`/search?${params.toString()}`)
+  return api<SearchResult>(`/search?${params.toString()}`)
 }
 
-export async function listFiles() {
+export async function listFiles(): Promise<FileEntry[]> {
   console.log('Listing files')
-  return api<any[]>(`/files/list`)
+  return api<FileEntry[]>(`/files/list`)
 }
 
-export async function postFileUpload(file: File) {
+export async function postFileUpload(file: File): Promise<FileEntry> {
   console.log('Uploading file:', file.name)
   const formData = new FormData()
   formData.append('file', file)
@@ -218,7 +250,7 @@ export async function postFileUpload(file: File) {
   return response.json()
 }
 
-export async function deleteFile(file_id: string) {
+export async function deleteFile(file_id: string): Promise<{ success: boolean }> {
   console.log('Deleting file:', file_id)
   const response = await fetch(`${BASE_URL}/files/${file_id}`, {
     method: 'DELETE',
@@ -233,12 +265,12 @@ export async function deleteFile(file_id: string) {
   return response.json()
 }
 
-export async function getUserSessions(user_id: number) {
+export async function getUserSessions(user_id: number): Promise<Session[]> {
   console.log('Fetching sessions for user:', user_id)
-  return api<any[]>(`/users/${user_id}/sessions`)
+  return api<Session[]>(`/users/${user_id}/sessions`)
 }
 
-export async function createNewConversation(user_id: number) {
+export async function createNewConversation(user_id: number): Promise<{ session_id: string; message: string }> {
   console.log('Creating new conversation for user:', user_id)
   return api<{ session_id: string; message: string }>(`/conversations/new?user_id=${user_id}`, {
     method: 'POST',
@@ -249,7 +281,7 @@ export async function updateConversationTitle(
   session_id: string,
   user_id: number,
   title: string
-) {
+): Promise<{ session_id: string; title: string }> {
   console.log('Updating conversation title:', { session_id, user_id, title })
   return api<{ session_id: string; title: string }>(
     `/conversations/${encodeURIComponent(session_id)}/title`,
@@ -264,18 +296,18 @@ export async function getSessionMessages(
   session_id: string,
   user_id: number,
   limit: number = 50
-) {
+): Promise<SessionMessage[]> {
   console.log('Fetching session messages:', { session_id, user_id, limit })
-  return api<any[]>(
+  return api<SessionMessage[]>(
     `/chat/session/${encodeURIComponent(session_id)}/messages?user_id=${user_id}&limit=${limit}`
   )
 }
 
-export async function getAssistantName() {
+export async function getAssistantName(): Promise<{ name: string }> {
   return api<{ name: string }>('/assistant/name')
 }
 
-export async function getSettings() {
+export async function getSettings(): Promise<{ brave_enabled: boolean; brave_configured: boolean }> {
   return api<{ brave_enabled: boolean; brave_configured: boolean }>('/settings')
 }
 
@@ -284,8 +316,8 @@ export async function postFeedback(
   message_id: string,
   kind: string,
   comment: string | null
-) {
-  return api<any>('/feedback', {
+): Promise<{ status: string }> {
+  return api<{ status: string }>('/feedback', {
     method: 'POST',
     body: JSON.stringify({ episode_id, message_id, kind, comment }),
   })
@@ -295,14 +327,14 @@ export async function postCorrection(
   episode_id: string | null,
   message_id: string,
   correction_text: string
-) {
-  return api<any>('/correction', {
+): Promise<{ status: string }> {
+  return api<{ status: string }>('/correction', {
     method: 'POST',
     body: JSON.stringify({ episode_id, message_id, correction_text }),
   })
 }
 
-export async function transcribeAudio(audioBlob: Blob) {
+export async function transcribeAudio(audioBlob: Blob): Promise<{ text: string }> {
   const formData = new FormData()
   formData.append('file', audioBlob, 'audio.webm')
   
@@ -320,6 +352,6 @@ export async function transcribeAudio(audioBlob: Blob) {
   return response.json()
 }
 
-export async function getOGPreview(url: string) {
-  return api<any>(`/og-preview?url=${encodeURIComponent(url)}`)
+export async function getOGPreview(url: string): Promise<OgPreviewResponse> {
+  return api<OgPreviewResponse>(`/og-preview?url=${encodeURIComponent(url)}`)
 }

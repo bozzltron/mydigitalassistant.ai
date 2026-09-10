@@ -8,7 +8,7 @@ export interface AppError {
   message: string
   timestamp: Date
   type: 'network' | 'api' | 'validation' | 'user' | 'unknown'
-  context?: Record<string, any>
+  context?: Record<string, unknown>
 }
 
 export const [errors, setErrors] = createSignal<AppError[]>([])
@@ -46,7 +46,7 @@ export async function checkBackendStatus(): Promise<boolean> {
     // For now, simulate success
     await new Promise(resolve => setTimeout(resolve, 100))
     return true
-  } catch (error) {
+  } catch {
     return false
   }
 }

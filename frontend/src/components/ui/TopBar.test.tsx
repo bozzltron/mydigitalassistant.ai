@@ -1,7 +1,7 @@
 import { render, screen, fireEvent } from '@solidjs/testing-library'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import TopBar from './TopBar'
-import { user, setUser } from '../../state/user'
+import { setUser } from '../../state/user'
 
 const mockConversations = [
   { id: 'conv-1', title: 'First Conversation', createdAt: '2024-01-01', updatedAt: '2024-01-01', episode_count: 5, last_message: 'Hello' },

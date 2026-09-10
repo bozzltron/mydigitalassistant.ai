@@ -1,5 +1,5 @@
 import { render, screen, fireEvent } from '@solidjs/testing-library'
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import TracePanel from './TracePanel'
 
 describe('TracePanel', () => {

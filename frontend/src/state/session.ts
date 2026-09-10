@@ -11,6 +11,21 @@ export interface Session {
   last_message?: string
 }
 
+interface ApiSession {
+  id: string
+  title?: string
+  last_message?: string
+  created_at: string
+  updated_at: string
+  episode_count?: number
+}
+
+interface ApiMessage {
+  role: string
+  content: string
+  timestamp: string
+}
+
 // Create signal for session state
 export const [session, setSession] = createSignal<Session | null>(null)
 export const [isSessionLoading, setIsSessionLoading] = createSignal(false)
@@ -20,7 +35,7 @@ export const fetchSessions = async (userId: number): Promise<Session[]> => {
   setIsSessionLoading(true)
   try {
     const data = await getUserSessions(userId)
-    return data.map((s: any) => ({
+    return data.map((s: ApiSession) => ({
       id: s.id,
       title: s.title || s.last_message || `Conversation ${s.episode_count}`,
       createdAt: s.created_at,
@@ -40,7 +55,7 @@ export const fetchSessions = async (userId: number): Promise<Session[]> => {
 export const fetchSessionMessages = async (sessionId: string, userId: number) => {
   try {
     const data = await getSessionMessages(sessionId, userId, 50)
-    return data.map((m: any) => ({
+    return data.map((m: ApiMessage) => ({
       role: m.role,
       content: m.content,
       timestamp: m.timestamp,

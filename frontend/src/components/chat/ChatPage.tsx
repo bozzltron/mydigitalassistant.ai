@@ -1,12 +1,21 @@
-import { createSignal, createEffect, Show } from 'solid-js'
+import { createSignal, createEffect, createMemo, Show } from 'solid-js'
 import MessageList from './MessageList'
 import InputBar from './InputBar'
 import StatusIndicator from './StatusIndicator'
-import { messages, setMessages, postChatMessage, sessionId, setSessionId, isTurnActive } from '../../state/chat'
+import { messages, sessionId, setSessionId, isTurnActive, getConversationTurnId, addMessageToConversation, ExtractionSummary, SearchInfo } from '../../state/chat'
 import { Session } from '../../state/session'
+import { useTurnStatus } from '../../services/status'
 
 interface ChatPageProps {
   conversation: Session | null
+  sendMessage: (message: string, session_id?: string, attached_files?: File[]) => Promise<{
+    response: string
+    task_type?: string
+    extraction_summary?: ExtractionSummary
+    search_extraction_summary?: ExtractionSummary
+    search_info?: SearchInfo
+    session_id?: string
+  }>
 }
 
 export default function ChatPage(props: ChatPageProps) {
@@ -15,6 +24,15 @@ export default function ChatPage(props: ChatPageProps) {
   const [messagesContainerRef] = createSignal<HTMLDivElement | null>(null)
   
   const isSending = isTurnActive
+
+  // Get the current conversation's turnId
+  const currentConvTurnId = createMemo(() => {
+    const sid = sessionId()
+    return sid ? getConversationTurnId(sid) : undefined
+  })
+
+  // Use the status for the current conversation's turn
+  const { turnStatus, isPolling } = useTurnStatus(currentConvTurnId())
 
   // Auto-scroll to bottom when messages change (e.g., when loading a conversation)
   createEffect(() => {
@@ -25,26 +43,28 @@ export default function ChatPage(props: ChatPageProps) {
     }
   })
 
-  const handleSendMessage = async (message: string) => {
+const handleSendMessage = async (message: string) => {
     if (!message.trim() || isSending()) return
-    
+
+    const currentSessionId = sessionId()
+    if (!currentSessionId) return
+
     try {
       const userMessage = {
         role: 'user' as const,
         content: message,
         id: Date.now().toString()
       }
-      
-      setMessages(prev => [...prev, userMessage])
-      
-      const currentSessionId = sessionId()
-      const result = await postChatMessage(message, currentSessionId || undefined)
-      
+
+      addMessageToConversation(currentSessionId, userMessage)
+
+      const result = await props.sendMessage(message, currentSessionId)
+
       if (result.session_id) {
         setSessionId(result.session_id)
         localStorage.setItem('session_id', result.session_id)
       }
-      
+
       const assistantMessage = {
         role: 'assistant' as const,
         content: result.response,
@@ -56,8 +76,8 @@ export default function ChatPage(props: ChatPageProps) {
           search_info: result.search_info,
         }
       }
-      
-      setMessages(prev => [...prev, assistantMessage])
+
+      addMessageToConversation(currentSessionId, assistantMessage)
     } catch (error) {
       console.error('Error sending message:', error)
       const errorMessage = {
@@ -65,7 +85,7 @@ export default function ChatPage(props: ChatPageProps) {
         content: 'Error: Failed to send message',
         id: Date.now().toString() + '-error'
       }
-      setMessages(prev => [...prev, errorMessage])
+      addMessageToConversation(currentSessionId, errorMessage)
     }
   }
 
@@ -80,10 +100,10 @@ export default function ChatPage(props: ChatPageProps) {
   return (
     <div id="main">
       <div id="chat-area" class="chat-area">
-        <div id="messages" ref={messagesContainerRef}>
+        <div id="messages" ref={messagesContainerRef()}>
           <MessageList messages={messages()} />
           
-          <StatusIndicator />
+          <StatusIndicator turnStatus={turnStatus} isPolling={isPolling} />
           
           <Show when={messages().length === 0}>
             <div class="welcome-message" id="welcome">
