@@ -62,8 +62,8 @@ export const FileGrid = () => {
             <span>Date</span>
           </div>
           <div class="files-list">
-            {files().map(file => (
-              <div class="file-item" key={file.id}>
+            <For each={files()}>{file => (
+              <div class="file-item" >
                 <div class="file-info">
                   <span class="file-name">{file.name}</span>
                   <span class="file-type">{file.type}</span>
@@ -73,7 +73,7 @@ export const FileGrid = () => {
                   <span class="file-date">{file.createdAt}</span>
                 </div>
               </div>
-            ))}
+            )}</For>
           </div>
         </div>
       </Show>

@@ -86,8 +86,8 @@ export const UploadZone = () => {
       <div class="uploaded-files">
         <Show when={files().length > 0}>
           <ul>
-            {files().map(file => (
-              <li key={file.id} class="file-item">
+            <For each={files()}>{file => (
+              <li  class="file-item">
                 <span class="file-name">{file.name}</span>
                 <span class="file-size">{formatFileSize(file.size)}</span>
                 <span class={`file-status ${file.status}`}>
@@ -95,7 +95,7 @@ export const UploadZone = () => {
                    file.status === 'completed' ? 'Uploaded' : 'Error'}
                 </span>
               </li>
-            ))}
+            )}</For>
           </ul>
         </Show>
       </div>

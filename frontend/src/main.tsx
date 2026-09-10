@@ -1,4 +1,5 @@
-import { createRoot } from 'solid-js/web'
+import { createRoot } from "solid-js";
+
 import App from './App'
 import './styles/global.css'
 import './styles/chat.css'

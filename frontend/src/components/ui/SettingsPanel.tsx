@@ -47,13 +47,13 @@ export default function SettingsPanel() {
           </div>
         </div>
 
-        <div class="settings-section" id="search-settings-section" style="display:none">
+        <div class="settings-section" id="search-settings-section" style={{"display":"none"}}>
           <label>Search backend</label>
           <div class="toggle-row">
             <span class="toggle-label">Use Brave Search API</span>
             <input type="checkbox" id="brave-enabled" />
           </div>
-          <p style="font-size:0.75rem;color:var(--text-dim);margin-top:0.25rem;">
+          <p style={{"font-size":"0.75rem","color":"var(--text-dim)","margin-top":"0.25rem"}}>
             When enabled, queries are sent to Brave's servers. Only available when a Brave API key is configured.
           </p>
         </div>
