@@ -112,7 +112,7 @@ export default function TopBar(props: TopBarProps) {
         </div>
       </header>
 
-      {showNewConvModal && (
+      {showNewConvModal() && (
         <div class="modal-overlay" onClick={() => setShowNewConvModal(false)}>
           <div class="modal" onClick={(e) => e.stopPropagation()}>
             <div class="modal-header">
