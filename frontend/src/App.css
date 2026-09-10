@@ -92,21 +92,23 @@
   display: flex;
   flex: 1;
   overflow: hidden;
+  min-height: 0;
 }
 
 #chat-area {
   flex: 1;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  min-height: 0;
 }
 
 /* Wide screens: center a readable column (Open WebUI style) instead of
     stretching edge-to-edge. The max() keeps normal padding on narrow
     viewports and adds symmetric padding once space allows, so the
     scrollbar stays at the window edge like every major chat UI. */
-  #messages {
+#messages {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 1.5rem max(clamp(1rem, 4vw, 2.5rem), calc((100% - 56rem) / 2));
   display: flex;
@@ -857,6 +859,38 @@ select {
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+/* App layout - proper flexbox structure */
+.app-layout {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.app-layout > header {
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.app-layout > #main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Input row sticky at bottom */
+#input-row {
+  position: sticky;
+  bottom: 0;
+  flex-shrink: 0;
+  z-index: 10;
+}
 
 /* Link preview cards (like iMessage/WhatsApp) */
 .preview-cards {

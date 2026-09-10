@@ -1,8 +1,9 @@
-import { createSignal, createEffect } from 'solid-js'
+import { createSignal, createEffect, Show } from 'solid-js'
 import MessageList from './MessageList'
 import InputBar from './InputBar'
 import VoiceControls from './VoiceControls'
-import { messages, setMessages, postChatMessage, sessionId, setSessionId } from '../../state/chat'
+import StatusIndicator from './StatusIndicator'
+import { messages, setMessages, postChatMessage, sessionId, setSessionId, isTurnActive } from '../../state/chat'
 import { Session } from '../../state/session'
 
 interface ChatPageProps {
@@ -10,28 +11,15 @@ interface ChatPageProps {
 }
 
 export default function ChatPage(props: ChatPageProps) {
-  const [isSending, setIsSending] = createSignal(false)
   const [showTrace, setShowTrace] = createSignal(false)
   const [isRecording, setIsRecording] = createSignal(false)
   const [showVoiceOverlay, setShowVoiceOverlay] = createSignal(false)
   const [isDictating, setIsDictating] = createSignal(false)
   
-  createEffect(() => {
-    const currentMessages = messages()
-    const hasMessages = currentMessages.length > 0
-    if (!hasMessages) {
-      setMessages([{
-        role: 'assistant',
-        content: `Welcome to ${props.conversation?.title || 'Chat'}! How can I help you today?`,
-        id: 'welcome'
-      }])
-    }
-  })
+  const isSending = isTurnActive
 
   const handleSendMessage = async (message: string) => {
     if (!message.trim() || isSending()) return
-    
-    setIsSending(true)
     
     try {
       const userMessage = {
@@ -71,8 +59,6 @@ export default function ChatPage(props: ChatPageProps) {
         id: Date.now().toString() + '-error'
       }
       setMessages(prev => [...prev, errorMessage])
-    } finally {
-      setIsSending(false)
     }
   }
 
@@ -89,14 +75,18 @@ export default function ChatPage(props: ChatPageProps) {
   return (
     <div id="main">
       <div id="chat-area" class="chat-area">
-        <div id="messages" class="message-container">
+        <div id="messages">
           <MessageList messages={messages()} />
           
-          <div class="welcome-message" id="welcome">
-            <div class="welcome-icon"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
-            <h2>{props.conversation?.title ? `Conversation: ${props.conversation.title}` : 'Ready to chat'}</h2>
-            <p>Type a message below or click Voice to start hands-free.</p>
-          </div>
+          <StatusIndicator />
+          
+          <Show when={messages().length === 0}>
+            <div class="welcome-message" id="welcome">
+              <div class="welcome-icon"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+              <h2>{props.conversation?.title ? `Conversation: ${props.conversation.title}` : 'Ready to chat'}</h2>
+              <p>Type a message below or click Voice to start hands-free.</p>
+            </div>
+          </Show>
         </div>
 
         <div id="input-row">

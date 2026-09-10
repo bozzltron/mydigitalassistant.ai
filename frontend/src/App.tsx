@@ -2,6 +2,7 @@ import { createEffect, createSignal } from 'solid-js'
 import { fetchUser } from './state/user'
 import { loadSettings } from './state/settings'
 import { fetchSessionMessages, fetchSessions, createConversation } from './state/index'
+import { loadConversationMessages, setMessages } from './state/chat'
 import ChatPage from './components/chat/ChatPage'
 import TopBar from './components/ui/TopBar'
 import { Modal } from './components/ui/Modal'
@@ -104,6 +105,20 @@ export default function App() {
     }
   })
 
+  // Load conversation messages when active conversation changes
+  createEffect(() => {
+    const conv = activeConversation()
+    const u = user()
+    if (conv && u) {
+      console.log('Loading messages for conversation:', conv.id)
+      loadConversationMessages(conv.id, u.id)
+      localStorage.setItem('session_id', conv.id)
+    } else if (!conv) {
+      // Clear messages when no conversation selected
+      setMessages([])
+    }
+  })
+
   const handleConversationChange = (conversationId: string) => {
     const conversation = conversations().find(c => c.id === conversationId) || null
     setActiveConversation(conversation)
@@ -147,14 +162,16 @@ return (
         </div>
       </Modal>
 
-      <TopBar
-        conversations={conversations()}
-        activeConversation={activeConversation()}
-        onConversationChange={handleConversationChange}
-        onNewConversationClick={handleNewConversationClick}
-        isLoading={isConversationsLoading()}
-      />
-      <ChatPage conversation={activeConversation()} />
+      <div class="app-layout">
+        <TopBar
+          conversations={conversations()}
+          activeConversation={activeConversation()}
+          onConversationChange={handleConversationChange}
+          onNewConversationClick={handleNewConversationClick}
+          isLoading={isConversationsLoading()}
+        />
+        <ChatPage conversation={activeConversation()} />
+      </div>
     </>
   )
 }

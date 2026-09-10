@@ -143,13 +143,15 @@ export async function api<T>(
 export async function postChat(
   message: string,
   session_id?: string,
-  attached_files?: any[]
+  attached_files?: any[],
+  turn_id?: string
 ) {
   const requestBody = {
     user_id: 1,
     message,
     session_id,
     attached_files,
+    turn_id,
   }
 
   console.log('Sending chat request:', requestBody)
@@ -167,6 +169,10 @@ export async function postChat(
     method: 'POST',
     body: JSON.stringify(requestBody),
   })
+}
+
+export function createTurnId(): string {
+  return crypto.randomUUID()
 }
 
 export async function getFrames(user_id: number) {

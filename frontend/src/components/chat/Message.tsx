@@ -1,5 +1,17 @@
 import { Show, createSignal, For, createEffect } from 'solid-js'
 import { ChatMessage } from '../../state/chat'
+import { marked } from 'marked'
+
+// Configure marked to open links in new tabs
+marked.use({
+  renderer: {
+    link(token) {
+      const href = token.href
+      const title = token.title ? ` title="${token.title}"` : ''
+      return `<a href="${href}"${title} target="_blank" rel="noopener">${token.text}</a>`
+    }
+  }
+})
 
 interface MessageProps {
   message: ChatMessage
@@ -69,7 +81,7 @@ export default function Message(props: MessageProps) {
 
   createEffect(() => {
     if (contentEl()) {
-      contentEl()!.innerHTML = message.content
+      contentEl()!.innerHTML = marked.parse(message.content || '') as string
     }
   })
 

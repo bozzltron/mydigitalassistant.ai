@@ -808,3 +808,72 @@ select {
   content: 'Copied!';
   font-size: 0.65rem;
 }
+
+/* Status indicator - shows processing stage */
+.status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 0.85rem;
+  max-width: min(80%, 46rem);
+  align-self: flex-start;
+  animation: fadeInUp 0.2s ease-out forwards;
+}
+
+.status-spinner {
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
+.status-label {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.status-elapsed {
+  color: var(--text-dim);
+  font-size: 0.78rem;
+  font-style: italic;
+  margin-left: 0.35rem;
+}
+
+/* Loading dots animation for status */
+.status-label::after {
+  content: '';
+  animation: dots 1.2s steps(4, end) infinite;
+  display: inline-block;
+  width: 1.2em;
+}
+
+@keyframes dots {
+  0% { content: ''; }
+  25% { content: '.'; }
+  50% { content: '..'; }
+  75% { content: '...'; }
+}
+
+/* Status indicator - aligns like assistant messages */
+#messages > .status-indicator {
+  align-self: flex-start;
+  max-width: min(80%, 46rem);
+  margin-left: 0;
+}
+
+/* Ensure welcome message is centered like original */
+.welcome-message {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  color: var(--text-dim);
+  padding: 2rem;
+}

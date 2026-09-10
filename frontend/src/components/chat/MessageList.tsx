@@ -38,17 +38,15 @@ export default function MessageList(props: MessageListProps) {
   }
 
   return (
-    <div class="message-list">
-      <For each={props.messages}>
-        {(message) => (
-          <Message 
-            message={message}
-            onReact={handleReact}
-            onCopy={handleCopy}
-            onCorrect={handleCorrect}
-          />
-        )}
-      </For>
-    </div>
+    <For each={props.messages}>
+      {(message) => (
+        <Message 
+          message={message}
+          onReact={handleReact}
+          onCopy={handleCopy}
+          onCorrect={handleCorrect}
+        />
+      )}
+    </For>
   )
 }
