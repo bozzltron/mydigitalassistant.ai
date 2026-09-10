@@ -412,7 +412,6 @@ async def chat(
         entry = _turn_progress.get(turn_id)
         if entry is not None:
             entry["done"] = True
-    return await orch.chat(request)
 
 
 @app.get("/chat/status/{turn_id}")
