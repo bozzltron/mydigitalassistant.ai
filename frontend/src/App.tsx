@@ -82,12 +82,17 @@ export default function App() {
     setActiveConversation(conversation)
   }
 
+  const handleConversationCreated = () => {
+    fetchSessionsFromAPI()
+  }
+
   return (
     <>
       <TopBar 
         conversations={conversations()} 
         activeConversation={activeConversation()}
         onConversationChange={handleConversationChange}
+        onConversationCreated={handleConversationCreated}
         isLoading={isConversationsLoading()}
       />
       <ChatPage conversation={activeConversation()} />

@@ -7,6 +7,7 @@ interface TopBarProps {
   conversations: Session[]
   activeConversation: Session | null
   onConversationChange: (conversationId: string) => void
+  onConversationCreated?: () => void
   isLoading: boolean
 }
 
@@ -54,7 +55,7 @@ export default function TopBar(props: TopBarProps) {
       localStorage.setItem('session_id', sessionId)
       setShowNewConvModal(false)
       setNewConvTitle('')
-      // The App component will refresh the conversations list
+      props.onConversationCreated?.()
     } catch (error) {
       console.error('Failed to create conversation:', error)
     }
