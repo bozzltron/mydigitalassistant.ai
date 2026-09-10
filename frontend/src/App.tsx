@@ -4,6 +4,7 @@ import { loadSettings } from './state/settings'
 import { fetchSessionMessages, fetchSessions, createConversation } from './state/index'
 import ChatPage from './components/chat/ChatPage'
 import TopBar from './components/ui/TopBar'
+import { Modal } from './components/ui/Modal'
 import { Session } from './state/session'
 import { user } from './state/user'
 import './App.css'
@@ -29,6 +30,11 @@ export default function App() {
     } catch (error) {
       console.error('Failed to create conversation:', error)
     }
+  }
+
+  const handleModalClose = () => {
+    setShowNewConvModal(false)
+    setNewConvTitle('')
   }
   createEffect(async () => {
     console.log('APP INIT: Starting initialization...')
@@ -107,51 +113,42 @@ export default function App() {
     fetchSessionsFromAPI()
   }
 
-  return (
+return (
     <>
-      {showNewConvModal() && (
-        <div class="modal-overlay" onClick={() => setShowNewConvModal(false)}>
-          <div class="modal" onClick={(e) => e.stopPropagation()}>
-            <div class="modal-header">
-              <h3>New Conversation</h3>
-              <button 
-                class="modal-close"
-                onClick={() => { setShowNewConvModal(false); setNewConvTitle('') }}
-                aria-label="Close modal"
-              >
-                ✕
-              </button>
-            </div>
-            <div class="modal-content">
-              <input
-                id="new-conv-title"
-                type="text"
-                placeholder="Conversation name (optional)"
-                value={newConvTitle()}
-                onInput={(e) => setNewConvTitle(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') handleNewConversation() }}
-              />
-              <div style={{"display":"flex","gap":"0.5rem","justify-content":"flex-end","margin-top":"1rem"}}>
-                <button 
-                  class="voice-btn-small" 
-                  onClick={() => { setShowNewConvModal(false); setNewConvTitle('') }}
-                >
-                  Cancel
-                </button>
-                <button 
-                  class="btn-primary" 
-                  onClick={handleNewConversation}
-                >
-                  Create
-                </button>
-              </div>
-            </div>
+      <Modal
+        isOpen={showNewConvModal()}
+        onClose={handleModalClose}
+        title="New Conversation"
+        size="small"
+      >
+        <div class="modal-content">
+          <input
+            id="new-conv-title"
+            type="text"
+            placeholder="Conversation name (optional)"
+            value={newConvTitle()}
+            onInput={(e) => setNewConvTitle(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleNewConversation() }}
+          />
+          <div class="modal-actions">
+            <button
+              class="btn-secondary"
+              onClick={handleModalClose}
+            >
+              Cancel
+            </button>
+            <button
+              class="btn-primary"
+              onClick={handleNewConversation}
+            >
+              Create
+            </button>
           </div>
         </div>
-      )}
+      </Modal>
 
-      <TopBar 
-        conversations={conversations()} 
+      <TopBar
+        conversations={conversations()}
         activeConversation={activeConversation()}
         onConversationChange={handleConversationChange}
         onNewConversationClick={handleNewConversationClick}
