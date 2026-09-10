@@ -18,6 +18,12 @@ interface ChatPageProps {
   }>
 }
 
+// Wrapper component that calls useTurnStatus with a dynamic turnId
+function StatusWrapper(props: { turnId: string | undefined }) {
+  const { turnStatus, isPolling } = useTurnStatus(props.turnId)
+  return <StatusIndicator turnStatus={turnStatus} isPolling={isPolling} />
+}
+
 export default function ChatPage(props: ChatPageProps) {
   const [showTrace, setShowTrace] = createSignal(false)
   const [isDictating, setIsDictating] = createSignal(false)
@@ -30,9 +36,6 @@ export default function ChatPage(props: ChatPageProps) {
     const sid = sessionId()
     return sid ? getConversationTurnId(sid) : undefined
   })
-
-  // Use the status for the current conversation's turn
-  const { turnStatus, isPolling } = useTurnStatus(currentConvTurnId())
 
   // Auto-scroll to bottom when messages change (e.g., when loading a conversation)
   createEffect(() => {
@@ -101,9 +104,9 @@ const handleSendMessage = async (message: string) => {
     <div id="main">
       <div id="chat-area" class="chat-area">
         <div id="messages" ref={messagesContainerRef()}>
-          <MessageList messages={messages()} />
-          
-          <StatusIndicator turnStatus={turnStatus} isPolling={isPolling} />
+<MessageList messages={messages()} />
+           
+           <StatusWrapper turnId={currentConvTurnId()} />
           
           <Show when={messages().length === 0}>
             <div class="welcome-message" id="welcome">
