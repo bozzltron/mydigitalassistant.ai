@@ -36,6 +36,19 @@ use incl. kids.
 - Run single test mode: `docker compose -f docker-compose.test.yml run --rm test-plain`
 - Lint: `docker run -it --rm -v $(pwd):/app -w /app assistant ruff check .`
 
+## Pre-Commit Flow (Required)
+**Before every commit, run both lint and tests in Docker:**
+
+```bash
+# Backend
+docker run -it --rm -v $(pwd):/app -w /app assistant ruff check .
+docker run -it --rm -v $(pwd):/app -w /app assistant pytest assistant/tests/
+
+# Frontend
+docker run -it --rm -v $(pwd)/frontend:/app -w /app assistant npm run lint
+docker run -it --rm -v $(pwd)/frontend:/app -w /app assistant npm run test
+```
+
 ## Code style
 - Python 3.11+. Type hints required on all public functions.
 - `ruff` for lint/format. Line length 100.

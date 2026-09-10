@@ -1,0 +1,6 @@
+{
+  "presets": [
+    ["@babel/preset-typescript", { "jsx": "preserve" }],
+    ["babel-preset-solid", { "generate": "dom" }]
+  ]
+}

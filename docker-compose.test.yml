@@ -1,4 +1,17 @@
 services:
+  # Frontend tests (Node/Vitest)
+  test-frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend-test
+    container_name: assistant-tests-frontend
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
+      - frontend-node-modules:/app/node_modules
+    command: npm run test
+    user: root
+
   exam:
     build:
       context: .
@@ -82,4 +95,6 @@ services:
 
 volumes:
   assistant-data:
+    driver: local
+  frontend-node-modules:
     driver: local

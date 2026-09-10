@@ -117,6 +117,7 @@ export default function InputBar(props: InputBarProps) {
           type="file"
           ref={setFileInputRef}
           id="file-input"
+          data-testid="file-input"
           multiple
           accept=".txt,.csv,.json,.xml,.html,.ics"
           onChange={handleFileChange}

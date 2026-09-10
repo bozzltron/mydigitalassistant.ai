@@ -356,3 +356,15 @@ Dead code is a liability. Unused functions, duplicate logic, and monolithic file
 - **Modular CSS** — component-scoped styles with shared base classes (see `static/shared/components.css`).
 - **Testable modules** — pure functions over side-effect-heavy IIFEs.
 - **ES Modules** — use `<script type="module">` for native browser modules (no build step required).
+
+## Pre-Commit Flow (Required)
+**Before every commit, run both lint and tests:**
+
+```bash
+# Backend (from repo root)
+docker run -it --rm -v $(pwd):/app -w /app assistant ruff check .
+docker run -it --rm -v $(pwd):/app -w /app assistant pytest assistant/tests/
+
+# Frontend
+cd frontend && npm run lint && npm run test
+```

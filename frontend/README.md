@@ -38,9 +38,28 @@ src/
 ```bash
 npm run dev        # Start development server
 npm run build      # Build for production
-npm run test       # Run tests
+npm run lint       # Lint source files
+npm run test       # Run tests (CI mode)
 npm run test:watch # Run tests in watch mode
 ```
+
+## Pre-Commit Flow (Required)
+**Before every commit, run both lint and tests in Docker:**
+
+```bash
+# From repo root
+docker run -it --rm -v $(pwd)/frontend:/app -w /app assistant npm run lint
+docker run -it --rm -v $(pwd)/frontend:/app -w /app assistant npm run test
+```
+
+This mirrors the backend requirement (also run in Docker):
+```bash
+docker run -it --rm -v $(pwd):/app -w /app assistant ruff check .
+docker run -it --rm -v $(pwd):/app -w /app assistant pytest assistant/tests/
+```
+
+## Testing Strategy
+See [`TESTING.md`](TESTING.md) for the testing philosophy, what to test, mocking policy, and current test coverage.
 
 ## Dependencies
 
