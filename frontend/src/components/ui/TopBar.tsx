@@ -8,6 +8,7 @@ interface TopBarProps {
   onConversationChange: (conversationId: string) => void
   onNewConversationClick?: () => void
   isLoading: boolean
+  assistantName: string
 }
 
 export default function TopBar(props: TopBarProps) {
@@ -71,10 +72,11 @@ export default function TopBar(props: TopBarProps) {
   return (
     <>
 <header>
-        <h1 id="agent-name">Cognitive Assistant</h1>
+        <h1 id="agent-name">{props.assistantName}</h1>
         <div class="conversation-switcher" style={{"white-space":"nowrap"}}>
           <select 
             id="conversation-select" 
+            data-testid="conversation-select"
             class="select" 
             style={{"font-size":"0.8rem","padding":"0.2rem 0.4rem"}}
             onChange={handleConversationSelect}

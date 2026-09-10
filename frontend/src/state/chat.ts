@@ -45,7 +45,15 @@ export async function loadConversationMessages(sessionId: string, userId: number
       role: m.role,
       content: m.content,
       id: `history-${sessionId}-${index}`,
-      meta: undefined,
+      meta: {
+        task_type: m.task_type,
+        memory_context: m.memory_context,
+        citations: m.citations,
+        extraction_summary: m.extraction_summary,
+        search_extraction_summary: m.search_extraction_summary,
+        search_info: m.search_info,
+        ogData: m.ogData,
+      },
     }))
     setMessages(loadedMessages)
   } catch (error) {

@@ -3,6 +3,7 @@ import { fetchUser } from './state/user'
 import { loadSettings } from './state/settings'
 import { fetchSessionMessages, fetchSessions, createConversation } from './state/index'
 import { loadConversationMessages, setMessages } from './state/chat'
+import { getAssistantName } from './services/api'
 import ChatPage from './components/chat/ChatPage'
 import TopBar from './components/ui/TopBar'
 import { Modal } from './components/ui/Modal'
@@ -13,6 +14,7 @@ import './App.css'
 export default function App() {
   const [showNewConvModal, setShowNewConvModal] = createSignal(false)
   const [newConvTitle, setNewConvTitle] = createSignal('')
+  const [assistantName, setAssistantName] = createSignal<string>('Cognitive Assistant')
 
   const handleNewConversationClick = () => {
     setNewConvTitle('')
@@ -43,6 +45,15 @@ export default function App() {
     console.log('APP INIT: fetchUser completed')
     loadSettings()
     console.log('APP INIT: loadSettings completed')
+    
+    try {
+      const result = await getAssistantName()
+      if (result.name) {
+        setAssistantName(result.name)
+      }
+    } catch (error) {
+      console.error('Failed to fetch assistant name:', error)
+    }
   })
 
   createEffect(() => {
@@ -124,9 +135,7 @@ export default function App() {
     setActiveConversation(conversation)
   }
 
-  const handleConversationCreated = () => {
-    fetchSessionsFromAPI()
-  }
+  
 
 return (
     <>
@@ -163,13 +172,14 @@ return (
       </Modal>
 
       <div class="app-layout">
-        <TopBar
-          conversations={conversations()}
-          activeConversation={activeConversation()}
-          onConversationChange={handleConversationChange}
-          onNewConversationClick={handleNewConversationClick}
-          isLoading={isConversationsLoading()}
-        />
+<TopBar
+        conversations={conversations()}
+        activeConversation={activeConversation()}
+        onConversationChange={handleConversationChange}
+        onNewConversationClick={handleNewConversationClick}
+        isLoading={isConversationsLoading()}
+        assistantName={assistantName()}
+      />
         <ChatPage conversation={activeConversation()} />
       </div>
     </>

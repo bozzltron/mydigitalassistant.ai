@@ -1,7 +1,6 @@
 import { createSignal, createEffect, Show } from 'solid-js'
 import MessageList from './MessageList'
 import InputBar from './InputBar'
-import VoiceControls from './VoiceControls'
 import StatusIndicator from './StatusIndicator'
 import { messages, setMessages, postChatMessage, sessionId, setSessionId, isTurnActive } from '../../state/chat'
 import { Session } from '../../state/session'
@@ -12,11 +11,19 @@ interface ChatPageProps {
 
 export default function ChatPage(props: ChatPageProps) {
   const [showTrace, setShowTrace] = createSignal(false)
-  const [isRecording, setIsRecording] = createSignal(false)
-  const [showVoiceOverlay, setShowVoiceOverlay] = createSignal(false)
   const [isDictating, setIsDictating] = createSignal(false)
+  const [messagesContainerRef] = createSignal<HTMLDivElement | null>(null)
   
   const isSending = isTurnActive
+
+  // Auto-scroll to bottom when messages change (e.g., when loading a conversation)
+  createEffect(() => {
+    messages()
+    const container = messagesContainerRef()
+    if (container) {
+      container.scrollTop = container.scrollHeight
+    }
+  })
 
   const handleSendMessage = async (message: string) => {
     if (!message.trim() || isSending()) return
@@ -64,18 +71,16 @@ export default function ChatPage(props: ChatPageProps) {
 
   const handleDictationStart = () => {
     setIsDictating(true)
-    setShowVoiceOverlay(true)
   }
 
   const handleDictationStop = () => {
     setIsDictating(false)
-    setShowVoiceOverlay(false)
   }
 
   return (
     <div id="main">
       <div id="chat-area" class="chat-area">
-        <div id="messages">
+        <div id="messages" ref={messagesContainerRef}>
           <MessageList messages={messages()} />
           
           <StatusIndicator />
@@ -96,20 +101,6 @@ export default function ChatPage(props: ChatPageProps) {
             onDictationStart={handleDictationStart}
             onDictationStop={handleDictationStop}
             isDictating={isDictating()}
-          />
-          
-          <VoiceControls 
-            isOpen={showVoiceOverlay()} 
-            onClose={() => setShowVoiceOverlay(false)}
-            isRecording={isRecording()}
-            onStartRecording={() => {
-              setIsRecording(true)
-              setShowVoiceOverlay(true)
-            }}
-            onStopRecording={() => {
-              setIsRecording(false)
-              setShowVoiceOverlay(false)
-            }}
           />
         </div>
       </div>

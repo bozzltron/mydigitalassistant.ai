@@ -134,10 +134,20 @@ describe('chat state', () => {
   })
 
   describe('loadConversationMessages', () => {
-    it('loads messages from API and maps them', async () => {
+    it('loads messages from API and maps them with metadata', async () => {
       const mockMessages = [
         { role: 'user', content: 'Hello' },
-        { role: 'assistant', content: 'Hi there!' },
+        { 
+          role: 'assistant', 
+          content: 'Hi there!',
+          task_type: 'functional',
+          memory_context: 'some context',
+          citations: ['cite1'],
+          extraction_summary: { slots: [{ frame_name: 'test', key: 'key', value: 'val' }] },
+          search_extraction_summary: { slots: [] },
+          search_info: { backend: 'searxng', query: 'test', engines: ['bing'] },
+          ogData: { 'https://example.com': { title: 'Test', image: 'img.jpg' } },
+        },
       ]
       vi.mocked(api.getSessionMessages).mockResolvedValue(mockMessages)
 
@@ -148,6 +158,20 @@ describe('chat state', () => {
         role: 'user',
         content: 'Hello',
         id: 'history-session-123-0',
+      })
+      expect(messages()[1]).toMatchObject({
+        role: 'assistant',
+        content: 'Hi there!',
+        id: 'history-session-123-1',
+        meta: {
+          task_type: 'functional',
+          memory_context: 'some context',
+          citations: ['cite1'],
+          extraction_summary: { slots: [{ frame_name: 'test', key: 'key', value: 'val' }] },
+          search_extraction_summary: { slots: [] },
+          search_info: { backend: 'searxng', query: 'test', engines: ['bing'] },
+          ogData: { 'https://example.com': { title: 'Test', image: 'img.jpg' } },
+        },
       })
     })
 

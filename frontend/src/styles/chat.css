@@ -190,6 +190,36 @@
 }
 
 .mic-btn {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 0 0.75rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mic-btn:hover {
+  background: var(--border);
+}
+
+.mic-btn.recording {
+  background: var(--error);
+  border-color: var(--error);
+  color: #fff;
+}
+
+.mic-btn.recording:hover {
+  background: var(--error);
+  opacity: 0.85;
+}
+
+#input-row .mic-btn {
   padding-right: 0.75rem;
 }
 

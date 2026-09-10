@@ -106,7 +106,7 @@ describe('InputBar', () => {
     render(() => <InputBar onSend={defaultProps.onSend} isSending={defaultProps.isSending} onDictationStart={defaultProps.onDictationStart} onDictationStop={defaultProps.onDictationStop} isDictating={true} />)
     
     const micBtn = screen.getByRole('button', { name: /dictate/i })
-    expect(micBtn).toHaveStyle({ background: 'var(--error)' })
+    expect(micBtn).toHaveClass('recording')
   })
 
   it('adds file chips when files attached', () => {
