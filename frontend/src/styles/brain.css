@@ -1,4 +1,4 @@
-/* Brain Observatory Styles */
+/* Brain Observatory Styles - Dark Theme */
 
 .brain-page {
   display: flex;
@@ -10,8 +10,8 @@
 
 .brain-header {
   padding: 1rem;
-  border-bottom: 1px solid var(--border-color);
-  background-color: rgba(255, 255, 255, 0.8);
+  border-bottom: 1px solid var(--border);
+  background-color: var(--surface);
   backdrop-filter: blur(10px);
   position: sticky;
   top: 0;
@@ -26,10 +26,10 @@
 
 .brain-sidebar {
   width: 300px;
-  border-right: 1px solid var(--border-color);
+  border-right: 1px solid var(--border);
   padding: 1rem;
   overflow-y: auto;
-  background-color: rgba(255, 255, 255, 0.6);
+  background-color: var(--surface);
   backdrop-filter: blur(10px);
 }
 
@@ -51,7 +51,7 @@
 .search-input {
   flex: 1;
   padding: 0.5rem;
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border);
   border-radius: 4px;
   background-color: var(--bg);
   color: var(--text);
@@ -59,12 +59,12 @@
 
 .search-input:focus {
   outline: none;
-  border-color: var(--primary-color);
+  border-color: var(--accent);
 }
 
 .search-button {
   padding: 0.5rem 1rem;
-  background-color: var(--primary-color);
+  background-color: var(--accent);
   color: white;
   border: none;
   border-radius: 4px;
@@ -72,8 +72,8 @@
 }
 
 .search-error {
-  color: var(--error-color);
-  background-color: rgba(255, 0, 0, 0.1);
+  color: var(--error);
+  background-color: rgba(244, 112, 112, 0.1);
   padding: 0.5rem;
   border-radius: 4px;
   margin: 0.5rem 0;
@@ -91,37 +91,37 @@
 
 .search-result {
   padding: 0.75rem;
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border);
   border-radius: 4px;
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .search-result:hover {
-  background-color: rgba(0, 0, 0, 0.05);
-  border-color: var(--primary-color);
+  background-color: var(--surface2);
+  border-color: var(--accent);
 }
 
 .search-result h5 {
   margin: 0 0 0.25rem 0;
-  color: var(--primary-color);
+  color: var(--accent);
 }
 
 .result-content {
   font-size: 0.9rem;
   margin: 0.25rem 0;
-  color: var(--muted);
+  color: var(--text-dim);
 }
 
 .result-meta {
   display: flex;
   justify-content: space-between;
   font-size: 0.8rem;
-  color: var(--muted);
+  color: var(--text-dim);
 }
 
 .relevance {
-  background-color: rgba(0, 0, 0, 0.1);
+  background-color: var(--surface2);
   padding: 0.25rem 0.5rem;
   border-radius: 4px;
 }
@@ -136,9 +136,9 @@
 
 .graph-visualization {
   flex: 1;
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border);
   border-radius: 8px;
-  background-color: rgba(255, 255, 255, 0.6);
+  background-color: var(--surface);
   backdrop-filter: blur(10px);
   overflow: hidden;
   position: relative;
@@ -151,7 +151,7 @@
   justify-content: center;
   height: 100%;
   text-align: center;
-  color: var(--muted);
+  color: var(--text-dim);
 }
 
 .graph-canvas {
@@ -179,7 +179,7 @@
   min-width: 80px;
   text-align: center;
   backdrop-filter: blur(10px);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
 }
 
 .graph-node.event {
@@ -243,7 +243,7 @@
 
 .graph-controls button {
   padding: 0.25rem 0.5rem;
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--border);
   border-radius: 4px;
   background-color: var(--bg);
   cursor: pointer;
@@ -262,7 +262,7 @@
   align-items: center;
   gap: 0.5rem;
   padding-bottom: 0.5rem;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border);
 }
 
 .back-button {
@@ -278,8 +278,8 @@
   font-size: 0.8em;
   padding: 0.25em 0.5em;
   border-radius: 4px;
-  background-color: var(--muted);
-  color: white;
+  background-color: var(--text-dim);
+  color: var(--text);
 }
 
 .frame-info {
@@ -290,7 +290,7 @@
 
 .info-item {
   padding: 0.5rem;
-  background-color: rgba(0, 0, 0, 0.05);
+  background-color: var(--surface2);
   border-radius: 4px;
 }
 
@@ -303,7 +303,7 @@
 .slots-table {
   width: 100%;
   border-collapse: collapse;
-  background-color: rgba(255, 255, 255, 0.9);
+  background-color: var(--surface);
   border-radius: 4px;
   overflow: hidden;
 }
@@ -312,11 +312,11 @@
 .slots-table td {
   padding: 0.5rem;
   text-align: left;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border);
 }
 
 .slots-table th {
-  background-color: rgba(0, 0, 0, 0.05);
+  background-color: var(--surface2);
 }
 
 .associations-list {
@@ -327,7 +327,7 @@
 
 .associations-list li {
   padding: 0.5rem;
-  border-bottom: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border);
 }
 
 /* Responsive design */
@@ -339,6 +339,6 @@
   .brain-sidebar {
     width: 100%;
     border-right: none;
-    border-bottom: 1px solid var(--border-color);
+    border-bottom: 1px solid var(--border);
   }
 }

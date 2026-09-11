@@ -1,0 +1,22 @@
+/* Main stylesheet - imports all modular CSS files in dependency order */
+
+/* 1. Variables - must be first for all other files */
+@import './variables.css';
+
+/* 2. Base - global resets and body */
+@import './base.css';
+
+/* 3. Layout - app structure and containers */
+@import './layout.css';
+
+/* 4. Components - reusable UI components */
+@import './components.css';
+
+/* 5. Messages - chat message styles */
+@import './messages.css';
+
+/* 6. Status indicator - processing stage and voice */
+@import './status-indicator.css';
+
+/* 7. Brain page styles */
+@import './brain.css';

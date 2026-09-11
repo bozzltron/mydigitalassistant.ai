@@ -6,7 +6,6 @@ import { useChat } from './hooks/useChat'
 import ChatPage from './components/chat/ChatPage'
 import TopBar from './components/ui/TopBar'
 import { Modal } from './components/ui/Modal'
-import './App.css'
 
 export default function App() {
   const [showNewConvModal, setShowNewConvModal] = createSignal(false)

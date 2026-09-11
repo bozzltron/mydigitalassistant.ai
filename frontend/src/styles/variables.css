@@ -1,0 +1,19 @@
+/* CSS Custom Properties - Theme variables */
+:root {
+  --bg: #0f1117;
+  --surface: #1a1d27;
+  --surface2: #242836;
+  --border: #2e3347;
+  --user-msg: #1e3a5f;
+  --assistant-msg: #1a2420;
+  --text: #e8e9ed;
+  --text-dim: #8b8fa3;
+  --accent: #14b8a6;
+  --accent2: #4ec9a0;
+  --error: #f47070;
+  --warning: #f0b97c;
+  --font: system-ui, -apple-system, BlinkMacSystemFont, 'SF Pro Text',
+          'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+  --mono: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas,
+          'Liberation Mono', monospace;
+}
