@@ -142,10 +142,11 @@ export function getConversationTurnId(sessionIdParam: string): string | undefine
 }
 
 // Create a memo for the current conversation's turnId that tracks the store
-export function useConversationTurnId(sessionIdParam: string | null | undefined) {
+export function useConversationTurnId(sessionIdParam: () => string | null | undefined) {
   return createMemo(() => {
-    if (!sessionIdParam) return undefined
-    return chatState.conversationTurnIds.get(sessionIdParam)
+    const sid = sessionIdParam()
+    if (!sid) return undefined
+    return chatState.conversationTurnIds.get(sid)
   })
 }
 

@@ -1,4 +1,4 @@
-import { createSignal, onCleanup } from 'solid-js'
+import { createSignal, onCleanup, createMemo } from 'solid-js'
 
 export interface TurnStatus {
   stage: string
@@ -46,27 +46,33 @@ export function clearTurnStatus(turnId: string): void {
   turnStatusMap.delete(turnId)
 }
 
-export function useTurnStatus(turnId?: string) {
-  if (turnId) {
-    const entry = getOrCreateTurnStatus(turnId)
-    onCleanup(() => {
-      if (!turnStatusMap.get(turnId)?.interval) {
-        clearTurnStatus(turnId)
-      }
-    })
-    return {
-      turnStatus: entry.status[0],
-      isPolling: entry.polling[0],
+export function useTurnStatus(turnId?: () => string | undefined) {
+  const currentTurnId = createMemo(() => turnId?.())
+  const entry = createMemo(() => {
+    const id = currentTurnId()
+    if (id) {
+      return getOrCreateTurnStatus(id)
     }
-  }
-  const entry = activeTurnId ? getOrCreateTurnStatus(activeTurnId) : (() => {
-    const [status, setStatus] = createSignal<TurnStatus | null>(null)
-    const [polling, setPolling] = createSignal(false)
-    return { status: [status, setStatus], polling: [polling, setPolling], interval: null }
-  })()
+    return activeTurnId ? getOrCreateTurnStatus(activeTurnId) : (() => {
+      const [status, setStatus] = createSignal<TurnStatus | null>(null)
+      const [polling, setPolling] = createSignal(false)
+      return { status: [status, setStatus], polling: [polling, setPolling], interval: null }
+    })()
+  })
+
+  onCleanup(() => {
+    const id = currentTurnId()
+    if (id && !turnStatusMap.get(id)?.interval) {
+      clearTurnStatus(id)
+    }
+  })
+
+  const turnStatus = createMemo(() => entry().status[0]())
+  const isPolling = createMemo(() => entry().polling[0]())
+
   return {
-    turnStatus: entry.status[0],
-    isPolling: entry.polling[0],
+    turnStatus,
+    isPolling,
   }
 }
 

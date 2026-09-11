@@ -143,8 +143,8 @@ describe('multi-conversation isolation', () => {
       const turnIdA = 'turn-A'
       const turnIdB = 'turn-B'
 
-      const { turnStatus: statusA } = statusModule.useTurnStatus(turnIdA)
-      const { turnStatus: statusB } = statusModule.useTurnStatus(turnIdB)
+      const { turnStatus: statusA } = statusModule.useTurnStatus(() => turnIdA)
+      const { turnStatus: statusB } = statusModule.useTurnStatus(() => turnIdB)
 
       expect(statusA()).toBeNull()
       expect(statusB()).toBeNull()

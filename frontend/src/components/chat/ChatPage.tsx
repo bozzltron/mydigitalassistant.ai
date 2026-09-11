@@ -19,7 +19,7 @@ interface ChatPageProps {
 }
 
 // Wrapper component that calls useTurnStatus with a dynamic turnId
-function StatusWrapper(props: { turnId: string | undefined }) {
+function StatusWrapper(props: { turnId: () => string | undefined }) {
   const { turnStatus, isPolling } = useTurnStatus(props.turnId)
   return <StatusIndicator turnStatus={turnStatus} isPolling={isPolling} />
 }
@@ -103,7 +103,7 @@ const handleSendMessage = async (message: string) => {
         <div id="messages" ref={messagesContainerRef()}>
 <MessageList messages={messages()} />
            
-           <StatusWrapper turnId={currentConvTurnId()} />
+           <StatusWrapper turnId={currentConvTurnId} />
           
           <Show when={messages().length === 0}>
             <div class="welcome-message" id="welcome">
