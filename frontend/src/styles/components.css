@@ -263,3 +263,211 @@ select {
 .toast-error { background: var(--error-color, #d32f2f); color: #fff; }
 .toast-warning { background: var(--warning); color: #111; }
 .toast-info { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+
+/* Settings panel (slide-in from right) */
+#settings-panel {
+  position: fixed;
+  top: 0;
+  right: -300px;
+  width: 300px;
+  height: 100vh;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  z-index: 100;
+  transition: right 0.25s ease;
+  padding: 1rem;
+  overflow-y: auto;
+}
+
+#settings-panel.open {
+  right: 0;
+}
+
+.settings-title {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.settings-section {
+  margin-bottom: 1.25rem;
+}
+
+.settings-section label {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  margin-bottom: 0.35rem;
+}
+
+.toggle-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.toggle-label {
+  font-size: 0.85rem;
+}
+
+/* Voice status bar (hidden by default, shows when .active) */
+.voice-status-bar {
+  display: none;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.3rem 0.6rem;
+}
+
+.voice-status-bar.active {
+  display: flex;
+}
+
+.voice-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: voice-pulse 1.2s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+.voice-dot.processing {
+  background: var(--warning);
+}
+
+.voice-dot.speaking {
+  background: var(--accent2);
+  animation: none;
+}
+
+@keyframes voice-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.85); }
+}
+
+.voice-btn-small {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 4px;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.voice-btn-small:hover { background: var(--border); }
+.voice-btn-small.danger { color: var(--error); border-color: var(--error); }
+
+/* Voice recording overlay */
+#voice-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s;
+}
+
+#voice-overlay.active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.voice-bubble {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 2rem;
+  text-align: center;
+  min-width: 240px;
+}
+
+.voice-bubble h3 {
+  font-size: 0.9rem;
+  color: var(--text-dim);
+  margin-bottom: 1rem;
+}
+
+.voice-bubble.processing .pulse-ring {
+  border-color: var(--warning);
+  animation-duration: 2s;
+}
+
+.voice-bubble.processing .pulse-ring::after {
+  background: var(--warning);
+}
+
+.voice-bubble.speaking .pulse-ring {
+  border-color: var(--accent2);
+  animation: none;
+  opacity: 0.6;
+}
+
+.voice-bubble.speaking .pulse-ring::after {
+  background: var(--accent2);
+}
+
+.pulse-ring {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  border: 3px solid var(--accent);
+  margin: 0 auto 1rem;
+  animation: pulse 1.2s infinite;
+  position: relative;
+}
+
+.pulse-ring::after {
+  content: '';
+  position: absolute;
+  inset: 8px;
+  background: var(--accent);
+  border-radius: 50%;
+  opacity: 0.5;
+}
+
+@keyframes pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.08); opacity: 0.7; }
+}
+
+.voice-actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: center;
+  margin-top: 1rem;
+}
+
+.voice-stop {
+  background: var(--error);
+  border: none;
+  color: #fff;
+  border-radius: 6px;
+  padding: 0.5rem 1.2rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.voice-cancel {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 0.5rem 1.2rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+}

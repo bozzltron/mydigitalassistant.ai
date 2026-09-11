@@ -46,6 +46,14 @@
   gap: 1.25rem;
 }
 
+/* Wide screens: center a readable column (Open WebUI style) instead of
+   stretching edge-to-edge. The max() keeps normal padding on narrow
+   viewports and adds symmetric padding once space allows, so the
+   scrollbar stays at the window edge like every major chat UI. */
+#messages {
+  padding: 1.5rem max(clamp(1rem, 4vw, 2.5rem), calc((100% - 56rem) / 2));
+}
+
 #input-row {
   padding: 1rem max(clamp(1rem, 4vw, 2.5rem), calc((100% - 56rem) / 2)) 1.25rem;
   background: var(--surface);
@@ -58,6 +66,131 @@
   z-index: 10;
 }
 
+#input-row textarea {
+  flex: 1;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  padding: 0.8rem 1rem;
+  font-family: var(--font);
+  font-size: 1rem;
+  resize: none;
+  min-height: 48px;
+  max-height: 140px;
+  line-height: 1.6;
+}
+
+#input-row textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+#input-row .file-attach {
+  position: relative;
+  flex-shrink: 0;
+}
+
+#input-row .file-attach-btn {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 0 0.75rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background 0.15s;
+  height: 52px;
+}
+
+#input-row .file-attach-btn:hover {
+  background: var(--border);
+}
+
+#input-row .file-attach-btn.danger {
+  color: var(--error);
+  border-color: var(--error);
+}
+
+#input-row .mic-btn {
+  padding-right: 0.75rem;
+}
+
+#input-row .file-chips {
+  display: flex;
+  gap: 0.4rem;
+  margin-left: 0.5rem;
+  flex-wrap: wrap;
+}
+
+#input-row .file-chip {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--text);
+}
+
+#input-row .file-chip.remove {
+  cursor: pointer;
+  color: var(--error);
+}
+
+#input-row .file-chip.remove:hover {
+  color: var(--error);
+}
+
+#input-row .file-icon {
+  width: 12px;
+  height: 12px;
+}
+
+#mic-btn {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 0 0.75rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+#mic-btn:hover {
+  background: var(--border);
+}
+
+#mic-btn.recording {
+  background: var(--error);
+  border-color: var(--error);
+  color: #fff;
+}
+
+#send-btn {
+  background: var(--accent);
+  border: none;
+  color: #fff;
+  border-radius: 8px;
+  padding: 0 1.25rem;
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+#send-btn:hover {
+  opacity: 0.85;
+}
+
+#send-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 #trace-panel {
   width: 420px;
   border-left: 1px solid var(--border);
@@ -68,4 +201,6 @@
   flex-shrink: 0;
 }
 
-#trace-panel.hidden { display: none; }
+#trace-panel.hidden {
+  display: none;
+}

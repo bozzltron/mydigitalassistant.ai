@@ -1,0 +1,15 @@
+{
+    admin off
+    grace_period 1s
+}
+
+https://localhost {
+    tls /etc/caddy/certs/localhost.crt /etc/caddy/certs/localhost.key
+    
+    # Route all requests to backend (handles both API and SPA)
+    reverse_proxy assistant:8000 {
+        transport http {
+            response_header_timeout 300s
+        }
+    }
+}

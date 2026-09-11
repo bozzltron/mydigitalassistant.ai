@@ -47,7 +47,7 @@ services:
     ports:
       - "127.0.0.1:8443:443"
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile
+      - ./Caddyfile.prod:/etc/caddy/Caddyfile
       - ./.data/caddy:/etc/caddy/certs
       - caddy-data:/data
     depends_on:

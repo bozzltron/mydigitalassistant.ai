@@ -1,23 +1,29 @@
 import { createStore } from 'solid-js/store'
 
-// Settings type definition
+// Settings type definition matching original chat.html
 export interface Settings {
   theme: 'light' | 'dark'
   ttsEnabled: boolean
-  voiceSelect: string
-  speechSpeed: number
-  speechPitch: number
+  voiceUri: string
+  voiceMode: boolean
+  voiceSpeed: number
+  voicePitch: number
+  voiceVolume: number
+  traceVisible: boolean
   braveEnabled: boolean
   language: string
 }
 
 // Create store for settings
 const [settings, setSettings] = createStore<Settings>({
-  theme: 'light',
+  theme: 'dark',
   ttsEnabled: true,
-  voiceSelect: 'default',
-  speechSpeed: 1.0,
-  speechPitch: 1.0,
+  voiceUri: '',
+  voiceMode: false,
+  voiceSpeed: 1.0,
+  voicePitch: 1.0,
+  voiceVolume: 1.0,
+  traceVisible: true,
   braveEnabled: false,
   language: 'en'
 })

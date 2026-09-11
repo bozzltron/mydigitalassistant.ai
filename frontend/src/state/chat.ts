@@ -30,7 +30,18 @@ export const [currentTurnId, setCurrentTurnId] = createSignal<string | null>(nul
 export const messages = createMemo(() => {
   const sid = sessionId()
   if (sid) {
-    return chatState.conversationMessages.get(sid) || []
+    const conversationMessages = chatState.conversationMessages.get(sid) || []
+    const currentQueue = queue()
+    if (currentQueue.length === 0) {
+      return conversationMessages
+    }
+    const queuedMessages: ChatMessage[] = currentQueue.map(q => ({
+      role: 'user' as const,
+      content: q.message,
+      id: q.id,
+      meta: { isQueued: true }
+    }))
+    return [...conversationMessages, ...queuedMessages]
   }
   return []
 })
@@ -125,6 +136,8 @@ export async function postChatMessage(
         return next
       })
     }
+
+    drainQueue()
   }
 }
 
@@ -141,12 +154,37 @@ export function getConversationTurnId(sessionIdParam: string): string | undefine
   return chatState.conversationTurnIds.get(sessionIdParam)
 }
 
-// Create a memo for the current conversation's turnId that tracks the store
 export function useConversationTurnId(sessionIdParam: () => string | null | undefined) {
   return createMemo(() => {
     const sid = sessionIdParam()
     if (!sid) return undefined
     return chatState.conversationTurnIds.get(sid)
+  })
+}
+
+export function enqueueMessage(message: string): void {
+  const queuedMessage: QueuedMessage = {
+    id: `queued-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    message,
+    timestamp: Date.now()
+  }
+  setQueue(prev => [...prev, queuedMessage])
+}
+
+export function removeQueuedMessage(id: string): void {
+  setQueue(prev => prev.filter(q => q.id !== id))
+}
+
+export function drainQueue(): void {
+  setQueue(prev => {
+    const [next, ...rest] = prev
+    if (next) {
+      const currentSessionId = sessionId()
+      if (currentSessionId) {
+        postChatMessage(next.message, currentSessionId)
+      }
+    }
+    return rest
   })
 }
 

@@ -1,10 +1,11 @@
-import { createSignal, createEffect, Show } from 'solid-js'
+import { createSignal, createEffect, Show, For } from 'solid-js'
 import MessageList from './MessageList'
 import InputBar from './InputBar'
 import StatusIndicator from './StatusIndicator'
-import { messages, sessionId, setSessionId, isTurnActive, useConversationTurnId, addMessageToConversation, ExtractionSummary, SearchInfo } from '../../state/chat'
+import { messages, sessionId, setSessionId, isTurnActive, useConversationTurnId, addMessageToConversation, ExtractionSummary, SearchInfo, enqueueMessage, removeQueuedMessage, queue } from '../../state/chat'
 import { Session } from '../../state/session'
 import { useTurnStatus } from '../../services/status'
+import { settings } from '../../state/settings'
 
 interface ChatPageProps {
   conversation: Session | null
@@ -34,6 +35,15 @@ export default function ChatPage(props: ChatPageProps) {
   // Get the current conversation's turnId
   const currentConvTurnId = useConversationTurnId(sessionId)
 
+  // Sync trace panel visibility with settings
+  createEffect(() => {
+    const tracePanel = document.getElementById('trace-panel')
+    if (tracePanel) {
+      tracePanel.classList.toggle('hidden', !settings().traceVisible)
+    }
+    setShowTrace(settings().traceVisible)
+  })
+
   // Auto-scroll to bottom when messages change (e.g., when loading a conversation)
   createEffect(() => {
     messages()
@@ -43,11 +53,17 @@ export default function ChatPage(props: ChatPageProps) {
     }
   })
 
-const handleSendMessage = async (message: string) => {
-    if (!message.trim() || isSending()) return
+  const handleSendMessage = async (message: string) => {
+    if (!message.trim()) return
 
     const currentSessionId = sessionId()
     if (!currentSessionId) return
+
+    // If a turn is active, queue the message instead of sending immediately
+    if (isSending()) {
+      enqueueMessage(message.trim())
+      return
+    }
 
     try {
       const userMessage = {
@@ -97,15 +113,38 @@ const handleSendMessage = async (message: string) => {
     setIsDictating(false)
   }
 
+  const handleRemoveQueued = (id: string) => {
+    removeQueuedMessage(id)
+  }
+
   return (
     <div id="main">
       <div id="chat-area" class="chat-area">
         <div id="messages" ref={messagesContainerRef()}>
-<MessageList messages={messages()} />
-           
-           <StatusWrapper turnId={currentConvTurnId} />
+          <MessageList messages={messages()} />
           
-          <Show when={messages().length === 0}>
+          <StatusWrapper turnId={currentConvTurnId} />
+          
+          <Show when={queue().length > 0}>
+            <For each={queue()}>
+              {(queuedMsg) => (
+                <div class="msg msg-user msg-queued" id={queuedMsg.id}>
+                  <div class="content">{queuedMsg.message}</div>
+                  <button 
+                    class="queued-remove"
+                    onClick={() => handleRemoveQueued(queuedMsg.id)}
+                    title="Remove queued message"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+                      <path d="M18 6 6 18M6 6l12 12"/>
+                    </svg>
+                  </button>
+                </div>
+              )}
+            </For>
+          </Show>
+
+          <Show when={messages().length === 0 && queue().length === 0}>
             <div class="welcome-message" id="welcome">
               <div class="welcome-icon"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
               <h2>{props.conversation?.title ? `Conversation: ${props.conversation.title}` : 'Ready to chat'}</h2>
