@@ -33,7 +33,7 @@ export default function StatusIndicator(props: StatusIndicatorProps) {
 
   return (
     <Show when={props.isPolling() && !isDone()}>
-      <div class="status-indicator voice-status-bar active">
+      <div class="status-indicator active">
         <span class={dotClass()} aria-hidden="true" />
         <span class="status-label">{label()}</span>
         <span class="status-elapsed">{elapsed()}</span>

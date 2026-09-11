@@ -826,11 +826,7 @@ select {
   animation: fadeInUp 0.2s ease-out forwards;
 }
 
-.status-indicator.voice-status-bar {
-  display: none;
-}
-
-.status-indicator.voice-status-bar.active {
+.status-indicator.active {
   display: flex;
 }
 
