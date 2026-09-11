@@ -815,15 +815,16 @@ select {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.3rem 0.6rem;
+  padding: 0.4rem 0.75rem;
   background: var(--surface2);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 8px;
   color: var(--text);
   font-size: 0.8rem;
   max-width: min(80%, 46rem);
   align-self: flex-start;
   animation: fadeInUp 0.2s ease-out forwards;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
 }
 
 .status-indicator.active {
@@ -837,19 +838,22 @@ select {
   background: var(--text-dim);
   animation: voice-pulse 1.2s ease-in-out infinite;
   flex-shrink: 0;
+  box-shadow: 0 0 6px currentColor;
 }
 
 .voice-dot.listening {
   background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
 }
 
 .voice-dot.processing {
   background: var(--warning);
+  box-shadow: 0 0 8px var(--warning);
 }
 
 @keyframes voice-pulse {
   0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.5; transform: scale(0.85); }
+  50% { opacity: 0.6; transform: scale(0.9); }
 }
 
 .status-label {
@@ -858,13 +862,16 @@ select {
   overflow: hidden;
   text-overflow: ellipsis;
   color: var(--text);
+  font-weight: 500;
 }
 
 .status-elapsed {
   color: var(--text-dim);
-  font-size: 0.78rem;
-  font-style: normal;
-  margin-left: 0.35rem;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  margin-left: 0.5rem;
+  padding-left: 0.5rem;
+  border-left: 1px solid var(--border);
 }
 
 /* Loading dots animation for status label */
