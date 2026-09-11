@@ -32,7 +32,7 @@ export default function ChatPage(props: ChatPageProps) {
   const isSending = isTurnActive
 
   // Get the current conversation's turnId
-  const currentConvTurnId = useConversationTurnId(sessionId())
+  const currentConvTurnId = useConversationTurnId(sessionId)
 
   // Auto-scroll to bottom when messages change (e.g., when loading a conversation)
   createEffect(() => {
