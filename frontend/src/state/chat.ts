@@ -141,6 +141,14 @@ export function getConversationTurnId(sessionIdParam: string): string | undefine
   return chatState.conversationTurnIds.get(sessionIdParam)
 }
 
+// Create a memo for the current conversation's turnId that tracks the store
+export function useConversationTurnId(sessionIdParam: string | null | undefined): string | undefined {
+  return createMemo(() => {
+    if (!sessionIdParam) return undefined
+    return chatState.conversationTurnIds.get(sessionIdParam)
+  })()
+}
+
 interface SessionMessage {
   role: string
   content: string

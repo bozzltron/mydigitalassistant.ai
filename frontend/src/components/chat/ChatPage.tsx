@@ -1,8 +1,8 @@
-import { createSignal, createEffect, createMemo, Show } from 'solid-js'
+import { createSignal, createEffect, Show } from 'solid-js'
 import MessageList from './MessageList'
 import InputBar from './InputBar'
 import StatusIndicator from './StatusIndicator'
-import { messages, sessionId, setSessionId, isTurnActive, getConversationTurnId, addMessageToConversation, ExtractionSummary, SearchInfo } from '../../state/chat'
+import { messages, sessionId, setSessionId, isTurnActive, useConversationTurnId, addMessageToConversation, ExtractionSummary, SearchInfo } from '../../state/chat'
 import { Session } from '../../state/session'
 import { useTurnStatus } from '../../services/status'
 
@@ -32,10 +32,7 @@ export default function ChatPage(props: ChatPageProps) {
   const isSending = isTurnActive
 
   // Get the current conversation's turnId
-  const currentConvTurnId = createMemo(() => {
-    const sid = sessionId()
-    return sid ? getConversationTurnId(sid) : undefined
-  })
+  const currentConvTurnId = useConversationTurnId(sessionId())
 
   // Auto-scroll to bottom when messages change (e.g., when loading a conversation)
   createEffect(() => {
