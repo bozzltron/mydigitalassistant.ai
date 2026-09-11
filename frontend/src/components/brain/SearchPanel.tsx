@@ -1,128 +1,156 @@
-import { createSignal } from 'solid-js'
 import { For, Show } from 'solid-js'
+import type { Frame, Slot, Association, Conflict } from '../../types'
 
-interface SearchResult {
-  id: number
-  url: string
-  title: string
-  content: string
-  relevance: number
+interface TopicMatch {
+  frame: Frame
+  slots: Slot[]
+  similarity: number | null
+  associations: Association[]
+  episodes: Array<{ role: string; content: string; timestamp: string }>
+  conflicts: Conflict[]
 }
 
 interface SearchPanelProps {
-  onResultClick?: (resultId: number) => void
+  onResultClick?: (match: TopicMatch) => void
+  searchQuery: string
+  searchResults: TopicMatch[]
+  isSearching: boolean
+  searchError: string | null
+  onClose: () => void
+}
+
+const TYPE_COLORS: Record<string, string> = {
+  person: '#f78166',
+  concept: '#d2a8ff',
+  event: '#79c0ff',
+  household: '#7ee787',
+  entity: '#ffa657',
+}
+
+function frameNameById(id: number, frames: Frame[]): string {
+  const n = frames.find(x => x.id === id)
+  return n ? n.name : `#${id}`
+}
+
+function fmtTs(ts: string | null | undefined): string {
+  if (!ts) return ''
+  const d = new Date(String(ts).replace(' ', 'T') + 'Z')
+  return isNaN(d.getTime()) ? String(ts) : d.toLocaleString()
+}
+
+function confBar(pct: number): JSX.Element {
+  return (
+    <div class="conf-bar">
+      <div style={{ width: `${Math.round((pct || 0.5) * 100)}%` }}></div>
+    </div>
+  )
 }
 
 export default function SearchPanel(props: SearchPanelProps) {
-  const [searchQuery, setSearchQuery] = createSignal('')
-  const [results, setResults] = createSignal<SearchResult[]>([])
-  const [isLoading, setIsLoading] = createSignal(false)
-  const [error, setError] = createSignal<string | null>(null)
-
-  const handleSearch = async (e: Event) => {
-    e.preventDefault()
-    
-    if (!searchQuery().trim()) return
-    
-    setIsLoading(true)
-    setError(null)
-    
-    try {
-      // Would call real API
-      console.log('Searching for:', searchQuery())
-      
-      // Mock results
-      const mockResults: SearchResult[] = [
-        {
-          id: 1,
-          url: 'https://example.com/article1',
-          title: 'Travel Planning Guide',
-          content: 'How to plan a successful trip...',
-          relevance: 0.95
-        },
-        {
-          id: 2,
-          url: 'https://example.com/article2', 
-          title: 'Budget Travel Tips',
-          content: 'Save money while traveling...',
-          relevance: 0.87
-        },
-        {
-          id: 3,
-          url: 'https://example.com/article3',
-          title: 'Flight Booking Services',
-          content: 'Compare flight prices from different carriers...',
-          relevance: 0.72
-        }
-      ]
-      
-      setResults(mockResults)
-    } catch (err) {
-      setError('Search failed. Please try again.')
-      console.error('Search error:', err)
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
   return (
     <div class="search-panel">
-      <h3>Memory Search</h3>
-      
-      <form onSubmit={handleSearch} class="search-form">
-        <input
-          type="text"
-          value={searchQuery()}
-          onInput={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search your knowledge..."
-          class="search-input"
-        />
-        
-        <button type="submit" disabled={isLoading()}>
-          {isLoading() ? 'Searching...' : 'Search'}
-        </button>
-      </form>
-      
-      <Show when={error()}>
-        <div class="search-error">{error()}</div>
+      <div class="topic-panel-header">
+        <div class="topic-panel-title">Topic memory: {props.searchQuery}</div>
+        <button class="topic-panel-close" onClick={() => props.onClose()}>×</button>
+      </div>
+
+      <Show when={props.searchError}>
+        <div class="search-error">{props.searchError}</div>
       </Show>
-      
-      <Show when={!isLoading() && results().length > 0}>
-        <div class="search-results">
-          <h4>Search Results ({results().length})</h4>
-          
-          <div class="results-list">
-            <For each={results()}>{result => (
-              <div 
-                 
-                class="search-result"
-                onClick={() => props.onResultClick?.(result.id)}
-              >
-                <a href={result.url} target="_blank" rel="noopener noreferrer">
-                  <h5>{result.title}</h5>
-                </a>
-                
-                <div class="result-content">
-                  {result.content}
-                </div>
-                
-                <div class="result-meta">
-                  <span class="relevance">Relevance: {(result.relevance * 100).toFixed(0)}%</span>
-                  <a href={result.url} target="_blank" rel="noopener noreferrer">
-                    {new URL(result.url).hostname}
-                  </a>
-                </div>
+
+      <div class="topic-results">
+        <For each={props.searchResults}>
+          {(match) => (
+            <div class="topic-card" onClick={() => props.onResultClick?.(match)}>
+              <div class="topic-card-head">
+                <div class="topic-card-dot" style={{ background: TYPE_COLORS[match.frame.type] || TYPE_COLORS.entity }}></div>
+                <div class="topic-card-name">{match.frame.name}</div>
+                {match.similarity != null && (
+                  <div class="topic-card-sim">{Math.round(match.similarity * 100)}% match</div>
+                )}
               </div>
-            )}</For>
-          </div>
-        </div>
-      </Show>
-      
-      <Show when={!isLoading() && results().length === 0 && searchQuery()}>
-        <div class="no-results">
-          No results found for "{searchQuery()}"
-        </div>
-      </Show>
+
+              <div class="topic-meta">
+                {match.frame.type} · confidence {Math.round((match.frame.confidence || 0.5) * 100)}%
+                · priority {Math.round((match.frame.priority || 0.5) * 100)}%
+                {match.frame.essential ? ' · essential' : ''}
+                {match.similarity == null ? ' · keyword match' : ''}
+              </div>
+              {confBar(match.frame.confidence)}
+
+              {(match.slots || []).length > 0 && (
+                <>
+                  <div class="topic-section-title">Stored facts</div>
+                  <For each={match.slots}>
+                    {(s) => (
+                      <div class="topic-slot">
+                        <span class="k">{s.key}: </span>
+                        {s.value}
+                        {s.confidence != null && (
+                          <span class="c"> {Math.round(s.confidence * 100)}%</span>
+                        )}
+                        {s.last_strengthened_at && (
+                          <span class="c"> · last reinforced {fmtTs(s.last_strengthened_at)}</span>
+                        )}
+                      </div>
+                    )}
+                  </For>
+                </>
+              )}
+
+              {(match.associations || []).length > 0 && (
+                <>
+                  <div class="topic-section-title">Connections</div>
+                  <For each={match.associations}>
+                    {(a) => {
+                      const other = a.from_frame_id === match.frame.id ? a.to_frame_id : a.from_frame_id
+                      const dir = a.from_frame_id === match.frame.id ? '→' : '←'
+                      const pct = a.confidence != null ? ` (${Math.round(a.confidence * 100)}%)` : ''
+                      return (
+                        <div class="topic-assoc">
+                          {dir} <span class="rel">{a.relation_type}</span> {frameNameById(other, [match.frame])}{pct}
+                        </div>
+                      )
+                    }}
+                  </For>
+                </>
+              )}
+
+              {(match.episodes || []).length > 0 && (
+                <>
+                  <div class="topic-section-title">Conversations that touched this</div>
+                  <For each={match.episodes.slice(0, 4)}>
+                    {(ep) => (
+                      <div class="topic-episode">
+                        <span class="when">{fmtTs(ep.timestamp)}</span> [{ep.role}]: {ep.content.slice(0, 200)}...
+                      </div>
+                    )}
+                  </For>
+                </>
+              )}
+
+              {(match.conflicts || []).length > 0 && (
+                <>
+                  <div class="topic-section-title">Pending conflicts</div>
+                  <For each={match.conflicts}>
+                    {(c) => (
+                      <div class="topic-conflict-line">
+                        <span class="k">{c.slot_key}:</span>
+                        <span class="old">{c.existing_value ?? '∅'}</span> →
+                        <span class="new">{c.new_value ?? '∅'}</span>
+                      </div>
+                    )}
+                  </For>
+                </>
+              )}
+            </div>
+          )}
+        </For>
+
+        <Show when={!props.isSearching && props.searchResults.length === 0 && props.searchQuery}>
+          <div class="topic-empty">No results found for &ldquo;{props.searchQuery}&rdquo;</div>
+        </Show>
+      </div>
     </div>
   )
 }

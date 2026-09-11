@@ -3,14 +3,11 @@ import logging
 import shutil
 import time
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import Depends as _Depends
-from fastapi import FastAPI, HTTPException
-from fastapi import UploadFile, File
-from fastapi.staticfiles import StaticFiles
-from pathlib import Path
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -1624,8 +1621,10 @@ async def get_file_content(
 
     # Read slots for this frame
     async with store._connect() as db:
-        query = ("SELECT id, key, value, confidence, essential, priority, source_type, source_episode_id "
-                 "FROM slots WHERE frame_id = ?")
+        query = (
+            "SELECT id, key, value, confidence, essential, priority, "
+            "source_type, source_episode_id FROM slots WHERE frame_id = ?"
+        )
         rows = await db.execute_fetchall(query, (frame_id,))
 
     slots_dict = {}
@@ -1675,8 +1674,10 @@ async def get_file(
 
     # Read slots for this frame
     async with store._connect() as db:
-        query = ("SELECT id, key, value, confidence, essential, priority, source_type, source_episode_id "
-                 "FROM slots WHERE frame_id = ?")
+        query = (
+            "SELECT id, key, value, confidence, essential, priority, "
+            "source_type, source_episode_id FROM slots WHERE frame_id = ?"
+        )
         rows = await db.execute_fetchall(query, (frame_id,))
 
     slots_dict = {}
@@ -1757,11 +1758,35 @@ async def delete_file(
 @app.get("/{path:path}")
 async def spa_catch_all(path: str):
     """Serve the SolidJS SPA for any unmatched path."""
-    from fastapi.responses import FileResponse
     from pathlib import Path
+
+    from fastapi.responses import FileResponse, PlainTextResponse
+
     # Don't serve SPA for asset file types or API routes
-    asset_extensions = ['.js', '.css', '.svg', '.png', '.jpg', '.ico', '.wasm', '.json']
-    api_prefixes = ["/api/", "/memory/", "/brain/", "/chat/", "/files/", "/settings/", "/tasks/", "/db/", "/feedback/", "/correction/", "/conversations/", "/users/", "/assistant/name", "/search/", "/health", "/og-preview", "/transcribe/", "/uploads/", "/embeddings/", "/show/", "/tags/"]
+    asset_extensions = [".js", ".css", ".svg", ".png", ".jpg", ".ico", ".wasm", ".json"]
+    api_prefixes = [
+        "/api/",
+        "/memory/",
+        "/brain/",
+        "/chat/",
+        "/files/",
+        "/settings/",
+        "/tasks/",
+        "/db/",
+        "/feedback/",
+        "/correction/",
+        "/conversations/",
+        "/users/",
+        "/assistant/name",
+        "/search/",
+        "/health",
+        "/og-preview",
+        "/transcribe/",
+        "/uploads/",
+        "/embeddings/",
+        "/show/",
+        "/tags/",
+    ]
     if any(path.endswith(ext) for ext in asset_extensions):
         raise HTTPException(status_code=404, detail="Asset not found - use /static/path")
     if any(path.startswith(prefix.lstrip("/")) for prefix in api_prefixes):
@@ -1770,7 +1795,6 @@ async def spa_catch_all(path: str):
     if index_path.exists():
         return FileResponse(str(index_path))
     # Fallback to a simple 200 response for any other assets
-    from fastapi.responses import PlainTextResponse
     return PlainTextResponse("Assistant frontend loaded", status_code=200)
 
 # Log that app is loaded
