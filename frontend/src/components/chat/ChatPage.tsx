@@ -35,15 +35,6 @@ export default function ChatPage(props: ChatPageProps) {
   // Get the current conversation's turnId
   const currentConvTurnId = useConversationTurnId(sessionId)
 
-  // Sync trace panel visibility with settings
-  createEffect(() => {
-    const tracePanel = document.getElementById('trace-panel')
-    if (tracePanel) {
-      tracePanel.classList.toggle('hidden', !settings().traceVisible)
-    }
-    setShowTrace(settings().traceVisible)
-  })
-
   // Auto-scroll to bottom when messages change (e.g., when loading a conversation)
   createEffect(() => {
     messages()

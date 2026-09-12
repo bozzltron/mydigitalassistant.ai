@@ -130,17 +130,7 @@ export default function TopBar(props: TopBarProps) {
 
   const applySettings = () => {
     const s = settings
-    const tracePanel = document.getElementById('trace-panel')
     const voiceModeBtn = document.getElementById('voice-mode-btn')
-
-    // Apply trace visibility
-    const traceVisibleCheckbox = document.getElementById('trace-visible') as HTMLInputElement
-    if (traceVisibleCheckbox) {
-      traceVisibleCheckbox.checked = s.traceVisible
-    }
-    if (tracePanel) {
-      tracePanel.classList.toggle('hidden', !s.traceVisible)
-    }
 
     // Apply voice mode button state
     if (voiceModeBtn) {
