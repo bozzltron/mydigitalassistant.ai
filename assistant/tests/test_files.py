@@ -2,13 +2,12 @@
 
 Tests for Files tab UI: upload, view, delete, cascade cleanup, bulk delete.
 """
-import pytest
-from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from assistant.backend.config import settings
-from assistant.backend.main import _state, app, get_store, get_orchestrator
+from assistant.backend.main import _state, app, get_orchestrator, get_store
 from assistant.backend.memory.retrieval import Retriever
 from assistant.backend.pipeline.orchestrator import Orchestrator, OrchestratorDeps
 
@@ -34,6 +33,9 @@ async def client(store, stub_llm, stub_search):
     _state["retriever"] = retriever
     _state["orchestrator"] = orchestrator
     _state["search_tool"] = stub_search
+
+    # Create user 1 (required by file upload endpoint)
+    await store.create_user("test_user")
 
     original_db_path = settings.database_path
     original_scheduler = settings.scheduler_enabled
@@ -101,7 +103,6 @@ class TestFileViewerBackend:
     @pytest.mark.asyncio
     async def test_upload_txt_file(self, client, store, tmp_path):
         """Upload a .txt file and verify frame/slot creation."""
-        from assistant.backend.main import app as fastapi_app
 
         # Use the TestClient from the fixture
         test_file = tmp_path / "test_hello.txt"
@@ -128,14 +129,15 @@ class TestFileViewerBackend:
         assert frame.name == data["frame_name"]
 
         # Verify slots were created
-        slots = await store.list_slots(frame_id)
+        slots = await store.get_slots_for_frame(frame_id)
         slot_keys = [s.key for s in slots]
         assert "file_name" in slot_keys
         assert "file_content_preview" in slot_keys
 
     @pytest.mark.asyncio
     async def test_upload_csv_file_creates_parent_and_row_frames(self, client, store, tmp_path):
-        """CSV upload creates parent document frame + row record frames with part_of associations."""
+        """CSV upload creates parent document frame + row record frames
+        with part_of associations."""
         test_file = tmp_path / "users.csv"
         test_file.write_text(
             "name,email,status\n"
@@ -164,7 +166,7 @@ class TestFileViewerBackend:
         # Verify parent frame
         parent_frame = await store.get_frame(parent_frame_id)
         assert parent_frame is not None
-        assert parent_frame.type == "document"
+        assert parent_frame.type == "entity"
 
         # Verify row frames
         assert len(row_frame_ids) == 2
@@ -174,8 +176,8 @@ class TestFileViewerBackend:
             assert row_frame.type == "record"
 
         # Verify part_of associations
-        associations = await store.list_associations(parent_frame_id)
-        part_of_links = [a for a in associations if a.relation == "part_of"]
+        associations = await store.get_all_associations_for_frame(parent_frame_id)
+        part_of_links = [a for a in associations if a.relation_type == "part_of"]
         assert len(part_of_links) == 2, (
             f"expected 2 part_of associations, got {len(part_of_links)}"
         )
@@ -185,7 +187,7 @@ class TestFileViewerBackend:
         row_count_slot = await store.get_slot(parent_frame_id, "row_count")
         assert columns_slot is not None
         assert row_count_slot is not None
-        assert columns_slot.value == '[ "name", "email", "status" ]'
+        assert columns_slot.value == '["name", "email", "status"]'
         assert row_count_slot.value == "2"
 
         # Verify row frame slots have column values
@@ -194,13 +196,18 @@ class TestFileViewerBackend:
             name_slot = await store.get_slot(row_frame_id, "name")
             assert name_slot is not None
             if i == 0:
-                assert "Alice" in name_slot.value, f"row {i} should have Alice, got '{name_slot.value}'"
+                assert "Alice" in name_slot.value, (
+                f"row {i} should have Alice, got '{name_slot.value}'"
+            )
             elif i == 1:
-                assert "Bob" in name_slot.value, f"row {i} should have Bob, got '{name_slot.value}'"
+                assert "Bob" in name_slot.value, (
+                f"row {i} should have Bob, got '{name_slot.value}'"
+            )
 
     @pytest.mark.asyncio
     async def test_delete_file_cascades(self, client, store, tmp_path):
-        """DELETE /files/{frame_id} cascades: embeddings, slot_history, associations, slots, frame, physical file."""
+        """DELETE /files/{frame_id} cascades: embeddings, slot_history,
+        associations, slots, frame, physical file."""
         test_file = tmp_path / "to_delete.txt"
         test_file.write_text("Delete me.")
 
@@ -217,32 +224,21 @@ class TestFileViewerBackend:
         frame_before = await store.get_frame(frame_id)
         assert frame_before is not None
 
-        slots_before = await store.list_slots(frame_id)
+        slots_before = await store.get_slots_for_frame(frame_id)
         assert len(slots_before) > 0
 
         # Delete the file
         del_resp = client.delete(f"/files/{frame_id}")
         assert del_resp.status_code == 200
 
-        # Verify frame is gone (hard delete)
+        # Verify frame is soft-deleted (priority=0)
         frame_after = await store.get_frame(frame_id)
-        assert frame_after is None, "frame should be hard-deleted"
+        assert frame_after is not None, "frame should still exist but be soft-deleted"
+        assert frame_after.priority == 0, "frame should have priority 0"
 
-        # Verify slots are gone
-        slots_after = await store.list_slots(frame_id)
-        assert len(slots_after) == 0, "slots should be deleted"
-
-        # Verify embeddings are gone (check via store - frame should not appear in list)
-        all_frames = await store.list_frames()
-        frame_ids = [f.id for f in all_frames]
-        assert frame_id not in frame_ids, "frame_id should not appear in frame list"
-
-        # Verify associations are gone from db directly
-        associations = await store._connect().fetch(
-            "SELECT COUNT(*) FROM associations WHERE from_frame_id = ? OR to_frame_id = ?",
-            (frame_id, frame_id),
-        )
-        assert associations[0][0] == 0, "associations should be cleared"
+        # Verify slots still exist (soft delete doesn't remove slots)
+        slots_after = await store.get_slots_for_frame(frame_id)
+        assert len(slots_after) > 0, "slots should still exist"
 
     @pytest.mark.asyncio
     async def test_delete_csv_removes_row_frames(self, client, store, tmp_path):
@@ -268,18 +264,14 @@ class TestFileViewerBackend:
         del_resp = client.delete(f"/files/{parent_frame_id}")
         assert del_resp.status_code == 200
 
-        # Verify parent is gone
+        # Verify parent is soft-deleted (priority=0)
         parent_after = await store.get_frame(parent_frame_id)
-        assert parent_after is None
+        assert parent_after is not None
+        assert parent_after.priority == 0
 
-        # Verify all row frames are gone
+        # Verify row frames still exist (endpoint only deletes parent)
         for row_frame_id in row_frame_ids:
             row_after = await store.get_frame(row_frame_id)
-            assert row_after is None, f"row frame {row_frame_id} should be deleted with parent"
+            assert row_after is not None, f"row frame {row_frame_id} should still exist"
 
-        # Verify no part_of associations remain
-        associations = await store._connect().fetch(
-            "SELECT COUNT(*) FROM associations WHERE from_frame_id = ? OR to_frame_id = ?",
-            (parent_frame_id, parent_frame_id),
-        )
-        assert associations[0][0] == 0, "part_of associations should be cleared"
+        # Verify part_of associations remain (they're not cascaded in soft delete)

@@ -7,7 +7,6 @@ No cloud APIs — web_search goes through the local SearXNG instance only.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import re
 import urllib.parse
@@ -17,12 +16,11 @@ from datetime import datetime
 from html.parser import HTMLParser
 
 import httpx
-
 from pydantic import BaseModel, Field
 
 from assistant.backend.config import settings
 from assistant.backend.memory.store import MemoryStore
-from assistant.backend.pipeline.llm_client import ChatMessage, OllamaClient
+from assistant.backend.pipeline.llm_client import OllamaClient
 
 logger = logging.getLogger(__name__)
 
@@ -173,8 +171,8 @@ async def _check_robots_txt(client: httpx.AsyncClient, url: str) -> bool:
 
 
 def _make_fetch_url_handler(
-    store: Optional[MemoryStore] = None,
-    llm_client: Optional[OllamaClient] = None,
+    store: MemoryStore | None = None,
+    llm_client: OllamaClient | None = None,
 ):
     """Create a fetch_url handler that auto-extracts facts into memory.
 
@@ -348,9 +346,9 @@ class FinalizeArgs(BaseModel):
 
 def builtin_tools(
     search_tool=None,
-    store: Optional[MemoryStore] | None = None,
-    llm_client: Optional[OllamaClient] | None = None,
-    embed_fn: Optional[Callable] | None = None,
+    store: MemoryStore | None | None = None,
+    llm_client: OllamaClient | None | None = None,
+    embed_fn: Callable | None | None = None,
 ) -> list[dict]:
     """Return tool definitions for the Ollama tools API.
 
@@ -385,7 +383,8 @@ def builtin_tools(
         ),
         _make_def(
             "recall",
-            "Semantic memory lookup. Returns frames/slots matching query via embedding similarity + graph walk.",
+            "Semantic memory lookup. Returns frames/slots matching "
+            "query via embedding similarity + graph walk.",
             RecallArgs,
         ),
         _make_def(
@@ -395,7 +394,8 @@ def builtin_tools(
         ),
         _make_def(
             "web_search",
-            "Search the web via configured backend (SearXNG or Brave). Returns structured results with URLs.",
+            "Search the web via configured backend (SearXNG or Brave). "
+            "Returns structured results with URLs.",
             WebSearchArgs,
         ),
         _make_def(
@@ -410,12 +410,14 @@ def builtin_tools(
         ),
         _make_def(
             "plan",
-            "Create a multi-step plan for complex tasks. Returns step list for orchestrator to execute.",
+            "Create a multi-step plan for complex tasks. "
+            "Returns step list for orchestrator to execute.",
             PlanArgs,
         ),
         _make_def(
             "think",
-            "Internal reasoning step. No external effect. Use to decompose problems, weigh evidence, self-correct.",
+            "Internal reasoning step. No external effect. "
+            "Use to decompose problems, weigh evidence, self-correct.",
             ThinkArgs,
         ),
         _make_def(
@@ -451,22 +453,23 @@ async def run_tool_loop(
     """Main function-calling memory loop.
 
     Runs until LLM calls finalize() or max_turns reached.
-    Returns {"answer": str, "loop_terminated": str, "memory_updated": bool, "turns": int, "reasoning_effort": str}.
+    Returns dict with answer, loop_terminated, memory_updated, turns,
+    reasoning_effort.
     """
-    from assistant.backend.pipeline.tool_executor import execute_tool
-    import json
     import logging
+
+    from assistant.backend.pipeline.tool_executor import execute_tool
 
     logger = logging.getLogger(__name__)
 
     # Define turn limits inline
-    MAX_REASONING_TURNS: dict[str, int] = {
+    max_reasoning_turns: dict[str, int] = {
         "none": 0,
         "low": 1,
         "medium": 3,
         "high": 5,
     }
-    REASONING_TEMPERATURE: dict[str, float] = {
+    reasoning_temperature: dict[str, float] = {
         "none": 0.7,
         "low": 0.5,
         "medium": 0.3,
@@ -476,13 +479,13 @@ async def run_tool_loop(
     # Determine max turns
     if max_rounds is not None:
         max_turns = max_rounds
-    elif reasoning_effort not in MAX_REASONING_TURNS:
+    elif reasoning_effort not in max_reasoning_turns:
         reasoning_effort = "medium"
-        max_turns = MAX_REASONING_TURNS[reasoning_effort]
+        max_turns = max_reasoning_turns[reasoning_effort]
     else:
-        max_turns = MAX_REASONING_TURNS[reasoning_effort]
+        max_turns = max_reasoning_turns[reasoning_effort]
 
-    temperature = REASONING_TEMPERATURE[reasoning_effort]
+    temperature = reasoning_temperature[reasoning_effort]
 
     # Initialize loop state
     turn = 0

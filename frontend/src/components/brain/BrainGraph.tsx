@@ -292,10 +292,10 @@ export default function BrainGraph(props: BrainGraphProps) {
     <svg ref={setSvgRef} width={props.width} height={props.height} class="brain-canvas">
       <rect width="100%" height="100%" fill="var(--bg)" />
       <g class="stars">
-        <For each={Array.from({ length: 200 })}>
-          {(_, index) => (
+        <For each={Array.from({ length: 200 }, (_, i) => i)}>
+          {(_) => (
             <circle
-              key={index}
+              
               cx={Math.random() * props.width}
               cy={Math.random() * props.height}
               r={Math.random() * 0.8 + 0.2}

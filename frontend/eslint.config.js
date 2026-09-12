@@ -18,6 +18,7 @@ export default tseslint.config(
     rules: {
       'solid/jsx-no-undef': 'off',
       'no-shadow': ['error', { allow: ['state', 'props'] }],
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
     },
   },
 )

@@ -184,11 +184,11 @@ export default function BrainPage() {
         <h1 id="agent-name">{agentName()}</h1>
         <div class="header-controls">
           <div class="legend">
-            <div class="legend-item"><div class="legend-dot" style="background:var(--person)"></div>person</div>
-            <div class="legend-item"><div class="legend-dot" style="background:var(--concept)"></div>concept</div>
-            <div class="legend-item"><div class="legend-dot" style="background:var(--event)"></div>event</div>
-            <div class="legend-item"><div class="legend-dot" style="background:var(--household)"></div>household</div>
-            <div class="legend-item"><div class="legend-dot" style="background:var(--entity)"></div>entity</div>
+            <div class="legend-item"><div class="legend-dot" style={{"background":"var(--person)"}} />person</div>
+            <div class="legend-item"><div class="legend-dot" style={{"background":"var(--concept)"}} />concept</div>
+            <div class="legend-item"><div class="legend-dot" style={{"background":"var(--event)"}} />event</div>
+            <div class="legend-item"><div class="legend-dot" style={{"background":"var(--household)"}} />household</div>
+            <div class="legend-item"><div class="legend-dot" style={{"background":"var(--entity)"}} />entity</div>
           </div>
           <div class="status" id="status">{isLoading() ? 'Loading...' : 'Live'}</div>
           <div class="topic-search">
@@ -234,7 +234,7 @@ export default function BrainPage() {
                   {(match) => (
                     <div class="topic-card" onClick={() => handleResultClick(match)}>
                       <div class="topic-card-head">
-                        <div class="topic-card-dot" style={{ background: TYPE_COLORS[match.frame.type] || TYPE_COLORS.entity }}></div>
+                        <div class="topic-card-dot" style={{ background: TYPE_COLORS[match.frame.type] || TYPE_COLORS.entity }} />
                         <div class="topic-card-name">{match.frame.name}</div>
                         {match.similarity != null && (
                           <div class="topic-card-sim">{Math.round(match.similarity * 100)}% match</div>
@@ -247,7 +247,7 @@ export default function BrainPage() {
                         {match.similarity == null ? ' · keyword match' : ''}
                       </div>
                       <div class="conf-bar">
-                        <div style={{ width: `${Math.round((match.frame.confidence || 0.5) * 100)}%` }}></div>
+                        <div style={{ width: `${Math.round((match.frame.confidence || 0.5) * 100)}%` }} />
                       </div>
                     </div>
                   )}

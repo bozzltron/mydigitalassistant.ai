@@ -6,12 +6,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import Any, Dict, Optional
 
 from pydantic import ValidationError
 
-from assistant.backend.config import settings
-from assistant.backend.memory.models import Frame, Slot
 from assistant.backend.memory.store import MemoryStore
 
 logger = logging.getLogger(__name__)
@@ -21,7 +18,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 # Global store instance (set during initialization)
-_store: Optional[MemoryStore] = None
+_store: MemoryStore | None = None
 
 
 def init_store(db_path: str) -> None:
@@ -34,17 +31,17 @@ def init_store(db_path: str) -> None:
 def _register_builtin_tools() -> None:
     """Register all builtin tools with their executors."""
     from assistant.backend.pipeline.tools import (
-        UpsertSlotArgs,
-        UpsertAssociationArgs,
-        MarkEssentialArgs,
-        RecallArgs,
-        SearchEpisodesArgs,
-        WebSearchArgs,
         FetchUrlArgs,
-        RunScheduledTaskArgs,
-        PlanArgs,
-        ThinkArgs,
         FinalizeArgs,
+        MarkEssentialArgs,
+        PlanArgs,
+        RecallArgs,
+        RunScheduledTaskArgs,
+        SearchEpisodesArgs,
+        ThinkArgs,
+        UpsertAssociationArgs,
+        UpsertSlotArgs,
+        WebSearchArgs,
     )
 
     register_tool("upsert_slot", UpsertSlotArgs, execute_upsert_slot)
@@ -52,7 +49,9 @@ def _register_builtin_tools() -> None:
     register_tool("mark_essential", MarkEssentialArgs, execute_mark_essential)
     register_tool("recall", RecallArgs, execute_recall)
     register_tool("get_frame", UpsertSlotArgs, execute_get_frame)  # frame_name only
-    register_tool("get_slot_history", UpsertSlotArgs, execute_get_slot_history)  # frame_name + slot_key
+    register_tool(
+        "get_slot_history", UpsertSlotArgs, execute_get_slot_history
+    )  # frame_name + slot_key
     register_tool("search_episodes", SearchEpisodesArgs, execute_search_episodes)
     register_tool("web_search", WebSearchArgs, execute_web_search)
     register_tool("fetch_url", FetchUrlArgs, execute_fetch_url)
@@ -72,9 +71,9 @@ class ToolResult:
     def __init__(
         self,
         success: bool = True,
-        data: Optional[Dict[str, object]] = None,
-        error: Optional[str] = None,
-        metadata: Optional[Dict[str, object]] = None,
+        data: dict[str, object] | None = None,
+        error: str | None = None,
+        metadata: dict[str, object] | None = None,
     ):
         self.success = success
         self.data = data or {}
@@ -114,7 +113,7 @@ def register_tool(
     name: str,
     args_class,
     executor_func,
-    timeout: Optional[float] = None,
+    timeout: float | None = None,
 ) -> None:
     """Register a tool with its args class and executor."""
     TOOL_REGISTRY[name] = {
@@ -159,7 +158,6 @@ async def execute_upsert_slot(args: dict, user_id: str, session_id: str) -> Tool
         frame_name = args.get("frame_name", "")
         slot_key = args.get("slot_key", "")
         slot_value = args.get("slot_value", "")
-        confidence = args.get("confidence", 0.5)
         essential = args.get("essential", False)
         priority = args.get("priority", 0)
         source_type = args.get("source_type", "conversation")
@@ -258,7 +256,6 @@ async def execute_mark_essential(args: dict, user_id: str) -> ToolResult:
 
     try:
         frame_name = args.get("frame_name", "")
-        slot_key = args.get("slot_key")
         essential = args.get("essential", True)
 
         await _store.set_frame_priority(frame_name, priority=10 if essential else 0)
@@ -279,9 +276,7 @@ async def execute_recall(args: dict, user_id: str, session_id: str = "") -> Tool
         return ToolResult(success=False, error="MemoryStore not initialized")
 
     try:
-        query = args.get("query", "")
-        max_results = args.get("max_results", 10)
-        min_confidence = args.get("min_confidence", 0.3)
+        _ = args.get("query", "")
 
         # Need to embed the query first - use a simple approach
         # For now, return empty results as embedding requires LLM client
@@ -335,10 +330,13 @@ async def execute_get_slot_history(args: dict, user_id: str) -> ToolResult:
         return ToolResult(success=False, error="MemoryStore not initialized")
 
     try:
-        frame_name = args.get("frame_name", "")
         slot_key = args.get("slot_key", "")
 
-        history = await _store.get_slot_history(slot_key) if hasattr(_store, "get_slot_history") else []
+        history = (
+            await _store.get_slot_history(slot_key)
+            if hasattr(_store, "get_slot_history")
+            else []
+        )
 
         return ToolResult(success=True, data={"history": history})
     except Exception as e:
@@ -378,7 +376,6 @@ async def execute_web_search(args: dict, user_id: str) -> ToolResult:
 
         query = args.get("query", "")
         num_results = args.get("num_results", 5)
-        min_relevance = args.get("min_relevance", 0.3)
 
         results, info = await search_with_info(query, num_results=num_results)
 
@@ -500,7 +497,7 @@ async def execute_tool(
             func(validated, user_id, session_id),
             timeout=timeout,
         )
-    except asyncio.TimeoutError:
+    except TimeoutError:
         logger.warning(f"Tool {tool_name} timed out after {timeout}s")
         return ToolResult(success=False, error=f"Tool timeout after {timeout}s")
     except Exception as e:

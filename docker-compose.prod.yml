@@ -17,10 +17,10 @@ services:
       - CODER_MODEL=${CODER_MODEL:-}
       # Binds inside the container only. Exposure is controlled by port
       # publishing: the assistant service publishes NO ports; Caddy is the
-      # single published surface (127.0.0.1:8443). Loopback-in-container would
+      # single published surface (127.0.0.1:8444). Loopback-in-container would
       # break Caddy's appnet proxy.
       - BACKEND_HOST=0.0.0.0
-      - SEARCH_BASE_URL=http://searxng:8080
+      - SEARCH_BASE_URL=http://searxng-prod:8080
       - BRAVE_ENABLED=${BRAVE_ENABLED:-false}
       - BRAVE_API_KEY=${BRAVE_API_KEY:-}
       - WHISPER_MODEL=base
@@ -43,9 +43,9 @@ services:
 
   caddy:
     image: caddy:alpine
-    container_name: caddy
+    container_name: caddy-prod
     ports:
-      - "127.0.0.1:8443:443"
+      - "127.0.0.1:8444:443"
     volumes:
       - ./Caddyfile.prod:/etc/caddy/Caddyfile
       - ./.data/caddy:/etc/caddy/certs
@@ -75,11 +75,11 @@ services:
 
   searxng:
     image: searxng/searxng:latest
-    container_name: searxng
+    container_name: searxng-prod
     ports:
-      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:8081:8080"
     environment:
-      - SEARXNG_BASE_URL=http://localhost:8080
+      - SEARXNG_BASE_URL=http://localhost:8081
       - SEARXNG_SECRET=${SEARXNG_SECRET:-$(head -c 32 /dev/urandom | base64)}
     volumes:
       - ./searxng:/etc/searxng

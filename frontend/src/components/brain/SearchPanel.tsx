@@ -41,7 +41,7 @@ function fmtTs(ts: string | null | undefined): string {
 function confBar(pct: number): JSX.Element {
   return (
     <div class="conf-bar">
-      <div style={{ width: `${Math.round((pct || 0.5) * 100)}%` }}></div>
+      <div style={{ width: `${Math.round((pct || 0.5) * 100)}%` }} />
     </div>
   )
 }
@@ -63,7 +63,7 @@ export default function SearchPanel(props: SearchPanelProps) {
           {(match) => (
             <div class="topic-card" onClick={() => props.onResultClick?.(match)}>
               <div class="topic-card-head">
-                <div class="topic-card-dot" style={{ background: TYPE_COLORS[match.frame.type] || TYPE_COLORS.entity }}></div>
+                <div class="topic-card-dot" style={{ background: TYPE_COLORS[match.frame.type] || TYPE_COLORS.entity }} />
                 <div class="topic-card-name">{match.frame.name}</div>
                 {match.similarity != null && (
                   <div class="topic-card-sim">{Math.round(match.similarity * 100)}% match</div>

@@ -23,7 +23,7 @@ const [settings, setSettings] = createStore<Settings>({
   voiceSpeed: 1.0,
   voicePitch: 1.0,
   voiceVolume: 1.0,
-  traceVisible: true,
+  traceVisible: false,
   braveEnabled: false,
   language: 'en'
 })

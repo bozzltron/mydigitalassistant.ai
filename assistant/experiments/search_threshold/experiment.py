@@ -9,16 +9,16 @@ Brave API limits.
 """
 import asyncio
 import json
-import sys
 from pathlib import Path
 
-from assistant.backend.pipeline.search import WebSearchTool, filter_relevant
 from assistant.backend.config import settings
+from assistant.backend.pipeline.search import WebSearchTool, filter_relevant
 
 
 async def run_threshold_test(threshold: float, embed_fn, results) -> dict:
     """Run filter_relevant at a given threshold and return results."""
-    filtered = await filter_relevant(results, 'artificial intelligence', embed_fn, min_relevance=threshold)
+    query = "artificial intelligence"
+    filtered = await filter_relevant(results, query, embed_fn, min_relevance=threshold)
     return {
         "threshold": threshold,
         "total_results": len(results),
@@ -32,10 +32,12 @@ async def main():
     print("=" * 60)
     print("Brave Search Threshold Experiment (REAL EMBEDDINGS)")
     print("=" * 60)
-    print(f"\nConfig: BRAVE_SEARCH_MIN_RELEVANCE (currently: {settings.brave_search_min_relevance})")
-    print(f"Query: 'artificial intelligence'")
-    print(f"Using: nomic-embed-text via Ollama")
-    print(f"Brave API calls: 1 (single search)")
+    print(
+        f"\nConfig: BRAVE_SEARCH_MIN_RELEVANCE (currently: {settings.brave_search_min_relevance})"
+    )
+    print("Query: 'artificial intelligence'")
+    print("Using: nomic-embed-text via Ollama")
+    print("Brave API calls: 1 (single search)")
     print()
 
     tool = WebSearchTool()
@@ -49,7 +51,6 @@ async def main():
     # Use the real embed_fn from the orchestrator pattern
     # This calls ollama's nomic-embed-text model
     async def get_embedding(text: str) -> list[float]:
-        from assistant.backend.pipeline.llm_client import ChatMessage
         resp = await settings.llm_client.embed(text)
         return resp.embedding
     
@@ -63,7 +64,8 @@ async def main():
     for t in [0.10, 0.15, 0.20, 0.25, 0.30]:
         r = await run_threshold_test(t, embed_fn, results)
         results_data.append(r)
-        print(f"{r['threshold']:>10.2f} | {r['passed']:>7} | {r['dropped']:>9} | {r['keep_percentage']:>6.1f}%")
+        print(f"{r['threshold']:>10.2f} | {r['passed']:>7} | "
+              f"{r['dropped']:>9} | {r['keep_percentage']:>6.1f}%")
 
     print()
     print("=== Diminishing Returns Analysis ===")
@@ -104,7 +106,7 @@ async def main():
     with open(output_path, "w") as f:
         json.dump(experiment_data, f, indent=2)
 
-    print(f"\nResults saved to: result.json")
+    print("\nResults saved to: result.json")
     print("=" * 60)
 
 

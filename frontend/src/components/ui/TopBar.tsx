@@ -113,7 +113,6 @@ export default function TopBar(props: TopBarProps) {
     if (!currentSettings.voiceUri && defaultIndex >= 0) {
       updateSetting('voiceUri', localVoices[defaultIndex].voiceURI)
     }
-    setVoiceSelectValue(voiceSelect.value)
   }
 
   const fetchBackendSettings = async () => {

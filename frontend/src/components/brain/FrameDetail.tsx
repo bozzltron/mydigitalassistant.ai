@@ -33,7 +33,7 @@ function fmtTs(ts: string | null | undefined): string {
 function confBar(pct: number): JSX.Element {
   return (
     <div class="conf-bar">
-      <div style={{ width: `${Math.round((pct || 0.5) * 100)}%` }}></div>
+      <div style={{ width: `${Math.round((pct || 0.5) * 100)}%` }} />
     </div>
   )
 }

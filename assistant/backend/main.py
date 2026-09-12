@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import shutil
 import time
@@ -7,7 +8,7 @@ from datetime import datetime
 from pathlib import Path
 
 from fastapi import Depends as _Depends
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, Response, UploadFile
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -188,6 +189,7 @@ app = FastAPI(
 _static_path = Path(__file__).parent / "static"
 _static_path.mkdir(exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(_static_path)), name="static")
+app.mount("/assets", StaticFiles(directory=str(_static_path / "assets")), name="assets")
 
 
 def get_store() -> MemoryStore:
@@ -1204,7 +1206,12 @@ async def list_user_sessions(
     Each session has a name (first user message or a given title),
     a creation timestamp, and episode count.
     """
-    return await store.get_sessions_for_user(user_id)
+    sessions = await store.get_sessions_for_user(user_id)
+    return Response(
+        content=json.dumps(sessions),
+        media_type="application/json",
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate"}
+    )
 
 
 @app.post("/conversations/new", response_model=dict)
@@ -1407,7 +1414,7 @@ async def upload_file(
         frame = existing_frame
     
     # Store file content as a slot
-    content_text = extraction_result.get("text", "")
+    content_text = extraction_result.text
     content_preview = content_text[:200] + ("..." if len(content_text) > 200 else "")
     
     await store.upsert_slot(
@@ -1462,8 +1469,8 @@ async def upload_file(
     )
     
     # Store extracted facts/slots if any
-    if extraction_result.get("key_entities"):
-        for entity in extraction_result["key_entities"]:
+    if extraction_result.key_entities:
+        for entity in extraction_result.key_entities:
             await store.upsert_slot(
                 frame_id=frame.id,
                 key=f"entity_{entity}",
@@ -1473,6 +1480,67 @@ async def upload_file(
                 source_type="file_upload",
                 source_reliability=0.8,
             )
+    
+    # For CSV files, create row frames
+    row_frame_ids = []
+    if ext == "csv" and extraction_result.row_data:
+        row_count = len(extraction_result.row_data)
+        await store.upsert_slot(
+            frame_id=frame.id,
+            key="row_count",
+            value=str(row_count),
+            essential=0,
+            priority=0.5,
+            source_type="file_upload",
+            source_reliability=0.8,
+        )
+        
+        # Store columns slot
+        if extraction_result.row_data:
+            columns = list(extraction_result.row_data[0].keys())
+            import json
+            await store.upsert_slot(
+                frame_id=frame.id,
+                key="columns",
+                value=json.dumps(columns),
+                essential=0,
+                priority=0.5,
+                source_type="file_upload",
+                source_reliability=0.8,
+            )
+        
+        # Create row frames
+        import re
+        for i, row in enumerate(extraction_result.row_data):
+            row_frame_name = f"file_{safe_filename}_row_{i+1}"
+            row_frame = await store.create_frame(
+                row_frame_name,
+                "record",
+                source_type="csv_row",
+                owner_user_id=user_id,
+            )
+            row_frame_ids.append(row_frame.id)
+            
+            # Store each column as a slot
+            for col, val in row.items():
+                slot_key = re.sub(r'[^a-zA-Z0-9_]', '_', col.lower().strip())
+                slot_key = re.sub(r'_+', '_', slot_key).strip('_')
+                if not slot_key:
+                    slot_key = f"col_{i}"
+                await store.upsert_slot(
+                    frame_id=row_frame.id,
+                    key=slot_key,
+                    value=str(val),
+                    essential=0,
+                    priority=0.5,
+                    source_type="csv_row",
+                    source_reliability=0.8,
+                )
+            
+            # Link parent -> row
+            await store.create_association(frame.id, row_frame.id, "part_of")
+    else:
+        row_count = 0
     
     # Clean up temp file
     try:
@@ -1486,10 +1554,13 @@ async def upload_file(
         "file_size": len(content),
         "file_ext": ext,
         "content_preview": content_preview,
-        "key_entities": extraction_result.get("key_entities", []),
-        "open_questions": extraction_result.get("open_questions", []),
+        "key_entities": extraction_result.key_entities,
+        "open_questions": extraction_result.open_questions,
         "frame_name": frame_name,
         "frame_id": frame.id,
+        "parent_frame_id": frame.id,
+        "row_count": row_count,
+        "row_frame_ids": row_frame_ids,
     }
 
 
@@ -1727,10 +1798,11 @@ async def delete_file(
 
     # Get file safe name from slots before deleting
     async with store._connect() as db:
-        row = await db.execute_fetchone(
+        cursor = await db.execute(
             "SELECT value FROM slots WHERE frame_id = ? AND key = 'file_safe_name'",
             (frame_id,),
         )
+        row = await cursor.fetchone()
         file_safe_name = row[0] if row else None
 
     # Soft-delete the frame (set priority to 0)
@@ -1762,7 +1834,7 @@ async def spa_catch_all(path: str):
 
     from fastapi.responses import FileResponse, PlainTextResponse
 
-    # Don't serve SPA for asset file types or API routes
+    # Don't serve SPA for asset file types, /assets/, or API routes
     asset_extensions = [".js", ".css", ".svg", ".png", ".jpg", ".ico", ".wasm", ".json"]
     api_prefixes = [
         "/api/",
@@ -1786,6 +1858,7 @@ async def spa_catch_all(path: str):
         "/embeddings/",
         "/show/",
         "/tags/",
+        "/assets/",  # Vite build output
     ]
     if any(path.endswith(ext) for ext in asset_extensions):
         raise HTTPException(status_code=404, detail="Asset not found - use /static/path")

@@ -22,11 +22,7 @@ export default defineConfig({
     port: 5173,
     host: true,
     proxy: {
-      '/chat': {
-        target: 'http://assistant:8000',
-        changeOrigin: true,
-      },
-      '/users': {
+      '/api': {
         target: 'http://assistant:8000',
         changeOrigin: true,
       },
@@ -34,7 +30,7 @@ export default defineConfig({
         target: 'http://assistant:8000',
         changeOrigin: true,
       },
-      '/brain': {
+      '/chat': {
         target: 'http://assistant:8000',
         changeOrigin: true,
       },
@@ -87,6 +83,26 @@ export default defineConfig({
         changeOrigin: true,
       },
       '/summarize': {
+        target: 'http://assistant:8000',
+        changeOrigin: true,
+      },
+      '/uploads': {
+        target: 'http://assistant:8000',
+        changeOrigin: true,
+      },
+      '/embeddings': {
+        target: 'http://assistant:8000',
+        changeOrigin: true,
+      },
+      '/show': {
+        target: 'http://assistant:8000',
+        changeOrigin: true,
+      },
+      '/tags': {
+        target: 'http://assistant:8000',
+        changeOrigin: true,
+      },
+      '/users': {
         target: 'http://assistant:8000',
         changeOrigin: true,
       },

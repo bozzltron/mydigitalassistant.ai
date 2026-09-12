@@ -1,7 +1,6 @@
 """Endpoint tests ensuring /files and /chat-ui return clean HTML."""
 import pytest
 from fastapi.testclient import TestClient
-from assistant.backend.main import app
 
 
 @pytest.fixture

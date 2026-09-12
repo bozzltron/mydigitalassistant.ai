@@ -5,7 +5,6 @@ import StatusIndicator from './StatusIndicator'
 import { messages, sessionId, setSessionId, isTurnActive, useConversationTurnId, addMessageToConversation, ExtractionSummary, SearchInfo, enqueueMessage, removeQueuedMessage, queue } from '../../state/chat'
 import { Session } from '../../state/session'
 import { useTurnStatus } from '../../services/status'
-import { settings } from '../../state/settings'
 
 interface ChatPageProps {
   conversation: Session | null

@@ -1,12 +1,11 @@
 """Tests for the M5 tool framework: registry, handlers, and the tool loop."""
 
-import re
 from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
 
-from assistant.backend.pipeline.llm_client import ChatMessage, ChatResponse, ToolCall
+from assistant.backend.pipeline.llm_client import ChatResponse, ToolCall
 from assistant.backend.pipeline.search import WebSearchTool
 from assistant.backend.pipeline.tools import (
     _make_fetch_url_handler,
@@ -109,7 +108,16 @@ async def test_run_tool_loop_executes_and_answers(store):
             content="",
             model="m",
             done=True,
-            tool_calls=[ToolCall(name="upsert_slot", arguments={"frame_name": "test", "slot_key": "key", "slot_value": "value"})],
+tool_calls=[
+            ToolCall(
+                name="upsert_slot",
+                arguments={
+                    "frame_name": "test",
+                    "slot_key": "key",
+                    "slot_value": "value"
+                }
+            )
+        ],
         ),
         ChatResponse(content="Stored successfully.", model="m", done=True),
     ]
@@ -147,7 +155,12 @@ async def test_run_tool_loop_bounded_rounds(store):
         content="",
         model="m",
         done=True,
-        tool_calls=[ToolCall(name="upsert_slot", arguments={"frame_name": "test", "slot_key": "key", "slot_value": "value"})],
+        tool_calls=[
+            ToolCall(
+                name="upsert_slot",
+                arguments={"frame_name": "test", "slot_key": "key", "slot_value": "value"}
+            )
+        ],
     )
     llm = FakeToolLLM([looping] * 2 + [ChatResponse(content="done", model="m", done=True)])
     content, resp, _ = await _run(llm, max_rounds=2)
@@ -168,7 +181,12 @@ async def test_tool_results_not_in_thinking_chain(store):
         ChatResponse(
             content="", model="m", done=True,
             thinking="pondering",
-            tool_calls=[ToolCall(name="upsert_slot", arguments={"frame_name": "test", "slot_key": "key", "slot_value": "value"})],
+            tool_calls=[
+                ToolCall(
+                    name="upsert_slot",
+                    arguments={"frame_name": "test", "slot_key": "key", "slot_value": "value"}
+                )
+            ],
         ),
         ChatResponse(content="2", model="m", done=True),
     ]
