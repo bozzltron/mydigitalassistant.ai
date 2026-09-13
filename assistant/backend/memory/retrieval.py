@@ -342,6 +342,12 @@ class Retriever:
             frame_ids = [rf.frame.id for rf in retrieved_frames]
             await self.working_memory.touch_frames(frame_ids)
 
+        # Log retrieval for daily run frames (helps verify tuning)
+        daily_run_frames = [rf for rf in retrieved_frames if rf.frame.name.startswith("daily_run_")]
+        if daily_run_frames:
+            logger.info("Retrieved daily run frames: %s (query: %s)",
+                        [rf.frame.name for rf in daily_run_frames], query[:80])
+
         return context
 
     async def _search_past_conversations(

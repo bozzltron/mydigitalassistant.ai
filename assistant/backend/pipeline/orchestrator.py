@@ -1121,10 +1121,11 @@ class Orchestrator:
         )
 
         messages = [ChatMessage(role="system", content=system_prompt)]
+        use_thinking = await self.llm_client.supports_thinking(self.llm_client.chat_model)
         llm_response = await self.llm_client.chat(
             messages,
-            think=True,
-            num_predict=settings.think_num_predict_cap,
+            think=use_thinking,
+            num_predict=settings.think_num_predict_cap if use_thinking else None,
         )
 
         response_text = (

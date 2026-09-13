@@ -110,7 +110,7 @@ def _signal_handler(signum, frame):
     SHUTDOWN = True
 
 
-async def _execute_task(
+async def execute_and_record_task(
     store: MemoryStore,
     orchestrator: Orchestrator,
     task_frame_id: int,
@@ -118,12 +118,14 @@ async def _execute_task(
     task_prompt: str,
     owner_user_id: int,
 ) -> tuple[bool, str]:
-    """Run a single scheduled task through the orchestrator.
+    """Run a scheduled task and record all memory artifacts.
 
+    Shared by scheduler runner and manual API endpoint.
     Calls run_scheduled_task (full cognitive loop), then:
     - Records last_run / next_run in slots.
     - Creates a daily_run_YYYY_MM_DD event frame.
     - Creates associations: task --ran_in--> daily_run, task --produced_output--> episode.
+    - Generates embedding for daily run frame.
     """
     now_str = datetime.now(UTC).isoformat()
     date_str = datetime.now(UTC).strftime("%Y_%m_%d")
@@ -164,6 +166,16 @@ async def _execute_task(
 
         await store.update_daily_run_frame(daily_run_frame_id, [task_name], "completed")
 
+        # Generate embedding for daily run frame so it's retrievable immediately
+        try:
+            await store.embed_frames(
+                [daily_run_frame_id],
+                orchestrator._embed_fn(),
+                embedding_model=settings.embedding_model,
+            )
+        except Exception as e:
+            logger.warning("Failed to embed daily run frame: %s", e)
+
         logger.info("Task '%s' completed successfully", task_name)
         return True, full
 
@@ -175,6 +187,20 @@ async def _execute_task(
             last_result_summary=f"failed: {exc}",
         )
         return False, f"failed: {exc}"
+
+
+async def _execute_task(
+    store: MemoryStore,
+    orchestrator: Orchestrator,
+    task_frame_id: int,
+    task_name: str,
+    task_prompt: str,
+    owner_user_id: int,
+) -> tuple[bool, str]:
+    """Run a single scheduled task through the orchestrator (scheduler entry point)."""
+    return await execute_and_record_task(
+        store, orchestrator, task_frame_id, task_name, task_prompt, owner_user_id
+    )
 
 
 async def _run_heartbeat(store: MemoryStore) -> None:

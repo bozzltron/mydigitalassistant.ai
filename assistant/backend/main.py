@@ -1196,6 +1196,68 @@ async def get_task_result(
             }
     raise HTTPException(status_code=404, detail="Task not found")
 
+
+@app.post("/tasks/run-due")
+async def run_due_tasks(
+    orchestrator: Orchestrator = _Depends(get_orchestrator),
+    store: MemoryStore = _Depends(get_store),
+):
+    """Manually trigger execution of all due scheduled tasks.
+
+    Bypasses the scheduler's poll loop for testing and on-demand runs.
+    Returns a summary of each task executed.
+    """
+    from assistant.backend.scheduler import execute_and_record_task
+
+    due = await store.get_due_scheduled_tasks()
+    if not due:
+        return {"tasks_run": [], "message": "No due tasks found"}
+
+    results = []
+    for task in due:
+        task_name = task["name"]
+        task_prompt = task.get("prompt", "")
+        frame_id = task["id"]
+        owner_user_id = task.get("owner_user_id") or 1
+
+        if not task_prompt:
+            results.append({
+                "name": task_name,
+                "success": False,
+                "result_summary": "Task has no prompt",
+            })
+            continue
+
+        try:
+            success, result = await execute_and_record_task(
+                store=store,
+                orchestrator=orchestrator,
+                task_frame_id=frame_id,
+                task_name=task_name,
+                task_prompt=task_prompt,
+                owner_user_id=owner_user_id,
+            )
+
+            summary = result[:2000] if result else ""
+
+            results.append({
+                "name": task_name,
+                "success": success,
+                "result_summary": summary,
+            })
+            logger.info("Manual run: task '%s' completed (success=%s)", task_name, success)
+
+        except Exception as exc:
+            logger.exception("Manual run: task '%s' failed: %s", task_name, exc)
+            results.append({
+                "name": task_name,
+                "success": False,
+                "result_summary": f"failed: {exc}",
+            })
+
+    return {"tasks_run": results}
+
+
 @app.get("/users/{user_id}/sessions", response_model=list[dict])
 async def list_user_sessions(
     user_id: int,
