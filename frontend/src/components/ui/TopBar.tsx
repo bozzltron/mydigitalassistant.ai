@@ -296,7 +296,7 @@ export default function TopBar(props: TopBarProps) {
             class="voice-btn" 
             title="Voice conversation mode" 
             onClick={() => {
-              if (settings.voiceMode) {
+              if (voice.status !== 'idle') {
                 exitVoiceMode()
                 updateSetting('voiceMode', false)
               } else {
@@ -304,9 +304,9 @@ export default function TopBar(props: TopBarProps) {
                 updateSetting('voiceMode', true)
               }
             }}
-            classList={{ active: settings.voiceMode }}
+            classList={{ active: voice.status !== 'idle' }}
           >
-            {settings.voiceMode ? 'Stop Conversation' : "Let's talk"}
+            {voice.status !== 'idle' ? 'Stop Conversation' : "Let's talk"}
           </button>
           <button id="stop-speaking-btn" class="voice-btn" title="Stop speaking" style={{"display":"none"}}>
             Stop

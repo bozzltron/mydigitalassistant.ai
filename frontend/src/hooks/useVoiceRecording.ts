@@ -18,6 +18,7 @@ interface UseVoiceRecordingReturn {
   stopRecording: () => void
 }
 
+const SILENCE_DURATION = 2000
 const MIN_RECORDING_MS = 500
 const MIN_AUDIO_LEVEL = 0.015
 const MIN_AUDIO_FRAMES = 3
@@ -68,6 +69,11 @@ export function useVoiceRecording({
   isDictationMode,
   onTranscription,
 }: UseVoiceRecordingOptions): UseVoiceRecordingReturn {
+  // Call getters if they are functions
+  const getIsVoiceMode = typeof isVoiceMode === 'function' ? isVoiceMode : () => isVoiceMode
+  const getIsDictationMode = typeof isDictationMode === 'function' ? isDictationMode : () => isDictationMode
+  
+  console.log('[useVoiceRecording] init')
   const [mediaRecorder, setMediaRecorder] = createSignal<MediaRecorder | null>(null)
   const [audioChunks, setAudioChunks] = createSignal<Blob[]>([])
   const [isRecording, setIsRecording] = createSignal(false)
@@ -84,10 +90,14 @@ export function useVoiceRecording({
 
   // Auto-start recording when voice mode is activated
   createEffect(() => {
-    if (isVoiceMode && !isRecording()) {
+    const voiceMode = getIsVoiceMode()
+    console.log('[useVoiceRecording] createEffect check', { voiceMode, isRecording: isRecording() })
+    if (voiceMode && !isRecording()) {
       // Small delay to ensure UI is ready
       setTimeout(() => {
-        if (isVoiceMode && !isRecording()) {
+        console.log('[useVoiceRecording] timeout check', { voiceMode: getIsVoiceMode(), isRecording: isRecording() })
+        if (getIsVoiceMode() && !isRecording()) {
+          console.log('[useVoiceRecording] auto-starting recording')
           startRecording()
         }
       }, 100)
@@ -115,6 +125,7 @@ export function useVoiceRecording({
         clearTimeout(st)
         setSilenceTimeout(null)
       }
+      console.log('[voice] loud audio', { average, loudFrames: loudFrameCount(), elapsed, metMinDuration })
     } else {
       if (!silenceAfterLoud() && loudFrameCount() > 0) {
         setSilenceAfterLoud(true)
@@ -129,6 +140,13 @@ export function useVoiceRecording({
           }
         }, SILENCE_DURATION)
         setSilenceTimeout(st)
+      } else if (loudFrameCount() > 0) {
+        console.log('[voice] waiting for silence timeout conditions', { 
+          metMinDuration, 
+          loudFrames: loudFrameCount(), 
+          minFrames: MIN_AUDIO_FRAMES,
+          hasTimeout: !!silenceTimeout() 
+        })
       }
     }
   }
@@ -148,6 +166,7 @@ export function useVoiceRecording({
   }
 
   async function startRecording() {
+    console.log('[voice] startRecording called', { isRecording: isRecording() })
     if (isRecording()) return
     try {
       const ctx = audioContext()
@@ -162,6 +181,7 @@ export function useVoiceRecording({
           autoGainControl: true,
         },
       })
+      console.log('[voice] got media stream', stream.getTracks())
 
       setMediaStream(stream)
 
@@ -183,7 +203,7 @@ export function useVoiceRecording({
         null
       if (!mimeType) {
         console.error('Audio recording not supported in this browser')
-        if (isVoiceMode) {
+        if (getIsVoiceMode()) {
           startProcessing()
           setTimeout(() => exitVoiceMode(), 100)
         }
@@ -232,7 +252,7 @@ export function useVoiceRecording({
 
       mr.onerror = (e) => {
         console.error('MediaRecorder error:', e)
-        if (isVoiceMode) {
+        if (getIsVoiceMode()) {
           scheduleListenRetry('Recording error, retrying...')
         }
       }
@@ -250,8 +270,8 @@ export function useVoiceRecording({
       }, MAX_RECORDING_MS)
       setRecordingTimeoutId(timeoutId)
     } catch (e) {
-      console.warn('Failed to start recording:', e)
-      if (isVoiceMode) {
+      console.warn('[voice] Failed to start recording:', e)
+      if (getIsVoiceMode()) {
         startProcessing()
         setTimeout(() => exitVoiceMode(), 100)
       }
@@ -295,9 +315,9 @@ export function useVoiceRecording({
 
   function handleRecordingDiscard(message: string) {
     stopRecording()
-    if (isDictationMode) {
+    if (getIsDictationMode()) {
       endDictation()
-    } else if (isVoiceMode) {
+    } else if (getIsVoiceMode()) {
       scheduleListenRetry(message)
     }
   }
@@ -305,22 +325,22 @@ export function useVoiceRecording({
   function scheduleListenRetry(message: string, delayMs = 1200) {
     startProcessing()
     window.setTimeout(() => {
-      if (isVoiceMode) {
+      if (getIsVoiceMode()) {
         startListeningForVoice()
       }
     }, delayMs)
   }
 
   function startListeningForVoice() {
-    if (!isVoiceMode) return
+    if (!getIsVoiceMode()) return
     startListening()
     playEarcon('start')
     startRecording()
   }
 
   async function sendAudioForTranscription(blob: Blob) {
-    console.log('[voice] sendAudioForTranscription blob:', blob.size, 'mime:', blob.type, 'voiceMode:', isVoiceMode, 'dictation:', isDictationMode)
-    if (!isVoiceMode && !isDictationMode) return
+    console.log('[voice] sendAudioForTranscription blob:', blob.size, 'mime:', blob.type, 'voiceMode:', getIsVoiceMode(), 'dictation:', getIsDictationMode())
+    if (!getIsVoiceMode() && !getIsDictationMode()) return
     startProcessing()
     playEarcon('stop')
 
@@ -348,7 +368,7 @@ export function useVoiceRecording({
         return
       }
 
-      if (isDictationMode) {
+      if (getIsDictationMode()) {
         endDictation()
         onTranscription(text)
         return
@@ -359,12 +379,12 @@ export function useVoiceRecording({
         return
       }
 
-      if (isVoiceMode) {
+      if (getIsVoiceMode()) {
         onTranscription(text)
       }
     } catch (err) {
       console.error('Transcription error:', err)
-      if (isDictationMode) {
+      if (getIsDictationMode()) {
         endDictation()
         console.error('Transcription failed')
       } else {
