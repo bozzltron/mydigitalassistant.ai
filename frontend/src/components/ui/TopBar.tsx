@@ -2,6 +2,7 @@ import { createEffect, createSignal, onMount } from 'solid-js'
 import { Session } from '../../state/session'
 import { user } from '../../state/user'
 import { settings, updateSetting } from '../../state/settings'
+import { enterVoiceMode, exitVoiceMode, voice, isListening, isProcessing, isSpeaking, isIdle } from '../../state/voice'
 import { api } from '../../services/api'
 
 interface TopBarProps {
@@ -129,12 +130,6 @@ export default function TopBar(props: TopBarProps) {
 
   const applySettings = () => {
     const s = settings
-    const voiceModeBtn = document.getElementById('voice-mode-btn')
-
-    // Apply voice mode button state
-    if (voiceModeBtn) {
-      voiceModeBtn.classList.toggle('active', s.voiceMode)
-    }
 
     // Apply voice settings
     const voiceSpeed = document.getElementById('voice-speed') as HTMLInputElement
@@ -230,6 +225,42 @@ export default function TopBar(props: TopBarProps) {
     }
   }
 
+  // Update voice status bar based on voice state
+  createEffect(() => {
+    const statusBar = document.getElementById('voice-status-bar') as HTMLElement
+    const statusDot = document.getElementById('voice-status-dot') as HTMLElement
+    const statusText = document.getElementById('voice-status-text') as HTMLElement
+    const stopBtn = document.getElementById('voice-stop-inline') as HTMLButtonElement
+    const cancelBtn = document.getElementById('voice-cancel-inline') as HTMLButtonElement
+    
+    if (!statusBar || !statusDot || !statusText) return
+
+    const v = voice
+    const isActive = !isIdle()
+    
+    statusBar.classList.toggle('active', isActive)
+    statusDot.classList.remove('processing', 'speaking')
+    
+    if (isListening()) {
+      statusDot.classList.remove('processing', 'speaking')
+      statusText.textContent = v.isDictating ? 'Dictating...' : 'Listening...'
+      stopBtn.textContent = 'Stop'
+      cancelBtn.textContent = v.isDictating ? 'Cancel' : 'Cancel'
+    } else if (isProcessing()) {
+      statusDot.classList.add('processing')
+      statusText.textContent = 'Transcribing...'
+      stopBtn.textContent = 'Stop'
+      cancelBtn.textContent = 'Cancel'
+    } else if (isSpeaking()) {
+      statusDot.classList.add('speaking')
+      statusText.textContent = 'Speaking...'
+      stopBtn.textContent = 'Stop'
+      cancelBtn.textContent = 'Cancel'
+    } else {
+      statusText.textContent = 'Idle'
+    }
+  })
+
   return (
     <>
       <header>
@@ -260,8 +291,22 @@ export default function TopBar(props: TopBarProps) {
             <button class="voice-btn-small" id="voice-stop-inline">Stop</button>
             <button class="voice-btn-small danger" id="voice-cancel-inline">Cancel</button>
           </span>
-          <button id="voice-mode-btn" class="voice-btn" title="Voice conversation mode">
-            Voice
+          <button 
+            id="voice-mode-btn" 
+            class="voice-btn" 
+            title="Voice conversation mode" 
+            onClick={() => {
+              if (settings.voiceMode) {
+                exitVoiceMode()
+                updateSetting('voiceMode', false)
+              } else {
+                enterVoiceMode()
+                updateSetting('voiceMode', true)
+              }
+            }}
+            classList={{ active: settings.voiceMode }}
+          >
+            {settings.voiceMode ? 'Stop Voice' : "Let's talk"}
           </button>
           <button id="stop-speaking-btn" class="voice-btn" title="Stop speaking" style={{"display":"none"}}>
             Stop
@@ -269,7 +314,7 @@ export default function TopBar(props: TopBarProps) {
           <button class="settings-btn" id="settings-toggle" title="Settings" onClick={() => setShowSettings(true)}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
           </button>
-          <a href="/brain-ui" class="nav-link" title="Brain Observatory" style={{"color":"var(--text-dim)","text-decoration":"none","font-size":"0.8rem","padding":"0.35rem 0.75rem","border":"1px solid var(--border)","border-radius":"6px"}}>Brain</a>
+          <a href="/brain" class="nav-link" title="Brain Observatory" style={{"color":"var(--text-dim)","text-decoration":"none","font-size":"0.8rem","padding":"0.35rem 0.75rem","border":"1px solid var(--border)","border-radius":"6px"}}>Brain</a>
         </div>
       </header>
 

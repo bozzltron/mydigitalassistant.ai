@@ -1,22 +1,14 @@
-import { createSignal, createEffect, Show, For } from 'solid-js'
+import { createSignal, createEffect, Show, For, onMount, onCleanup } from 'solid-js'
 import MessageList from './MessageList'
 import InputBar from './InputBar'
 import StatusIndicator from './StatusIndicator'
-import { messages, sessionId, setSessionId, isTurnActive, useConversationTurnId, addMessageToConversation, ExtractionSummary, SearchInfo, enqueueMessage, removeQueuedMessage, queue } from '../../state/chat'
+import { messages, sessionId, setSessionId, isTurnActive, useConversationTurnId, addMessageToConversation, enqueueMessage, removeQueuedMessage, queue } from '../../state/chat'
 import { Session } from '../../state/session'
 import { useTurnStatus } from '../../services/status'
-
-interface ChatPageProps {
-  conversation: Session | null
-  sendMessage: (message: string, session_id?: string, attached_files?: File[]) => Promise<{
-    response: string
-    task_type?: string
-    extraction_summary?: ExtractionSummary
-    search_extraction_summary?: ExtractionSummary
-    search_info?: SearchInfo
-    session_id?: string
-  }>
-}
+import type {
+  ExtractionSummary,
+  SearchInfo,
+} from '../../types'
 
 // Wrapper component that calls useTurnStatus with a dynamic turnId
 function StatusWrapper(props: { turnId: () => string | undefined }) {
@@ -24,22 +16,58 @@ function StatusWrapper(props: { turnId: () => string | undefined }) {
   return <StatusIndicator turnStatus={turnStatus} isPolling={isPolling} />
 }
 
-export default function ChatPage(props: ChatPageProps) {
+interface SendMessageResult {
+  response: string
+  task_type?: string
+  extraction_summary?: ExtractionSummary
+  search_extraction_summary?: ExtractionSummary
+  search_info?: SearchInfo
+  session_id?: string
+}
+
+export default function ChatPage(props: {
+  conversation: Session | null
+  sendMessage: (message: string, session_id?: string, attached_files?: File[]) => Promise<SendMessageResult>
+}) {
   const [showTrace, setShowTrace] = createSignal(false)
+  const [messagesContainerRef, setMessagesContainerRef] = createSignal<HTMLDivElement | null>(null)
   const [isDictating, setIsDictating] = createSignal(false)
-  const [messagesContainerRef] = createSignal<HTMLDivElement | null>(null)
   
   const isSending = isTurnActive
 
   // Get the current conversation's turnId
   const currentConvTurnId = useConversationTurnId(sessionId)
 
-  // Auto-scroll to bottom when messages change (e.g., when loading a conversation)
+  // Auto-scroll to bottom when messages change
+  let scrollTimeout: number | null = null
   createEffect(() => {
     messages()
-    const container = messagesContainerRef()
-    if (container) {
-      container.scrollTop = container.scrollHeight
+    queue()
+    if (scrollTimeout) {
+      clearTimeout(scrollTimeout)
+    }
+    scrollTimeout = window.setTimeout(() => {
+      const container = messagesContainerRef()
+      if (container) {
+        container.scrollTop = container.scrollHeight
+      }
+    }, 0)
+  })
+
+  onCleanup(() => {
+    if (scrollTimeout) {
+      clearTimeout(scrollTimeout)
+    }
+  })
+
+  // Load user ID on mount
+  onMount(async () => {
+    try {
+      const res = await fetch('/users')
+      const users = await res.json()
+      // User ID loaded but not needed locally
+    } catch (e) {
+      console.error('Failed to load user:', e)
     }
   })
 
@@ -95,22 +123,24 @@ export default function ChatPage(props: ChatPageProps) {
     }
   }
 
+  const handleRemoveQueued = (id: string) => {
+    removeQueuedMessage(id)
+  }
+
   const handleDictationStart = () => {
     setIsDictating(true)
+    startDictation()
   }
 
   const handleDictationStop = () => {
     setIsDictating(false)
-  }
-
-  const handleRemoveQueued = (id: string) => {
-    removeQueuedMessage(id)
+    endDictation()
   }
 
   return (
     <div id="main">
       <div id="chat-area" class="chat-area">
-        <div id="messages" ref={messagesContainerRef()}>
+        <div id="messages" ref={setMessagesContainerRef}>
           <MessageList messages={messages()} />
           
           <StatusWrapper turnId={currentConvTurnId} />
@@ -147,9 +177,9 @@ export default function ChatPage(props: ChatPageProps) {
           <InputBar 
             onSend={handleSendMessage} 
             isSending={isSending()}
+            isDictating={isDictating()}
             onDictationStart={handleDictationStart}
             onDictationStop={handleDictationStop}
-            isDictating={isDictating()}
           />
         </div>
       </div>

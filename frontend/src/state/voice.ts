@@ -1,64 +1,65 @@
-import { createSignal } from 'solid-js'
+import { createStore } from 'solid-js/store'
 
-// Voice state type definition
+// Voice state type definition - matching original chat.html
+export type VoiceStatus = 'idle' | 'listening' | 'processing' | 'speaking' | 'error'
+
 export interface VoiceState {
-  isListening: boolean
-  isProcessing: boolean
-  isSpeaking: boolean
-  status: 'idle' | 'listening' | 'processing' | 'speaking' | 'error'
+  status: VoiceStatus
   transcript?: string
+  isDictating: boolean
 }
 
-// Create signal for voice state
-export const [voice, setVoice] = createSignal<VoiceState>({
-  isListening: false,
-  isProcessing: false,
-  isSpeaking: false,
-  status: 'idle'
+// Create store for voice state (allows partial updates)
+export const [voice, setVoice] = createStore<VoiceState>({
+  status: 'idle',
+  transcript: undefined,
+  isDictating: false,
 })
 
-// Voice actions
+// Voice actions - proper state machine
 export const enterVoiceMode = () => {
-  setVoice(prev => ({
-    ...prev,
-    isListening: true,
-    status: 'listening'
-  }))
+  setVoice('status', 'listening')
+  setVoice('isDictating', false)
 }
 
 export const exitVoiceMode = () => {
-  setVoice(prev => ({
-    ...prev,
-    isListening: false,
-    isProcessing: false,
-    isSpeaking: false,
-    status: 'idle',
-    transcript: undefined
-  }))
+  setVoice('status', 'idle')
+  setVoice('isDictating', false)
+  setVoice('transcript', undefined)
+}
+
+export const startListening = () => {
+  setVoice('status', 'listening')
 }
 
 export const startProcessing = () => {
-  setVoice(prev => ({
-    ...prev,
-    isListening: false,
-    isProcessing: true,
-    status: 'processing'
-  }))
+  setVoice('status', 'processing')
 }
 
 export const startSpeaking = () => {
-  setVoice(prev => ({
-    ...prev,
-    isProcessing: false,
-    isSpeaking: true,
-    status: 'speaking'
-  }))
+  setVoice('status', 'speaking')
 }
 
 export const setError = (error: string) => {
-  setVoice(prev => ({
-    ...prev,
-    status: 'error',
-    transcript: error
-  }))
+  setVoice('status', 'error')
+  setVoice('transcript', error)
 }
+
+// Dictation mode (one-shot recording)
+export const startDictation = () => {
+  setVoice('status', 'listening')
+  setVoice('isDictating', true)
+}
+
+export const endDictation = () => {
+  setVoice('status', 'idle')
+  setVoice('isDictating', false)
+  setVoice('transcript', undefined)
+}
+
+// Helper to get computed state for UI
+export const isListening = () => voice.status === 'listening'
+export const isProcessing = () => voice.status === 'processing'
+export const isSpeaking = () => voice.status === 'speaking'
+export const isIdle = () => voice.status === 'idle'
+export const isError = () => voice.status === 'error'

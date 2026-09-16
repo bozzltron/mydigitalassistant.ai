@@ -4,9 +4,9 @@ interface InputBarProps {
   onSend: (message: string) => void
   isSending?: boolean
   onAttachFile?: () => void
+  isDictating?: boolean
   onDictationStart?: () => void
   onDictationStop?: () => void
-  isDictating?: boolean
 }
 
 export default function InputBar(props: InputBarProps) {
@@ -14,6 +14,14 @@ export default function InputBar(props: InputBarProps) {
   const [attachedFiles, setAttachedFiles] = createSignal<File[]>([])
   const [fileInputRef, setFileInputRef] = createSignal<HTMLInputElement | null>(null)
   const [textareaRef, setTextareaRef] = createSignal<HTMLTextAreaElement | null>(null)
+
+  const handleDictationClick = () => {
+    if (props.isDictating) {
+      props.onDictationStop?.()
+    } else {
+      props.onDictationStart?.()
+    }
+  }
 
   const handleSubmit = (e: Event) => {
     e.preventDefault()
@@ -121,40 +129,34 @@ export default function InputBar(props: InputBarProps) {
             </div>
           )}
         </For>
-      </div>
-      
-      <button 
-        type="button"
-        class="mic-btn btn-icon"
-        id="mic-btn"
-        title="Dictate into message box"
-        onClick={() => {
-          if (props.isDictating) {
-            props.onDictationStop?.()
-          } else {
-            props.onDictationStart?.()
-          }
-        }}
-        classList={{
-          recording: props.isDictating,
-        }}
-      >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
-          <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-          <line x1="12" x2="12" y1="19" y2="22"/>
-        </svg>
-      </button>
-      
-      <button 
-        type="button"
-        class="btn-primary"
-        id="send-btn"
-        disabled={!message().trim() || props.isSending}
-        onClick={handleSubmit}
-      >
-        {props.isSending ? 'Sending...' : 'Send'}
-      </button>
-    </>
+</div>
+        
+        <button 
+          type="button"
+          class="mic-btn btn-icon"
+          id="mic-btn"
+          title={props.isDictating ? 'Stop dictation' : 'Dictate into message box'}
+          onClick={handleDictationClick}
+          classList={{
+            recording: props.isDictating,
+          }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+            <line x1="12" x2="12" y1="19" y2="22"/>
+          </svg>
+        </button>
+        
+       <button
+         type="button"
+         class="btn-primary"
+         id="send-btn"
+         disabled={!message().trim() || props.isSending}
+         onClick={handleSubmit}
+       >
+         {props.isSending ? 'Sending...' : 'Send'}
+       </button>
+     </>
   )
 }
