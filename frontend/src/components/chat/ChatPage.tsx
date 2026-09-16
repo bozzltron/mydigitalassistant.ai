@@ -125,6 +125,7 @@ export default function ChatPage(props: {
   }
 
   // TTS: speak assistant responses when they arrive
+  const [isTtsSpeaking, setIsTtsSpeaking] = createSignal(false)
   const lastSpokenMsgId = { current: '' }
   createEffect(() => {
     const msgs = messages()
@@ -142,10 +143,20 @@ export default function ChatPage(props: {
         utterance.rate = settings.voiceSpeed
         utterance.pitch = settings.voicePitch
         utterance.volume = settings.voiceVolume
+        utterance.onstart = () => setIsTtsSpeaking(true)
+        utterance.onend = () => setIsTtsSpeaking(false)
+        utterance.onerror = () => setIsTtsSpeaking(false)
         speechSynthesis.speak(utterance)
       }
     }
   })
+
+  const stopSpeaking = () => {
+    if ('speechSynthesis' in window) {
+      speechSynthesis.cancel()
+      setIsTtsSpeaking(false)
+    }
+  }
 
   // Voice recording hook - runs when voice mode is active
   useVoiceRecording({
@@ -214,6 +225,39 @@ export default function ChatPage(props: {
           />
         </div>
       </div>
+
+      <Show when={isTtsSpeaking()}>
+        <button 
+          class="stop-speaking-btn"
+          id="stop-speaking-btn"
+          onClick={stopSpeaking}
+          title="Stop speaking"
+          style={{
+            position: 'fixed',
+            bottom: '90px',
+            right: '20px',
+            zIndex: 100,
+            padding: '0.75rem 1rem',
+            background: 'var(--error)',
+            color: 'white',
+            border: 'none',
+            borderRadius: '8px',
+            fontSize: '0.875rem',
+            fontWeight: 600,
+            cursor: 'pointer',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem'
+          }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="6" y="4" width="4" height="16" rx="1"/>
+            <rect x="14" y="4" width="4" height="16" rx="1"/>
+          </svg>
+          Stop
+        </button>
+      </Show>
 
       <div id="trace-panel" class={`trace-panel ${showTrace() ? '' : 'hidden'}`}>
         <div class="trace-header">
