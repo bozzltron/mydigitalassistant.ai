@@ -6,7 +6,7 @@ import { messages, sessionId, setSessionId, isTurnActive, useConversationTurnId,
 import { Session } from '../../state/session'
 import { useTurnStatus } from '../../services/status'
 import { useVoiceRecording } from '../../hooks/useVoiceRecording'
-import { voice } from '../../state/voice'
+import { voice, setTtsSpeaking, isTtsSpeaking } from '../../state/voice'
 import { settings } from '../../state/settings'
 import type {
   ExtractionSummary,
@@ -126,12 +126,38 @@ export default function ChatPage(props: {
 
   // TTS: speak assistant responses when they arrive
   const [isTtsSpeaking, setIsTtsSpeaking] = createSignal(false)
-  const lastSpokenMsgId = { current: '' }
+  
+  // Load spoken message IDs from localStorage
+  const [spokenMsgIds, setSpokenMsgIds] = createSignal<Set<string>>(new Set())
+  onMount(() => {
+    try {
+      const saved = localStorage.getItem('tts_spoken_messages')
+      if (saved) {
+        setSpokenMsgIds(new Set(JSON.parse(saved)))
+      }
+    } catch (e) {
+      console.warn('Failed to load spoken messages:', e)
+    }
+  })
+
+  const markAsSpoken = (msgId: string) => {
+    setSpokenMsgIds(prev => {
+      const next = new Set(prev)
+      next.add(msgId)
+      try {
+        localStorage.setItem('tts_spoken_messages', JSON.stringify([...next]))
+      } catch (e) {
+        console.warn('Failed to save spoken messages:', e)
+      }
+      return next
+    })
+  }
+
   createEffect(() => {
     const msgs = messages()
     const lastMsg = msgs[msgs.length - 1]
-    if (lastMsg && lastMsg.role === 'assistant' && lastMsg.id !== lastSpokenMsgId.current) {
-      lastSpokenMsgId.current = lastMsg.id
+    if (lastMsg && lastMsg.role === 'assistant' && !spokenMsgIds().has(lastMsg.id)) {
+      markAsSpoken(lastMsg.id)
       if (settings.ttsEnabled && 'speechSynthesis' in window) {
         const utterance = new SpeechSynthesisUtterance(lastMsg.content)
         const voiceUri = settings.voiceUri
@@ -143,9 +169,9 @@ export default function ChatPage(props: {
         utterance.rate = settings.voiceSpeed
         utterance.pitch = settings.voicePitch
         utterance.volume = settings.voiceVolume
-        utterance.onstart = () => setIsTtsSpeaking(true)
-        utterance.onend = () => setIsTtsSpeaking(false)
-        utterance.onerror = () => setIsTtsSpeaking(false)
+        utterance.onstart = () => setTtsSpeaking(true)
+        utterance.onend = () => setTtsSpeaking(false)
+        utterance.onerror = () => setTtsSpeaking(false)
         speechSynthesis.speak(utterance)
       }
     }
@@ -154,7 +180,7 @@ export default function ChatPage(props: {
   const stopSpeaking = () => {
     if ('speechSynthesis' in window) {
       speechSynthesis.cancel()
-      setIsTtsSpeaking(false)
+      setTtsSpeaking(false)
     }
   }
 

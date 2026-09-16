@@ -7,6 +7,7 @@ export interface VoiceState {
   status: VoiceStatus
   transcript?: string
   isDictating: boolean
+  isTtsSpeaking: boolean
 }
 
 // Create store for voice state (allows partial updates)
@@ -14,6 +15,7 @@ export const [voice, setVoice] = createStore<VoiceState>({
   status: 'idle',
   transcript: undefined,
   isDictating: false,
+  isTtsSpeaking: false,
 })
 
 // Voice actions - proper state machine
@@ -63,3 +65,9 @@ export const isProcessing = () => voice.status === 'processing'
 export const isSpeaking = () => voice.status === 'speaking'
 export const isIdle = () => voice.status === 'idle'
 export const isError = () => voice.status === 'error'
+export const isTtsSpeaking = () => voice.isTtsSpeaking
+
+// TTS speaking state setters
+export const setTtsSpeaking = (speaking: boolean) => {
+  setVoice('isTtsSpeaking', speaking)
+}

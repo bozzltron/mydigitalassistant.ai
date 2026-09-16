@@ -1,8 +1,8 @@
-import { createEffect, createSignal, onMount } from 'solid-js'
+import { createEffect, createSignal, onMount, Show } from 'solid-js'
 import { Session } from '../../state/session'
 import { user } from '../../state/user'
 import { settings, updateSetting } from '../../state/settings'
-import { enterVoiceMode, exitVoiceMode, voice, isListening, isProcessing, isSpeaking, isIdle } from '../../state/voice'
+import { enterVoiceMode, exitVoiceMode, voice, isListening, isProcessing, isSpeaking, isIdle, isTtsSpeaking } from '../../state/voice'
 import { api } from '../../services/api'
 
 interface TopBarProps {
@@ -251,7 +251,7 @@ export default function TopBar(props: TopBarProps) {
       statusText.textContent = 'Transcribing...'
       stopBtn.textContent = 'Stop'
       cancelBtn.textContent = 'Cancel'
-    } else if (isSpeaking()) {
+    } else if (isSpeaking() || isTtsSpeaking()) {
       statusDot.classList.add('speaking')
       statusText.textContent = 'Speaking...'
       stopBtn.textContent = 'Stop'
