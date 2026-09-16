@@ -104,6 +104,15 @@ export function useVoiceRecording({
     }
   })
 
+  // Stop recording when voice mode is deactivated
+  createEffect(() => {
+    const voiceMode = getIsVoiceMode()
+    if (!voiceMode && isRecording()) {
+      console.log('[useVoiceRecording] voice mode deactivated — stopping recording')
+      stopRecording()
+    }
+  })
+
   function checkAudioLevels() {
     const a = analyser()
     if (!a) return
