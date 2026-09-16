@@ -306,7 +306,7 @@ export default function TopBar(props: TopBarProps) {
             }}
             classList={{ active: settings.voiceMode }}
           >
-            {settings.voiceMode ? 'Stop Voice' : "Let's talk"}
+            {settings.voiceMode ? 'Stop Conversation' : "Let's talk"}
           </button>
           <button id="stop-speaking-btn" class="voice-btn" title="Stop speaking" style={{"display":"none"}}>
             Stop
