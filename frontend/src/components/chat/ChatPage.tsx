@@ -6,7 +6,7 @@ import { messages, sessionId, setSessionId, isTurnActive, useConversationTurnId,
 import { Session } from '../../state/session'
 import { useTurnStatus } from '../../services/status'
 import { useVoiceRecording } from '../../hooks/useVoiceRecording'
-import { voice, setTtsSpeaking, isTtsSpeaking } from '../../state/voice'
+import { voice } from '../../state/voice'
 import { settings } from '../../state/settings'
 import type {
   ExtractionSummary,
@@ -169,9 +169,9 @@ export default function ChatPage(props: {
         utterance.rate = settings.voiceSpeed
         utterance.pitch = settings.voicePitch
         utterance.volume = settings.voiceVolume
-        utterance.onstart = () => setTtsSpeaking(true)
-        utterance.onend = () => setTtsSpeaking(false)
-        utterance.onerror = () => setTtsSpeaking(false)
+        utterance.onstart = () => setIsTtsSpeaking(true)
+        utterance.onend = () => setIsTtsSpeaking(false)
+        utterance.onerror = () => setIsTtsSpeaking(false)
         speechSynthesis.speak(utterance)
       }
     }
@@ -180,7 +180,7 @@ export default function ChatPage(props: {
   const stopSpeaking = () => {
     if ('speechSynthesis' in window) {
       speechSynthesis.cancel()
-      setTtsSpeaking(false)
+      setIsTtsSpeaking(false)
     }
   }
 
