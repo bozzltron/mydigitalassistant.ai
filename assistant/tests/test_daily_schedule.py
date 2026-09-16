@@ -33,6 +33,7 @@ class FakeLLM(OllamaClient):
     def __init__(self) -> None:
         super().__init__()
         self.intent_reply: dict = {}
+        self.extraction_reply: dict = {}
 
     async def chat(self, messages, *args, **kwargs):  # noqa: ANN001, ANN002
         system = messages[0].content.lower()
@@ -43,6 +44,11 @@ class FakeLLM(OllamaClient):
         if "daily task list" in system:
             payload = {"intent": "create", "name": "test_task", "repeat": True}
             payload.update(self.intent_reply)
+            return ChatResponse(
+                content=json.dumps(payload), model="fake", done=True
+            )
+        if "extract" in system or "extraction" in system:
+            payload = self.extraction_reply or {"slots": [], "associations": []}
             return ChatResponse(
                 content=json.dumps(payload), model="fake", done=True
             )
@@ -218,6 +224,50 @@ async def test_chat_run_now_task(env):
     assert tasks[0]["name"] == "briefing"
     # last_run should be updated
     assert tasks[0]["last_run"] is not None
+
+
+async def test_run_scheduled_task_episode_has_frame_ids(env):
+    """run_scheduled_task should link extracted frames to the assistant episode."""
+    orch, llm, store, user_id = env
+    await store.upsert_scheduled_task(
+        name="test_briefing", description="test",
+        schedule_cron="daily", prompt="Brief me on AI news",
+        owner_user_id=user_id,
+    )
+    # Provide a fake extraction that creates frames
+    llm.extraction_reply = {
+        "slots": [
+            {
+                "frame_name": "ai_news",
+                "frame_type": "entity",
+                "key": "topic",
+                "value": "AI breakthroughs",
+                "confidence": 0.8,
+            }
+        ],
+        "associations": [],
+    }
+    # Call run_scheduled_task directly (bypasses chat intent routing)
+    result = await orch.run_scheduled_task(
+        prompt="Brief me on AI news",
+        user_id=user_id,
+        task_name="test_briefing",
+    )
+    assert result == "ok"
+
+    # Find the episode created for this task
+    episodes = await store.get_episodes_for_user(user_id)
+    task_episodes = [e for e in episodes if e.session_id.startswith("scheduled-test_briefing-")]
+    assert len(task_episodes) == 1
+    episode = task_episodes[0]
+    assert episode.role == "assistant"
+    # frame_ids should be populated with extracted frames
+    assert episode.frame_ids is not None
+    assert len(episode.frame_ids) >= 1
+    # Verify the frame was created
+    frame = await store.get_frame(episode.frame_ids[0])
+    assert frame is not None
+    assert frame.name == "ai_news"
 
 
 async def test_chat_run_now_disables_once_task(env):

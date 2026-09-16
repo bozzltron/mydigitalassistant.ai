@@ -1134,7 +1134,7 @@ class Orchestrator:
             or "Task completed."
         )
 
-        await self._log_episode(
+        episode = await self._log_episode(
             user_id,
             session_id,
             role="assistant",
@@ -1153,12 +1153,15 @@ class Orchestrator:
                 self.llm_client,
             )
             if extraction.slots or extraction.associations:
-                await apply_extraction(
+                result = await apply_extraction(
                     extraction,
                     self.store,
                     source_type="scheduled_task",
                     source_url=None,
                     source_reliability=0.6,
+                )
+                await self.store.update_episode_frame_ids(
+                    episode.id, result.get("frame_ids", [])
                 )
                 logger.info(
                     "run_scheduled_task: extracted %d slots, %d assocs",
