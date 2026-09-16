@@ -7,6 +7,7 @@ import { Session } from '../../state/session'
 import { useTurnStatus } from '../../services/status'
 import { useVoiceRecording } from '../../hooks/useVoiceRecording'
 import { voice } from '../../state/voice'
+import { settings } from '../../state/settings'
 import type {
   ExtractionSummary,
   SearchInfo,
@@ -65,9 +66,7 @@ export default function ChatPage(props: {
   // Load user ID on mount
   onMount(async () => {
     try {
-      const res = await fetch('/users')
-      const users = await res.json()
-      // User ID loaded but not needed locally
+      await fetch('/users')
     } catch (e) {
       console.error('Failed to load user:', e)
     }
@@ -124,6 +123,29 @@ export default function ChatPage(props: {
       addMessageToConversation(currentSessionId, errorMessage)
     }
   }
+
+  // TTS: speak assistant responses when they arrive
+  const lastSpokenMsgId = { current: '' }
+  createEffect(() => {
+    const msgs = messages()
+    const lastMsg = msgs[msgs.length - 1]
+    if (lastMsg && lastMsg.role === 'assistant' && lastMsg.id !== lastSpokenMsgId.current) {
+      lastSpokenMsgId.current = lastMsg.id
+      if (settings.ttsEnabled && 'speechSynthesis' in window) {
+        const utterance = new SpeechSynthesisUtterance(lastMsg.content)
+        const voiceUri = settings.voiceUri
+        if (voiceUri) {
+          const voices = speechSynthesis.getVoices()
+          const selectedVoice = voices.find(v => v.voiceURI === voiceUri)
+          if (selectedVoice) utterance.voice = selectedVoice
+        }
+        utterance.rate = settings.voiceSpeed
+        utterance.pitch = settings.voicePitch
+        utterance.volume = settings.voiceVolume
+        speechSynthesis.speak(utterance)
+      }
+    }
+  })
 
   // Voice recording hook - runs when voice mode is active
   useVoiceRecording({
