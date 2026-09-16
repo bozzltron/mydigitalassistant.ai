@@ -5,6 +5,8 @@ import StatusIndicator from './StatusIndicator'
 import { messages, sessionId, setSessionId, isTurnActive, useConversationTurnId, addMessageToConversation, enqueueMessage, removeQueuedMessage, queue } from '../../state/chat'
 import { Session } from '../../state/session'
 import { useTurnStatus } from '../../services/status'
+import { useVoiceRecording } from '../../hooks/useVoiceRecording'
+import { voice } from '../../state/voice'
 import type {
   ExtractionSummary,
   SearchInfo,
@@ -122,6 +124,13 @@ export default function ChatPage(props: {
       addMessageToConversation(currentSessionId, errorMessage)
     }
   }
+
+  // Voice recording hook - runs when voice mode is active
+  useVoiceRecording({
+    isVoiceMode: () => voice.status === 'listening' || voice.status === 'processing' || voice.status === 'speaking',
+    isDictationMode: () => isDictating(),
+    onTranscription: handleSendMessage,
+  })
 
   const handleRemoveQueued = (id: string) => {
     removeQueuedMessage(id)
