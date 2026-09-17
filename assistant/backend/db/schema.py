@@ -387,6 +387,16 @@ async def _migrate_add_deleted_at_to_sessions(db) -> None:
         logger.debug("Migration: deleted_at column added to sessions")
 
 
+async def _migrate_add_reasoning_trace(db) -> None:
+    """Add reasoning_trace column to episodes table."""
+    episodes_info = await db.execute_fetchall("PRAGMA table_info(episodes)")
+    episode_cols = {r[1] for r in episodes_info}
+    if "reasoning_trace" not in episode_cols:
+        await db.execute("ALTER TABLE episodes ADD COLUMN reasoning_trace TEXT")
+        await db.commit()
+        logger.debug("Migration: reasoning_trace column added to episodes")
+
+
 async def init_db(db_path: str) -> None:
     """Open connection, apply schema, enable foreign keys + WAL, load sqlite-vec.
 
@@ -409,3 +419,4 @@ async def init_db(db_path: str) -> None:
         await _migrate_add_deleted_at_and_last_accessed(db)
         await _migrate_add_sessions_table(db)
         await _migrate_add_deleted_at_to_sessions(db)
+        await _migrate_add_reasoning_trace(db)

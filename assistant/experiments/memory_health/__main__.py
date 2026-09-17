@@ -14,7 +14,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from assistant.backend.db.sqlcipher import aiosqlite_connect
 
-
 HEALTHY_THRESHOLDS = {
     "conflict_rate_pct": 5.0,
     "high_conf_pct": 30.0,

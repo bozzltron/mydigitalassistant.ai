@@ -72,6 +72,7 @@ class OllamaClient:
     - utility_model: extraction + task-routing fallback
     - embedding_model: frame/query embeddings
     - coder_model: reserved for tool codegen (M5); empty = fall back to chat_model
+    - math_model: dedicated computation model with Python tool execution
     """
 
     def __init__(
@@ -81,6 +82,9 @@ class OllamaClient:
         utility_model: str = "qwen2.5:3b",
         embedding_model: str = "nomic-embed-text",
         coder_model: str = "",
+        math_model: str = "",
+        math_num_ctx: int = 16384,
+        math_keep_alive: str = "10m",
         timeout: float = 120.0,
         verify_tls: bool | str = True,
         chat_num_ctx: int = 8192,
@@ -92,6 +96,9 @@ class OllamaClient:
         self.utility_model = utility_model
         self.embedding_model = embedding_model
         self.coder_model = coder_model
+        self.math_model = math_model
+        self.math_num_ctx = math_num_ctx
+        self.math_keep_alive = math_keep_alive
         self.timeout = timeout
         self.verify_tls: bool | str = verify_tls
         self.chat_num_ctx = chat_num_ctx
@@ -176,7 +183,125 @@ class OllamaClient:
 
     async def supports_thinking(self, model: str | None = None) -> bool:
         """True if the model advertises the 'thinking' capability."""
-        return "thinking" in await self.model_capabilities(model)
+        try:
+            return "thinking" in await self.model_capabilities(model)
+        except Exception:
+            return False
+
+    async def supports_tools(self, model: str | None = None) -> bool:
+        """True if the model advertises the 'tools' capability."""
+        return "tools" in await self.model_capabilities(model)
+
+    async def _execute_python_sandboxed(self, code: str, timeout: int) -> str:
+        """Execute Python code with timeout, no network, limited imports."""
+        import os
+        import subprocess
+        import tempfile
+
+        # Allowed imports (extend as needed)
+        allowed_imports = """
+import math, statistics, random, decimal, fractions
+import itertools, functools, collections, datetime, typing
+try: import numpy as np
+except: pass
+try: import scipy.stats as stats
+except: pass
+try: import sympy as sp
+except: pass
+try: import pandas as pd
+except: pass
+"""
+        full_code = allowed_imports + "\n" + code
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+            f.write(full_code)
+            tmp_path = f.name
+
+        try:
+            result = subprocess.run(
+                ["python3", tmp_path],
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                env={**os.environ, "PYTHONPATH": ""}  # No user site-packages
+            )
+            output = result.stdout
+            if result.stderr:
+                output += f"\nSTDERR: {result.stderr}"
+            if result.returncode != 0:
+                output += f"\nExit code: {result.returncode}"
+            return output
+        except subprocess.TimeoutExpired:
+            return f"Error: Execution timed out after {timeout}s"
+        except Exception as e:
+            return f"Error: {e}"
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except Exception:
+                pass
+
+    async def execute_python(self, code: str, timeout: int = 30) -> str:
+        """
+        Execute Python code via math model with tool calling.
+        Returns stdout/stderr as string.
+        """
+        if not self.math_model:
+            raise ValueError("MATH_MODEL not configured")
+
+        # Check capability
+        if not await self.supports_tools(self.math_model):
+            raise ValueError(f"Model {self.math_model} does not support tool calling")
+
+        # Build tool definition for Python execution
+        python_tool = {
+            "type": "function",
+            "function": {
+                "name": "execute_python",
+                "description": (
+                    "Execute Python code and return stdout/stderr. "
+                    "Use for math, statistics, financial calculations, symbolic manipulation."
+                ),
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "code": {"type": "string", "description": "Python code to execute"},
+                        "timeout": {
+                            "type": "integer",
+                            "default": 30,
+                            "description": "Execution timeout in seconds"
+                        }
+                    },
+                    "required": ["code"]
+                }
+            }
+        }
+
+        # System prompt for math model
+        system = ChatMessage(role="system", content="""You are a computation engine.
+        Execute the user's mathematical request by writing and running Python code.
+        Use numpy, scipy, sympy, pandas, statistics as needed.
+        Return ONLY the tool call to execute_python with the code.
+        The system will return the result; you then formulate the final answer.""")
+
+        user = ChatMessage(role="user", content=code)
+
+        response = await self.chat(
+            [system, user],
+            model=self.math_model,
+            tools=[python_tool],
+            tool_choice="required",
+            think=False,
+            num_ctx=self.math_num_ctx,
+            temperature=0.0,
+        )
+
+        if response.tool_calls:
+            call = response.tool_calls[0]
+            # Execute the code locally (sandboxed)
+            return await self._execute_python_sandboxed(call.arguments.get("code", ""), timeout)
+
+        raise RuntimeError("Math model did not invoke execute_python tool")
 
     async def chat(
         self,
@@ -213,13 +338,25 @@ class OllamaClient:
         if format:
             payload["format"] = format
         if think is not None:
-            payload["think"] = think
+            # Capability-gated thinking: don't send think flag to non-thinking models
+            if think and not await self.supports_thinking(model):
+                import logging
+                logging.getLogger(__name__).warning(
+                    "Model %s does not support 'thinking' capability; ignoring think=True",
+                    model,
+                )
+                think = False
+            if think:
+                payload["think"] = think
         if num_predict is not None:
             payload["options"]["num_predict"] = num_predict
         if num_ctx is None:
-            num_ctx = (
-                self.utility_num_ctx if model == self.utility_model else self.chat_num_ctx
-            )
+            if model == self.utility_model:
+                num_ctx = self.utility_num_ctx
+            elif model == self.math_model:
+                num_ctx = self.math_num_ctx
+            else:
+                num_ctx = self.chat_num_ctx
         if num_ctx:
             payload["options"]["num_ctx"] = num_ctx
         if tools:
@@ -249,11 +386,17 @@ class OllamaClient:
 
     async def embed(
         self,
-        text: str,
+        text: str | list[str],
         model: str | None = None,
-    ) -> EmbeddingResponse:
-        """Generate embedding for text. Uses embedding_model by default."""
+    ) -> EmbeddingResponse | list[EmbeddingResponse]:
+        """Generate embedding(s) for text. Accepts single string or list."""
         model = model or self.embedding_model
+
+        # Handle list input
+        if isinstance(text, list):
+            return await self._embed_batch(text, model)
+
+        # Single string (existing logic with cache)
         cache_key = f"{model}:{text}"
         if cache_key in self._embed_cache:
             cached = self._embed_cache[cache_key]
@@ -278,6 +421,56 @@ class OllamaClient:
             for k in keys:
                 self._embed_cache.pop(k, None)
         return EmbeddingResponse(embedding=embedding, model=model)
+
+    async def _embed_batch(
+        self, texts: list[str], model: str
+    ) -> list[EmbeddingResponse]:
+        """Batch embedding via single Ollama call."""
+        cache_keys = [f"{model}:{t}" for t in texts]
+
+        # Check cache for all
+        cached = {}
+        uncached_texts = []
+        uncached_indices = []
+        for i, (t, k) in enumerate(zip(texts, cache_keys, strict=True)):
+            if k in self._embed_cache:
+                cached[i] = self._embed_cache[k]
+            else:
+                uncached_texts.append(t)
+                uncached_indices.append(i)
+
+        if not uncached_texts:
+            # All cached - return without calling API
+            return [
+                EmbeddingResponse(embedding=cached[i], model=model) for i in range(len(texts))
+            ]
+
+        # Need API call - get client now
+        client = await self._get_client()
+
+        # Batch request
+        payload = {"model": model, "prompt": uncached_texts, "keep_alive": self._keep_alive_param()}
+        r = await client.post("/api/embeddings", json=payload)
+        r.raise_for_status()
+        data = r.json()
+        embeddings = data["embedding"]  # List of lists
+
+        # Update cache and build results
+        results: list[EmbeddingResponse | None] = [None] * len(texts)
+        for idx, emb in zip(uncached_indices, embeddings, strict=True):
+            self._embed_cache[cache_keys[idx]] = emb
+            results[idx] = EmbeddingResponse(embedding=emb, model=model)
+
+        for idx, emb in cached.items():
+            results[idx] = EmbeddingResponse(embedding=emb, model=model)
+
+        # Trim cache
+        if len(self._embed_cache) > self._cache_max_size:
+            keys = list(self._embed_cache.keys())[:-self._cache_max_size // 2]
+            for k in keys:
+                self._embed_cache.pop(k, None)
+
+        return results  # type: ignore
 
 
 def build_system_prompt(

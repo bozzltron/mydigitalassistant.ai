@@ -328,13 +328,15 @@ async def run_consolidation(
         )
         # Fill in any missing vectors from the live frames themselves so
         # recently created or re-named frames still participate.
-        for frame in frames:
-            if frame["id"] in embeddings:
-                continue
+        missing_frames = [f for f in frames if f["id"] not in embeddings]
+        if missing_frames:
+            texts = [f["norm"] or f["name"] for f in missing_frames]
             try:
-                embeddings[frame["id"]] = await embed_fn(frame["norm"] or frame["name"])
+                new_embeddings = await embed_fn(texts)
+                for frame, emb in zip(missing_frames, new_embeddings, strict=True):
+                    embeddings[frame["id"]] = emb
             except Exception as exc:
-                logger.warning("Embedding failed for frame %d: %s", frame["id"], exc)
+                logger.warning("Batch embedding failed for %d frames: %s", len(missing_frames), exc)
         reps = {uf.find(f["id"]): f for f in frames}
         pairs: list[tuple[float, int, int]] = []
         rep_ids = list(reps)

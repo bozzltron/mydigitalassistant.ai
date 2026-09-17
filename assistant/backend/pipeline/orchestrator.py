@@ -176,6 +176,23 @@ class Orchestrator:
         """Public alias — scheduler consolidation reuses the hot-path embedder."""
         return self._embed_fn()
 
+    async def _detect_math_intent(self, query: str) -> bool:
+        """Detect if query needs mathematical computation."""
+        math_keywords = {
+            "calculate", "compute", "solve", "derive", "integrate", "differentiate",
+            "npv", "irr", "roi", "payback", "amortize", "compound", "present value",
+            "future value", "annuity", "bond", "yield", "volatility", "sharpe",
+            "regression", "correlation", "covariance", "mean", "median", "std",
+            "standard deviation", "variance", "percentile", "quantile", "hypothesis",
+            "t-test", "chi-square", "anova", "monte carlo", "simulate", "bootstrap",
+            "optimize", "minimize", "maximize", "linear programming", "constraint",
+            "derivative", "integral", "limit", "series", "taylor", "fourier",
+            "matrix", "eigenvalue", "determinant", "inverse", "decomposition",
+            "dimensional analysis", "unit conversion", "significant figures"
+        }
+        q_lower = query.lower()
+        return any(kw in q_lower for kw in math_keywords)
+
     async def _log_episode(
         self,
         user_id: int,
@@ -183,6 +200,7 @@ class Orchestrator:
         role: str,
         content: str,
         frame_ids: list[int] | None = None,
+        reasoning_trace: str | None = None,
     ):
         """Persist a conversation turn and index it for semantic recall.
 
@@ -195,6 +213,7 @@ class Orchestrator:
             role=role,
             content=content,
             frame_ids=frame_ids or [],
+            reasoning_trace=reasoning_trace,
         )
         try:
             embedding = await self.embed_fn()(
@@ -506,6 +525,55 @@ class Orchestrator:
                 + "\nAcknowledge these naturally, in your own words."
             )
 
+        # Math computation path
+        computation_result = None
+        if await self._detect_math_intent(request.message):
+            if self.llm_client.math_model:
+                try:
+                    await self._report(progress, "computing", "running mathematical computation")
+                    computation_result = await self.llm_client.execute_python(
+                        f"Solve this step by step: {request.message}"
+                    )
+                    logger.info("Math computation completed: %d chars", len(computation_result))
+                except Exception as e:
+                    logger.warning("Math computation failed: %s", e)
+
+        if computation_result:
+            system_prompt += (
+                f"\n\n**Computed Result (verified via Python execution):**\n"
+                f"{computation_result}\n"
+                f"Incorporate this result into your response. Cite as 'computed'."
+            )
+            # Store computation result in memory
+            try:
+                from assistant.backend.pipeline.extractor import (
+                    ExtractedSlot,
+                    ExtractionResult,
+                    apply_extraction,
+                )
+
+                # Create a simple extraction result for the computation
+                computation_frame = f"computation_{uuid.uuid4().hex[:8]}"
+                extraction = ExtractionResult(
+                    slots=[ExtractedSlot(
+                        frame_name=computation_frame,
+                        key="result",
+                        value=computation_result[:5000],  # Truncate if too long
+                        confidence=0.9,
+                        source_type="computation",
+                    )],
+                    associations=[],
+                )
+                await apply_extraction(
+                    extraction,
+                    self.store,
+                    source_type="computation",
+                    source_reliability=0.9,
+                )
+                logger.info("Stored computation result in memory")
+            except Exception as e:
+                logger.warning("Failed to store computation result: %s", e)
+
         # 7b. Execute search if reasoner says it's needed
         search_results: list[SearchResult] = []
         search_extraction_summary: dict = {}
@@ -735,8 +803,14 @@ class Orchestrator:
         messages = [ChatMessage(role="system", content=system_prompt)]
         messages.extend(history_messages)
         messages.append(ChatMessage(role="user", content=request.message))
-        think = True if plan.think else settings.chat_think_default
-        num_predict = settings.think_num_predict_cap if plan.think else None
+
+        supports_thinking = await self.llm_client.supports_thinking(self.llm_client.chat_model)
+        think = False
+        if plan.think and supports_thinking:
+            think = True
+        elif settings.chat_think_default and supports_thinking:
+            think = True
+        num_predict = settings.think_num_predict_cap if think else None
         if think:
             await self._report(progress, "reasoning", "thinking it through")
         else:
@@ -789,11 +863,17 @@ class Orchestrator:
             )
 
         # 8. Log assistant episode
+        reasoning_trace = (
+            llm_response.get("reasoning_trace")
+            if isinstance(llm_response, dict)
+            else None
+        )
         await self._log_episode(
             request.user_id,
             session_id,
             role="assistant",
             content=llm_response.content,
+            reasoning_trace=reasoning_trace,
         )
 
         # 9. Append sources to response — only for informational/search tasks

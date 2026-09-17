@@ -15,6 +15,11 @@ class Settings(BaseSettings):
     # Reserved role (Phase 6 M5). Empty = use chat_model for codegen.
     coder_model: str = ""
 
+    # Math/computation model (Phase: Math Model Integration). Empty = math computation disabled.
+    math_model: str = "qwen3-coder:30b"
+    math_num_ctx: int = 16384
+    math_keep_alive: str = "10m"
+
     # Thinking-mode plumbing (Phase 6 M4 wires the escalation policy).
     # chat_think_default is the fast-path default; escalations override per call.
     chat_think_default: bool = False

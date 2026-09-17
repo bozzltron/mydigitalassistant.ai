@@ -31,6 +31,7 @@ def init_store(db_path: str) -> None:
 def _register_builtin_tools() -> None:
     """Register all builtin tools with their executors."""
     from assistant.backend.pipeline.tools import (
+        ComputeArgs,
         FetchUrlArgs,
         FinalizeArgs,
         MarkEssentialArgs,
@@ -56,6 +57,7 @@ def _register_builtin_tools() -> None:
     register_tool("web_search", WebSearchArgs, execute_web_search)
     register_tool("fetch_url", FetchUrlArgs, execute_fetch_url)
     register_tool("run_scheduled_task", RunScheduledTaskArgs, execute_run_scheduled_task)
+    register_tool("compute", ComputeArgs, execute_compute)
     register_tool("plan", PlanArgs, execute_plan)
     register_tool("think", ThinkArgs, execute_think)
     register_tool("finalize", FinalizeArgs, execute_finalize)
@@ -89,6 +91,7 @@ TOOL_TIMEOUTS: dict[str, float] = {
     "web_search": 30.0,
     "fetch_url": 30.0,
     "run_scheduled_task": 60.0,
+    "compute": 60.0,
     "upsert_slot": 10.0,
     "upsert_association": 10.0,
     "mark_essential": 10.0,
@@ -412,6 +415,65 @@ async def execute_run_scheduled_task(args: dict, user_id: str) -> ToolResult:
         return ToolResult(success=True, data=result)
     except Exception as e:
         logger.error(f"run_scheduled_task failed: {e}", exc_info=True)
+        return ToolResult(success=False, error=str(e))
+
+
+async def execute_compute(args: dict, user_id: str) -> ToolResult:
+    """Execute mathematical computation via dedicated math model."""
+    try:
+        from assistant.backend.config import settings
+        from assistant.backend.pipeline.llm_client import OllamaClient
+
+        expression = args.get("expression", "")
+        context = args.get("context")
+        precision = args.get("precision", 4)
+
+        # Build the code to execute
+        code = expression
+        if context:
+            # Add context variables
+            var_assignments = "\n".join(f"{k} = {v}" for k, v in context.items())
+            code = f"{var_assignments}\n\n# Compute:\n{expression}"
+
+        # Get LLM client
+        llm_client = OllamaClient(
+            base_url=settings.ollama_url,
+            chat_model=settings.chat_model,
+            utility_model=settings.utility_model,
+            embedding_model=settings.embedding_model,
+            math_model=settings.math_model,
+            math_num_ctx=settings.math_num_ctx,
+            math_keep_alive=settings.math_keep_alive,
+            timeout=settings.ollama_timeout,
+            chat_num_ctx=settings.chat_num_ctx,
+            utility_num_ctx=settings.utility_num_ctx,
+            keep_alive=settings.ollama_keep_alive,
+        )
+
+        try:
+            result = await llm_client.execute_python(code, timeout=30)
+        finally:
+            await llm_client.close()
+
+        # Format result with precision
+        try:
+            # Try to extract a numeric result and format it
+            import re
+            numbers = re.findall(r'[-+]?\d*\.\d+|\d+', result)
+            if numbers:
+                # Take the last number as the result
+                value = float(numbers[-1])
+                formatted = f"{value:.{precision}f}"
+                result = (
+                    f"{result}\n\n**Result (formatted to {precision} "
+                    f"decimal places):** {formatted}"
+                )
+        except Exception:
+            pass
+
+        return ToolResult(success=True, data={"result": result, "expression": expression})
+    except Exception as e:
+        logger.error(f"compute failed: {e}", exc_info=True)
         return ToolResult(success=False, error=str(e))
 
 

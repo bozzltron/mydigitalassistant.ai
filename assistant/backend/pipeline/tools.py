@@ -314,6 +314,15 @@ class RunScheduledTaskArgs(BaseModel):
         ..., description="Name of task to run immediately")
 
 
+class ComputeArgs(BaseModel):
+    expression: str = Field(
+        ..., description="Natural language description of computation needed")
+    context: dict | None = Field(
+        None, description="Optional: variable bindings (e.g., {'rate': 0.07, 'years': 10})")
+    precision: int = Field(
+        4, description="Decimal places in result")
+
+
 # ---------------------------------------------------------------------------
 # Meta tool args
 # ---------------------------------------------------------------------------
@@ -409,6 +418,13 @@ def builtin_tools(
             RunScheduledTaskArgs,
         ),
         _make_def(
+            "compute",
+            "Execute mathematical computation via dedicated math model. "
+            "Use for: financial models (NPV, IRR), statistics, calculus, "
+            "linear algebra, optimization, unit conversions, dimensional analysis.",
+            ComputeArgs,
+        ),
+        _make_def(
             "plan",
             "Create a multi-step plan for complex tasks. "
             "Returns step list for orchestrator to execute.",
@@ -432,6 +448,18 @@ def builtin_tools(
         pass
     else:
         tools = [t for t in tools if t["function"]["name"] != "web_search"]
+
+    # Gate compute on math_model being configured and supporting tools
+    if (
+        llm_client is None
+        or not getattr(llm_client, "math_model", None)
+        or not llm_client.math_model
+    ):
+        tools = [t for t in tools if t["function"]["name"] != "compute"]
+    else:
+        # Check if math_model supports tools (async check - we can't do it here synchronously)
+        # The tool will just fail gracefully at runtime if the model doesn't support tools
+        pass
 
     return tools
 
@@ -545,6 +573,9 @@ async def run_tool_loop(
                         "memory_updated": True,
                         "turns": turn,
                         "reasoning_effort": reasoning_effort,
+                        "reasoning_trace": (
+                            "\n\n".join(reasoning_trace) if reasoning_trace else None
+                        ),
                     }
 
                 # Record tool result for next iteration
@@ -578,6 +609,9 @@ async def run_tool_loop(
                 "memory_updated": len(tool_results) > 0,
                 "turns": turn,
                 "reasoning_effort": reasoning_effort,
+                "reasoning_trace": (
+                    "\n\n".join(reasoning_trace) if reasoning_trace else None
+                ),
             }
 
     # Max turns reached - force finalize
@@ -592,4 +626,7 @@ async def run_tool_loop(
         "memory_updated": True,
         "turns": turn,
         "reasoning_effort": reasoning_effort,
+        "reasoning_trace": (
+            "\n\n".join(reasoning_trace) if reasoning_trace else None
+        ),
     }

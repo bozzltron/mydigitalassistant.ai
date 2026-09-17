@@ -464,6 +464,19 @@ class MemoryStore:
             except Exception:
                 continue
 
+    async def embed_frames_batch(
+        self,
+        frame_ids: list[int],
+        embeddings: list[list[float]],
+        embedding_model: str = "nomic-embed-text",
+    ) -> None:
+        """Store pre-computed embeddings for a list of frames."""
+        for frame_id, embedding in zip(frame_ids, embeddings, strict=True):
+            try:
+                await self.store_frame_embedding(frame_id, embedding, embedding_model)
+            except Exception:
+                continue
+
     @staticmethod
     def _frame_to_embed_text(frame: Frame, slots: list[Slot]) -> str:
         """Build embeddable text from a frame and its slots."""
@@ -1055,19 +1068,20 @@ class MemoryStore:
         role: str,
         content: str,
         frame_ids: list[int] | None = None,
+        reasoning_trace: str | None = None,
     ) -> Episode:
         frame_ids = frame_ids or []
         async with self._connect() as db:
             cursor = await db.execute(
-                "INSERT INTO episodes (user_id, session_id, role, content, frame_ids) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (user_id, session_id, role, content, json.dumps(frame_ids)),
+                "INSERT INTO episodes (user_id, session_id, role, content, "
+                "frame_ids, reasoning_trace) VALUES (?, ?, ?, ?, ?, ?)",
+                (user_id, session_id, role, content, json.dumps(frame_ids), reasoning_trace),
             )
             await db.commit()
             # Fetch the inserted row directly using the lastrowid
             row = await db.execute_fetchall(
-                "SELECT id, user_id, session_id, role, content, frame_ids, timestamp "
-                "FROM episodes WHERE id = ?",
+                "SELECT id, user_id, session_id, role, content, frame_ids, "
+                "timestamp, reasoning_trace FROM episodes WHERE id = ?",
                 (cursor.lastrowid,),
             )
             if not row:
@@ -1587,6 +1601,7 @@ class MemoryStore:
             "content": row[4],
             "frame_ids": json.loads(row[5]),
             "timestamp": row[6],
+            "reasoning_trace": row[7] if len(row) > 7 else None,
         }
 
     async def _get_conflict_row(self, db: aiosqlite.Connection, conflict_id: int) -> Conflict:

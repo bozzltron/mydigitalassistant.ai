@@ -4,6 +4,7 @@ import re
 import sqlite3
 from collections import defaultdict
 from typing import TYPE_CHECKING
+from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field
 
@@ -30,6 +31,8 @@ class ExtractedSlot(BaseModel):
     frame_type: str = "entity"  # 'entity' | 'concept' | 'event' | 'household'
     key: str
     value: str | None = None  # Optional — some facts may not have a simple value
+    source_urls: list[str] = Field(default_factory=list)
+    source_domains: set[str] = Field(default_factory=set)
 
 
 class ExtractedAssociation(BaseModel):
@@ -587,6 +590,7 @@ async def apply_search_extraction(
     Groups facts by (frame_name, key, value) to detect corroboration.
     Facts appearing in multiple independent sources get bumped source_reliability.
     Per-slot source_url is the corroborating URL (prefer .edu, Wikipedia, major news).
+    High-stakes facts (financial, medical, legal, safety) require ≥2 unique domains.
     """
     # The agent's name is never a web fact — drop any identity slots outright.
     extraction.slots = [s for s in extraction.slots if s.frame_name != IDENTITY_FRAME]
@@ -597,24 +601,66 @@ async def apply_search_extraction(
             "conflicts_created": 0,
             "frame_ids": [],
             "slots": [],
+            "corroboration_status": {
+                "high_stakes_checked": 0,
+                "flagged_for_review": 0,
+            },
         }
 
     fact_key_to_urls: dict[tuple, set[str]] = defaultdict(set)
+    fact_key_to_domains: dict[tuple, set[str]] = defaultdict(set)
     for result in search_results:
         snippet_lower = result.snippet.lower()
+        domain = urlparse(result.url).netloc if result.url else ""
         for slot in extraction.slots:
             if not slot.value:
                 continue
             if slot.value.lower() in snippet_lower or slot.key.lower() in snippet_lower:
                 fact_key_to_urls[(slot.frame_name, slot.key, slot.value)].add(result.url)
+                if domain:
+                    fact_key_to_domains[(slot.frame_name, slot.key, slot.value)].add(domain)
 
     initial_reliability = (
         INITIAL_SEARCH_RELIABILITY + 0.15 if backend_name == "brave" else INITIAL_SEARCH_RELIABILITY
     )
 
+    # Corroboration gate for high-stakes facts
+    high_stakes_categories = {"financial", "medical", "legal", "safety", "security"}
+
+    def _categorize_fact(frame_name: str, slot_key: str) -> str:
+        text = f"{frame_name} {slot_key}".lower()
+        financial_kw = [
+            "price", "cost", "revenue", "profit", "npv", "irr",
+            "investment", "stock", "bond", "rate", "yield"
+        ]
+        if any(kw in text for kw in financial_kw):
+            return "financial"
+        medical_kw = [
+            "dose", "medication", "diagnosis", "symptom",
+            "treatment", "drug", "therapy"
+        ]
+        if any(kw in text for kw in medical_kw):
+            return "medical"
+        legal_kw = ["law", "regulation", "compliance", "contract", "liability", "statute"]
+        if any(kw in text for kw in legal_kw):
+            return "legal"
+        safety_kw = ["hazard", "danger", "warning", "recall", "toxic", "explosive", "flammable"]
+        if any(kw in text for kw in safety_kw):
+            return "safety"
+        return "general"
+
     reliability_map: dict[tuple, float] = {}
+    corroboration_map: dict[tuple, dict] = {}
     for fact_key, urls in fact_key_to_urls.items():
         count = len(urls)
+        domains = fact_key_to_domains.get(fact_key, set())
+        unique_domains = len(domains)
+
+        # Corroboration gate: high-stakes facts need ≥2 unique domains
+        frame_name, slot_key, _ = fact_key
+        category = _categorize_fact(frame_name, slot_key)
+        needs_corroboration = category in high_stakes_categories and unique_domains < 2
+
         if count >= 3:
             reliability = min(
                 initial_reliability + CORROBORATION_BONUS * 2,
@@ -627,7 +673,14 @@ async def apply_search_extraction(
             )
         else:
             reliability = initial_reliability
+
         reliability_map[fact_key] = reliability
+        corroboration_map[fact_key] = {
+            "unique_domains": unique_domains,
+            "category": category,
+            "needs_corroboration": needs_corroboration,
+            "domains": list(domains),
+        }
 
     def _best_url(urls: set[str]) -> str | None:
         prefs = (".edu", "wikipedia.org", "github.com", "nytimes.com", "reuters.com", "bbc.com")
@@ -677,6 +730,21 @@ async def apply_search_extraction(
         urls = fact_key_to_urls.get(fact_key, set())
         slot_url = _best_url(urls)
         slot_reliability = reliability_map.get(fact_key, initial_reliability)
+
+        # Apply corroboration gate for high-stakes facts
+        corrob_info = corroboration_map.get(fact_key, {})
+        if corrob_info.get("needs_corroboration"):
+            # Reduce confidence and flag for review
+            slot_reliability = min(slot_reliability, 0.3)
+            logger.warning(
+                "High-stakes fact needs corroboration: %s.%s "
+                "(domains=%d, category=%s)",
+                slot.frame_name,
+                slot.key,
+                corrob_info.get("unique_domains", 0),
+                corrob_info.get("category", "unknown"),
+            )
+
         _, conflict = await store.upsert_slot(
             frame_id=frame_id,
             key=slot.key,
@@ -694,6 +762,9 @@ async def apply_search_extraction(
                 "key": slot.key,
                 "value": slot.value,
                 "conflict": conflict is not None,
+                "needs_corroboration": corrob_info.get("needs_corroboration", False),
+                "corroboration_domains": corrob_info.get("unique_domains", 0),
+                "corroboration_category": corrob_info.get("category", "general"),
             }
         )
 
@@ -725,6 +796,10 @@ async def apply_search_extraction(
         "conflicts_created": conflicts_created,
         "frame_ids": list(frame_ids.values()),
         "slots": applied_slots,
+        "corroboration_status": {
+            "high_stakes_checked": sum(1 for s in applied_slots if s.get("needs_corroboration")),
+            "flagged_for_review": sum(1 for s in applied_slots if s.get("needs_corroboration")),
+        },
     }
 
 
