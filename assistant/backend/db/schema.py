@@ -109,6 +109,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     title TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    deleted_at TEXT,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
@@ -364,6 +365,7 @@ async def _migrate_add_sessions_table(db) -> None:
                 title TEXT,
                 created_at TEXT NOT NULL DEFAULT (datetime('now')),
                 updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                deleted_at TEXT,
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             )
             """
@@ -373,6 +375,16 @@ async def _migrate_add_sessions_table(db) -> None:
         )
         await db.commit()
         logger.debug("Migration: sessions table created")
+
+
+async def _migrate_add_deleted_at_to_sessions(db) -> None:
+    """Add deleted_at column to sessions table for soft delete."""
+    sessions_info = await db.execute_fetchall("PRAGMA table_info(sessions)")
+    session_cols = {r[1] for r in sessions_info}
+    if "deleted_at" not in session_cols:
+        await db.execute("ALTER TABLE sessions ADD COLUMN deleted_at TEXT")
+        await db.commit()
+        logger.debug("Migration: deleted_at column added to sessions")
 
 
 async def init_db(db_path: str) -> None:
@@ -396,3 +408,4 @@ async def init_db(db_path: str) -> None:
         await _migrate_add_feedback(db)
         await _migrate_add_deleted_at_and_last_accessed(db)
         await _migrate_add_sessions_table(db)
+        await _migrate_add_deleted_at_to_sessions(db)

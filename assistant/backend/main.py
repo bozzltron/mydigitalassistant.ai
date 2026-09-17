@@ -1410,6 +1410,19 @@ async def update_conversation_title(
     return {"session_id": session_id, "title": body.title}
 
 
+@app.delete("/conversations/{session_id}")
+async def delete_conversation(
+    session_id: str,
+    user_id: int,
+    store: MemoryStore = _Depends(get_store),
+):
+    """Delete a conversation session and its episodes (soft delete)."""
+    deleted = await store.delete_session(session_id, user_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    return {"status": "ok", "session_id": session_id}
+
+
 @app.post("/files/upload", response_model=dict)
 async def upload_file(
     file: UploadFile = File(...),

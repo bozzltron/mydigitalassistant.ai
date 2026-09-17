@@ -1084,7 +1084,10 @@ class MemoryStore:
             return [Episode(**self._episode_dict(row)) for row in rows]
 
     async def get_sessions_for_user(self, user_id: int) -> list[dict]:
-        """Get all sessions for a user with episode counts and last message."""
+        """Get all sessions for a user with episode counts and last message.
+
+        Excludes soft-deleted sessions.
+        """
         async with self._connect() as db:
             rows = await db.execute_fetchall(
                 """
@@ -1094,7 +1097,7 @@ class MemoryStore:
                        MAX(CASE WHEN e.role = 'user' THEN e.content END) as first_user_message
                 FROM sessions s
                 LEFT JOIN episodes e ON e.session_id = s.id AND e.user_id = s.user_id
-                WHERE s.user_id = ?
+                WHERE s.user_id = ? AND s.deleted_at IS NULL
                 GROUP BY s.id, s.user_id, s.title, s.created_at, s.updated_at
                 ORDER BY last_activity DESC
                 """,
@@ -1146,6 +1149,20 @@ class MemoryStore:
             )
             await db.execute(sql, (title, session_id, user_id))
             await db.commit()
+
+    async def delete_session(self, session_id: str, user_id: int) -> bool:
+        """Soft-delete a session by setting deleted_at timestamp."""
+        async with self._connect() as db:
+            cursor = await db.execute(
+                """
+                UPDATE sessions
+                SET deleted_at = datetime('now'), updated_at = datetime('now')
+                WHERE id = ? AND user_id = ? AND deleted_at IS NULL
+                """,
+                (session_id, user_id)
+            )
+            await db.commit()
+            return cursor.rowcount > 0
 
     async def get_episodes_for_session(self, session_id: str) -> list[Episode]:
         async with self._connect() as db:
