@@ -185,7 +185,8 @@ export async function postChat(
   message: string,
   session_id?: string,
   attached_files?: AttachedFile[],
-  turn_id?: string
+  turn_id?: string,
+  search_consent?: boolean
 ): Promise<ChatResponse> {
   const requestBody = {
     user_id: 1,
@@ -193,6 +194,7 @@ export async function postChat(
     session_id,
     attached_files,
     turn_id,
+    search_consent,
   }
 
   console.log('Sending chat request:', requestBody)

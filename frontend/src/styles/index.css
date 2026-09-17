@@ -20,3 +20,6 @@
 
 /* 7. Brain page styles */
 @import './brain.css';
+
+/* 8. Files page styles */
+@import './files.css';

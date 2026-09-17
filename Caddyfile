@@ -6,6 +6,10 @@
 https://localhost {
     tls /etc/caddy/certs/localhost.crt /etc/caddy/certs/localhost.key
     
+    # Serve static assets directly from backend
+    @static path /assets/* /static/* /favicon.ico
+    reverse_proxy @static assistant:8000
+    
     # Route API requests to backend
     @api path /api/* /health /chat* /users* /memory* /brain* /files* /settings* /tasks* /db* /feedback* /correction* /conversations* /assistant* /search* /og-preview /transcribe* /uploads* /embeddings* /show* /tags* /chat-ui /brain-ui /summarize
     reverse_proxy @api assistant:8000 {

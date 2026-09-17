@@ -10,6 +10,7 @@ import type {
   OgData,
   QueuedMessage,
   SessionMessage,
+  AttachedFile,
 } from '../../types'
 
 interface ChatState {
@@ -88,7 +89,7 @@ export async function loadConversationMessages(sessionIdParam: string, userId: n
 export async function postChatMessage(
   message: string,
   session_id?: string,
-  attached_files?: File[]
+  attached_files?: AttachedFile[]
 ): Promise<{
   response: string
   task_type?: string

@@ -2,7 +2,7 @@ import { createEffect, createSignal, onMount, Show } from 'solid-js'
 import { Session } from '../../state/session'
 import { user } from '../../state/user'
 import { settings, updateSetting } from '../../state/settings'
-import { enterVoiceMode, exitVoiceMode, voice, isListening, isProcessing, isSpeaking, isIdle, isTtsSpeaking } from '../../state/voice'
+import { enterVoiceMode, exitVoiceMode, voice, isListening, isProcessing, isSpeaking, isIdle, isTtsSpeaking, stopRecording, setTtsSpeaking } from '../../state/voice'
 import { api } from '../../services/api'
 
 interface TopBarProps {
@@ -244,17 +244,17 @@ export default function TopBar(props: TopBarProps) {
     if (isListening()) {
       statusDot.classList.remove('processing', 'speaking')
       statusText.textContent = v.isDictating ? 'Dictating...' : 'Listening...'
-      stopBtn.textContent = 'Stop'
-      cancelBtn.textContent = v.isDictating ? 'Cancel' : 'Cancel'
+      stopBtn.textContent = "I'm done talking"
+      cancelBtn.textContent = 'Cancel'
     } else if (isProcessing()) {
       statusDot.classList.add('processing')
       statusText.textContent = 'Transcribing...'
-      stopBtn.textContent = 'Stop'
+      stopBtn.textContent = "I'm done talking"
       cancelBtn.textContent = 'Cancel'
     } else if (isSpeaking() || isTtsSpeaking()) {
       statusDot.classList.add('speaking')
       statusText.textContent = 'Speaking...'
-      stopBtn.textContent = 'Stop'
+      stopBtn.textContent = "I'm done talking"
       cancelBtn.textContent = 'Cancel'
     } else {
       statusText.textContent = 'Idle'
@@ -288,8 +288,25 @@ export default function TopBar(props: TopBarProps) {
           <span class="voice-status-bar" id="voice-status-bar">
             <span class="voice-dot" id="voice-status-dot" />
             <span id="voice-status-text">Listening</span>
-            <button class="voice-btn-small" id="voice-stop-inline">Stop</button>
-            <button class="voice-btn-small danger" id="voice-cancel-inline">Cancel</button>
+            <button 
+              class="voice-btn-small" 
+              id="voice-stop-inline"
+              onClick={() => stopRecording()}
+              title="Stop recording and transcribe (I'm done talking)"
+            >
+              I'm done talking
+            </button>
+            <button 
+              class="voice-btn-small danger" 
+              id="voice-cancel-inline"
+              onClick={() => {
+                exitVoiceMode()
+                updateSetting('voiceMode', false)
+              }}
+              title="Exit voice mode (cancel)"
+            >
+              Cancel
+            </button>
           </span>
           <button 
             id="voice-mode-btn" 
@@ -317,6 +334,7 @@ export default function TopBar(props: TopBarProps) {
                 if ('speechSynthesis' in window) {
                   speechSynthesis.cancel()
                 }
+                setTtsSpeaking(false)
               }}
             >
               Stop
@@ -326,6 +344,7 @@ export default function TopBar(props: TopBarProps) {
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
           </button>
           <a href="/brain" class="nav-link" title="Brain Observatory" style={{"color":"var(--text-dim)","text-decoration":"none","font-size":"0.8rem","padding":"0.35rem 0.75rem","border":"1px solid var(--border)","border-radius":"6px"}}>Brain</a>
+          <a href="/files" class="nav-link" title="File Browser" style={{"color":"var(--text-dim)","text-decoration":"none","font-size":"0.8rem","padding":"0.35rem 0.75rem","border":"1px solid var(--border)","border-radius":"6px","margin-left":"0.5rem"}}>Files</a>
         </div>
       </header>
 

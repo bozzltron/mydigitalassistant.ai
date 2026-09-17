@@ -3,7 +3,9 @@ import {
   endDictation, 
   startListening, 
   startProcessing,
-  exitVoiceMode
+  exitVoiceMode,
+  registerStopRecording,
+  unregisterStopRecording
 } from '../state/voice'
 
 interface UseVoiceRecordingOptions {
@@ -87,6 +89,19 @@ export function useVoiceRecording({
   const [loudFrameCount, setLoudFrameCount] = createSignal(0)
   const [silenceAfterLoud, setSilenceAfterLoud] = createSignal(false)
   const [monitorIntervalId, setMonitorIntervalId] = createSignal<number | null>(null)
+
+  // Register stopRecording callback for external access (e.g., TopBar buttons)
+  onCleanup(() => {
+    unregisterStopRecording()
+  })
+  
+  const stopRecordingFn = () => {
+    stopRecording()
+  }
+  
+  createEffect(() => {
+    registerStopRecording(stopRecordingFn)
+  })
 
   // Auto-start recording when voice mode is activated
   createEffect(() => {

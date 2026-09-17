@@ -70,7 +70,7 @@ describe('TopBar', () => {
 
   it('renders voice mode button', () => {
     render(() => <TopBar conversations={defaultProps.conversations} activeConversation={defaultProps.activeConversation} onConversationChange={defaultProps.onConversationChange} onNewConversationClick={defaultProps.onNewConversationClick} isLoading={defaultProps.isLoading} assistantName={defaultProps.assistantName} />)
-    expect(screen.getByRole('button', { name: /voice/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /let's talk/i })).toBeInTheDocument()
   })
 
   it('renders settings button', () => {

@@ -132,6 +132,10 @@ export interface AttachedFile {
   open_questions: string[]
 }
 
+export interface ChatRequestConsent {
+  search_consent: boolean
+}
+
 export interface ChatResponse {
   session_id: string
   response: string

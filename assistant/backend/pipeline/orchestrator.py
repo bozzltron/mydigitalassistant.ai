@@ -114,6 +114,8 @@ class ChatRequest(BaseModel):
     turn_id: str | None = None
     # Optional attached files from file upload UI
     attached_files: list[dict] = []
+    # User consent for sensitive search queries (Brave)
+    search_consent: bool = False
 
 
 class ChatResponse(BaseModel):
@@ -527,14 +529,47 @@ class Orchestrator:
                 if backend_name == "brave"
                 else settings.search_min_relevance
             )
+            
+            # If user gave consent for sensitive search, pass it to skip sensitivity check
+            user_consent = getattr(request, 'search_consent', False)
             try:
                 search_results, search_info = await self.search_tool.search_with_info(
-                    query, num_results=extraction_budget
+                    query, 
+                    num_results=extraction_budget, 
+                    llm_client=self.llm_client,
+                    user_consent=user_consent
                 )
             except Exception as e:
                 logger.warning("Search failed, continuing without results: %s", e)
                 search_results = []
                 search_info = None
+
+            # Check if user consent is required for sensitive query
+            if search_info and search_info.consent_required:
+                # Return early with a response asking for consent
+                sensitivity = search_info.sensitivity
+                categories = (
+                    ", ".join(sensitivity.categories)
+                    if sensitivity.categories
+                    else "general"
+                )
+                consent_msg = (
+                    f"This search query may contain sensitive information "
+                    f"({sensitivity.level.value}: {sensitivity.reason}). "
+                    f"Categories: {categories}. "
+                    f"Search via Brave would send this query to their servers. "
+                    f"Do you want to proceed?"
+                )
+                return ChatResponse(
+                    session_id=request.session_id or "",
+                    response=consent_msg,
+                    task_type="search_consent_required",
+                    memory_context="",
+                    citations=[],
+                    extraction_summary=None,
+                    search_extraction_summary=None,
+                    search_info=search_info,
+                )
 
             # Relevance gate: drop links that don't belong to the query
             # before they can pollute the system prompt or citations.
@@ -1068,7 +1103,7 @@ class Orchestrator:
             logger.info("Scheduled task triggering search: %s", query[:80])
             try:
                 search_results, _search_info = await self.search_tool.search_with_info(
-                    query, num_results=5
+                    query, num_results=5, llm_client=self.llm_client
                 )
             except Exception as e:
                 logger.warning("Task search failed: %s", e)

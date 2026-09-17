@@ -2,15 +2,18 @@ import { createSignal, createEffect, Show, For, onMount, onCleanup } from 'solid
 import MessageList from './MessageList'
 import InputBar from './InputBar'
 import StatusIndicator from './StatusIndicator'
+import { Modal } from '../ui/Modal'
 import { messages, sessionId, setSessionId, isTurnActive, useConversationTurnId, addMessageToConversation, enqueueMessage, removeQueuedMessage, queue } from '../../state/chat'
 import { Session } from '../../state/session'
 import { useTurnStatus } from '../../services/status'
 import { useVoiceRecording } from '../../hooks/useVoiceRecording'
-import { voice } from '../../state/voice'
+import { voice, setTtsSpeaking } from '../../state/voice'
 import { settings } from '../../state/settings'
 import type {
   ExtractionSummary,
   SearchInfo,
+  AttachedFile,
+  SensitivityResult,
 } from '../../types'
 
 // Wrapper component that calls useTurnStatus with a dynamic turnId
@@ -30,11 +33,16 @@ interface SendMessageResult {
 
 export default function ChatPage(props: {
   conversation: Session | null
-  sendMessage: (message: string, session_id?: string, attached_files?: File[]) => Promise<SendMessageResult>
+  sendMessage: (message: string, session_id?: string, attached_files?: AttachedFile[], search_consent?: boolean) => Promise<SendMessageResult>
 }) {
   const [showTrace, setShowTrace] = createSignal(false)
   const [messagesContainerRef, setMessagesContainerRef] = createSignal<HTMLDivElement | null>(null)
   const [isDictating, setIsDictating] = createSignal(false)
+  const [pendingSearchConsent, setPendingSearchConsent] = createSignal<{
+    message: string
+    attachedFiles: AttachedFile[]
+    searchInfo: SearchInfo
+  } | null>(null)
   
   const isSending = isTurnActive
 
@@ -72,7 +80,29 @@ export default function ChatPage(props: {
     }
   })
 
-  const handleSendMessage = async (message: string) => {
+  // Read file and convert to AttachedFile format
+  const readFileAsAttachedFile = async (file: File): Promise<AttachedFile> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        const text = e.target?.result as string || ''
+        const ext = file.name.split('.').pop()?.toLowerCase() || 'txt'
+        resolve({
+          name: file.name,
+          ext,
+          preview: text.slice(0, 500),
+          content: text,
+          text,
+          key_entities: [],
+          open_questions: [],
+        })
+      }
+      reader.onerror = reject
+      reader.readAsText(file)
+    })
+  }
+
+  const handleSendMessage = async (message: string, attachedFiles?: File[], search_consent?: boolean) => {
     if (!message.trim()) return
 
     const currentSessionId = sessionId()
@@ -84,6 +114,12 @@ export default function ChatPage(props: {
       return
     }
 
+    // Process attached files
+    let processedFiles: AttachedFile[] = []
+    if (attachedFiles && attachedFiles.length > 0) {
+      processedFiles = await Promise.all(attachedFiles.map(readFileAsAttachedFile))
+    }
+
     try {
       const userMessage = {
         role: 'user' as const,
@@ -93,11 +129,34 @@ export default function ChatPage(props: {
 
       addMessageToConversation(currentSessionId, userMessage)
 
-      const result = await props.sendMessage(message, currentSessionId)
+      const result = await props.sendMessage(message, currentSessionId, processedFiles, search_consent)
 
       if (result.session_id) {
         setSessionId(result.session_id)
         localStorage.setItem('session_id', result.session_id)
+      }
+
+      // Handle search consent required
+      if (result.task_type === 'search_consent_required' && result.search_info) {
+        setPendingSearchConsent({
+          message,
+          attachedFiles: processedFiles,
+          searchInfo: result.search_info,
+        })
+        // Show the consent message as assistant response
+        const consentMessage = {
+          role: 'assistant' as const,
+          content: result.response,
+          id: Date.now().toString() + '-assistant',
+          meta: {
+            task_type: result.task_type,
+            extraction_summary: result.extraction_summary,
+            search_extraction_summary: result.search_extraction_summary,
+            search_info: result.search_info,
+          }
+        }
+        addMessageToConversation(currentSessionId, consentMessage)
+        return
       }
 
       const assistantMessage = {
@@ -124,9 +183,31 @@ export default function ChatPage(props: {
     }
   }
 
+  const handleConsentProceed = async () => {
+    const consent = pendingSearchConsent()
+    if (!consent) return
+    setPendingSearchConsent(null)
+    await handleSendMessage(consent.message, undefined, true)
+  }
+
+  const handleConsentCancel = () => {
+    const consent = pendingSearchConsent()
+    if (!consent) return
+    setPendingSearchConsent(null)
+    // Add a cancellation message
+    const currentSessionId = sessionId()
+    if (currentSessionId) {
+      const cancelMessage = {
+        role: 'assistant' as const,
+        content: 'Search cancelled. Your query was not sent to Brave.',
+        id: Date.now().toString() + '-assistant',
+        meta: { task_type: 'search_cancelled' }
+      }
+      addMessageToConversation(currentSessionId, cancelMessage)
+    }
+  }
+
   // TTS: speak assistant responses when they arrive
-  const [isTtsSpeaking, setIsTtsSpeaking] = createSignal(false)
-  
   // Load spoken message IDs from localStorage
   const [spokenMsgIds, setSpokenMsgIds] = createSignal<Set<string>>(new Set())
   onMount(() => {
@@ -169,20 +250,13 @@ export default function ChatPage(props: {
         utterance.rate = settings.voiceSpeed
         utterance.pitch = settings.voicePitch
         utterance.volume = settings.voiceVolume
-        utterance.onstart = () => setIsTtsSpeaking(true)
-        utterance.onend = () => setIsTtsSpeaking(false)
-        utterance.onerror = () => setIsTtsSpeaking(false)
+        utterance.onstart = () => setTtsSpeaking(true)
+        utterance.onend = () => setTtsSpeaking(false)
+        utterance.onerror = () => setTtsSpeaking(false)
         speechSynthesis.speak(utterance)
       }
     }
   })
-
-  const stopSpeaking = () => {
-    if ('speechSynthesis' in window) {
-      speechSynthesis.cancel()
-      setIsTtsSpeaking(false)
-    }
-  }
 
   // Voice recording hook - runs when voice mode is active
   useVoiceRecording({
@@ -252,39 +326,6 @@ export default function ChatPage(props: {
         </div>
       </div>
 
-      <Show when={isTtsSpeaking()}>
-        <button 
-          class="stop-speaking-btn"
-          id="stop-speaking-btn"
-          onClick={stopSpeaking}
-          title="Stop speaking"
-          style={{
-            position: 'fixed',
-            bottom: '90px',
-            right: '20px',
-            zIndex: 100,
-            padding: '0.75rem 1rem',
-            background: 'var(--error)',
-            color: 'white',
-            border: 'none',
-            borderRadius: '8px',
-            fontSize: '0.875rem',
-            fontWeight: 600,
-            cursor: 'pointer',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.5rem'
-          }}
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="6" y="4" width="4" height="16" rx="1"/>
-            <rect x="14" y="4" width="4" height="16" rx="1"/>
-          </svg>
-          Stop
-        </button>
-      </Show>
-
       <div id="trace-panel" class={`trace-panel ${showTrace() ? '' : 'hidden'}`}>
         <div class="trace-header">
           <span>
@@ -316,6 +357,72 @@ export default function ChatPage(props: {
           </div>
         </div>
       </div>
+
+      {/* Search Consent Modal */}
+      <Show when={pendingSearchConsent()}>
+        <Modal
+          isOpen={true}
+          onClose={handleConsentCancel}
+          title="Search Consent Required"
+          size="medium"
+        >
+          <div class="consent-modal-content">
+            <div class="consent-warning">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                <line x1="12" x2="12" y1="9" y2="13"/>
+                <line x1="12" x2="12.01" y1="17" y2="17"/>
+              </svg>
+            </div>
+            <h3>Sensitive Search Query</h3>
+            <p>This search query may contain sensitive information that would be sent to Brave's servers.</p>
+            
+            <Show when={pendingSearchConsent()?.searchInfo.sensitivity}>
+              {() => {
+                const sensitivity = pendingSearchConsent()!.searchInfo.sensitivity
+                return (
+                  <div class="consent-details">
+                    <div class="consent-level">
+                      <span class={`consent-badge ${sensitivity.level}`}>{sensitivity.level}</span>
+                      <span>{sensitivity.reason}</span>
+                    </div>
+                    <Show when={sensitivity.categories.length > 0}>
+                      <div class="consent-categories">
+                        <strong>Categories:</strong>
+                        <ul>
+                          <For each={sensitivity.categories}>
+                            {(cat) => <li>{cat}</li>}
+                          </For>
+                        </ul>
+                      </div>
+                    </Show>
+                  </div>
+                )
+              }}
+            </Show>
+
+            <div class="consent-query">
+              <strong>Query:</strong>
+              <code>{pendingSearchConsent()?.searchInfo.query}</code>
+            </div>
+
+            <div class="consent-actions">
+              <button 
+                class="btn-secondary" 
+                onClick={handleConsentCancel}
+              >
+                Cancel
+              </button>
+              <button 
+                class="btn-primary" 
+                onClick={handleConsentProceed}
+              >
+                Proceed with Search
+              </button>
+            </div>
+          </div>
+        </Modal>
+      </Show>
     </div>
   )
 }

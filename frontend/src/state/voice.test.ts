@@ -1,52 +1,48 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { voice, setVoice, enterVoiceMode, exitVoiceMode, startProcessing, startSpeaking, setError } from '../state/voice'
+import { voice, setVoice, enterVoiceMode, exitVoiceMode, startProcessing, startSpeaking, setError, isListening, isProcessing, isSpeaking } from '../state/voice'
 
 describe('voice state', () => {
   beforeEach(() => {
     setVoice({
-      isListening: false,
-      isProcessing: false,
-      isSpeaking: false,
       status: 'idle',
+      transcript: undefined,
+      isDictating: false,
+      isTtsSpeaking: false,
     })
   })
 
   it('initializes in idle state', () => {
-    const state = voice()
-    expect(state.status).toBe('idle')
-    expect(state.isListening).toBe(false)
-    expect(state.isProcessing).toBe(false)
-    expect(state.isSpeaking).toBe(false)
-    expect(state.transcript).toBeUndefined()
+    expect(voice.status).toBe('idle')
+    expect(isListening()).toBe(false)
+    expect(isProcessing()).toBe(false)
+    expect(isSpeaking()).toBe(false)
+    expect(voice.transcript).toBeUndefined()
   })
 
   describe('enterVoiceMode', () => {
     it('sets listening status', () => {
       enterVoiceMode()
-      const state = voice()
-      expect(state.isListening).toBe(true)
-      expect(state.status).toBe('listening')
+      expect(isListening()).toBe(true)
+      expect(voice.status).toBe('listening')
     })
 
-    it('preserves other fields', () => {
-      setVoice({ isListening: false, isProcessing: true, isSpeaking: false, status: 'processing', transcript: 'old' })
+    it('preserves transcript and dictation fields', () => {
+      setVoice({ status: 'processing', transcript: 'old', isDictating: true, isTtsSpeaking: false })
       enterVoiceMode()
-      const state = voice()
-      expect(state.isProcessing).toBe(true)
-      expect(state.transcript).toBe('old')
+      expect(voice.transcript).toBe('old')
+      expect(voice.isDictating).toBe(true)
     })
   })
 
   describe('exitVoiceMode', () => {
     it('resets to idle state', () => {
-      setVoice({ isListening: true, isProcessing: true, isSpeaking: true, status: 'speaking', transcript: 'something' })
+      setVoice({ status: 'speaking', transcript: 'something', isDictating: true, isTtsSpeaking: false })
       exitVoiceMode()
-      const state = voice()
-      expect(state.isListening).toBe(false)
-      expect(state.isProcessing).toBe(false)
-      expect(state.isSpeaking).toBe(false)
-      expect(state.status).toBe('idle')
-      expect(state.transcript).toBeUndefined()
+      expect(isListening()).toBe(false)
+      expect(isProcessing()).toBe(false)
+      expect(isSpeaking()).toBe(false)
+      expect(voice.status).toBe('idle')
+      expect(voice.transcript).toBeUndefined()
     })
   })
 
@@ -54,37 +50,34 @@ describe('voice state', () => {
     it('transitions from listening to processing', () => {
       enterVoiceMode()
       startProcessing()
-      const state = voice()
-      expect(state.isListening).toBe(false)
-      expect(state.isProcessing).toBe(true)
-      expect(state.status).toBe('processing')
+      expect(isListening()).toBe(false)
+      expect(isProcessing()).toBe(true)
+      expect(voice.status).toBe('processing')
     })
   })
 
   describe('startSpeaking', () => {
     it('transitions from processing to speaking', () => {
-      setVoice({ isListening: false, isProcessing: true, isSpeaking: false, status: 'processing' })
+      setVoice({ status: 'processing', transcript: undefined, isDictating: false, isTtsSpeaking: false })
       startSpeaking()
-      const state = voice()
-      expect(state.isProcessing).toBe(false)
-      expect(state.isSpeaking).toBe(true)
-      expect(state.status).toBe('speaking')
+      expect(isProcessing()).toBe(false)
+      expect(isSpeaking()).toBe(true)
+      expect(voice.status).toBe('speaking')
     })
   })
 
   describe('setError', () => {
     it('sets error status and transcript', () => {
       setError('Microphone permission denied')
-      const state = voice()
-      expect(state.status).toBe('error')
-      expect(state.transcript).toBe('Microphone permission denied')
+      expect(voice.status).toBe('error')
+      expect(voice.transcript).toBe('Microphone permission denied')
     })
 
-    it('preserves other state', () => {
-      setVoice({ isListening: true, isProcessing: false, isSpeaking: false, status: 'listening' })
+    it('preserves dictation and tts fields', () => {
+      setVoice({ status: 'listening', transcript: undefined, isDictating: true, isTtsSpeaking: true })
       setError('Error occurred')
-      const state = voice()
-      expect(state.isListening).toBe(true)
+      expect(voice.isDictating).toBe(true)
+      expect(voice.isTtsSpeaking).toBe(true)
     })
   })
 })

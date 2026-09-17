@@ -11,10 +11,12 @@ Result quality is guarded in three layers:
   so unrelated links never reach the system prompt.
 """
 
+import json
 import logging
 import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from enum import Enum
 from urllib.parse import urlsplit, urlunsplit
 
 import httpx
@@ -22,6 +24,108 @@ import httpx
 from assistant.backend.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+class QuerySensitivity(Enum):
+    """Result of sensitivity analysis for a search query."""
+    SAFE = "safe"           # General knowledge, no PII/sensitive data
+    SENSITIVE = "sensitive" # Contains PII, medical, financial, credentials, etc.
+    AMBIGUOUS = "ambiguous" # Unclear - err on side of caution
+
+
+@dataclass
+class SensitivityResult:
+    """Result of query sensitivity analysis."""
+    level: QuerySensitivity
+    reason: str
+    categories: list[str]  # e.g., ["pii_email", "medical", "financial"]
+
+
+async def classify_query_sensitivity(
+    query: str,
+    llm_client,
+) -> SensitivityResult:
+    """Classify a search query for privacy/sensitivity concerns.
+    
+    Uses the utility model for fast, cheap classification.
+    Runs before any external search call.
+    """
+    from assistant.backend.pipeline.llm_client import ChatMessage
+    
+    system = ChatMessage(
+        role="system",
+        content="""Analyze the search query for privacy/sensitivity concerns.
+        
+Return JSON with:
+- "level": "safe" | "sensitive" | "ambiguous"
+- "reason": brief explanation
+- "categories": list of concern categories found
+
+Categories to watch for:
+- "pii_email": email addresses
+- "pii_phone": phone numbers  
+- "pii_address": physical addresses
+- "pii_name": full names (not public figures)
+- "pii_ssn": social security / national ID numbers
+- "pii_dob": date of birth
+- "medical": health conditions, medications, diagnoses
+- "financial": bank accounts, credit cards, income, investments
+- "credentials": passwords, API keys, tokens, secrets
+- "legal": ongoing legal matters, case numbers
+- "location_tracking": precise real-time location
+- "private_comms": private messages, emails, DMs
+- "biometric": fingerprints, DNA, facial recognition data
+
+SAFE examples:
+- "capital of France"
+- "Python async tutorial"
+- "weather in London"
+- "best restaurants in Tokyo"
+- "quantum computing explained"
+
+SENSITIVE examples:
+- "john.doe@company.com email"
+- "SSN 123-45-6789"
+- "my blood pressure medication"
+- "credit card ending in 4242"
+- "password for aws account"
+- "divorce case number 2024-CV-12345"
+- "exact location of my home"
+
+AMBIGUOUS: unclear intent, err on side of caution.
+
+Respond with ONLY valid JSON.""",
+    )
+    user = ChatMessage(role="user", content=f"Query: {query}")
+    
+    try:
+        response = await llm_client.chat(
+            [system, user],
+            model=llm_client.utility_model,
+            format="json",
+            temperature=0.0,
+            think=False,
+        )
+        data = json.loads(response.content)
+        level_str = data.get("level", "ambiguous").lower()
+        valid_levels = ("safe", "sensitive", "ambiguous")
+        level = (
+            QuerySensitivity(level_str)
+            if level_str in valid_levels
+            else QuerySensitivity.AMBIGUOUS
+        )
+        return SensitivityResult(
+            level=level,
+            reason=data.get("reason", ""),
+            categories=data.get("categories", []),
+        )
+    except Exception as e:
+        logger.warning("Sensitivity classification failed: %s", e)
+        return SensitivityResult(
+            level=QuerySensitivity.AMBIGUOUS,
+            reason="Classification error",
+            categories=[],
+        )
 
 # Tracking/query junk stripped during URL normalization so that the same page
 # reached through different campaign links dedups to one entry.
@@ -54,6 +158,8 @@ class SearchInfo:
     backend: str  # "brave" or "searxng"
     query: str  # sanitized query that was sent to the backend
     results: list[SearchResult]
+    sensitivity: SensitivityResult | None = None  # sensitivity analysis result
+    consent_required: bool = False  # true if sensitive query needs user consent
 
 
 def sanitize_query(query: str) -> str:
@@ -380,21 +486,62 @@ class WebSearchTool(SearchBackend):
         return self._backend.backend_name
 
     async def search_with_info(
-        self, query: str, num_results: int = 5
+        self, query: str, num_results: int = 5, llm_client=None, user_consent: bool = False
     ) -> tuple[list[SearchResult], SearchInfo]:
         """Search and return results with full provenance metadata.
 
         Returns (results, search_info) so the caller can record transparency data.
+        Includes sensitivity analysis — if Brave backend and query is sensitive,
+        consent_required will be True (caller should prompt user).
+        
+        IMPORTANT: If consent_required is True, the search is NOT executed.
+        Caller must get user consent and retry with user_consent=True.
         """
         if not self.enabled:
             logger.warning("Search is disabled in config")
-            return [], SearchInfo(backend=self.backend_name, query=query, results=[])
+            return [], SearchInfo(
+                backend=self.backend_name,
+                query=query,
+                results=[],
+            )
+        
         raw_query = sanitize_query(query)
+        
+        # Sensitivity check for Brave backend - BEFORE searching
+        sensitivity = None
+        consent_required = False
+        if self.backend_name == "brave" and llm_client and not user_consent:
+            sensitivity = await classify_query_sensitivity(raw_query, llm_client)
+            sensitive_levels = (
+                QuerySensitivity.SENSITIVE,
+                QuerySensitivity.AMBIGUOUS,
+            )
+            consent_required = sensitivity.level in sensitive_levels
+            if consent_required:
+                logger.info(
+                    "Brave search query flagged as %s: %s (reason: %s, "
+                    "categories: %s) - NOT executing",
+                    sensitivity.level.value,
+                    raw_query,
+                    sensitivity.reason,
+                    sensitivity.categories,
+                )
+                # Return early WITHOUT executing search - caller must get consent
+                return [], SearchInfo(
+                    backend=self.backend_name,
+                    query=raw_query,
+                    results=[],
+                    sensitivity=sensitivity,
+                    consent_required=True,
+                )
+        
         results = await self._backend.search(raw_query, num_results)
         info = SearchInfo(
             backend=self.backend_name,
             query=raw_query,
             results=results,
+            sensitivity=sensitivity,
+            consent_required=consent_required,
         )
         return results, info
 

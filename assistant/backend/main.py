@@ -404,6 +404,7 @@ async def chat(
                 session_id=request.session_id,
                 turn_id=request.turn_id,
                 attached_files=[fc for fc in file_contents],
+                search_consent=request.search_consent,
             ),
             progress=progress,
         )
@@ -1439,13 +1440,17 @@ async def upload_file(
         )
     
     # Store file in data directory
+    import re
     from pathlib import Path
     
     data_dir = Path("/app/data")
     data_dir.mkdir(exist_ok=True)
     
-    # Secure filename - use timestamp-based name
-    safe_filename = "upload_" + datetime.now().strftime('%Y%m%d_%H%M%S') + '.file'
+    # Preserve original filename (sanitized) with timestamp prefix for uniqueness
+    # Remove path components, keep only basename, replace non-alphanumeric with underscore
+    original_base = filename.rsplit(".", 1)[0] if "." in filename else filename
+    sanitized_base = re.sub(r'[^a-zA-Z0-9_.-]', '_', original_base)[:100]
+    safe_filename = f"upload_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{sanitized_base}.{ext}"
     file_path = data_dir / safe_filename
     
     # Save file
@@ -1604,11 +1609,8 @@ async def upload_file(
     else:
         row_count = 0
     
-    # Clean up temp file
-    try:
-        file_path.unlink(missing_ok=True)
-    except Exception:
-        pass
+    # File is kept at /app/data/{safe_filename} for later retrieval
+    # via the file content endpoints
     
     return {
         "status": "ok",
@@ -1638,7 +1640,7 @@ class FileFrameResponse(BaseModel):
     priority: float
     source_type: str | None
     source_url: str | None
-    source_reliability: float
+    source_reliability: float | None
     created_at: datetime
     updated_at: datetime
 
@@ -1665,6 +1667,8 @@ async def list_files(
 ):
     """List all file frames for a user."""
     frames = await store.list_frames(owner_user_id=user_id)
+    # Filter to only file upload frames that are not forgotten (priority > 0)
+    file_frames = [f for f in frames if f.source_type == "file_upload" and f.priority > 0]
     return [
         FileFrameResponse(
             id=frame.id,
@@ -1679,7 +1683,7 @@ async def list_files(
             created_at=frame.created_at,
             updated_at=frame.updated_at,
         )
-        for frame in frames
+        for frame in file_frames
     ]
 
 

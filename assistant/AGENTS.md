@@ -134,6 +134,17 @@ Critical paths that need regression tests (in priority order):
 3. **Correction pipeline**: parse → validate → apply → response.
 4. **Search extraction + merge**: snippet extract → deduplication → document extract → merge.
 
+### Safety & Privacy: user data protection
+The system is designed to support and protect the user and their data. 
+The agent must confirm before performing actions that could expose sensitive information:
+
+- **Search confirmation**: Before sending queries to external search APIs (Brave), confirm the user wants to send that data. Local SearXNG searches stay on-device.
+- **File upload awareness**: When uploading files to chat, show what content will be sent to the LLM (preview, entities, questions).
+- **Web fetch transparency**: The `fetch_url` tool shows the target URL before fetching and extracting facts.
+- **Data locality**: All LLM inference runs locally via Ollama (127.0.0.1). No data leaves the machine unless the user explicitly opts into Brave Search.
+- **No telemetry**: Zero analytics, tracking, or phone-home code. The agent's memory stays in the local SQLite database.
+- **User consent for external calls**: Any network request beyond localhost (Ollama, SearXNG, Brave) requires explicit user action or configuration.
+
 ## Memory model
 - Frames: entities/concepts/events with confidence.
 - Slots: key/value pairs on a frame, each with confidence + source episode.

@@ -18,10 +18,26 @@ export const [voice, setVoice] = createStore<VoiceState>({
   isTtsSpeaking: false,
 })
 
+// Callback for external stop recording (registered by useVoiceRecording hook)
+let stopRecordingCallback: (() => void) | null = null
+
+export const registerStopRecording = (fn: () => void) => {
+  stopRecordingCallback = fn
+}
+
+export const unregisterStopRecording = () => {
+  stopRecordingCallback = null
+}
+
+export const stopRecording = () => {
+  if (stopRecordingCallback) {
+    stopRecordingCallback()
+  }
+}
+
 // Voice actions - proper state machine
 export const enterVoiceMode = () => {
   setVoice('status', 'listening')
-  setVoice('isDictating', false)
 }
 
 export const exitVoiceMode = () => {

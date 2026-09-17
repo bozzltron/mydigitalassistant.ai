@@ -94,7 +94,7 @@ services:
       dockerfile: Dockerfile.dev
     container_name: solid-dev-server
     ports:
-      - "3000:5173"
+      - "5174:5173"
     volumes:
       - ./frontend:/app/frontend
       - ./assistant/backend/static:/app/assistant/backend/static

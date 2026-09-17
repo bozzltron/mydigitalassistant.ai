@@ -16,7 +16,10 @@
     "@solidjs/router": "^1.0.0",
     "@types/d3": "^7.4.3",
     "d3": "^7.9.0",
+    "graphology": "^0.25.4",
+    "graphology-layout-forceatlas2": "^0.10.1",
     "marked": "^18.0.12",
+    "sigma": "^2.3.0",
     "solid-js": "^1.8.0",
     "typescript": "^5.4.5",
     "zod": "^4.6.0"

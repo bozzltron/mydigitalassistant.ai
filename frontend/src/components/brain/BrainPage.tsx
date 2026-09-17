@@ -1,4 +1,4 @@
-import { createSignal, createMemo, onMount, For, Show } from 'solid-js'
+import { createSignal, createMemo, onMount, onCleanup, For, Show } from 'solid-js'
 import BrainGraph from './BrainGraph'
 import FrameDetail from './FrameDetail'
 import type { Frame, Association, Slot, Conflict } from '../../types'
@@ -42,6 +42,32 @@ export default function BrainPage() {
   const [searchError, setSearchError] = createSignal<string | null>(null)
   const [showSearchPanel, setShowSearchPanel] = createSignal(false)
   const [agentName, setAgentName] = createSignal('Brain Observatory')
+  const [width, setWidth] = createSignal(800)
+  const [height, setHeight] = createSignal(600)
+  const [conflictsByFrame, setConflictsByFrame] = createSignal<Record<number, any[]>>({})
+  // 3D view state
+  const [mode, setMode] = createSignal<'2d' | '3d'>('3d')
+  const [touring, setTouring] = createSignal(false)
+
+  const updateDimensions = () => {
+    const container = document.getElementById('brain-graph-container')
+    if (container) {
+      setWidth(container.clientWidth || 800)
+      setHeight(container.clientHeight || 600)
+    }
+  }
+
+  onMount(() => {
+    updateDimensions()
+    window.addEventListener('resize', updateDimensions)
+    // Load saved view mode
+    const savedMode = localStorage.getItem('brain-view') as '2d' | '3d' | null
+    if (savedMode) setMode(savedMode)
+  })
+
+  onCleanup(() => {
+    window.removeEventListener('resize', updateDimensions)
+  })
 
   const loadBrainData = async () => {
     setIsLoading(true)
@@ -61,7 +87,13 @@ export default function BrainPage() {
 
       setFrames(framesData)
       setAssociations(associationsData)
-      setConflicts(conflictsData.filter(c => c.status === 'pending'))
+      const pendingConflicts = conflictsData.filter(c => c.status === 'pending')
+      setConflicts(pendingConflicts)
+      const conflictsByFrameMap: Record<number, any[]> = {}
+      for (const c of pendingConflicts) {
+        (conflictsByFrameMap[c.frame_id] ||= []).push(c)
+      }
+      setConflictsByFrame(conflictsByFrameMap)
     } catch (err) {
       console.error('Failed to load brain data:', err)
       setError('Failed to load brain data')
@@ -130,6 +162,18 @@ export default function BrainPage() {
     setHighlightedNodeIds(new Set())
   }
 
+  const handleModeChange = (newMode: '2d' | '3d') => {
+    setMode(newMode)
+    localStorage.setItem('brain-view', newMode)
+    if (newMode !== '3d') {
+      setTouring(false)
+    }
+  }
+
+  const toggleTour = () => {
+    setTouring(t => !t)
+  }
+
   interface Node {
     id: number
     name: string
@@ -175,9 +219,6 @@ export default function BrainPage() {
     }
   })
 
-  const width = () => document.getElementById('brain-graph-container')?.clientWidth || 800
-  const height = () => document.getElementById('brain-graph-container')?.clientHeight || 600
-
   return (
     <div class="brain-page">
       <header class="brain-header">
@@ -208,6 +249,23 @@ export default function BrainPage() {
           </div>
           <button class="refresh-btn" onClick={loadBrainData} disabled={isLoading()}>
             {isLoading() ? 'Loading...' : 'Refresh'}
+          </button>
+          <button
+            class="refresh-btn"
+            title="Toggle 2D / 3D view"
+            onClick={() => handleModeChange(mode() === '3d' ? '2d' : '3d')}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+          >
+            {mode() === '3d' ? '2D' : '3D'}
+          </button>
+          <button
+            class="refresh-btn"
+            id="tour-btn"
+            title="Auto-orbit tour"
+            onClick={toggleTour}
+            style={{ display: mode() === '3d' ? 'inline-flex' : 'none', alignItems: 'center', gap: '4px' }}
+          >
+            {touring() ? 'Stop Tour' : 'Tour'}
           </button>
         </div>
       </header>
@@ -273,12 +331,17 @@ export default function BrainPage() {
               </Show>
               <Show when={!isLoading() && nodes().length > 0}>
                 <BrainGraph
-                  nodes={nodes()}
-                  links={links()}
-                  width={width()}
-                  height={height()}
+                  nodes={nodes}
+                  links={links}
+                  width={width}
+                  height={height}
                   onNodeClick={handleNodeClick}
-                  highlightedNodeIds={highlightedNodeIds()}
+                  highlightedNodeIds={highlightedNodeIds}
+                  conflictsByFrame={conflictsByFrame}
+                  mode={mode}
+                  onModeChange={handleModeChange}
+                  touring={touring}
+                  setTouring={setTouring}
                 />
               </Show>
               <Show when={isLoading()}>

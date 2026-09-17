@@ -1,7 +1,7 @@
 import { createSignal, onCleanup, onMount, For } from 'solid-js'
 
 interface InputBarProps {
-  onSend: (message: string) => void
+  onSend: (message: string, attachedFiles?: File[]) => void
   isSending?: boolean
   onAttachFile?: () => void
   isDictating?: boolean
@@ -26,7 +26,7 @@ export default function InputBar(props: InputBarProps) {
   const handleSubmit = (e: Event) => {
     e.preventDefault()
     if (message().trim() && !props.isSending) {
-      props.onSend(message())
+      props.onSend(message(), attachedFiles())
       setMessage('')
       setAttachedFiles([])
     }

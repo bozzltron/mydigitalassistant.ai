@@ -13,16 +13,16 @@ describe('VoiceControls', () => {
     vi.clearAllMocks()
   })
 
-  it('renders mic button', () => {
+  it('renders mic button for dictation mode', () => {
     render(() => <VoiceControls isRecording={defaultProps.isRecording} onStartRecording={defaultProps.onStartRecording} onStopRecording={defaultProps.onStopRecording} />)
     
-    expect(screen.getByRole('button', { name: /dictate/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /dictate into message box/i })).toBeInTheDocument()
   })
 
   it('calls onStartRecording when clicked and not recording', () => {
     render(() => <VoiceControls isRecording={defaultProps.isRecording} onStartRecording={defaultProps.onStartRecording} onStopRecording={defaultProps.onStopRecording} />)
     
-    const btn = screen.getByRole('button', { name: /dictate/i })
+    const btn = screen.getByRole('button', { name: /dictate into message box/i })
     fireEvent.click(btn)
     
     expect(defaultProps.onStartRecording).toHaveBeenCalled()
@@ -32,7 +32,7 @@ describe('VoiceControls', () => {
   it('calls onStopRecording when clicked and recording', () => {
     render(() => <VoiceControls isRecording={true} onStartRecording={defaultProps.onStartRecording} onStopRecording={defaultProps.onStopRecording} />)
     
-    const btn = screen.getByRole('button', { name: /dictate/i })
+    const btn = screen.getByRole('button', { name: /stop dictation/i })
     fireEvent.click(btn)
     
     expect(defaultProps.onStopRecording).toHaveBeenCalled()
@@ -42,14 +42,14 @@ describe('VoiceControls', () => {
   it('handles missing callbacks gracefully', () => {
     render(() => <VoiceControls isRecording={false} />)
     
-    const btn = screen.getByRole('button', { name: /dictate/i })
+    const btn = screen.getByRole('button', { name: /dictate into message box/i })
     expect(() => fireEvent.click(btn)).not.toThrow()
   })
 
   it('handles missing onStopRecording gracefully', () => {
     render(() => <VoiceControls isRecording={true} onStartRecording={vi.fn()} />)
     
-    const btn = screen.getByRole('button', { name: /dictate/i })
+    const btn = screen.getByRole('button', { name: /stop dictation/i })
     expect(() => fireEvent.click(btn)).not.toThrow()
   })
 })

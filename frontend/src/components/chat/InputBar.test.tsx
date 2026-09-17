@@ -29,7 +29,7 @@ describe('InputBar', () => {
     fireEvent.input(textarea, { target: { value: 'Hello' } })
     fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: false })
     
-    expect(defaultProps.onSend).toHaveBeenCalledWith('Hello')
+    expect(defaultProps.onSend).toHaveBeenCalledWith('Hello', [])
   })
 
   it('does not send on Shift+Enter', () => {
@@ -49,6 +49,7 @@ describe('InputBar', () => {
     fireEvent.input(textarea, { target: { value: 'Test' } })
     fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: false })
     
+    expect(defaultProps.onSend).toHaveBeenCalledWith('Test', [])
     expect(textarea).toHaveValue('')
   })
 
@@ -87,7 +88,7 @@ describe('InputBar', () => {
   it('calls onDictationStart when mic clicked and not dictating', () => {
     render(() => <InputBar onSend={defaultProps.onSend} isSending={defaultProps.isSending} onDictationStart={defaultProps.onDictationStart} onDictationStop={defaultProps.onDictationStop} isDictating={defaultProps.isDictating} />)
     
-    const micBtn = screen.getByRole('button', { name: /dictate/i })
+    const micBtn = screen.getByRole('button', { name: /dictate into message box/i })
     fireEvent.click(micBtn)
     
     expect(defaultProps.onDictationStart).toHaveBeenCalled()
@@ -96,7 +97,7 @@ describe('InputBar', () => {
   it('calls onDictationStop when mic clicked and dictating', () => {
     render(() => <InputBar onSend={defaultProps.onSend} isSending={defaultProps.isSending} onDictationStart={defaultProps.onDictationStart} onDictationStop={defaultProps.onDictationStop} isDictating={true} />)
     
-    const micBtn = screen.getByRole('button', { name: /dictate/i })
+    const micBtn = screen.getByRole('button', { name: /stop dictation/i })
     fireEvent.click(micBtn)
     
     expect(defaultProps.onDictationStop).toHaveBeenCalled()
@@ -105,7 +106,7 @@ describe('InputBar', () => {
   it('shows mic button as red when dictating', () => {
     render(() => <InputBar onSend={defaultProps.onSend} isSending={defaultProps.isSending} onDictationStart={defaultProps.onDictationStart} onDictationStop={defaultProps.onDictationStop} isDictating={true} />)
     
-    const micBtn = screen.getByRole('button', { name: /dictate/i })
+    const micBtn = screen.getByRole('button', { name: /stop dictation/i })
     expect(micBtn).toHaveClass('recording')
   })
 
