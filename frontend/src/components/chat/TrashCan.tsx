@@ -1,6 +1,6 @@
 import { createSignal, createEffect, onMount, For, Show } from 'solid-js'
 import { Modal } from '../ui/Modal'
-import { trashRestore, trashDelete } from '../../icons'
+import { trashRestore, trashDelete } from './icons'
 import { getDeletedSessions, restoreConversation } from '../../services/api'
 import { user } from '../../state/user'
 import type { DeletedSession } from '../../types/chat'
@@ -77,14 +77,14 @@ export default function TrashCan() {
 
   return (
     <>
-      <button
-        class="btn-secondary trash-can-trigger"
-        onClick={() => setIsOpen(true)}
-        aria-label="Open trash can"
-      >
-        {trashRestore}
-        <span>Trash</span>
-      </button>
+<button
+          class="btn-secondary trash-can-trigger"
+          onClick={() => setIsOpen(true)}
+          aria-label="Open trash can"
+        >
+          <span class="trash-icon">{trashRestore}</span>
+          <span>Trash</span>
+        </button>
 
       <Modal
         isOpen={isOpen()}
@@ -151,6 +151,12 @@ export default function TrashCan() {
           display: flex;
           align-items: center;
           gap: 6px;
+        }
+        .trash-icon {
+          flex-shrink: 0;
+          width: 1em;
+          height: 1em;
+          vertical-align: middle;
         }
         .trash-can-modal {
           max-height: 70vh;
