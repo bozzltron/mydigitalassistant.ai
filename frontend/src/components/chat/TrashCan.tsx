@@ -1,6 +1,5 @@
 import { createSignal, createEffect, onMount, For, Show } from 'solid-js'
 import { Modal } from '../ui/Modal'
-import { trashRestore, trashDelete } from './icons'
 import { getDeletedSessions, restoreConversation } from '../../services/api'
 import { user } from '../../state/user'
 import type { DeletedSession } from '../../types/chat'
@@ -82,7 +81,7 @@ export default function TrashCan() {
           onClick={() => setIsOpen(true)}
           aria-label="Open trash can"
         >
-          <span class="trash-icon">{trashRestore}</span>
+          <img src="/trash.svg" alt="trash" class="trash-icon" />
           <span>Trash</span>
         </button>
 
@@ -97,7 +96,7 @@ export default function TrashCan() {
             <div class="trash-loading">Loading trash can...</div>
           </Show>
           <Show when={!isLoading() && deletedSessions().length === 0} fallback={<div class="trash-empty">
-            <div class="trash-empty-icon">{trashDelete}</div>
+            <img src="/trash.svg" alt="trash empty" class="trash-empty-icon" />
             <p>Trash is empty</p>
             <p class="trash-empty-hint">Deleted conversations will appear here</p>
           </div>}>
@@ -126,17 +125,21 @@ export default function TrashCan() {
                         onClick={() => handleRestore(session.id)}
                         disabled={restoringId() === session.id}
                         aria-label="Restore conversation"
-                      >
-                        {restoringId() === session.id ? '⏳' : trashRestore}
-                      </button>
-                      <button
+>
+                        {restoringId() === session.id ? '⏳' : (
+              <img src="/trash.svg" alt="restore" class="trash-icon" />
+            )}
+                       </button>
+                       <button
                         class="btn-icon permanent-delete-btn"
                         onClick={() => handlePermanentDelete(session.id)}
                         disabled={permanentlyDeletingId() === session.id}
                         aria-label="Permanently delete"
-                      >
-                        {permanentlyDeletingId() === session.id ? '⏳' : trashDelete}
-                      </button>
+>
+                        {permanentlyDeletingId() === session.id ? '⏳' : (
+              <img src="/trash.svg" alt="permanently delete" class="trash-icon" />
+            )}
+                       </button>
                     </div>
                   </div>
                 )}
@@ -157,6 +160,13 @@ export default function TrashCan() {
           width: 1em;
           height: 1em;
           vertical-align: middle;
+          color: white;
+        }
+        .trash-icon path {
+          stroke: currentColor !important;
+        }
+        .trash-icon [fill=none] {
+          fill: currentColor !important;
         }
         .trash-can-modal {
           max-height: 70vh;
@@ -227,18 +237,19 @@ export default function TrashCan() {
           gap: 8px;
           flex-shrink: 0;
         }
-        .btn-icon {
+.btn-icon {
           display: flex;
           align-items: center;
           justify-content: center;
-          width: 32px;
-          height: 32px;
           border: none;
           background: transparent;
           border-radius: 6px;
-          cursor: pointer;
-          color: var(--color-text-secondary);
+          color: white;
           transition: all 0.15s ease;
+        }
+        .btn-icon svg {
+          width: 1em;
+          height: 1em;
         }
         .btn-icon:hover:not(:disabled) {
           background: var(--color-background-hover);

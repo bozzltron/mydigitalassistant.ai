@@ -5,8 +5,6 @@ import { settings, updateSetting } from '../../state/settings'
 import { enterVoiceMode, exitVoiceMode, voice, isListening, isProcessing, isSpeaking, isIdle, isTtsSpeaking, stopRecording, setTtsSpeaking } from '../../state/voice'
 import { api } from '../../services/api'
 import TrashCan from '../chat/TrashCan'
-import { useConversations } from '../../hooks/useConversations'
-import { useActiveConversation } from '../../hooks/useActiveConversation'
 
 interface TopBarProps {
   conversations: Session[]
@@ -20,12 +18,6 @@ interface TopBarProps {
 export default function TopBar(props: TopBarProps) {
   const [showSettings, setShowSettings] = createSignal(false)
   const [braveConfigured, setBraveConfigured] = createSignal(false)
-  const [isRenaming, setIsRenaming] = createSignal(false)
-  const [renameTitle, setRenameTitle] = createSignal('')
-  const [isEditing, setIsEditing] = createSignal(false)
-  const [isDeleting, setIsDeleting] = createSignal(false)
-  const [editSessionId, setEditSessionId] = createSignal<string | null>(null)
-  const [deleteSessionId, setDeleteSessionId] = createSignal<string | null>(null)
 
   const u = user()
 
@@ -62,66 +54,6 @@ export default function TopBar(props: TopBarProps) {
     const selectedId = selectElement.value
     if (selectedId) {
       props.onConversationChange(selectedId)
-    }
-  }
-
-  const handleRenameConversation = async (sessionId: string) => {
-    const newTitle = renameTitle().trim()
-    if (!newTitle) return
-    
-    setIsRenaming(false)
-    try {
-      await api(`/conversations/${sessionId}/title`, {
-        method: 'PATCH',
-        body: JSON.stringify({ user_id: u?.id, title: newTitle }),
-      })
-      await fetchSessionsFromAPI()
-      setIsRenaming(false)
-      setRenameTitle('')
-    } catch (error) {
-      console.error('Failed to rename conversation:', error)
-      setIsRenaming(false)
-    }
-  }
-
-  const handleEditConversation = async (sessionId: string) => {
-    setEditSessionId(sessionId)
-    setIsEditing(true)
-  }
-
-  const handleSaveEdit = async (sessionId: string, newTitle: string) => {
-    if (!newTitle.trim()) return
-    
-    setIsEditing(false)
-    try {
-      await api(`/conversations/${sessionId}/title`, {
-        method: 'PATCH',
-        body: JSON.stringify({ user_id: u?.id, title: newTitle.trim() }),
-      })
-      await fetchSessionsFromAPI()
-      setIsEditing(false)
-      setEditSessionId(null)
-    } catch (error) {
-      console.error('Failed to save conversation edit:', error)
-      setIsEditing(false)
-      setEditSessionId(null)
-    }
-  }
-
-  const handleDeleteConversation = async (sessionId: string) => {
-    setDeleteSessionId(sessionId)
-    setIsDeleting(true)
-    try {
-      await api(`/conversations/${sessionId}`, {
-        method: 'DELETE',
-      })
-      await fetchSessionsFromAPI()
-      setIsDeleting(false)
-      setDeleteSessionId(null)
-    } catch (error) {
-      console.error('Failed to delete conversation:', error)
-      setIsDeleting(false)
-      setDeleteSessionId(null)
     }
   }
 
@@ -351,65 +283,7 @@ export default function TopBar(props: TopBarProps) {
             style={{"padding":"0.2rem 0.4rem","font-size":"0.75rem","margin-left":"0.3rem"}}
             onClick={() => props.onNewConversationClick?.()}
           >New</button>
-          {props.activeConversation && (
-            <>
-              <button
-                class="voice-btn-small"
-                style={{"padding":"0.2rem 0.4rem","font-size":"0.75rem","margin-left":"0.3rem","background":"var(--color-background-hover)"}}
-                onClick={() => setIsRenaming(true)}
-                title="Rename conversation"
-              >
-                Rename
-              </button>
-              {isEditing() && editSessionId() === props.activeConversation?.id && (
-                <button
-                  class="voice-btn-small"
-                  style={{"padding":"0.2rem 0.4rem","font-size":"0.75rem","margin-left":"0.3rem","background":"var(--color-success-bg)"}}
-                  onClick={() => handleSaveEdit(props.activeConversation!.id, renameTitle())}
-                  title="Save rename"
-                >
-                  Save
-                </button>
-              )}
-              {isDeleting() && deleteSessionId() === props.activeConversation?.id && (
-                <span class="deleting">Deleting...</span>
-              )}
-            </>
-          )}
         </div>
-        {isRenaming() && (
-          <div class="rename-prompt">
-            <span class="rename-prompt-text">Rename conversation:</span>
-            <input
-              type="text"
-              value={renameTitle()}
-              onInput={(e) => setRenameTitle(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') handleRenameConversation(props.activeConversation!.id) }}
-              style={{
-                padding: '8px',
-                fontSize: '0.8rem',
-                margin: '4px',
-                border: '1px solid var(--border)',
-                borderRadius: '4px',
-              }}
-            />
-            <button
-              class="btn-primary"
-              style={{marginLeft: '8px'}}
-              onClick={handleRenameConversation}
-              disabled={!renameTitle().trim()}
-            >
-              Rename
-            </button>
-            <button
-              class="btn-secondary"
-              style={{marginLeft: '8px'}}
-              onClick={() => setIsRenaming(false)}
-            >
-              Cancel
-            </button>
-          </div>
-        )}
         <div class="header-right">
           {u && <span class="user-badge" id="user-badge">{u.name}</span>}
           <TrashCan />
