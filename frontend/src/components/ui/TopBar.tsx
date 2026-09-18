@@ -5,6 +5,7 @@ import { settings, updateSetting } from '../../state/settings'
 import { enterVoiceMode, exitVoiceMode, voice, isListening, isProcessing, isSpeaking, isIdle, isTtsSpeaking, stopRecording, setTtsSpeaking } from '../../state/voice'
 import { api } from '../../services/api'
 import TrashCan from '../chat/TrashCan'
+import { useConversations } from '../../hooks/useConversations'
 
 interface TopBarProps {
   conversations: Session[]
@@ -18,6 +19,8 @@ interface TopBarProps {
 export default function TopBar(props: TopBarProps) {
   const [showSettings, setShowSettings] = createSignal(false)
   const [braveConfigured, setBraveConfigured] = createSignal(false)
+  const [isRenaming, setIsRenaming] = createSignal(false)
+  const [renameTitle, setRenameTitle] = createSignal('')
 
   const u = user()
 
@@ -54,6 +57,25 @@ export default function TopBar(props: TopBarProps) {
     const selectedId = selectElement.value
     if (selectedId) {
       props.onConversationChange(selectedId)
+    }
+  }
+
+  const handleRenameConversation = async (sessionId: string) => {
+    const newTitle = renameTitle().trim()
+    if (!newTitle) return
+    
+    setIsRenaming(false)
+    try {
+      await api(`/conversations/${sessionId}/title`, {
+        method: 'PATCH',
+        body: JSON.stringify({ user_id: u?.id, title: newTitle }),
+      })
+      await fetchSessionsFromAPI()
+      setIsRenaming(false)
+      setRenameTitle('')
+    } catch (error) {
+      console.error('Failed to rename conversation:', error)
+      setIsRenaming(false)
     }
   }
 
@@ -283,7 +305,50 @@ export default function TopBar(props: TopBarProps) {
             style={{"padding":"0.2rem 0.4rem","font-size":"0.75rem","margin-left":"0.3rem"}}
             onClick={() => props.onNewConversationClick?.()}
           >New</button>
+          {props.activeConversation && (
+            <button
+              class="voice-btn-small"
+              style={{"padding":"0.2rem 0.4rem","font-size":"0.75rem","margin-left":"0.3rem","background":"var(--color-background-hover)"}}
+              onClick={() => setIsRenaming(true)}
+              title="Rename conversation"
+            >
+              Rename
+            </button>
+          )}
         </div>
+        {isRenaming() && (
+          <div class="rename-prompt">
+            <span class="rename-prompt-text">Rename conversation:</span>
+            <input
+              type="text"
+              value={renameTitle()}
+              onInput={(e) => setRenameTitle(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleRenameConversation(props.activeConversation!.id) }}
+              style={{
+                padding: '8px',
+                fontSize: '0.8rem',
+                margin: '4px',
+                border: '1px solid var(--border)',
+                borderRadius: '4px',
+              }}
+            />
+            <button
+              class="btn-primary"
+              style={{marginLeft: '8px'}}
+              onClick={handleRenameConversation}
+              disabled={!renameTitle().trim()}
+            >
+              Rename
+            </button>
+            <button
+              class="btn-secondary"
+              style={{marginLeft: '8px'}}
+              onClick={() => setIsRenaming(false)}
+            >
+              Cancel
+            </button>
+          </div>
+        )}
         <div class="header-right">
           {u && <span class="user-badge" id="user-badge">{u.name}</span>}
           <TrashCan />
