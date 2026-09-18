@@ -6,6 +6,7 @@ import { enterVoiceMode, exitVoiceMode, voice, isListening, isProcessing, isSpea
 import { api } from '../../services/api'
 import TrashCan from '../chat/TrashCan'
 import { useConversations } from '../../hooks/useConversations'
+import { useActiveConversation } from '../../hooks/useActiveConversation'
 
 interface TopBarProps {
   conversations: Session[]
@@ -21,6 +22,10 @@ export default function TopBar(props: TopBarProps) {
   const [braveConfigured, setBraveConfigured] = createSignal(false)
   const [isRenaming, setIsRenaming] = createSignal(false)
   const [renameTitle, setRenameTitle] = createSignal('')
+  const [isEditing, setIsEditing] = createSignal(false)
+  const [isDeleting, setIsDeleting] = createSignal(false)
+  const [editSessionId, setEditSessionId] = createSignal<string | null>(null)
+  const [deleteSessionId, setDeleteSessionId] = createSignal<string | null>(null)
 
   const u = user()
 
@@ -76,6 +81,47 @@ export default function TopBar(props: TopBarProps) {
     } catch (error) {
       console.error('Failed to rename conversation:', error)
       setIsRenaming(false)
+    }
+  }
+
+  const handleEditConversation = async (sessionId: string) => {
+    setEditSessionId(sessionId)
+    setIsEditing(true)
+  }
+
+  const handleSaveEdit = async (sessionId: string, newTitle: string) => {
+    if (!newTitle.trim()) return
+    
+    setIsEditing(false)
+    try {
+      await api(`/conversations/${sessionId}/title`, {
+        method: 'PATCH',
+        body: JSON.stringify({ user_id: u?.id, title: newTitle.trim() }),
+      })
+      await fetchSessionsFromAPI()
+      setIsEditing(false)
+      setEditSessionId(null)
+    } catch (error) {
+      console.error('Failed to save conversation edit:', error)
+      setIsEditing(false)
+      setEditSessionId(null)
+    }
+  }
+
+  const handleDeleteConversation = async (sessionId: string) => {
+    setDeleteSessionId(sessionId)
+    setIsDeleting(true)
+    try {
+      await api(`/conversations/${sessionId}`, {
+        method: 'DELETE',
+      })
+      await fetchSessionsFromAPI()
+      setIsDeleting(false)
+      setDeleteSessionId(null)
+    } catch (error) {
+      console.error('Failed to delete conversation:', error)
+      setIsDeleting(false)
+      setDeleteSessionId(null)
     }
   }
 
@@ -306,14 +352,29 @@ export default function TopBar(props: TopBarProps) {
             onClick={() => props.onNewConversationClick?.()}
           >New</button>
           {props.activeConversation && (
-            <button
-              class="voice-btn-small"
-              style={{"padding":"0.2rem 0.4rem","font-size":"0.75rem","margin-left":"0.3rem","background":"var(--color-background-hover)"}}
-              onClick={() => setIsRenaming(true)}
-              title="Rename conversation"
-            >
-              Rename
-            </button>
+            <>
+              <button
+                class="voice-btn-small"
+                style={{"padding":"0.2rem 0.4rem","font-size":"0.75rem","margin-left":"0.3rem","background":"var(--color-background-hover)"}}
+                onClick={() => setIsRenaming(true)}
+                title="Rename conversation"
+              >
+                Rename
+              </button>
+              {isEditing() && editSessionId() === props.activeConversation?.id && (
+                <button
+                  class="voice-btn-small"
+                  style={{"padding":"0.2rem 0.4rem","font-size":"0.75rem","margin-left":"0.3rem","background":"var(--color-success-bg)"}}
+                  onClick={() => handleSaveEdit(props.activeConversation!.id, renameTitle())}
+                  title="Save rename"
+                >
+                  Save
+                </button>
+              )}
+              {isDeleting() && deleteSessionId() === props.activeConversation?.id && (
+                <span class="deleting">Deleting...</span>
+              )}
+            </>
           )}
         </div>
         {isRenaming() && (
