@@ -1178,6 +1178,63 @@ class MemoryStore:
             await db.commit()
             return cursor.rowcount > 0
 
+    async def restore_session(self, session_id: str, user_id: int) -> bool:
+        """Restore a soft-deleted session by clearing deleted_at timestamp."""
+        async with self._connect() as db:
+            cursor = await db.execute(
+                """
+                UPDATE sessions
+                SET deleted_at = NULL, updated_at = datetime('now')
+                WHERE id = ? AND user_id = ? AND deleted_at IS NOT NULL
+                """,
+                (session_id, user_id)
+            )
+            await db.commit()
+            return cursor.rowcount > 0
+
+    async def get_deleted_sessions_for_user(self, user_id: int) -> list[dict]:
+        """Get all soft-deleted sessions for a user (trash can view)."""
+        async with self._connect() as db:
+            rows = await db.execute_fetchall(
+                """
+                SELECT s.id, s.user_id, s.title, s.created_at, s.updated_at, s.deleted_at,
+                       COUNT(e.id) as episode_count,
+                       MAX(e.timestamp) as last_activity,
+                       MAX(CASE WHEN e.role = 'user' THEN e.content END) as first_user_message
+                FROM sessions s
+                LEFT JOIN episodes e ON e.session_id = s.id AND e.user_id = s.user_id
+                WHERE s.user_id = ? AND s.deleted_at IS NOT NULL
+                GROUP BY s.id, s.user_id, s.title, s.created_at, s.updated_at, s.deleted_at
+                ORDER BY s.deleted_at DESC
+                """,
+                (user_id,),
+            )
+            sessions = []
+            for row in rows:
+                (
+                    sid,
+                    uid,
+                    title,
+                    created_at,
+                    updated_at,
+                    deleted_at,
+                    episode_count,
+                    last_activity,
+                    first_user_message,
+                ) = row
+                sessions.append({
+                    "id": sid,
+                    "user_id": uid,
+                    "title": title,
+                    "created_at": created_at,
+                    "updated_at": updated_at,
+                    "deleted_at": deleted_at,
+                    "episode_count": episode_count,
+                    "last_activity": last_activity,
+                    "first_user_message": first_user_message[:200] if first_user_message else None,
+                })
+            return sessions
+
     async def get_episodes_for_session(self, session_id: str) -> list[Episode]:
         async with self._connect() as db:
             rows = await db.execute_fetchall(

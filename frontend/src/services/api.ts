@@ -354,6 +354,32 @@ export async function transcribeAudio(audioBlob: Blob): Promise<{ text: string }
   return response.json()
 }
 
+// Conversation trash can
+export interface DeletedSession {
+  id: string
+  user_id: number
+  title?: string
+  created_at: string
+  updated_at: string
+  deleted_at: string
+  episode_count: number
+  last_activity: string | null
+  first_user_message: string | null
+}
+
+export async function getDeletedSessions(user_id: number): Promise<DeletedSession[]> {
+  console.log('Fetching deleted sessions for user:', user_id)
+  return api<DeletedSession[]>(`/conversations/trash?user_id=${user_id}`)
+}
+
+export async function restoreConversation(session_id: string, user_id: number): Promise<{ status: string; session_id: string }> {
+  console.log('Restoring conversation:', session_id)
+  return api<{ status: string; session_id: string }>(
+    `/conversations/${encodeURIComponent(session_id)}/restore`,
+    { method: 'POST', body: JSON.stringify({ user_id }) }
+  )
+}
+
 export async function getOGPreview(url: string): Promise<OgPreviewResponse> {
   return api<OgPreviewResponse>(`/og-preview?url=${encodeURIComponent(url)}`)
 }

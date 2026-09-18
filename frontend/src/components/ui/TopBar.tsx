@@ -4,6 +4,7 @@ import { user } from '../../state/user'
 import { settings, updateSetting } from '../../state/settings'
 import { enterVoiceMode, exitVoiceMode, voice, isListening, isProcessing, isSpeaking, isIdle, isTtsSpeaking, stopRecording, setTtsSpeaking } from '../../state/voice'
 import { api } from '../../services/api'
+import TrashCan from '../chat/TrashCan'
 
 interface TopBarProps {
   conversations: Session[]
@@ -285,6 +286,7 @@ export default function TopBar(props: TopBarProps) {
         </div>
         <div class="header-right">
           {u && <span class="user-badge" id="user-badge">{u.name}</span>}
+          <TrashCan />
           <span class="voice-status-bar" id="voice-status-bar">
             <span class="voice-dot" id="voice-status-dot" />
             <span id="voice-status-text">Listening</span>

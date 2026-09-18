@@ -116,6 +116,18 @@ export interface Session {
   last_message: string | null
 }
 
+export interface DeletedSession {
+  id: string
+  user_id: number
+  title: string | null
+  created_at: string
+  updated_at: string
+  deleted_at: string
+  episode_count: number
+  last_activity: string | null
+  first_user_message: string | null
+}
+
 export interface SessionMessage {
   role: string
   content: string

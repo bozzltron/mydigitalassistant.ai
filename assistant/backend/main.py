@@ -1423,6 +1423,29 @@ async def delete_conversation(
     return {"status": "ok", "session_id": session_id}
 
 
+@app.get("/conversations/trash", response_model=list[dict])
+async def list_deleted_conversations(
+    user_id: int,
+    store: MemoryStore = _Depends(get_store),
+):
+    """List all soft-deleted conversations for a user (trash can view)."""
+    sessions = await store.get_deleted_sessions_for_user(user_id)
+    return sessions
+
+
+@app.post("/conversations/{session_id}/restore")
+async def restore_conversation(
+    session_id: str,
+    user_id: int,
+    store: MemoryStore = _Depends(get_store),
+):
+    """Restore a soft-deleted conversation."""
+    restored = await store.restore_session(session_id, user_id)
+    if not restored:
+        raise HTTPException(status_code=404, detail="Conversation not found or not deleted")
+    return {"status": "ok", "session_id": session_id}
+
+
 @app.post("/files/upload", response_model=dict)
 async def upload_file(
     file: UploadFile = File(...),
