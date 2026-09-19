@@ -12,7 +12,7 @@ export default function App() {
   const [newConvTitle, setNewConvTitle] = createSignal('')
   const [assistantName, setAssistantName] = createSignal<string>('Cognitive Assistant')
 
-  const { conversations, isLoading, createNewConversation } = useConversations()
+  const { conversations, isLoading, createNewConversation, fetchSessionsFromAPI } = useConversations()
   const {
     activeConversation,
     handleConversationChange,
@@ -88,6 +88,7 @@ export default function App() {
           onNewConversationClick={handleNewConversationClick}
           isLoading={isLoading()}
           assistantName={assistantName()}
+          onRefreshConversations={fetchSessionsFromAPI}
         />
         <ChatPage conversation={activeConversation()} sendMessage={sendMessage} />
       </div>

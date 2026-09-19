@@ -375,8 +375,16 @@ export async function getDeletedSessions(user_id: number): Promise<DeletedSessio
 export async function restoreConversation(session_id: string, user_id: number): Promise<{ status: string; session_id: string }> {
   console.log('Restoring conversation:', session_id)
   return api<{ status: string; session_id: string }>(
-    `/conversations/${encodeURIComponent(session_id)}/restore`,
-    { method: 'POST', body: JSON.stringify({ user_id }) }
+    `/conversations/${encodeURIComponent(session_id)}/restore?user_id=${user_id}`,
+    { method: 'POST' }
+  )
+}
+
+export async function deleteConversation(session_id: string, user_id: number): Promise<{ status: string; session_id: string }> {
+  console.log('Deleting conversation:', session_id)
+  return api<{ status: string; session_id: string }>(
+    `/conversations/${encodeURIComponent(session_id)}?user_id=${user_id}`,
+    { method: 'DELETE' }
   )
 }
 

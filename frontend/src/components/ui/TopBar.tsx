@@ -3,7 +3,7 @@ import { Session } from '../../state/session'
 import { user } from '../../state/user'
 import { settings, updateSetting } from '../../state/settings'
 import { enterVoiceMode, exitVoiceMode, voice, isListening, isProcessing, isSpeaking, isIdle, isTtsSpeaking, stopRecording, setTtsSpeaking } from '../../state/voice'
-import { api, getDeletedSessions, updateConversationTitle } from '../../services/api'
+import { api, getDeletedSessions, updateConversationTitle, deleteConversation } from '../../services/api'
 import TrashCan from '../chat/TrashCan'
 import { EditModal } from './EditModal'
 import styles from './TopBar.module.css'
@@ -15,6 +15,7 @@ interface TopBarProps {
   onNewConversationClick?: () => void
   isLoading: boolean
   assistantName: string
+  onRefreshConversations?: () => Promise<void>
 }
 
 export default function TopBar(props: TopBarProps) {
@@ -44,7 +45,7 @@ export default function TopBar(props: TopBarProps) {
     if (!userId) return
 
     // Fetch trash sessions for TrashCan component
-    const trash = await getDeletedSessions(userId)
+    const _trash = await getDeletedSessions(userId)
     // TrashCan handles its own state internally
   })
 
@@ -336,9 +337,14 @@ export default function TopBar(props: TopBarProps) {
                           <button
                             class={styles.conversationItemAction}
                             title="Archive conversation"
-                            onClick={(e) => {
+                            onClick={async (e) => {
                               e.stopPropagation()
-                              setShowTrash(true)
+                              if (u && conv.id) {
+                                await deleteConversation(conv.id, u.id)
+                                if (props.onRefreshConversations) {
+                                  await props.onRefreshConversations()
+                                }
+                              }
                             }}
                           >
                             <svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -518,10 +524,18 @@ export default function TopBar(props: TopBarProps) {
           setEditTitle('')
         }}
         onSave={(newTitle) => {
-          if (editSessionId()) {
-            updateConversationTitle(editSessionId()!, u?.id ?? 1, newTitle)
-            setEditSessionId(null)
-            setEditTitle('')
+          const sessionId = editSessionId()
+          if (sessionId) {
+            const userId = u?.id ?? 1
+            updateConversationTitle(sessionId, userId, newTitle).then(() => {
+              setEditSessionId(null)
+              setEditTitle('')
+              if (props.onRefreshConversations) {
+                props.onRefreshConversations()
+              }
+            }).catch((error) => {
+              console.error('Failed to save title:', error)
+            })
           }
         }}
         sessionId={editSessionId() ?? ''}
