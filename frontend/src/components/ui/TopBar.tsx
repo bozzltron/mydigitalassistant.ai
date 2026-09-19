@@ -6,6 +6,7 @@ import { enterVoiceMode, exitVoiceMode, voice, isListening, isProcessing, isSpea
 import { api, getDeletedSessions, updateConversationTitle, deleteConversation } from '../../services/api'
 import TrashCan from '../chat/TrashCan'
 import { EditModal } from './EditModal'
+import { Modal } from './Modal'
 import styles from './TopBar.module.css'
 
 interface TopBarProps {

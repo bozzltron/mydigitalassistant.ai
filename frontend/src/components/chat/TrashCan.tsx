@@ -106,11 +106,14 @@ export default function TrashCan() {
           <Show when={isLoading()}>
             <div class="trash-loading">Loading trash can...</div>
           </Show>
-          <Show when={!isLoading() && deletedSessions().length === 0} fallback={<div class="trash-empty">
-            <img src="/trash.svg" alt="trash empty" class="trash-empty-icon" />
-            <p>Trash is empty</p>
-            <p class="trash-empty-hint">Deleted conversations will appear here</p>
-          </div>}>
+          <Show when={!isLoading() && deletedSessions().length === 0}>
+            <div class="trash-empty">
+              <img src="/trash.svg" alt="trash empty" class="trash-empty-icon" />
+              <p>Trash is empty</p>
+              <p class="trash-empty-hint">Deleted conversations will appear here</p>
+            </div>
+          </Show>
+          <Show when={!isLoading() && deletedSessions().length > 0}>
             <div class="trash-list">
               <For each={deletedSessions()}>
                 {(session: DeletedSession) => (
@@ -130,7 +133,7 @@ export default function TrashCan() {
                         )}
                       </div>
                     </div>
-                    <div class="trash-item-actions">
+<div class="trash-item-actions">
                       <button
                         class="btn-icon restore-btn"
                         onClick={() => handleRestore(session.id)}
@@ -138,20 +141,26 @@ export default function TrashCan() {
                         aria-label="Restore conversation"
 >
                         {restoringId() === session.id ? '⏳' : (
-              <img src="/trash.svg" alt="restore" class="trash-icon" />
+              <svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 7v6h6"/>
+                <path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/>
+              </svg>
             )}
                        </button>
-                       <button
+                      <button
                         class="btn-icon permanent-delete-btn"
                         onClick={() => handlePermanentDelete(session.id)}
                         disabled={permanentlyDeletingId() === session.id}
                         aria-label="Permanently delete"
 >
                         {permanentlyDeletingId() === session.id ? '⏳' : (
-              <img src="/trash.svg" alt="permanently delete" class="trash-icon" />
+              <svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="3 6 5 6 21 6"/>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+              </svg>
             )}
                        </button>
-                    </div>
+                     </div>
                   </div>
                 )}
               </For>
