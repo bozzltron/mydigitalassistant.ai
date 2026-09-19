@@ -21,6 +21,7 @@ describe('TopBar', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     setUser({ id: 1, name: 'Assistant User' })
+    localStorage.clear()
   })
 
   it('renders assistant name instead of "Cognitive Assistant"', () => {
@@ -29,24 +30,27 @@ describe('TopBar', () => {
     expect(screen.queryByText('Cognitive Assistant')).not.toBeInTheDocument()
   })
 
-  it('renders conversation dropdown with conversations', () => {
+  it('renders conversation trigger with active conversation title', () => {
     render(() => <TopBar conversations={defaultProps.conversations} activeConversation={defaultProps.activeConversation} onConversationChange={defaultProps.onConversationChange} onNewConversationClick={defaultProps.onNewConversationClick} isLoading={defaultProps.isLoading} assistantName={defaultProps.assistantName} />)
-    const select = screen.getByTestId('conversation-select')
-    expect(select).toBeInTheDocument()
-    expect(screen.getByText('First Conversation')).toBeInTheDocument()
+    const trigger = screen.getByRole('button', { name: /first conversation/i })
+    expect(trigger).toBeInTheDocument()
+    expect(trigger).toHaveAttribute('aria-haspopup', 'listbox')
+  })
+
+  it('opens dropdown when trigger is clicked', () => {
+    render(() => <TopBar conversations={defaultProps.conversations} activeConversation={defaultProps.activeConversation} onConversationChange={defaultProps.onConversationChange} onNewConversationClick={defaultProps.onNewConversationClick} isLoading={defaultProps.isLoading} assistantName={defaultProps.assistantName} />)
+    const trigger = screen.getByRole('button', { name: /first conversation/i })
+    fireEvent.click(trigger)
     expect(screen.getByText('Second Conversation')).toBeInTheDocument()
+    expect(screen.getByText('New')).toBeInTheDocument() // New button in dropdown
   })
 
-  it('selects active conversation in dropdown', () => {
+  it('calls onConversationChange when conversation item clicked', () => {
     render(() => <TopBar conversations={defaultProps.conversations} activeConversation={defaultProps.activeConversation} onConversationChange={defaultProps.onConversationChange} onNewConversationClick={defaultProps.onNewConversationClick} isLoading={defaultProps.isLoading} assistantName={defaultProps.assistantName} />)
-    const select = screen.getByTestId('conversation-select') as HTMLSelectElement
-    expect(select.value).toBe('conv-1')
-  })
-
-  it('calls onConversationChange when selection changes', () => {
-    render(() => <TopBar conversations={defaultProps.conversations} activeConversation={defaultProps.activeConversation} onConversationChange={defaultProps.onConversationChange} onNewConversationClick={defaultProps.onNewConversationClick} isLoading={defaultProps.isLoading} assistantName={defaultProps.assistantName} />)
-    const select = screen.getByTestId('conversation-select')
-    fireEvent.change(select, { target: { value: 'conv-2' } })
+    const trigger = screen.getByRole('button', { name: /first conversation/i })
+    fireEvent.click(trigger)
+    const secondConv = screen.getByText('Second Conversation')
+    fireEvent.click(secondConv)
     expect(defaultProps.onConversationChange).toHaveBeenCalledWith('conv-2')
   })
 
@@ -57,10 +61,10 @@ describe('TopBar', () => {
     expect(defaultProps.onNewConversationClick).toHaveBeenCalled()
   })
 
-  it('disables dropdown when loading', () => {
+  it('disables trigger when loading', () => {
     render(() => <TopBar conversations={defaultProps.conversations} activeConversation={defaultProps.activeConversation} onConversationChange={defaultProps.onConversationChange} onNewConversationClick={defaultProps.onNewConversationClick} isLoading={true} assistantName={defaultProps.assistantName} />)
-    const select = screen.getByTestId('conversation-select')
-    expect(select).toBeDisabled()
+    const trigger = screen.getByRole('button', { name: /first conversation/i })
+    expect(trigger).toBeDisabled()
   })
 
   it('shows user name in badge', () => {
@@ -81,5 +85,14 @@ describe('TopBar', () => {
   it('renders Brain link', () => {
     render(() => <TopBar conversations={defaultProps.conversations} activeConversation={defaultProps.activeConversation} onConversationChange={defaultProps.onConversationChange} onNewConversationClick={defaultProps.onNewConversationClick} isLoading={defaultProps.isLoading} assistantName={defaultProps.assistantName} />)
     expect(screen.getByRole('link', { name: /brain/i })).toBeInTheDocument()
+  })
+
+  it('persists selection to localStorage', () => {
+    render(() => <TopBar conversations={defaultProps.conversations} activeConversation={defaultProps.activeConversation} onConversationChange={defaultProps.onConversationChange} onNewConversationClick={defaultProps.onNewConversationClick} isLoading={defaultProps.isLoading} assistantName={defaultProps.assistantName} />)
+    const trigger = screen.getByRole('button', { name: /first conversation/i })
+    fireEvent.click(trigger)
+    const secondConv = screen.getByText('Second Conversation')
+    fireEvent.click(secondConv)
+    expect(localStorage.getItem('session_id')).toBe('conv-2')
   })
 })

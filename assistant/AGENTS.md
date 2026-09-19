@@ -357,6 +357,15 @@ Endpoint: `POST /summarize` with body `{"session_id": "..."}`
 - **Links:** All links must open in a new tab (`target="_blank"`) so users don't lose their session.
 - **Interactions:** Show feedback on user actions (copied toast, loading states, confirmation messages).
 
+## CSS Design Principles
+- **No inline styles.** Inline styles (`style={{...}}`) are prohibited. They break cohesion, are hard to maintain, bypass the design system (variables), and prevent reuse.
+- **CSS Modules for component-scoped styles.** Each component gets its own `.module.css` file co-located with the component.
+- **Use design tokens from `variables.css`.** Colors, spacing, typography, radii, shadows, transitions — all defined once in `src/styles/variables.css` and referenced via `var(--token-name)`.
+- **Shared base classes in `components.css`.** Reusable patterns (buttons, inputs, modals, etc.) live in `src/styles/components.css`. Extend or compose these rather than redefining.
+- **Layout in `layout.css`, not components.** Structural positioning (flex/grid containers, header/sidebar/main) belongs in layout, not component files.
+- **States via classes, not inline.** Hover, active, disabled, open/closed, loading — use pseudo-classes (`:hover`, `:focus`) or toggle class names (`.is-active`, `.is-open`) driven by signals.
+- **Animations in CSS.** Transitions and keyframes live in CSS. JS only toggles classes.
+
 ## Clean Code & Modularity
 Dead code is a liability. Unused functions, duplicate logic, and monolithic files make the codebase harder to reason about and increase the risk of breaking something that still matters. Before shipping a change:
 

@@ -16,4 +16,17 @@
           'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
   --mono: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas,
           'Liberation Mono', monospace;
+
+  /* Semantic aliases for component usage */
+  --color-background: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface2: var(--surface2);
+  --color-border: var(--border);
+  --color-text: var(--text);
+  --color-text-dim: var(--text-dim);
+  --color-accent: var(--accent);
+  --color-accent2: var(--accent2);
+  --color-error: var(--error);
+  --color-warning: var(--warning);
+  --color-background-hover: var(--surface);
 }

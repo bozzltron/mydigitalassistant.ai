@@ -1,0 +1,155 @@
+/* TopBar Component Styles */
+
+.conversationSwitcher {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.conversationDropdown {
+  position: relative;
+}
+
+.conversationTrigger {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  font-size: 0.8rem;
+  padding: 0.35rem 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-width: 120px;
+  justify-content: space-between;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.conversationTrigger:hover {
+  background: var(--border);
+}
+
+.conversationTrigger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.newConversationBtn {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  font-size: 0.8rem;
+  padding: 0.35rem 0.75rem;
+  cursor: pointer;
+  transition: background 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: auto;
+}
+
+.newConversationBtn:hover {
+  background: var(--border);
+}
+
+.conversationTriggerTitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.conversationTriggerChevron {
+  flex-shrink: 0;
+  transition: transform 0.15s;
+}
+
+.conversationTriggerChevron.isOpen {
+  transform: rotate(180deg);
+}
+
+.conversationDropdownMenu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 2px;
+  background: var(--color-background);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 100;
+  max-height: 300px;
+  overflow-y: auto;
+  min-width: fit-content;
+}
+
+.conversationDropdownMenuContent {
+  padding: 4px;
+}
+
+.conversationItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+
+.conversationItem:hover {
+  background: var(--color-background-hover);
+}
+
+.conversationItem.isActive {
+  background: var(--color-background-hover);
+}
+
+.conversationItemTitle {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.8rem;
+}
+
+.conversationItemActions {
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.conversationItem:hover .conversationItemActions {
+  opacity: 1;
+}
+
+.conversationItemAction {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: var(--color-text-dim);
+  cursor: pointer;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.conversationItemAction:hover {
+  background: var(--color-surface2);
+  color: var(--color-text);
+}
+
+.conversationItemAction svg {
+  width: 1em;
+  height: 1em;
+}
