@@ -164,6 +164,7 @@ export async function api<T>(
   options: RequestInit = {}
 ): Promise<T> {
   const url = `${BASE_URL}${path}`
+  console.log('[api] Request:', options.method || 'GET', url)
   const response = await fetch(url, {
     ...options,
     headers: {
@@ -173,12 +174,16 @@ export async function api<T>(
     credentials: 'include',
   })
 
+  console.log('[api] Response:', response.status, response.statusText)
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: 'Unknown error' }))
+    console.error('[api] Error:', error)
     throw new Error(error.detail || `HTTP ${response.status}`)
   }
 
-  return response.json() as Promise<T>
+  const data = await response.json()
+  console.log('[api] Response data:', data)
+  return data as Promise<T>
 }
 
 export async function postChat(
@@ -381,7 +386,7 @@ export async function restoreConversation(session_id: string, user_id: number): 
 }
 
 export async function deleteConversation(session_id: string, user_id: number): Promise<{ status: string; session_id: string }> {
-  console.log('Deleting conversation:', session_id)
+  console.log('[deleteConversation] Called with:', session_id, user_id)
   return api<{ status: string; session_id: string }>(
     `/conversations/${encodeURIComponent(session_id)}?user_id=${user_id}`,
     { method: 'DELETE' }
