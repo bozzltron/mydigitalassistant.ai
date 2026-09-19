@@ -1131,6 +1131,66 @@ async def submit_correction(
     )
 
 
+# Alerts (Learning Monitor)
+
+class AlertResponse(BaseModel):
+    id: int
+    user_id: int
+    type: str
+    title: str
+    message: str
+    source_frame_id: int | None = None
+    source_episode_id: int | None = None
+    severity: str
+    is_read: bool
+    created_at: str | None = None
+    read_at: str | None = None
+
+
+class AlertsListResponse(BaseModel):
+    alerts: list[AlertResponse]
+    unread_count: int
+
+
+@app.get("/alerts", response_model=AlertsListResponse)
+async def get_alerts(
+    user_id: int = 1,
+    unread_only: bool = False,
+    limit: int = 50,
+    store: MemoryStore = _Depends(get_store),
+):
+    """Get alerts for a user (learning monitor)."""
+    alerts = await store.get_alerts(user_id=user_id, unread_only=unread_only, limit=limit)
+    unread_count = await store.get_unread_alert_count(user_id)
+    return AlertsListResponse(
+        alerts=[AlertResponse(**alert.model_dump()) for alert in alerts],
+        unread_count=unread_count,
+    )
+
+
+@app.post("/alerts/{alert_id}/read")
+async def mark_alert_read(
+    alert_id: int,
+    user_id: int = 1,
+    store: MemoryStore = _Depends(get_store),
+):
+    """Mark an alert as read."""
+    success = await store.mark_alert_read(alert_id, user_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    return {"status": "ok", "alert_id": alert_id}
+
+
+@app.post("/alerts/read-all")
+async def mark_all_alerts_read(
+    user_id: int = 1,
+    store: MemoryStore = _Depends(get_store),
+):
+    """Mark all alerts as read for a user."""
+    count = await store.mark_all_alerts_read(user_id)
+    return {"status": "ok", "marked_read": count}
+
+
 class ScheduledTaskResponse(BaseModel):
     id: int
     name: str

@@ -19,6 +19,7 @@ from assistant.backend.memory.confidence import (
     lower_confidence,
 )
 from assistant.backend.memory.models import (
+    Alert,
     Association,
     Conflict,
     Episode,
@@ -2259,6 +2260,126 @@ class MemoryStore:
                 (from_frame_id, to_frame_id, relation_type, confidence),
             )
             await db.commit()
+
+    # Alerts (Learning Monitor)
+    async def create_alert(
+        self,
+        user_id: int,
+        type: str,
+        title: str,
+        message: str,
+        source_frame_id: int | None = None,
+        source_episode_id: int | None = None,
+        severity: str = "info",
+    ) -> Alert:
+        """Create a new alert for the user."""
+        async with self._connect() as db:
+            cursor = await db.execute(
+                """
+                INSERT INTO alerts (user_id, type, title, message,
+                                   source_frame_id, source_episode_id, severity)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (user_id, type, title, message, source_frame_id, source_episode_id, severity),
+            )
+            await db.commit()
+            row = await db.execute_fetchall(
+                """
+                SELECT id, user_id, type, title, message, source_frame_id, source_episode_id,
+                       severity, is_read, created_at, read_at
+                FROM alerts WHERE id = ?
+                """,
+                (cursor.lastrowid,),
+            )
+            if not row:
+                raise ValueError("Failed to retrieve created alert")
+            id_, uid, t, title_, msg, sf_id, se_id, sev, is_read, created_at, read_at = row[0]
+            return Alert(
+                id=id_,
+                user_id=uid,
+                type=t,
+                title=title_,
+                message=msg,
+                source_frame_id=sf_id,
+                source_episode_id=se_id,
+                severity=sev,
+                is_read=bool(is_read),
+                created_at=created_at,
+                read_at=read_at,
+            )
+
+    async def get_alerts(
+        self,
+        user_id: int,
+        unread_only: bool = False,
+        limit: int = 50,
+    ) -> list[Alert]:
+        """Get alerts for a user, newest first."""
+        async with self._connect() as db:
+            query = """
+                SELECT id, user_id, type, title, message, source_frame_id, source_episode_id,
+                       severity, is_read, created_at, read_at
+                FROM alerts
+                WHERE user_id = ?
+            """
+            params = [user_id]
+            if unread_only:
+                query += " AND is_read = 0"
+            query += " ORDER BY id DESC LIMIT ?"
+            params.append(limit)
+            rows = await db.execute_fetchall(query, params)
+            return [
+                Alert(
+                    id=r[0],
+                    user_id=r[1],
+                    type=r[2],
+                    title=r[3],
+                    message=r[4],
+                    source_frame_id=r[5],
+                    source_episode_id=r[6],
+                    severity=r[7],
+                    is_read=bool(r[8]),
+                    created_at=r[9],
+                    read_at=r[10],
+                )
+                for r in rows
+            ]
+
+    async def get_unread_alert_count(self, user_id: int) -> int:
+        """Get count of unread alerts for a user."""
+        async with self._connect() as db:
+            row = await db.execute_fetchall(
+                "SELECT COUNT(*) FROM alerts WHERE user_id = ? AND is_read = 0",
+                (user_id,),
+            )
+            return row[0][0] if row else 0
+
+    async def mark_alert_read(self, alert_id: int, user_id: int) -> bool:
+        """Mark an alert as read."""
+        from datetime import UTC, datetime
+        async with self._connect() as db:
+            cursor = await db.execute(
+                """
+                UPDATE alerts SET is_read = 1, read_at = ? WHERE id = ? AND user_id = ?
+                """,
+                (datetime.now(UTC).isoformat(), alert_id, user_id),
+            )
+            await db.commit()
+            return cursor.rowcount > 0
+
+    async def mark_all_alerts_read(self, user_id: int) -> int:
+        """Mark all alerts as read for a user."""
+        from datetime import UTC, datetime
+        async with self._connect() as db:
+            cursor = await db.execute(
+                """
+                UPDATE alerts SET is_read = 1, read_at = ? WHERE user_id = ? AND is_read = 0
+                """,
+                (datetime.now(UTC).isoformat(), user_id),
+            )
+            await db.commit()
+            return cursor.rowcount
+
 
     async def _create_backup(self) -> Path:
         """Create a backup of the current DB before overwrite import."""

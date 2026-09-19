@@ -5,6 +5,7 @@ import { settings, updateSetting } from '../../state/settings'
 import { enterVoiceMode, exitVoiceMode, voice, isListening, isProcessing, isSpeaking, isIdle, isTtsSpeaking, stopRecording, setTtsSpeaking } from '../../state/voice'
 import { api, getDeletedSessions, updateConversationTitle, deleteConversation } from '../../services/api'
 import TrashCan from '../chat/TrashCan'
+import { AlertsPanel } from './AlertsPanel'
 import { EditModal } from './EditModal'
 import { Modal } from './Modal'
 import styles from './TopBar.module.css'
@@ -364,6 +365,7 @@ export default function TopBar(props: TopBarProps) {
         </div>
         <div class="header-right">
           {user() && <span class="user-badge" id="user-badge">{user().name}</span>}
+          <AlertsPanel />
           <TrashCan />
           <span class="voice-status-bar" id="voice-status-bar">
             <span class="voice-dot" id="voice-status-dot" />

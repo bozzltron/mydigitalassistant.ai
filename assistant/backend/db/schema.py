@@ -219,6 +219,28 @@ CREATE TABLE IF NOT EXISTS working_memory (
 
 CREATE INDEX IF NOT EXISTS idx_wm_last_accessed ON working_memory(last_accessed_at);
 CREATE INDEX IF NOT EXISTS idx_wm_access_count ON working_memory(access_count);
+
+-- Alerts (learning monitor): notifications for user about learned facts, task results, etc.
+CREATE TABLE IF NOT EXISTS alerts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    type TEXT NOT NULL,
+    title TEXT NOT NULL,
+    message TEXT NOT NULL,
+    source_frame_id INTEGER,
+    source_episode_id INTEGER,
+    severity TEXT NOT NULL DEFAULT 'info',
+    is_read INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    read_at TEXT,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (source_frame_id) REFERENCES frames(id) ON DELETE SET NULL,
+    FOREIGN KEY (source_episode_id) REFERENCES episodes(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_alerts_user ON alerts(user_id);
+CREATE INDEX IF NOT EXISTS idx_alerts_unread ON alerts(user_id, is_read);
+CREATE INDEX IF NOT EXISTS idx_alerts_created ON alerts(created_at);
 """
 
 
@@ -397,6 +419,45 @@ async def _migrate_add_reasoning_trace(db) -> None:
         logger.debug("Migration: reasoning_trace column added to episodes")
 
 
+async def _migrate_add_alerts_table(db) -> None:
+    """Add alerts table if it doesn't exist (for existing databases)."""
+    tables = await db.execute_fetchall(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='alerts'"
+    )
+    if not tables:
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS alerts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                type TEXT NOT NULL,
+                title TEXT NOT NULL,
+                message TEXT NOT NULL,
+                source_frame_id INTEGER,
+                source_episode_id INTEGER,
+                severity TEXT NOT NULL DEFAULT 'info',
+                is_read INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                read_at TEXT,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY (source_frame_id) REFERENCES frames(id) ON DELETE SET NULL,
+                FOREIGN KEY (source_episode_id) REFERENCES episodes(id) ON DELETE SET NULL
+            )
+            """
+        )
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_alerts_user ON alerts(user_id)"
+        )
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_alerts_unread ON alerts(user_id, is_read)"
+        )
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_alerts_created ON alerts(created_at)"
+        )
+        await db.commit()
+        logger.debug("Migration: alerts table created")
+
+
 async def init_db(db_path: str) -> None:
     """Open connection, apply schema, enable foreign keys + WAL, load sqlite-vec.
 
@@ -420,3 +481,4 @@ async def init_db(db_path: str) -> None:
         await _migrate_add_sessions_table(db)
         await _migrate_add_deleted_at_to_sessions(db)
         await _migrate_add_reasoning_trace(db)
+        await _migrate_add_alerts_table(db)

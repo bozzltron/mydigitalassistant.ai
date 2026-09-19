@@ -84,3 +84,17 @@ class Feedback(BaseModel):
     kind: str
     comment: str | None = None
     created_at: str | None = None
+
+
+class Alert(BaseModel):
+    id: int | None = None
+    user_id: int
+    type: str  # "learning", "task_result", "conflict", "correction", "search_result"
+    title: str
+    message: str
+    source_frame_id: int | None = None
+    source_episode_id: int | None = None
+    severity: str = "info"  # "info", "warning", "important"
+    is_read: bool = False
+    created_at: str | None = None
+    read_at: str | None = None

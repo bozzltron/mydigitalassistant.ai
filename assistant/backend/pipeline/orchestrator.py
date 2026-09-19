@@ -434,6 +434,21 @@ class Orchestrator:
                         current_value,
                         correction.new_value,
                     )
+                    # Create alert for contradicted correction
+                    try:
+                        await self.store.create_alert(
+                            user_id=request.user_id,
+                            type="correction",
+                            title="Correction contradicted by sources",
+                            message=(
+                                f"Your correction to '{correction.frame_name}."
+                                f"{correction.slot_key}' was contradicted by "
+                                f"third-party sources and not applied."
+                            ),
+                            severity="warning",
+                        )
+                    except Exception as e:
+                        logger.warning("Failed to create correction alert: %s", e)
                     response_text = await self._acknowledge_correction(
                         correction.frame_name,
                         correction.slot_key,
@@ -453,6 +468,25 @@ class Orchestrator:
                         correction_summary.get("new_value"),
                         validation.corroborated,
                     )
+                    # Create alert for applied correction
+                    try:
+                        corr_msg = (
+                            f"Updated '{correction.frame_name}.{correction.slot_key}' "
+                            f"to '{correction.new_value}'."
+                        )
+                        if validation.corroborated:
+                            corr_msg += " Corroborated by sources."
+                        else:
+                            corr_msg += " No third-party sources available."
+                        await self.store.create_alert(
+                            user_id=request.user_id,
+                            type="correction",
+                            title="Correction applied",
+                            message=corr_msg,
+                            severity="info",
+                        )
+                    except Exception as e:
+                        logger.warning("Failed to create correction alert: %s", e)
                     response_text = await self._acknowledge_correction(
                         correction.frame_name,
                         correction.slot_key,
@@ -899,6 +933,54 @@ class Orchestrator:
                 f" · {frame_count} {fact_word} retrieved)_</small>"
             )
             response_text += memory_block
+
+        # Create alerts for learning events
+        try:
+            # Alert for conversational extraction conflicts
+            conv_conflicts = extraction_summary.get("conflicts_created", 0)
+            if conv_conflicts > 0:
+                fact_word = "fact" if conv_conflicts == 1 else "facts"
+                await self.store.create_alert(
+                    user_id=request.user_id,
+                    type="conflict",
+                    title="Auto-resolved conflict in learning",
+                    message=(
+                        f"{conv_conflicts} {fact_word} you mentioned contradicted "
+                        "existing memory and were auto-resolved. "
+                        "Check the trace panel for details."
+                    ),
+                    severity="info",
+                )
+            
+            # Alert for search extraction
+            search_conflicts = search_extraction_summary.get("conflicts_created", 0)
+            search_slots = search_extraction_summary.get("slots_applied", 0)
+            if search_slots > 0:
+                if search_conflicts > 0:
+                    fact_word = "fact" if search_conflicts == 1 else "facts"
+                    await self.store.create_alert(
+                        user_id=request.user_id,
+                        type="conflict",
+                        title="Search conflict auto-resolved",
+                        message=(
+                            f"Search found {search_conflicts} {fact_word} that "
+                            "contradicted existing memory and were auto-resolved."
+                        ),
+                        severity="info",
+                    )
+                else:
+                    await self.store.create_alert(
+                        user_id=request.user_id,
+                        type="search_result",
+                        title="New facts learned from search",
+                        message=f"Search returned {search_slots} new fact(s) stored in memory.",
+                        severity="info",
+                    )
+            
+            # Alert for corrections (handled in correction branch above)
+            # The correction branch already returns early, so alerts would need to be added there
+        except Exception as e:
+            logger.warning("Failed to create learning alerts: %s", e)
 
         # Return response
         return ChatResponse(

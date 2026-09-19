@@ -126,6 +126,7 @@ async def execute_and_record_task(
     - Creates a daily_run_YYYY_MM_DD event frame.
     - Creates associations: task --ran_in--> daily_run, task --produced_output--> episode.
     - Generates embedding for daily run frame.
+    - Creates alert for user about task result.
     """
     now_str = datetime.now(UTC).isoformat()
     date_str = datetime.now(UTC).strftime("%Y_%m_%d")
@@ -176,6 +177,19 @@ async def execute_and_record_task(
         except Exception as e:
             logger.warning("Failed to embed daily run frame: %s", e)
 
+        # Create alert for task completion
+        try:
+            await store.create_alert(
+                user_id=owner_user_id,
+                type="task_result",
+                title=f"Task completed: {task_name}",
+                message=full[:500] if full else "Task completed with no output",
+                source_frame_id=daily_run_frame_id,
+                severity="info",
+            )
+        except Exception as e:
+            logger.warning("Failed to create task completion alert: %s", e)
+
         logger.info("Task '%s' completed successfully", task_name)
         return True, full
 
@@ -186,6 +200,20 @@ async def execute_and_record_task(
             last_run=now_str,
             last_result_summary=f"failed: {exc}",
         )
+
+        # Create alert for task failure
+        try:
+            await store.create_alert(
+                user_id=owner_user_id,
+                type="task_result",
+                title=f"Task failed: {task_name}",
+                message=f"Error: {exc}",
+                source_frame_id=task_frame_id,
+                severity="warning",
+            )
+        except Exception as e:
+            logger.warning("Failed to create task failure alert: %s", e)
+
         return False, f"failed: {exc}"
 
 
