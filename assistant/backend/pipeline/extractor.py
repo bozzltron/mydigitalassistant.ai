@@ -469,7 +469,12 @@ async def extract_facts_from_document(
                 think=False,
             )
             data = json.loads(response.content)
-            return ExtractionResult.model_validate(data)
+            result = ExtractionResult.model_validate(data)
+            # Attach source URL to all extracted slots for traceability
+            for slot in result.slots:
+                slot.source_urls = [source_url]
+                slot.source_domains = {urlparse(source_url).netloc} if source_url else set()
+            return result
         except (json.JSONDecodeError, ValueError) as e:
             logger.warning("Document extraction parse failed (attempt %d): %s", attempt + 1, e)
             if attempt == 0:
@@ -698,6 +703,12 @@ async def apply_search_extraction(
             seen.add(key)
             deduped_slots.append(slot)
 
+    # Populate per-slot source URLs and domains from corroboration matching
+    for slot in deduped_slots:
+        fact_key = (slot.frame_name, slot.key, slot.value)
+        slot.source_urls = list(fact_key_to_urls.get(fact_key, set()))
+        slot.source_domains = fact_key_to_domains.get(fact_key, set())
+
     frame_ids: dict[str, int] = {}
     all_frame_names = {slot.frame_name for slot in deduped_slots}
     for assoc in extraction.associations:
@@ -765,6 +776,8 @@ async def apply_search_extraction(
                 "needs_corroboration": corrob_info.get("needs_corroboration", False),
                 "corroboration_domains": corrob_info.get("unique_domains", 0),
                 "corroboration_category": corrob_info.get("category", "general"),
+                "source_urls": slot.source_urls,
+                "source_domains": list(slot.source_domains),
             }
         )
 

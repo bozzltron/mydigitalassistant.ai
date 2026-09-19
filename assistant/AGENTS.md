@@ -50,6 +50,11 @@ Search-derived facts enter memory only when they are accurate and useful:
 6. **Conflict and audit.** Conflicting search facts are auto-resolved by the
    standard confidence ladder and preserved in `slot_history`. The UI surfaces
    auto-resolved conflicts in the trace panel and “What I learned” indicator.
+7. **Per-slot source traceability.** Every extracted slot carries `source_urls`
+   (list of URLs where the fact appeared) and `source_domains` (unique domains).
+   This enables UI transparency and powers the corroboration gate: high-stakes
+   facts (financial, medical, legal, safety) require >=2 unique domains or are
+   flagged with reduced confidence.
 
 ## The cognitive loop
 1. Task Router classifies input: functional (goal-directed) vs introspective (reflective).

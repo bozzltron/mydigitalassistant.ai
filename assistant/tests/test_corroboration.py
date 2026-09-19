@@ -154,6 +154,104 @@ class TestApplySearchExtractionCorroboration:
         assert "high_stakes_checked" in result["corroboration_status"]
         assert "flagged_for_review" in result["corroboration_status"]
 
+    @pytest.mark.asyncio
+    async def test_per_slot_sources_populated_from_search_results(self):
+        """Test that slots get source_urls and source_domains from matching search results."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        from assistant.backend.pipeline.extractor import (
+            ExtractedSlot,
+            ExtractionResult,
+            apply_search_extraction,
+        )
+        from assistant.backend.pipeline.search import SearchResult
+
+        extraction = ExtractionResult(
+            slots=[
+                ExtractedSlot(frame_name="investment_xyz", key="npv", value="100"),
+                ExtractedSlot(frame_name="company_abc", key="revenue", value="1M"),
+            ],
+            associations=[],
+        )
+
+        search_results = [
+            SearchResult(
+                title="Result 1",
+                url="https://example.com/1",
+                snippet="investment_xyz npv 100",
+                engine="searxng",
+            ),
+            SearchResult(
+                title="Result 2",
+                url="https://example.com/2",
+                snippet="company_abc revenue 1M",
+                engine="searxng",
+            ),
+            SearchResult(
+                title="Result 3",
+                url="https://another.com/3",
+                snippet="investment_xyz npv 100",
+                engine="searxng",
+            ),
+        ]
+
+        mock_store = MagicMock()
+        mock_store.list_live_frame_stubs = AsyncMock(return_value=[])
+        mock_store.upsert_slot = AsyncMock(return_value=(MagicMock(), None))
+        mock_store.create_association = AsyncMock()
+        mock_store.get_frame_by_name = AsyncMock(return_value=None)
+        mock_store.create_frame = AsyncMock(return_value=MagicMock(id=1))
+        mock_store.get_alias_frame_id = AsyncMock(return_value=None)
+
+        result = await apply_search_extraction(extraction, search_results, mock_store)
+
+        # Verify per-slot source metadata is populated
+        assert result["slots_applied"] == 2
+
+        # Find the investment_xyz slot (corroborated by 2 domains)
+        inv_slot = next(s for s in result["slots"] if s["frame_name"] == "investment_xyz")
+        assert "source_urls" in inv_slot
+        assert "source_domains" in inv_slot
+        assert len(inv_slot["source_urls"]) == 2
+        assert set(inv_slot["source_domains"]) == {"example.com", "another.com"}
+        assert inv_slot["corroboration_domains"] == 2
+        assert not inv_slot["needs_corroboration"]  # 2 domains = corroborated
+
+        # Find the company_abc slot (single domain)
+        comp_slot = next(s for s in result["slots"] if s["frame_name"] == "company_abc")
+        assert len(comp_slot["source_urls"]) == 1
+        assert comp_slot["source_domains"] == ["example.com"]
+        assert comp_slot["corroboration_domains"] == 1
+
+
+class TestDocumentExtractionSources:
+    """Test extract_facts_from_document populates per-slot sources."""
+
+    @pytest.mark.asyncio
+    async def test_document_extraction_attaches_source_url(self):
+        """Test that document extraction adds source_urls and source_domains to slots."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        from assistant.backend.pipeline.extractor import extract_facts_from_document
+
+        mock_llm = MagicMock()
+        mock_response = MagicMock()
+        mock_response.content = (
+            '{"slots": [{"frame_name": "test_entity", "frame_type": "entity", '
+            '"key": "fact", "value": "extracted"}], "associations": []}'
+        )
+        mock_llm.chat = AsyncMock(return_value=mock_response)
+        mock_llm.utility_model = "qwen2.5:3b"
+
+        result = await extract_facts_from_document(
+            "Some document content with a fact.", "https://source.example.com/page", mock_llm
+        )
+
+        assert len(result.slots) == 1
+        slot = result.slots[0]
+        assert slot.source_urls == ["https://source.example.com/page"]
+        assert slot.source_domains == {"source.example.com"}
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
