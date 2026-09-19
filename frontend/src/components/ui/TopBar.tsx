@@ -23,6 +23,7 @@ export default function TopBar(props: TopBarProps) {
   const [editSessionId, setEditSessionId] = createSignal<string | null>(null)
   const [editTitle, setEditTitle] = createSignal('')
   const [braveConfigured, setBraveConfigured] = createSignal(false)
+  const [archiveConfirmSessionId, setArchiveConfirmSessionId] = createSignal<string | null>(null)
 
   // Use the same session_id key as useActiveConversation for consistency
   const [selectedSessionId, setSelectedSessionId] = createSignal<string | null>(() => {
@@ -32,8 +33,6 @@ export default function TopBar(props: TopBarProps) {
     return null
   })
 
-  const u = user()
-
   // Update document title when assistant name changes
   createEffect(() => {
     document.title = props.assistantName
@@ -41,7 +40,7 @@ export default function TopBar(props: TopBarProps) {
 
   // Fetch conversations on mount
   onMount(async () => {
-    const userId = u?.id ?? 1
+    const userId = user()?.id ?? 1
     if (!userId) return
 
     // Fetch trash sessions for TrashCan component
@@ -337,14 +336,11 @@ export default function TopBar(props: TopBarProps) {
                           <button
                             class={styles.conversationItemAction}
                             title="Archive conversation"
-                            onClick={async (e) => {
+                            onClick={(e) => {
                               e.stopPropagation()
-                              if (u && conv.id) {
-                                await deleteConversation(conv.id, u.id)
-                                if (props.onRefreshConversations) {
-                                  await props.onRefreshConversations()
-                                }
-                              }
+                              console.log('[Archive] Clicked for conversation:', conv.id, conv.title)
+                              setArchiveConfirmSessionId(conv.id)
+                              setShowConversationDropdown(false)
                             }}
                           >
                             <svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -366,7 +362,7 @@ export default function TopBar(props: TopBarProps) {
           >New</button>
         </div>
         <div class="header-right">
-          {u && <span class="user-badge" id="user-badge">{u.name}</span>}
+          {user() && <span class="user-badge" id="user-badge">{user().name}</span>}
           <TrashCan />
           <span class="voice-status-bar" id="voice-status-bar">
             <span class="voice-dot" id="voice-status-dot" />
@@ -526,7 +522,7 @@ export default function TopBar(props: TopBarProps) {
         onSave={(newTitle) => {
           const sessionId = editSessionId()
           if (sessionId) {
-            const userId = u?.id ?? 1
+            const userId = user()?.id ?? 1
             updateConversationTitle(sessionId, userId, newTitle).then(() => {
               setEditSessionId(null)
               setEditTitle('')
@@ -541,5 +537,47 @@ export default function TopBar(props: TopBarProps) {
         sessionId={editSessionId() ?? ''}
         currentTitle={editTitle()}
       />
+
+      {/* Archive confirmation modal */}
+      <Modal
+        isOpen={!!archiveConfirmSessionId()}
+        onClose={() => setArchiveConfirmSessionId(null)}
+        title="Archive Conversation"
+        size="small"
+      >
+        <div class="modal-content">
+          <p>Are you sure you want to archive this conversation? It will be moved to the trash can and can be restored later.</p>
+          <div class="modal-actions">
+            <button
+              class="btn-secondary"
+              onClick={() => setArchiveConfirmSessionId(null)}
+            >
+              Cancel
+            </button>
+            <button
+              class="btn-primary"
+              onClick={async () => {
+                const sessionId = archiveConfirmSessionId()
+                if (!sessionId) return
+                const u = user()
+                if (u) {
+                  console.log('[Archive] Calling deleteConversation with:', sessionId, u.id)
+                  await deleteConversation(sessionId, u.id)
+                  console.log('[Archive] Delete complete, refreshing conversations')
+                  if (props.onRefreshConversations) {
+                    await props.onRefreshConversations()
+                  }
+                  console.log('[Archive] Refresh complete')
+                  // Notify trash can to refresh if open
+                  window.dispatchEvent(new CustomEvent('conversation-archived'))
+                }
+                setArchiveConfirmSessionId(null)
+              }}
+            >
+              Archive
+            </button>
+          </div>
+        </div>
+      </Modal>
     </>
   )}

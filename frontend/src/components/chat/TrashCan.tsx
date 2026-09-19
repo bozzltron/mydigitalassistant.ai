@@ -26,6 +26,17 @@ export default function TrashCan() {
     }
   }
 
+  // Listen for archive events to refresh trash can
+  onMount(() => {
+    const handleArchive = () => {
+      if (isOpen()) {
+        loadDeletedSessions()
+      }
+    }
+    window.addEventListener('conversation-archived', handleArchive)
+    return () => window.removeEventListener('conversation-archived', handleArchive)
+  })
+
   createEffect(() => {
     if (isOpen()) {
       loadDeletedSessions()
