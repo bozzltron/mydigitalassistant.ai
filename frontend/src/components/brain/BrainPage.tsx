@@ -44,7 +44,7 @@ export default function BrainPage() {
   const [agentName, setAgentName] = createSignal('Brain Observatory')
   const [width, setWidth] = createSignal(800)
   const [height, setHeight] = createSignal(600)
-  const [conflictsByFrame, setConflictsByFrame] = createSignal<Record<number, any[]>>({})
+  const [conflictsByFrame, setConflictsByFrame] = createSignal<Record<number, Conflict[]>>({})
   // 3D view state
   const [mode, setMode] = createSignal<'2d' | '3d'>('3d')
   const [touring, setTouring] = createSignal(false)
@@ -89,7 +89,7 @@ export default function BrainPage() {
       setAssociations(associationsData)
       const pendingConflicts = conflictsData.filter(c => c.status === 'pending')
       setConflicts(pendingConflicts)
-      const conflictsByFrameMap: Record<number, any[]> = {}
+      const conflictsByFrameMap: Record<number, Conflict[]> = {}
       for (const c of pendingConflicts) {
         (conflictsByFrameMap[c.frame_id] ||= []).push(c)
       }

@@ -80,6 +80,17 @@ export interface Association {
   created_at: string
 }
 
+export interface Conflict {
+  frame_id: number
+  frame_name: string
+  slot_key: string
+  slot_value: string
+  confidence: number
+  new_value: string
+  new_confidence: number
+  created_at: string
+}
+
 export interface SearchResult {
   id: number
   query: string

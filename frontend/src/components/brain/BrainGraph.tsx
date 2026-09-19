@@ -1,6 +1,17 @@
-import { createSignal, createEffect, onCleanup, createMemo, onMount, Show, lazy, Suspense } from 'solid-js'
+import { createSignal, createEffect, onCleanup, createMemo, Show, lazy, Suspense } from 'solid-js'
 import { For } from 'solid-js'
 import * as d3 from 'd3'
+
+interface Conflict {
+  frame_id: number
+  frame_name: string
+  slot_key: string
+  slot_value: string
+  confidence: number
+  new_value: string
+  new_confidence: number
+  created_at: string
+}
 
 interface Node {
   id: number
@@ -33,7 +44,7 @@ interface BrainGraphProps {
   height: () => number
   onNodeClick?: (node: Node) => void
   highlightedNodeIds: () => Set<number>
-  conflictsByFrame: () => Record<number, any[]>
+  conflictsByFrame: () => Record<number, Conflict[]>
   mode: () => '2d' | '3d'
   onModeChange: (mode: '2d' | '3d') => void
   touring: () => boolean
@@ -102,7 +113,7 @@ function escAttr(value: string): string {
   return String(value ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")
 }
 
-function tooltipHtml(d: Node, conflictsByFrame: Record<number, any[]>): string {
+function tooltipHtml(d: Node, conflictsByFrame: Record<number, Conflict[]>): string {
   const conf = Math.round((d.confidence || 0.5) * 100)
   const pri = Math.round((d.priority || 0.5) * 100)
 
@@ -145,12 +156,6 @@ function tooltipHtml(d: Node, conflictsByFrame: Record<number, any[]>): string {
   `
 }
 
-function hexToRgba(hex: string, alpha: number): string {
-  const r = parseInt(hex.slice(1, 3), 16)
-  const g = parseInt(hex.slice(3, 5), 16)
-  const b = parseInt(hex.slice(5, 7), 16)
-  return `rgba(${r},${g},${b},${alpha})`
-}
 
 // Lazy-loaded 3D component (Sigma.js WebGL)
 const BrainGraph3D = lazy(() => import('./BrainGraphSigma').then(m => ({ default: m.default })))
@@ -159,14 +164,11 @@ export default function BrainGraph(props: BrainGraphProps) {
   const [svgRef, setSvgRef] = createSignal<SVGSVGElement | null>(null)
   const [svgReady, setSvgReady] = createSignal(false)
   const [simulation, setSimulation] = createSignal<d3.Simulation<Node, Link> | null>(null)
-  const [zoomBehavior, setZoomBehavior] = createSignal<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null)
   const [gSelection, setGSelection] = createSignal<d3.Selection<SVGGElement, unknown, null, undefined> | null>(null)
   const [defsSelection, setDefsSelection] = createSignal<d3.Selection<SVGDefsElement, unknown, null, undefined> | null>(null)
   const [tooltipVisible, setTooltipVisible] = createSignal(false)
   const [tooltipContent, setTooltipContent] = createSignal('')
   const [tooltipPosition, setTooltipPosition] = createSignal({ x: 0, y: 0 })
-  const [neighborsMap, setNeighborsMap] = createSignal<Map<number, Set<number>>>(new Map())
-  const [highlightedFrameIds, setHighlightedFrameIds] = createSignal<Set<number>>(new Set())
 
   const nodesWithPos = createMemo(() =>
     props.nodes().map((n) => ({
@@ -237,7 +239,6 @@ export default function BrainGraph(props: BrainGraphProps) {
         .on('zoom', (event) => {
           g.attr('transform', event.transform)
         })
-      setZoomBehavior(zoom)
       container.call(zoom)
     }
 
@@ -381,7 +382,7 @@ export default function BrainGraph(props: BrainGraphProps) {
         setTooltipVisible(true)
         const rect = svg.getBoundingClientRect()
         let tx = event.clientX - rect.left + 15
-        let ty = event.clientY - rect.top - 10
+        const ty = event.clientY - rect.top - 10
         if (tx + 280 > rect.width) tx = event.clientX - rect.left - 295
         setTooltipPosition({ x: tx, y: ty })
       })
@@ -502,12 +503,14 @@ export default function BrainGraph(props: BrainGraphProps) {
       </Show>
 
       <div class="edge-legend" style={{ position: 'absolute', left: '1rem', bottom: '3.2rem', zIndex: 10 }}>
-        {RELATION_GROUPS.map(g => (
-          <div class="legend-item" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.72rem', color: 'var(--text-dim)' }}>
-            <div class="legend-line" style={{ width: '18px', height: '0', borderTop: `2px solid ${g.color}`, borderRadius: '2px' }} />
-            {g.label}
-          </div>
-        ))}
+        <For each={RELATION_GROUPS}>
+          {(g) => (
+            <div class="legend-item" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.72rem', color: 'var(--text-dim)' }}>
+              <div class="legend-line" style={{ width: '18px', height: '0', borderTop: `2px solid ${g.color}`, borderRadius: '2px' }} />
+              {g.label}
+            </div>
+          )}
+        </For>
       </div>
 
       <Show when={tooltipVisible()}>
@@ -518,7 +521,8 @@ export default function BrainGraph(props: BrainGraphProps) {
             top: `${tooltipPosition().y}px`,
           }}
         >
-          <div dangerouslySetInnerHTML={{ __html: tooltipContent() }} />
+          {/* eslint-disable-next-line solid/no-innerhtml -- content sanitized by tooltipHtml() */}
+          <div innerHTML={tooltipContent()} />
         </div>
       </Show>
     </div>

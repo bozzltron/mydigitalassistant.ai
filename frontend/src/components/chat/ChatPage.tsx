@@ -13,7 +13,6 @@ import type {
   ExtractionSummary,
   SearchInfo,
   AttachedFile,
-  SensitivityResult,
 } from '../../types'
 
 // Wrapper component that calls useTurnStatus with a dynamic turnId
