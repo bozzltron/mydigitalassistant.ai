@@ -9,6 +9,7 @@ from pathlib import Path
 
 from fastapi import Depends as _Depends
 from fastapi import FastAPI, File, HTTPException, Response, UploadFile
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -1301,6 +1302,20 @@ async def new_conversation(
 
 # Serve static files (JS, CSS, favicon, etc.) directly from the static directory
 app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
+
+# Serve root-level assets (trash.svg, favicon.ico, favicon.svg) for direct access
+
+@app.get("/trash.svg")
+async def trash_svg():
+    return FileResponse(str(Path(__file__).parent / "static" / "trash.svg"))
+
+@app.get("/favicon.ico")
+async def favicon_ico():
+    return FileResponse(str(Path(__file__).parent / "static" / "favicon.svg"))
+
+@app.get("/favicon.svg")
+async def favicon_svg():
+    return FileResponse(str(Path(__file__).parent / "static" / "favicon.svg"))
 @app.get("/conversations/{session_id}/details", response_model=dict)
 async def conversation_details(
     session_id: str,
