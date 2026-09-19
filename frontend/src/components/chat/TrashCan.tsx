@@ -9,7 +9,6 @@ export default function TrashCan() {
   const [deletedSessions, setDeletedSessions] = createSignal<DeletedSession[]>([])
   const [isLoading, setIsLoading] = createSignal(false)
   const [restoringId, setRestoringId] = createSignal<string | null>(null)
-  const [permanentlyDeletingId, setPermanentlyDeletingId] = createSignal<string | null>(null)
 
   const loadDeletedSessions = async () => {
     const u = user()
@@ -58,7 +57,7 @@ export default function TrashCan() {
     }
   }
 
-  const handlePermanentDelete = async (sessionId: string) => {
+  const handlePermanentDelete = async () => {
     // For now, we don't have a permanent delete endpoint
     // This would require a hard delete which we don't support
     alert('Permanent delete not implemented. Use the regular delete to move to trash.')
@@ -147,18 +146,15 @@ export default function TrashCan() {
               </svg>
             )}
                        </button>
-                      <button
+<button
                         class="btn-icon permanent-delete-btn"
                         onClick={() => handlePermanentDelete(session.id)}
-                        disabled={permanentlyDeletingId() === session.id}
                         aria-label="Permanently delete"
 >
-                        {permanentlyDeletingId() === session.id ? '⏳' : (
-              <svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <polyline points="3 6 5 6 21 6"/>
                 <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
               </svg>
-            )}
                        </button>
                      </div>
                   </div>
@@ -290,25 +286,4 @@ export default function TrashCan() {
       `}</style>
     </>
   )
-}
-
-function formatDate(dateStr: string | null) {
-  if (!dateStr) return 'Unknown date'
-  try {
-    return new Date(dateStr).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    })
-  } catch {
-    return dateStr
-  }
-}
-
-function formatEpisodeCount(count: number) {
-  if (count === 0) return 'empty'
-  if (count === 1) return '1 message'
-  return `${count} messages`
 }
