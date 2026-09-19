@@ -124,7 +124,11 @@ async def main(db_path: str) -> int:
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
-        print("Usage: python -m assistant.experiments.memory_health /path/to/assistant.db", file=sys.stderr)
+        print(
+            "Usage: python -m assistant.experiments.memory_health "
+            "/path/to/assistant.db",
+            file=sys.stderr,
+        )
         sys.exit(2)
 
     import asyncio
