@@ -38,14 +38,14 @@ export default function TopBar(props: TopBarProps) {
     document.title = props.assistantName
   })
 
-  // Fetch conversations and trash on mount
+  // Fetch conversations on mount
   onMount(async () => {
     const userId = u?.id ?? 1
     if (!userId) return
 
-    // Fetch trash sessions
+    // Fetch trash sessions for TrashCan component
     const trash = await getDeletedSessions(userId)
-    setShowTrashSessions(trash.map((s: { id: string; title: string }) => ({ id: s.id, title: s.title || 'Untitled' })))
+    // TrashCan handles its own state internally
   })
 
   // Load voices on mount
