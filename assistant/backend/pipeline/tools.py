@@ -309,6 +309,13 @@ class FetchUrlArgs(BaseModel):
         True, description="Auto-extract facts into memory")
 
 
+class ReadFileArgs(BaseModel):
+    frame_id: int | None = Field(
+        None, description="Frame ID of the uploaded file")
+    frame_name: str | None = Field(
+        None, description="Frame name of the uploaded file (e.g., 'file_test_config.txt')")
+
+
 class RunScheduledTaskArgs(BaseModel):
     task_name: str = Field(
         ..., description="Name of task to run immediately")
@@ -411,6 +418,12 @@ def builtin_tools(
             "fetch_url",
             "Fetch and extract text from a URL. Auto-extracts facts into memory.",
             FetchUrlArgs,
+        ),
+        _make_def(
+            "read_file",
+            "Read the content of an uploaded file by frame ID or frame name. "
+            "Returns the full file content stored on disk.",
+            ReadFileArgs,
         ),
         _make_def(
             "run_scheduled_task",

@@ -74,12 +74,13 @@ async def test_extract_facts_returns_empty_after_retry_failure():
     mock_llm.chat.side_effect = [
         MagicMock(content="bad"),
         MagicMock(content="still bad"),
+        MagicMock(content="still bad"),
     ]
 
     result = await extract_facts("test", "test", mock_llm)
     assert result.slots == []
     assert result.associations == []
-    assert mock_llm.chat.call_count == 2
+    assert mock_llm.chat.call_count == 3
 
 
 async def test_apply_extraction_creates_frames_and_slots(store):

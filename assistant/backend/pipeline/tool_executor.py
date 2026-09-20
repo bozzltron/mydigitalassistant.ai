@@ -36,6 +36,7 @@ def _register_builtin_tools() -> None:
         FinalizeArgs,
         MarkEssentialArgs,
         PlanArgs,
+        ReadFileArgs,
         RecallArgs,
         RunScheduledTaskArgs,
         SearchEpisodesArgs,
@@ -56,6 +57,7 @@ def _register_builtin_tools() -> None:
     register_tool("search_episodes", SearchEpisodesArgs, execute_search_episodes)
     register_tool("web_search", WebSearchArgs, execute_web_search)
     register_tool("fetch_url", FetchUrlArgs, execute_fetch_url)
+    register_tool("read_file", ReadFileArgs, execute_read_file)
     register_tool("run_scheduled_task", RunScheduledTaskArgs, execute_run_scheduled_task)
     register_tool("compute", ComputeArgs, execute_compute)
     register_tool("plan", PlanArgs, execute_plan)
@@ -90,6 +92,7 @@ class ToolResult:
 TOOL_TIMEOUTS: dict[str, float] = {
     "web_search": 30.0,
     "fetch_url": 30.0,
+    "read_file": 10.0,
     "run_scheduled_task": 60.0,
     "compute": 60.0,
     "upsert_slot": 10.0,
@@ -401,6 +404,70 @@ async def execute_fetch_url(args: dict, user_id: str) -> ToolResult:
         return ToolResult(success=True, data=result)
     except Exception as e:
         logger.error(f"fetch_url failed: {e}", exc_info=True)
+        return ToolResult(success=False, error=str(e))
+
+
+async def execute_read_file(args: dict, user_id: str, session_id: str) -> ToolResult:
+    """Read the content of an uploaded file by frame ID or frame name."""
+    if _store is None:
+        return ToolResult(success=False, error="MemoryStore not initialized")
+
+    try:
+        frame_id = args.get("frame_id")
+        frame_name = args.get("frame_name")
+
+        if not frame_id and not frame_name:
+            return ToolResult(success=False, error="Either frame_id or frame_name must be provided")
+
+        # Get the frame
+        if frame_id:
+            frame = await _store.get_frame(frame_id)
+        else:
+            frame = await _store.get_frame_by_name(frame_name)
+
+        if frame is None:
+            return ToolResult(success=False, error="File frame not found")
+
+        # Get slots to find file_safe_name
+        slots = await _store.get_slots_for_frame(frame.id)
+        slots_dict = {slot.key: slot.value for slot in slots}
+
+        file_safe_name = slots_dict.get("file_safe_name")
+        file_name = slots_dict.get("file_name", "unknown")
+        file_ext = slots_dict.get("file_ext", "")
+
+        if not file_safe_name:
+            return ToolResult(
+                success=False,
+                error="File not found on disk (missing file_safe_name slot)",
+            )
+
+        # Read file from disk
+        from pathlib import Path
+        data_dir = Path("/app/data")
+        file_path = data_dir / file_safe_name
+
+        if not file_path.exists():
+            return ToolResult(success=False, error=f"File not found on disk: {file_safe_name}")
+
+        try:
+            content = file_path.read_text(encoding="utf-8", errors="replace")
+        except Exception as e:
+            return ToolResult(success=False, error=f"Failed to read file: {e}")
+
+        return ToolResult(
+            success=True,
+            data={
+                "frame_id": frame.id,
+                "frame_name": frame.name,
+                "file_name": file_name,
+                "file_ext": file_ext,
+                "content": content,
+                "size": len(content),
+            },
+        )
+    except Exception as e:
+        logger.error(f"read_file failed: {e}", exc_info=True)
         return ToolResult(success=False, error=str(e))
 
 

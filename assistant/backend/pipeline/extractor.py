@@ -345,7 +345,7 @@ async def extract_facts(
         content=f"User: {user_message}\n\nAssistant: {assistant_response}",
     )
 
-    for attempt in range(2):
+    for attempt in range(3):
         try:
             response = await llm_client.chat(
                 [system, user],
@@ -354,16 +354,24 @@ async def extract_facts(
                 temperature=0.0,
                 think=False,
             )
+            if not response.content or not response.content.strip():
+                logger.warning("Extraction returned empty content (attempt %d)", attempt + 1)
+                if attempt == 0:
+                    extra = (
+                        "\n\nIMPORTANT: Output ONLY valid JSON. "
+                        "No markdown, no preamble. Do not output empty response."
+                    )
+                    system = ChatMessage(role="system", content=EXTRACTION_PROMPT + extra)
+                continue
             data = json.loads(response.content)
             return ExtractionResult.model_validate(data)
         except (json.JSONDecodeError, ValueError) as e:
             logger.warning("Extraction parse failed (attempt %d): %s", attempt + 1, e)
-            if attempt == 0:
+            if attempt < 2:
                 extra = "\n\nIMPORTANT: Output ONLY valid JSON. No markdown, no preamble."
                 system = ChatMessage(role="system", content=EXTRACTION_PROMPT + extra)
             else:
-                logger.error("Extraction failed after retry for message: %s", user_message[:100])
-                return ExtractionResult()
+                logger.error("Extraction failed after retries for message: %s", user_message[:100])
     return ExtractionResult()
 
 
@@ -387,7 +395,7 @@ async def extract_facts_from_search(
     system = ChatMessage(role="system", content=SEARCH_EXTRACTION_PROMPT)
     user = ChatMessage(role="user", content=user_content)
 
-    for attempt in range(2):
+    for attempt in range(3):
         try:
             response = await llm_client.chat(
                 [system, user],
@@ -396,16 +404,24 @@ async def extract_facts_from_search(
                 temperature=0.0,
                 think=False,
             )
+            if not response.content or not response.content.strip():
+                logger.warning("Search extraction returned empty content (attempt %d)", attempt + 1)
+                if attempt < 2:
+                    extra = (
+                        "\n\nIMPORTANT: Output ONLY valid JSON. "
+                        "No markdown, no preamble. Do not output empty response."
+                    )
+                    system = ChatMessage(role="system", content=SEARCH_EXTRACTION_PROMPT + extra)
+                continue
             data = json.loads(response.content)
             return ExtractionResult.model_validate(data)
         except (json.JSONDecodeError, ValueError) as e:
             logger.warning("Search extraction parse failed (attempt %d): %s", attempt + 1, e)
-            if attempt == 0:
+            if attempt < 2:
                 extra = "\n\nIMPORTANT: Output ONLY valid JSON. No markdown, no preamble."
                 system = ChatMessage(role="system", content=SEARCH_EXTRACTION_PROMPT + extra)
             else:
-                logger.error("Search extraction failed after retry for query: %s", query[:100])
-                return ExtractionResult()
+                logger.error("Search extraction failed after retries for query: %s", query[:100])
     return ExtractionResult()
 
 
@@ -459,7 +475,7 @@ async def extract_facts_from_document(
     system = ChatMessage(role="system", content=DOCUMENT_EXTRACTION_PROMPT)
     user = ChatMessage(role="user", content=user_content)
 
-    for attempt in range(2):
+    for attempt in range(3):
         try:
             response = await llm_client.chat(
                 [system, user],
@@ -468,6 +484,17 @@ async def extract_facts_from_document(
                 temperature=0.0,
                 think=False,
             )
+            if not response.content or not response.content.strip():
+                logger.warning(
+                    "Document extraction returned empty content (attempt %d)", attempt + 1
+                )
+                if attempt < 2:
+                    extra = (
+                        "\n\nIMPORTANT: Output ONLY valid JSON. "
+                        "No markdown, no preamble. Do not output empty response."
+                    )
+                    system = ChatMessage(role="system", content=DOCUMENT_EXTRACTION_PROMPT + extra)
+                continue
             data = json.loads(response.content)
             result = ExtractionResult.model_validate(data)
             # Attach source URL to all extracted slots for traceability
@@ -477,12 +504,11 @@ async def extract_facts_from_document(
             return result
         except (json.JSONDecodeError, ValueError) as e:
             logger.warning("Document extraction parse failed (attempt %d): %s", attempt + 1, e)
-            if attempt == 0:
+            if attempt < 2:
                 extra = "\n\nIMPORTANT: Output ONLY valid JSON. No markdown, no preamble."
                 system = ChatMessage(role="system", content=DOCUMENT_EXTRACTION_PROMPT + extra)
             else:
-                logger.error("Document extraction failed after retry for URL: %s", source_url)
-                return ExtractionResult()
+                logger.error("Document extraction failed after retries for URL: %s", source_url)
     return ExtractionResult()
 
 
