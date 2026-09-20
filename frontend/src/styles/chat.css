@@ -185,7 +185,7 @@
   font-size: 0.9rem;
   cursor: pointer;
   transition: background 0.15s;
-  height: 52px;
+  height: 100%;
 }
 
 .file-attach-btn:hover {

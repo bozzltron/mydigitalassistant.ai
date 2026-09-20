@@ -1320,6 +1320,52 @@ async def run_due_tasks(
     return {"tasks_run": results}
 
 
+@app.post("/tasks/run-now/{task_name}")
+async def run_task_now(
+    task_name: str,
+    user_id: int = 1,
+    orchestrator: Orchestrator = _Depends(get_orchestrator),
+    store: MemoryStore = _Depends(get_store),
+):
+    """Run a specific scheduled task by name immediately (run_now).
+    
+    Creates alerts for task completion/failure.
+    """
+    tasks = await store.get_scheduled_tasks(owner_user_id=user_id)
+    task = next((t for t in tasks if t["name"] == task_name), None)
+    
+    if not task:
+        raise HTTPException(status_code=404, detail=f"Task '{task_name}' not found")
+    
+    task_prompt = task.get("prompt", "")
+    frame_id = task["id"]
+    owner_user_id = task.get("owner_user_id") or user_id
+    
+    if not task_prompt:
+        return {
+            "name": task_name,
+            "success": False,
+            "result_summary": "Task has no prompt",
+        }
+    
+    from assistant.backend.scheduler import execute_and_record_task
+    success, result = await execute_and_record_task(
+        store=store,
+        orchestrator=orchestrator,
+        task_frame_id=frame_id,
+        task_name=task_name,
+        task_prompt=task_prompt,
+        owner_user_id=owner_user_id,
+    )
+    
+    summary = result[:2000] if result else ""
+    return {
+        "name": task_name,
+        "success": success,
+        "result_summary": summary,
+    }
+
+
 @app.get("/users/{user_id}/sessions", response_model=list[dict])
 async def list_user_sessions(
     user_id: int,
