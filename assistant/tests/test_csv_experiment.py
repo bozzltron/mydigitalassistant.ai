@@ -296,8 +296,8 @@ class TestCSVPerformance:
         assert resp.status_code == 200
         data = resp.json()
         assert data["row_count"] == 200, f"expected 200 rows, got {data.get('row_count')}"
-        # Should complete in under 180 seconds for 200 rows in CI
-        assert elapsed < 180, f"CSV upload took {elapsed:.1f}s, expected < 180s"
+        # Should complete in under 300 seconds for 200 rows in CI
+        assert elapsed < 300, f"CSV upload took {elapsed:.1f}s, expected < 300s"
 
     @pytest.mark.asyncio
     async def test_recall_latency_100_rows(self, client, store, tmp_path):

@@ -43,6 +43,18 @@ class EnabledSearch:
             )
         ]
 
+    async def search_with_info(
+        self, query: str, num_results: int = 5, llm_client=None, user_consent=False
+    ):
+        from assistant.backend.pipeline.search import SearchInfo, SearchResult
+        return [
+            SearchResult(
+                title=f"Result for {query}",
+                url="http://127.0.0.1:8080/x",
+                snippet="snip",
+            )
+        ], SearchInfo(backend="test", query=query, results=[])
+
     def close(self):
         pass
 

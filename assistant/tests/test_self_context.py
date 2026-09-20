@@ -66,5 +66,11 @@ class WebSearchStub:
     async def search(self, query: str, num_results: int = 5):
         return []
 
+    async def search_with_info(
+        self, query: str, num_results: int = 5, llm_client=None, user_consent=False
+    ):
+        from assistant.backend.pipeline.search import SearchInfo
+        return [], SearchInfo(backend="test", query=query, results=[])
+
     def close(self):
         pass

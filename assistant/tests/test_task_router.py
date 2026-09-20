@@ -15,10 +15,9 @@ from assistant.backend.pipeline.task_router import (
     "query",
     [
         "What do you know about what you remember?",
-        "Tell me about what you remember",
-        "Do you still remember my dog?",
+        "Do you remember my dog?",
+        "What have we talked about?",
         "What have you learned about guitars?",
-        "Remember when we talked about music?",
     ],
 )
 def test_heuristic_introspective_patterns(query):
@@ -34,7 +33,9 @@ def test_heuristic_introspective_what_have_we_talked():
 
 
 def test_heuristic_introspective_have_you_heard():
-    assert classify_heuristic("Have you heard of quantum computing?") == TaskType.INTROSPECTIVE
+    # "Have you heard of X" is ambiguous - could be asking model's knowledge (introspective)
+    # or asking it to search (functional). Heuristic returns None, LLM decides.
+    assert classify_heuristic("Have you heard of quantum computing?") is None
 
 
 def test_heuristic_introspective_case_insensitive():
@@ -42,25 +43,27 @@ def test_heuristic_introspective_case_insensitive():
 
 
 def test_heuristic_introspective_tell_me_about_article():
-    assert classify_heuristic("Tell me more about the Glasgow article") == TaskType.INTROSPECTIVE
-    assert classify_heuristic("Tell me about the story") == TaskType.INTROSPECTIVE
-    assert classify_heuristic("Tell me about the topic") == TaskType.INTROSPECTIVE
+    # Ambiguous - LLM should decide. Heuristic returns None.
+    assert classify_heuristic("Tell me more about the Glasgow article") is None
+    assert classify_heuristic("Tell me about the story") is None
+    assert classify_heuristic("Tell me about the topic") is None
 
 
 def test_heuristic_introspective_pick_up():
-    """Queries referencing prior context should be introspective."""
-    assert classify_heuristic("Pick up with that") == TaskType.INTROSPECTIVE
-    assert classify_heuristic("Pick up on that") == TaskType.INTROSPECTIVE
-    assert classify_heuristic("It was on apnews.com") == TaskType.INTROSPECTIVE
-    assert classify_heuristic("That was related to climate") == TaskType.INTROSPECTIVE
+    """Queries referencing prior context should be introspective (LLM decides)."""
+    assert classify_heuristic("Pick up with that") is None
+    assert classify_heuristic("Pick up on that") is None
+    assert classify_heuristic("It was on apnews.com") is None
+    assert classify_heuristic("That was related to climate") is None
 
 
 def test_heuristic_introspective_recall_about():
+    # "What do you recall" matches heuristic, "what was discussed" goes to LLM
     assert (
         classify_heuristic("What do you recall about the Glasgow article?")
         == TaskType.INTROSPECTIVE
     )
-    assert classify_heuristic("What was discussed about climate change?") == TaskType.INTROSPECTIVE
+    assert classify_heuristic("What was discussed about climate change?") is None
 
 
 def test_heuristic_returns_none_for_functional():

@@ -29,30 +29,26 @@ class ClassificationResult(BaseModel):
     search_query: str | None = None
 
 
-# Heuristic patterns for introspective queries (case-insensitive)
+# Heuristic patterns for clearly introspective queries (narrow fast-path only)
+# These are patterns that are unambiguously introspective with near-100% precision.
+# The LLM is the primary classifier; heuristic is a minor optimization for latency.
 INTROSPECTIVE_PATTERNS = [
-    r"\bwhat do you (know|remember|think|recall)\b",
-    r"\bdo you (know|remember|recall|have)\b",
-    r"\bcan you (remember|recall)\b",
-    r"\btell me about (what you (know|remember|learned)|"
-    r"our (previous|past|earlier) (conversations?|talks?))\b",
-    r"\bwhat have (we|you|i) (talked|discussed|said|learned)\b",
-    r"\bdo you (still )?remember\b",
-    r"\bhave you (heard of|learned about|seen)\b",
-    r"\bwhat is (your|the) (knowledge|understanding|model)\b",
+    r"\bwhat do you (know|remember|recall)\b",
+    r"\bdo you (remember|recall)\b",
+    r"\bwhat have we (talked|discussed)\b",
     r"\bwhat (have you|do you) learned\b",
-    r"\bour (previous|earlier|past) (conversation|chat|discussion)\b",
-    r"\bremember when\b",
-    r"\bwhat (else )?do you know about\b",
-    r"\btell me (more )?about the? (?:[\w'-]+ )?(article|story|thing|fact|subject|topic|matter)\b",
-    r"\bwhat do you recall (about|regarding) \b",
-    r"\bwhat was (discussed|said|mentioned) about\b",
-    r"\b(pick )?up (with|on|on) that\b",
-    r"\bit was (on|about|related to) \w+\b",
-    r"\bthat (was|is) (about|on|related to) \w+\b",
 ]
 
 _COMPILED_INTROSPECTIVE = [re.compile(p, re.IGNORECASE) for p in INTROSPECTIVE_PATTERNS]
+
+
+def _compile_patterns():
+    """Re-compile patterns (useful for testing when patterns are modified)."""
+    global _COMPILED_INTROSPECTIVE
+    _COMPILED_INTROSPECTIVE = [re.compile(p, re.IGNORECASE) for p in INTROSPECTIVE_PATTERNS]
+
+
+_compile_patterns()
 
 
 def classify_heuristic(text: str) -> TaskType | None:
@@ -87,9 +83,13 @@ FUNCTIONAL: The user wants information, help with a task, an explanation, or an 
   that is a goal-directed action, NOT a question about your memory.
 
 INTROSPECTIVE: The user is asking about YOUR memory, knowledge, or past interactions.
-  Questions that use "you" to refer to yourself: "what do you know/remember?",
-  "what have we discussed?", "do you recall X?", "tell me what you learned".
-  The test: an introspective message QUERIES what you already know. A message
+  Questions that query what you already know or have access to:
+  - "what do you know/remember/recall?"
+  - "what have we discussed/talked about?"
+  - "do you recall X?", "tell me what you learned"
+  - "what files/documents/uploads do you have/have access to/can see?"
+  - "list/show my/your files"
+  The test: an introspective message QUERIES your internal state/memory. A message
   that PROVIDES new information is functional, even if it contains the word
   "remember" ("remember that..." = giving, "do you remember..." = asking).
 
@@ -115,14 +115,17 @@ Examples:
 - "Note for later: our anniversary dinner is June 12." → functional (sharing a fact)
 - "Remind me every day at 9am to check the news." → scheduled (recurring execution)
 - "That's wrong, it has 12 strings not 6." → correction
+- "What files do you have access to?" → introspective (querying your memory)
+- "List my uploaded documents" → introspective (querying your memory)
 
-IMPORTANT: When uncertain between FUNCTIONAL and INTROSPECTIVE, prefer FUNCTIONAL.
+IMPORTANT: When uncertain, prefer INTROSPECTIVE for queries about your own memory/knowledge/files.
 When uncertain between FUNCTIONAL and CORRECTION, look for explicit disagreement signals.
 
 Also decide wants_search: true ONLY if answering well requires fetching external or
 current information from the web. Statements that give information to remember are
 wants_search=false. General-knowledge questions you can answer without looking
-anything up are also wants_search=false.
+anything up are also wants_search=false. Questions about your own memory/files are
+wants_search=false — the answer is in your local memory, not on the web.
 
 When wants_search is true, also return "search_query": a short keyword query
 (3-8 words) for a search engine — strip greetings, filler and personal details,

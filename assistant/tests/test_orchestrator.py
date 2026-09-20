@@ -36,6 +36,13 @@ class SearchSpy:
         self.queries.append(query)
         return []
 
+    async def search_with_info(
+        self, query: str, num_results: int = 5, llm_client=None, user_consent=False
+    ):
+        self.queries.append(query)
+        from assistant.backend.pipeline.search import SearchInfo
+        return [], SearchInfo(backend="test", query=query, results=[])
+
     def close(self):
         pass
 
@@ -286,7 +293,7 @@ async def test_search_failure_does_not_crash(store, stub_llm):
     from assistant.backend.pipeline.search import WebSearchTool
 
     stub_search = WebSearchTool(enabled=True)
-    stub_search.search = AsyncMock(side_effect=RuntimeError("Search unavailable"))
+    stub_search.search_with_info = AsyncMock(side_effect=RuntimeError("Search unavailable"))
 
     retriever = Retriever(store=store, llm_client=stub_llm)
     orchestrator = Orchestrator(

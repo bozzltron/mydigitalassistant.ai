@@ -26,7 +26,7 @@ async def test_search_learn_stores_fact_in_memory(store, stub_llm):
 
     retriever = Retriever(store=store, llm_client=stub_llm)
 
-    async def fake_search_with_info(query, num_results=5):
+    async def fake_search_with_info(query, num_results=5, llm_client=None, user_consent=False):
         if "capital" in query.lower() and "texas" in query.lower():
             results = [
                 SearchResult(
@@ -108,7 +108,7 @@ async def test_search_learn_then_recall_does_not_re_search(store, stub_llm):
 
     search_count = 0
 
-    async def counting_search_with_info(query, num_results=5):
+    async def counting_search_with_info(query, num_results=5, llm_client=None, user_consent=False):
         nonlocal search_count
         search_count += 1
         if "capital" in query.lower() and "texas" in query.lower():
@@ -265,7 +265,7 @@ async def test_search_contradiction_triggers_auto_resolve_and_surfaces_conflict(
 
     # Mock the search method on the instance
     from assistant.backend.pipeline.search import SearchInfo
-    async def fake_search_with_info(q, num_results=5):
+    async def fake_search_with_info(q, num_results=5, llm_client=None, user_consent=False):
         return search_results, SearchInfo(backend="test", query=q, results=search_results)
     stub_search.search_with_info = fake_search_with_info
 

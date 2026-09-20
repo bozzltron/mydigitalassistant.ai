@@ -210,7 +210,9 @@ class _RecordingSearch:
         results, _ = await self.search_with_info(query, num_results)
         return results
 
-    async def search_with_info(self, query: str, num_results: int = 5):
+    async def search_with_info(
+        self, query: str, num_results: int = 5, llm_client=None, user_consent=False
+    ):
         self.queries.append(query)
         results = [
             SearchResult(

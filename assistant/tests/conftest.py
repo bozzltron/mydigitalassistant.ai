@@ -100,6 +100,14 @@ class StubLLMClient(OllamaClient):
         user_lower = user.lower()
 
         if "classify" in system_lower:
+            # Check if this is the sensitivity classification prompt
+            if "privacy sensitivity" in system_lower or "sensitivity" in system_lower:
+                # Query sensitivity classification - return SAFE for test queries
+                return ChatResponse(
+                    content='{"level": "safe", "reason": "Test query", "categories": []}',
+                    model=self.utility_model,
+                    done=True,
+                )
             if any(
                 k in user_lower
                 for k in ("remember", "what do you know", "tell me about what you")

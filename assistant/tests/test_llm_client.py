@@ -79,6 +79,9 @@ async def test_chat_passes_think_flag_and_uses_structured_field():
     captured: dict = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
+        # Handle /api/show for supports_thinking check
+        if request.url.path == "/api/show":
+            return httpx.Response(200, json={"capabilities": ["thinking"]})
         captured["payload"] = json.loads(request.content)
         return httpx.Response(200, json={
             "model": "chat-model",
@@ -123,10 +126,12 @@ async def test_chat_without_think_omits_flag_and_parses_inline_tags():
     await client.close()
 
 
-async def test_chat_think_false_is_sent_explicitly():
+async def test_chat_think_false_omits_key():
     captured: dict = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/show":
+            return httpx.Response(200, json={"capabilities": ["thinking"]})
         captured["payload"] = json.loads(request.content)
         return httpx.Response(200, json={
             "model": "m", "done": True,
@@ -135,7 +140,8 @@ async def test_chat_think_false_is_sent_explicitly():
 
     client = _client_with_transport(handler)
     await client.chat([ChatMessage(role="user", content="hi")], think=False)
-    assert captured["payload"]["think"] is False  # None would omit the key
+    # think=False should omit the key (default behavior)
+    assert "think" not in captured["payload"]
     await client.close()
 
 
