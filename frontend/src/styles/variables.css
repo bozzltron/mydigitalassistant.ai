@@ -5,9 +5,10 @@
   --surface: #1a1d27;
   --surface2: #242836;
   --border: #2e3347;
-  --user-msg: #1e3a5f;
-  --assistant-msg: #1e2d2b;
-  --assistant-msg-hover: #233d39;
+  --user-msg: #13151b;
+  --user-msg-border: #0d8a7c;
+  --assistant-msg: #1a1d27;
+  --assistant-msg-hover: #1f232d;
   --text: #e8e9ed;
   --text-dim: #8b8fa3;
   --accent: #14b8a6;

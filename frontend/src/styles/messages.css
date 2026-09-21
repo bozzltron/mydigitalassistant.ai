@@ -12,6 +12,7 @@
 .msg-user {
   align-self: flex-end;
   background: var(--user-msg);
+  border-left: 3px solid var(--user-msg-border);
   border-bottom-right-radius: var(--radius-sm);
 }
 
