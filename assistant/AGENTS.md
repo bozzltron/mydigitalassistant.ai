@@ -393,3 +393,45 @@ docker run -it --rm -v $(pwd):/app -w /app assistant pytest assistant/tests/
 # Frontend
 cd frontend && npm run lint && npm run test
 ```
+
+## SolidJS Frontend Development Notes
+
+### 1. Refs (`ref` attribute)
+
+**Official docs:** https://docs.solidjs.com/reference/jsx-attributes/ref
+
+**Key behaviors:**
+- **Variable ref**: `let myEl !: HTMLDivElement; <div ref={myEl} />` — assigned during render, before DOM connection
+- **Callback ref**: `<div ref={(el) => { myEl = el }} />` — called with element; use when you need the element before it's added to DOM
+- **TypeScript**: Must use definite assignment assertion (`!`) since Solid assigns at render time
+- **Signals as refs**: `const [el, setEl] = createSignal<HTMLDivElement>(); <div ref={setEl} />` — useful when element may not exist initially or gets removed
+- **Forwarding refs**: Pass `props.ref` to child element: `<Child ref={props.ref} />` — child must accept `ref` prop and apply it to its element
+- **Ref arrays**: `<input ref={[(el) => input = el, autofocus, listen("input", onInput)]} />` — compose element access + directives
+
+**Common pitfalls:**
+- ❌ Don't use `useRef` (React pattern) — Solid uses plain variables + callback refs
+- ❌ Don't access ref in render body — it's assigned *during* render, not before
+- ✅ Use `onMount` or `onSettled` (or `setTimeout` in callback) for DOM measurements after mount
+- ⚠️ Ref callbacks run untracked (no reactive context) — wrap in `createEffect` if needed
+
+### 2. `innerHTML`
+
+**Official docs:** https://docs.solidjs.com/reference/jsx-attributes/innerhtml
+
+**Syntax:** `<div innerHTML={htmlString} />`
+
+**Critical security warning:**
+- **XSS risk**: Unlike JSX expressions (which auto-escape), `innerHTML` inserts raw markup — **never use with unsanitized user input**
+- **Sanitization required**: Use DOMPurify or similar if content comes from untrusted sources
+- **SSR**: HTML string emitted as child content without escaping
+
+**Alternatives (prefer these):**
+- **`textContent`**: `<div textContent={plainText} />` — inserts as plain text, safe from XSS
+- **Solid's built-in escaping**: `{userContent}` in JSX — auto-escapes by default
+- **`@solidjs/html`**: Tagged template literal for trusted HTML: `html`<div>${trusted}</div>` (compile-time trusted only)
+
+**Common pitfalls:**
+- ❌ `innerHTML={userInput}` — XSS vulnerability
+- ❌ `innerHTML={apiResponse.html}` without sanitization
+- ✅ Sanitize first: `innerHTML={DOMPurify.sanitize(userHtml)}`
+- ✅ Prefer `textContent` or JSX interpolation for user content

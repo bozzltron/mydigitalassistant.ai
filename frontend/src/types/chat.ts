@@ -35,7 +35,16 @@ export interface SearchInfo {
   backend: string
   query: string
   engines?: string[]
+  results?: SearchResultItem[]
   video_results?: YouTubeVideo[]
+  sensitivity?: SensitivityResult
+  consent_required?: boolean
+}
+
+export interface SensitivityResult {
+  level: 'safe' | 'sensitive' | 'ambiguous'
+  reason: string
+  categories: string[]
 }
 
 export interface OgData {
@@ -61,8 +70,8 @@ export interface YouTubeVideo {
   videoId: string
   title: string
   channelTitle?: string
-  thumbnailUrl: string
-  url: string
+  thumbnailUrl?: string
+  url?: string
   publishedAt?: string
   duration?: string
 }

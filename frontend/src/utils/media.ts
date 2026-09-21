@@ -79,7 +79,7 @@ export function extractMediaFromOgData(ogData: Record<string, OgData>): MediaCon
   const media: MediaContent[] = []
 
   for (const [url, data] of Object.entries(ogData)) {
-    if (data && data.image) {
+    if (data && data.image && typeof data.image === 'string') {
       media.push({
         type: 'image',
         url: data.image,
@@ -99,7 +99,7 @@ export function extractMediaFromSearchInfo(searchInfo: SearchInfo): MediaContent
 
   if (searchInfo?.results) {
     for (const result of searchInfo.results) {
-      if (result.thumbnail) {
+      if (result.thumbnail && typeof result.thumbnail === 'string') {
         media.push({
           type: 'image',
           url: result.thumbnail,
@@ -112,13 +112,15 @@ export function extractMediaFromSearchInfo(searchInfo: SearchInfo): MediaContent
 
   if (searchInfo?.video_results) {
     for (const video of searchInfo.video_results) {
-      media.push({
-        type: 'youtube',
-        url: video.url,
-        thumbnail: video.thumbnailUrl,
-        title: video.title,
-        description: video.channelTitle,
-      })
+      if (video.thumbnailUrl && typeof video.thumbnailUrl === 'string') {
+        media.push({
+          type: 'youtube',
+          url: video.url || `https://www.youtube.com/watch?v=${video.videoId}`,
+          thumbnail: video.thumbnailUrl,
+          title: video.title,
+          description: video.channelTitle,
+        })
+      }
     }
   }
 

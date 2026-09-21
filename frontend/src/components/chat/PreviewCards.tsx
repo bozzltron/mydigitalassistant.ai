@@ -24,9 +24,9 @@ export default function PreviewCards(props: PreviewCardsProps) {
             ) : (
               <div class="msg-preview-card-placeholder">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                  <path d="M21 12a9 9 0 01-9 9c-2.5 0-4.8-.8-6.5-2.1" />
-                  <path d="M3 3v18h18" />
-                  <path d="M21 3l-9 9" />
+                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                  <circle cx="8.5" cy="8.5" r="1.5" />
+                  <path d="M21 15l-5-5L5 21" />
                 </svg>
               </div>
             )}
