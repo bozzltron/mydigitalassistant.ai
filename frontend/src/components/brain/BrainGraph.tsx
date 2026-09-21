@@ -1,4 +1,5 @@
 import { createSignal, createEffect, onCleanup, createMemo, Show, lazy, Suspense } from 'solid-js'
+import DOMPurify from 'dompurify'
 import { For } from 'solid-js'
 import * as d3 from 'd3'
 
@@ -522,7 +523,7 @@ export default function BrainGraph(props: BrainGraphProps) {
           }}
         >
           {/* eslint-disable-next-line solid/no-innerhtml -- content sanitized by tooltipHtml() */}
-          <div innerHTML={tooltipContent()} />
+          <div innerHTML={DOMPurify.sanitize(tooltipContent())} />
         </div>
       </Show>
     </div>

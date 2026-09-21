@@ -386,9 +386,12 @@ async def test_validate_correction_corroborated_by_search(store):
     await store.upsert_slot(frame.id, "strings", "6")
 
     mock_search = AsyncMock()
-    mock_search.search.return_value = [
-        MagicMock(url="https://example.com/strings", snippet="12-string guitars are common"),
-    ]
+    mock_search.search.return_value = (
+        [
+            MagicMock(url="https://example.com/strings", snippet="12-string guitars are common"),
+        ],
+        [],
+    )
 
     correction = CorrectionResult(
         frame_name="guitar", slot_key="strings", new_value="12"
@@ -414,9 +417,12 @@ async def test_validate_correction_contradicted_by_search(store):
     await store.upsert_slot(frame.id, "strings", "6")
 
     mock_search = AsyncMock()
-    mock_search.search.return_value = [
-        MagicMock(url="https://example.com/strings", snippet="Most guitars have 6 strings"),
-    ]
+    mock_search.search.return_value = (
+        [
+            MagicMock(url="https://example.com/strings", snippet="Most guitars have 6 strings"),
+        ],
+        [],
+    )
 
     correction = CorrectionResult(
         frame_name="guitar", slot_key="strings", new_value="12"

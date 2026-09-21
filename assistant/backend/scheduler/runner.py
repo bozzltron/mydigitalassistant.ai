@@ -171,7 +171,7 @@ async def execute_and_record_task(
         try:
             await store.embed_frames(
                 [daily_run_frame_id],
-                orchestrator._embed_fn(),
+                orchestrator.embed_fn(),
                 embedding_model=settings.embedding_model,
             )
         except Exception as e:

@@ -163,18 +163,20 @@ class Orchestrator:
         self.llm_client = deps.llm_client
         self.search_tool = deps.search_tool
 
-    def _embed_fn(self):
-        """Embedding callable for canonical frame resolution (Phase 9A)."""
+    def embed_fn(self) -> Callable[[str | list[str]], Awaitable[list[float] | list[list[float]]]]:
+        """Embedding callable for canonical frame resolution and consolidation.
 
-        async def get_embedding(text: str) -> list[float]:
+        Returns a callable that accepts a string or list of strings.
+        The underlying OllamaClient.embed handles both single and batch inputs.
+        """
+        async def get_embedding(text: str | list[str]) -> list[float] | list[list[float]]:
             resp = await self.llm_client.embed(text)
+            # For single string, resp is EmbeddingResponse with .embedding
+            # For list, resp is list[EmbeddingResponse]
+            if isinstance(text, list):
+                return [r.embedding for r in resp]
             return resp.embedding
-
         return get_embedding
-
-    def embed_fn(self):
-        """Public alias — scheduler consolidation reuses the hot-path embedder."""
-        return self._embed_fn()
 
     async def _detect_math_intent(self, query: str) -> bool:
         """Detect if query needs mathematical computation."""
@@ -386,6 +388,8 @@ class Orchestrator:
         if (
             plan.search_needed
             and task_type != TaskType.SEARCH
+            and not skip_route
+            and classification is not None
             and classification.wants_search is False
         ):
             logger.info("Search vetoed by router for storage-style turn")
@@ -676,7 +680,7 @@ class Orchestrator:
             # Relevance gate: drop links that don't belong to the query
             # before they can pollute the system prompt or citations.
             search_results = await filter_relevant(
-                search_results, query, self._embed_fn(), min_relevance=relevance_threshold
+                search_results, query, self.embed_fn(), min_relevance=relevance_threshold
             )
 
             if search_results:
@@ -738,7 +742,7 @@ class Orchestrator:
                     search_extraction,
                     search_results,
                     self.store,
-                    embed_fn=self._embed_fn(),
+                    embed_fn=self.embed_fn(),
                     backend_name=backend_name,
                 )
                 logger.info(
@@ -855,7 +859,7 @@ class Orchestrator:
                     self.search_tool,
                     store=self.store,
                     llm_client=self.llm_client,
-                    embed_fn=self._embed_fn(),
+                    embed_fn=self.embed_fn(),
                 )
                 llm_response = await run_tool_loop(
                     self.llm_client,
@@ -1272,7 +1276,7 @@ class Orchestrator:
                 search_results = []
 
             search_results = await filter_relevant(
-                search_results, query, self._embed_fn()
+                search_results, query, self.embed_fn()
             )
 
             if search_results:
@@ -1293,7 +1297,7 @@ class Orchestrator:
                     )
                     await apply_search_extraction(
                         extraction, search_results, self.store,
-                        embed_fn=self._embed_fn(),
+                        embed_fn=self.embed_fn(),
                     )
                 except Exception as e:
                     logger.error("Search extraction failed: %s", e)

@@ -235,11 +235,12 @@ async def run_consolidation(
     Args:
         db_path: Path to the SQLite database.
         dry_run: If True, compute the plan but do not write.
-        embed_fn: Optional async callable text -> vector. When provided (and
-            Ollama is reachable), near-duplicate names are also clustered by
-            embedding similarity within settings.consolidation_name_distance —
-            this catches variants normalized names cannot ("mountain_in_the_wolf"
-            vs "the mountain and the wolf").
+        embed_fn: Optional async callable text -> vector. Accepts single string
+            or list of strings. When provided (and Ollama is reachable),
+            near-duplicate names are also clustered by embedding similarity
+            within settings.consolidation_name_distance — this catches variants
+            normalized names cannot ("mountain_in_the_wolf" vs
+            "the mountain and the wolf").
         max_merges: Circuit breaker for unattended runs. When the planned
             merge count exceeds this, nothing is written (dry-run semantics)
             so a clustering bug can never mass-merge the brain overnight.

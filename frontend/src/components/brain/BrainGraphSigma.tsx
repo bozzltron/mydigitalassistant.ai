@@ -355,7 +355,7 @@ export default function BrainGraphSigma(props: BrainGraphSigmaProps) {
         .catch(() => { d.slots = [] })
         // eslint-disable-next-line solid/reactivity
         .finally(() => {
-          tooltip.innerHTML = tooltipHtml(d, props.conflictsByFrame())
+tooltip.textContent = tooltipHtml(d, props.conflictsByFrame())
           const rect = document.getElementById('brain-graph-container')?.getBoundingClientRect()
           if (!rect) return
           let tx = event.clientX - rect.left + 15
@@ -366,7 +366,7 @@ export default function BrainGraphSigma(props: BrainGraphSigmaProps) {
           tooltip.classList.add('visible')
         })
     } else {
-      tooltip.innerHTML = tooltipHtml(d, props.conflictsByFrame())
+      tooltip.textContent = tooltipHtml(d, props.conflictsByFrame())
       const rect = document.getElementById('brain-graph-container')?.getBoundingClientRect()
       if (!rect) return
       let tx = event.clientX - rect.left + 15

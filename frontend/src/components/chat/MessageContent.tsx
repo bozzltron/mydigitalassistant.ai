@@ -1,5 +1,6 @@
 import { createMemo } from 'solid-js'
 import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 import { extractAllMedia, getHeroMedia, getGridMedia, getPreviewCards } from '../../utils/media'
 import MediaCard from './MediaCard'
 import MediaGrid from './MediaGrid'
@@ -40,7 +41,8 @@ export default function MessageContent(props: MessageContentProps) {
         />
       )}
 
-      <div class="msg-markdown" innerHTML={htmlContent()} />
+      {/* eslint-disable-next-line solid/no-innerhtml -- content sanitized by DOMPurify */}
+      <div class="msg-markdown" innerHTML={DOMPurify.sanitize(htmlContent())} />
 
       {gridMedia().length > 0 && (
         <MediaGrid

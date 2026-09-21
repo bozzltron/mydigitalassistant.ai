@@ -530,9 +530,12 @@ async def test_orchestrator_correction_contradicted_flagged_not_applied(store):
     retriever = Retriever(store=store, llm_client=mock_llm)
 
     mock_search = AsyncMock()
-    mock_search.search.return_value = [
-        MagicMock(url="https://example.com/strings", snippet="Most guitars have 6 strings"),
-    ]
+    mock_search.search.return_value = (
+        [
+            MagicMock(url="https://example.com/strings", snippet="Most guitars have 6 strings"),
+        ],
+        [],
+    )
 
     orchestrator = Orchestrator(
         deps=OrchestratorDeps(

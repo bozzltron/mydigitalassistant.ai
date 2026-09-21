@@ -65,7 +65,7 @@ Categories to watch for:
 - "pii_email": email addresses
 - "pii_phone": phone numbers  
 - "pii_address": physical addresses
-- "pii_name": full names (not public figures)
+- "pii_name": PRIVATE individuals' full names (NOT public figures, celebrities, historical figures, authors, politicians, actors, musicians, athletes, etc.)
 - "pii_ssn": social security / national ID numbers
 - "pii_dob": date of birth
 - "medical": health conditions, medications, diagnoses
@@ -76,12 +76,23 @@ Categories to watch for:
 - "private_comms": private messages, emails, DMs
 - "biometric": fingerprints, DNA, facial recognition data
 
+PUBLIC FIGURE NAMES ARE SAFE (not PII):
+- Celebrities, actors, musicians, athletes (e.g. "Tom Hanks", "Taylor Swift", "LeBron James")
+- Historical figures (e.g. "Abraham Lincoln", "Marie Curie")
+- Politicians, public officials (e.g. "Joe Biden", "Angela Merkel")
+- Authors, creators, influencers with public presence
+- Fictional characters (e.g. "Harry Potter", "Batman")
+
 SAFE examples:
 - "capital of France"
 - "Python async tutorial"
 - "weather in London"
 - "best restaurants in Tokyo"
 - "quantum computing explained"
+- "youtube video of jason lee"  (actor)
+- "movies starring tom hanks"
+- "books by stephen king"
+- "speeches by martin luther king"
 
 SENSITIVE examples:
 - "john.doe@company.com email"
@@ -91,6 +102,7 @@ SENSITIVE examples:
 - "password for aws account"
 - "divorce case number 2024-CV-12345"
 - "exact location of my home"
+- "my neighbor john smith's phone number"  (private individual)
 
 AMBIGUOUS: unclear intent, err on side of caution.
 

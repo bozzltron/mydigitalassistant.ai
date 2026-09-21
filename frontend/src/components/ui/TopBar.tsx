@@ -54,7 +54,6 @@ export default function TopBar(props: TopBarProps) {
   onMount(() => {
     if (window.speechSynthesis) {
       speechSynthesis.onvoiceschanged = populateVoices
-      populateVoices()
     }
     // Fetch backend settings (Brave toggle visibility)
     fetchBackendSettings()
@@ -64,6 +63,7 @@ export default function TopBar(props: TopBarProps) {
 
   // Ref for dropdown click-outside detection
   let dropdownRef: HTMLDivElement
+  let voiceSelectRef: HTMLSelectElement
 
   // Close dropdown when clicking outside
   onMount(() => {
@@ -79,7 +79,7 @@ export default function TopBar(props: TopBarProps) {
   const populateVoices = () => {
     const voices = speechSynthesis.getVoices()
     const localVoices = voices.filter(v => !v.url)
-    const voiceSelect = document.getElementById('voice-select') as HTMLSelectElement
+    const voiceSelect = voiceSelectRef
     if (!voiceSelect) return
 
     const currentSettings = settings
@@ -447,7 +447,7 @@ export default function TopBar(props: TopBarProps) {
           </div>
           <div class="settings-section">
             <label for="voice-select">Voice</label>
-            <select id="voice-select" onChange={handleVoiceSelectChange}>
+            <select id="voice-select" ref={(el) => { voiceSelectRef = el; populateVoices(); }} onChange={handleVoiceSelectChange}>
               <option value="">Loading voices...</option>
             </select>
           </div>

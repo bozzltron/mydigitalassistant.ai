@@ -18,7 +18,6 @@ export default function Message(props: MessageProps) {
   const isUser = createMemo(() => message().role === 'user')
   const [showCorrection, setShowCorrection] = createSignal(false)
   const [correctionText, setCorrectionText] = createSignal('')
-  const [badgeEl, setBadgeEl] = createSignal<HTMLSpanElement | null>(null)
 
   const msgId = message().id || `msg-${Date.now()}`
 
@@ -62,17 +61,16 @@ export default function Message(props: MessageProps) {
   if (conflictCount > 0) learnedLabel += ` (${conflictCount} auto-resolved)`
   if (isSearch) learnedLabel = 'Found from search'
 
-  let backendBadge = ''
-  if (isSearch && message().meta?.search_info) {
-    const backend = message().meta.search_info.backend
-    const badgeClass = backend === 'brave' ? 'badge-brave' : 'badge-searxng'
-    const badgeLabel = backend === 'brave' ? 'Searched via Brave' : 'Searched via local SearXNG'
-    backendBadge = `<span class="badge ${badgeClass}">${badgeLabel}</span>`
-  }
+  const [backendBadge, setBackendBadge] = createSignal<JSX.Element | null>(null)
 
   createEffect(() => {
-    if (badgeEl() && backendBadge) {
-      badgeEl()!.innerHTML = backendBadge
+    if (isSearch && message().meta?.search_info) {
+      const backend = message().meta.search_info.backend
+      const badgeClass = backend === 'brave' ? 'badge-brave' : 'badge-searxng'
+      const badgeLabel = backend === 'brave' ? 'Searched via Brave' : 'Searched via local SearXNG'
+      setBackendBadge(<span class={`badge ${badgeClass}`}>{badgeLabel}</span>)
+    } else {
+      setBackendBadge(null)
     }
   })
 
@@ -98,7 +96,7 @@ export default function Message(props: MessageProps) {
 
         {!isUser() && hasLearned && (
           <details class="learned-indicator">
-            <summary>{learnedLabel}{backendBadge && <span ref={setBadgeEl} />}</summary>
+            <summary>{learnedLabel}{backendBadge()}</summary>
             <div class="learned-items">
               <For each={learnedSlots}>
                 {(slot) => (

@@ -18,10 +18,10 @@ class TestCorroborationGate:
             key="price",
             value="100",
             source_urls=["http://example.com"],
-            source_domains={"example.com"},
+            source_domains=["example.com"],
         )
         assert slot.source_urls == ["http://example.com"]
-        assert slot.source_domains == {"example.com"}
+        assert slot.source_domains == ["example.com"]
 
     @pytest.mark.asyncio
     async def test_categorize_fact_financial(self):
@@ -78,7 +78,7 @@ class TestExtractedSlotSchema:
 
         slot = ExtractedSlot(frame_name="test", key="k", value="v")
         assert hasattr(slot, "source_domains")
-        assert slot.source_domains == set()
+        assert slot.source_domains == []
 
     def test_source_urls_can_be_set(self):
         """Test that source_urls can be set."""
@@ -100,9 +100,9 @@ class TestExtractedSlotSchema:
             frame_name="test",
             key="k",
             value="v",
-            source_domains={"a.com", "b.com"},
+            source_domains=["a.com", "b.com"],
         )
-        assert slot.source_domains == {"a.com", "b.com"}
+        assert slot.source_domains == ["a.com", "b.com"]
 
 
 class TestCorroborationCategories:
