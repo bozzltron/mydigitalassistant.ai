@@ -13,6 +13,7 @@ export interface MessageMeta {
   search_extraction_summary?: ExtractionSummary
   search_info?: SearchInfo
   ogData?: Record<string, OgData>
+  media?: MediaContent[]
 }
 
 export interface ExtractionSummary {
@@ -34,6 +35,7 @@ export interface SearchInfo {
   backend: string
   query: string
   engines?: string[]
+  video_results?: YouTubeVideo[]
 }
 
 export interface OgData {
@@ -41,6 +43,41 @@ export interface OgData {
   description?: string
   image?: string
   site_name?: string
+}
+
+export interface MediaContent {
+  type: 'image' | 'video' | 'youtube' | 'preview-card'
+  url: string
+  thumbnail?: string
+  title?: string
+  description?: string
+  sourceUrl?: string
+  aspectRatio?: number
+  width?: number
+  height?: number
+}
+
+export interface YouTubeVideo {
+  videoId: string
+  title: string
+  channelTitle?: string
+  thumbnailUrl: string
+  url: string
+  publishedAt?: string
+  duration?: string
+}
+
+export interface SearchResultItem {
+  title: string
+  url: string
+  snippet: string
+  engine: string
+  thumbnail?: string
+}
+
+export interface SearchResponse {
+  results: SearchResultItem[]
+  video_results?: YouTubeVideo[]
 }
 
 export interface QueuedMessage {

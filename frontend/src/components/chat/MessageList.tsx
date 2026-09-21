@@ -3,11 +3,7 @@ import Message from './Message'
 import { ChatMessage } from '../../state/chat'
 import { postFeedback } from '../../services/api'
 
-interface MessageListProps {
-  messages: ChatMessage[]
-}
-
-export default function MessageList(props: MessageListProps) {
+export default function MessageList(props: { messages: () => ChatMessage[] }) {
   const handleReact = async (kind: 'positive' | 'negative' | 'correction', msgId: string) => {
     if (kind === 'correction') return
     try {
@@ -38,7 +34,7 @@ export default function MessageList(props: MessageListProps) {
   }
 
   return (
-    <For each={props.messages}>
+    <For each={props.messages()}>
       {(message) => (
         <Message 
           message={message}

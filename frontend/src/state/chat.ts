@@ -57,20 +57,31 @@ export function initChat(): void {
 export async function loadConversationMessages(sessionIdParam: string, userId: number): Promise<void> {
   try {
     const data = await getSessionMessages(sessionIdParam, userId, 50)
-    const loadedMessages: ChatMessage[] = data.map((m: SessionMessage, index: number) => ({
-      role: m.role,
-      content: m.content,
-      id: `history-${sessionIdParam}-${index}`,
-      meta: {
-        task_type: m.task_type,
-        memory_context: m.memory_context,
-        citations: m.citations,
-        extraction_summary: m.extraction_summary,
-        search_extraction_summary: m.search_extraction_summary,
-        search_info: m.search_info,
-        ogData: m.ogData,
-      },
-    }))
+    const loadedMessages: ChatMessage[] = data.map((m: SessionMessage, index: number) => {
+      const mm = m as SessionMessage & {
+        task_type?: string
+        memory_context?: string
+        citations?: string[]
+        extraction_summary?: ExtractionSummary
+        search_extraction_summary?: ExtractionSummary
+        search_info?: SearchInfo
+        ogData?: Record<string, OgData>
+      }
+      return {
+        role: m.role as 'user' | 'assistant',
+        content: m.content,
+        id: `history-${sessionIdParam}-${index}`,
+        meta: {
+          task_type: mm.task_type,
+          memory_context: mm.memory_context,
+          citations: mm.citations,
+          extraction_summary: mm.extraction_summary,
+          search_extraction_summary: mm.search_extraction_summary,
+          search_info: mm.search_info,
+          ogData: mm.ogData,
+        },
+      }
+    })
     setChatState('conversationMessages', (prev: Map<string, ChatMessage[]>) => {
       const next = new Map(prev)
       next.set(sessionIdParam, loadedMessages)

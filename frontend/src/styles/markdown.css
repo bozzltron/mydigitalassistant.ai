@@ -1,0 +1,283 @@
+/* Markdown - Enhanced markdown rendering for chat messages */
+
+.msg-assistant .content {
+  line-height: 1.7;
+}
+
+.msg-assistant .content p {
+  margin: 0 0 var(--space-sm);
+}
+
+.msg-assistant .content p:last-child {
+  margin-bottom: 0;
+}
+
+.msg-assistant .content h1,
+.msg-assistant .content h2,
+.msg-assistant .content h3,
+.msg-assistant .content h4 {
+  margin: var(--space-lg) 0 var(--space-sm);
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--text);
+}
+
+.msg-assistant .content h1 { font-size: 1.5rem; }
+.msg-assistant .content h2 { font-size: 1.3rem; }
+.msg-assistant .content h3 { font-size: 1.15rem; }
+.msg-assistant .content h4 { font-size: 1.05rem; }
+
+.msg-assistant .content h1:first-child,
+.msg-assistant .content h2:first-child,
+.msg-assistant .content h3:first-child {
+  margin-top: 0;
+}
+
+.msg-assistant .content a {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.msg-assistant .content a:hover {
+  border-bottom-color: var(--accent);
+  color: var(--accent2);
+}
+
+.msg-assistant .content code {
+  background: rgba(255, 255, 255, 0.08);
+  padding: 0.12em 0.4em;
+  border-radius: var(--radius-sm);
+  font-size: 0.88em;
+  font-family: var(--mono);
+  color: var(--accent2);
+}
+
+.msg-assistant .content pre {
+  background: rgba(0, 0, 0, 0.35);
+  padding: var(--space-md);
+  border-radius: var(--radius-md);
+  overflow-x: auto;
+  margin: var(--space-md) 0;
+  line-height: 1.55;
+  border: 1px solid var(--border);
+}
+
+.msg-assistant .content pre code {
+  background: none;
+  padding: 0;
+  font-size: 0.85rem;
+  color: var(--text);
+  border-radius: 0;
+}
+
+.msg-assistant .content pre code .hljs-keyword,
+.msg-assistant .content pre code .hljs-selector-tag,
+.msg-assistant .content pre code .hljs-literal { color: #c792ea; }
+.msg-assistant .content pre code .hljs-function,
+.msg-assistant .content pre code .hljs-title { color: #82aaff; }
+.msg-assistant .content pre code .hljs-string,
+.msg-assistant .content pre code .hljs-regexp { color: #c3e88d; }
+.msg-assistant .content pre code .hljs-number,
+.msg-assistant .content pre code .hljs-symbol { color: #f78c6c; }
+.msg-assistant .content pre code .hljs-comment { color: #546e7a; }
+.msg-assistant .content pre code .hljs-variable,
+.msg-assistant .content pre code .hljs-params { color: #f78c6c; }
+.msg-assistant .content pre code .hljs-attr { color: #ffcb6b; }
+.msg-assistant .content pre code .hljs-type,
+.msg-assistant .content pre code .hljs-class { color: #ffcb6b; }
+
+.msg-assistant .content ul,
+.msg-assistant .content ol {
+  margin: var(--space-sm) 0 var(--space-sm) var(--space-lg);
+  padding-left: var(--space-md);
+}
+
+.msg-assistant .content li {
+  margin: var(--space-xs) 0;
+  line-height: 1.6;
+}
+
+.msg-assistant .content li::marker {
+  color: var(--text-dim);
+}
+
+.msg-assistant .content blockquote {
+  margin: var(--space-md) 0;
+  padding: var(--space-sm) var(--space-md);
+  border-left: 3px solid var(--accent);
+  background: rgba(20, 184, 166, 0.08);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  font-style: italic;
+  color: var(--text-dim);
+}
+
+.msg-assistant .content blockquote p {
+  margin: var(--space-xs) 0;
+}
+
+.msg-assistant .content blockquote p:first-child {
+  margin-top: 0;
+}
+
+.msg-assistant .content blockquote p:last-child {
+  margin-bottom: 0;
+}
+
+.msg-assistant .content hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: var(--space-lg) 0;
+}
+
+.msg-assistant .content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: var(--space-md) 0;
+  font-size: 0.9rem;
+  overflow-x: auto;
+  display: block;
+}
+
+.msg-assistant .content th,
+.msg-assistant .content td {
+  padding: var(--space-xs) var(--space-sm);
+  border: 1px solid var(--border);
+  text-align: left;
+}
+
+.msg-assistant .content th {
+  background: var(--surface2);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.msg-assistant .content tr:nth-child(even) td {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.msg-assistant .content img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius-md);
+  margin: var(--space-sm) 0;
+}
+
+.msg-assistant .content details {
+  margin: var(--space-sm) 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+
+.msg-assistant .content summary {
+  cursor: pointer;
+  padding: var(--space-sm) var(--space-md);
+  font-weight: 500;
+  color: var(--accent2);
+  user-select: none;
+  list-style: none;
+}
+
+.msg-assistant .content summary::-webkit-details-marker {
+  display: none;
+}
+
+.msg-assistant .content summary::before {
+  content: '\25B6';
+  display: inline-block;
+  margin-right: var(--space-xs);
+  font-size: 0.7em;
+  transition: transform var(--transition-fast);
+  color: var(--text-dim);
+}
+
+.msg-assistant .content details[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.msg-assistant .content details > *:not(summary) {
+  padding: 0 var(--space-md) var(--space-md);
+}
+
+.msg-assistant .content kbd {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.1em 0.4em;
+  font-family: var(--mono);
+  font-size: 0.8em;
+  color: var(--accent2);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.msg-assistant .content mark {
+  background: rgba(240, 185, 124, 0.3);
+  padding: 0.1em 0.2em;
+  border-radius: var(--radius-sm);
+  color: var(--warning);
+}
+
+/* Task list */
+.msg-assistant .content input[type="checkbox"] {
+  margin-right: var(--space-sm);
+  transform: translateY(2px);
+}
+
+/* Footnotes */
+.msg-assistant .content .footnotes {
+  margin-top: var(--space-lg);
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--border);
+  font-size: 0.85rem;
+  color: var(--text-dim);
+}
+
+.msg-assistant .content .footnotes ol {
+  padding-left: var(--space-lg);
+}
+
+.msg-assistant .content .footnotes li {
+  margin: var(--space-xs) 0;
+}
+
+/* Math (if using KaTeX) */
+.msg-assistant .content .katex-display {
+  overflow-x: auto;
+  margin: var(--space-md) 0;
+}
+
+/* Mermaid diagrams */
+.msg-assistant .content .mermaid {
+  text-align: center;
+  margin: var(--space-md) 0;
+}
+
+/* ==========================================================================
+   USER MESSAGE MARKDOWN (minimal)
+   ========================================================================== */
+
+.msg-user .content {
+  line-height: 1.6;
+}
+
+.msg-user .content code {
+  background: rgba(255, 255, 255, 0.15);
+  padding: 0.12em 0.4em;
+  border-radius: var(--radius-sm);
+  font-size: 0.88em;
+  font-family: var(--mono);
+}
+
+.msg-user .content pre {
+  background: rgba(0, 0, 0, 0.2);
+  padding: var(--space-md);
+  border-radius: var(--radius-md);
+  overflow-x: auto;
+  margin: var(--space-sm) 0;
+}
+
+.msg-user .content a {
+  color: var(--accent2);
+}

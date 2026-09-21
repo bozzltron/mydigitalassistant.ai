@@ -1,27 +1,8 @@
 import { createSignal, onMount, For, Show } from 'solid-js'
-import { api } from '../../services/api'
+import { getAlerts, markAlertAsRead, markAllAlertsAsRead, type Alert } from '../../services/api'
 import { user } from '../../state/user'
 import { Modal } from './Modal'
 import styles from './AlertsPanel.module.css'
-
-interface Alert {
-  id: number
-  user_id: number
-  type: string
-  title: string
-  message: string
-  source_frame_id: number | null
-  source_episode_id: number | null
-  severity: string
-  is_read: boolean
-  created_at: string | null
-  read_at: string | null
-}
-
-interface AlertsListResponse {
-  alerts: Alert[]
-  unread_count: number
-}
 
 export function AlertsPanel() {
   const [alerts, setAlerts] = createSignal<Alert[]>([])
@@ -35,12 +16,10 @@ export function AlertsPanel() {
     
     setIsLoading(true)
     try {
-      const response = await api.get<AlertsListResponse>('/alerts', {
-        params: { user_id: u.id, limit: 50 }
-      })
-      if (response.data) {
-        setAlerts(response.data.alerts)
-        setUnreadCount(response.data.unread_count)
+      const response = await getAlerts(u.id, 50)
+      if (response) {
+        setAlerts(response.alerts)
+        setUnreadCount(response.unread_count)
       }
     } catch (error) {
       console.error('Failed to fetch alerts:', error)
@@ -61,9 +40,7 @@ export function AlertsPanel() {
     if (!u) return
     
     try {
-      await api.post('/alerts/{alert_id}/read', null, {
-        params: { alert_id: alertId, user_id: u.id }
-      })
+      await markAlertAsRead(alertId, u.id)
       setAlerts(prev => prev.map(a => a.id === alertId ? { ...a, is_read: true } : a))
       setUnreadCount(prev => Math.max(0, prev - 1))
     } catch (error) {
@@ -76,7 +53,7 @@ export function AlertsPanel() {
     if (!u) return
     
     try {
-      await api.post('/alerts/read-all', null, { params: { user_id: u.id } })
+      await markAllAlertsAsRead(u.id)
       setAlerts(prev => prev.map(a => ({ ...a, is_read: true })))
       setUnreadCount(0)
     } catch (error) {

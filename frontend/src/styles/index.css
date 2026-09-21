@@ -15,11 +15,17 @@
 /* 5. Messages - chat message styles */
 @import './messages.css';
 
-/* 6. Status indicator - processing stage and voice */
+/* 6. Media Grid - masonry, hero cards, video embeds, preview cards */
+@import './media-grid.css';
+
+/* 7. Markdown - enhanced markdown rendering */
+@import './markdown.css';
+
+/* 8. Status indicator - processing stage and voice */
 @import './status-indicator.css';
 
-/* 7. Brain page styles */
+/* 9. Brain page styles */
 @import './brain.css';
 
-/* 8. Files page styles */
+/* 10. Files page styles */
 @import './files.css';

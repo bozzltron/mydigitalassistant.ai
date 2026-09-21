@@ -96,7 +96,13 @@ services:
     ports:
       - "5174:5173"
     volumes:
-      - ./frontend:/app/frontend
+      - ./frontend/src:/app/frontend/src
+      - ./frontend/public:/app/frontend/public
+      - ./frontend/index.html:/app/frontend/index.html
+      - ./frontend/vite.config.ts:/app/frontend/vite.config.ts
+      - ./frontend/tsconfig.json:/app/frontend/tsconfig.json
+      - ./frontend/tsconfig.node.json:/app/frontend/tsconfig.node.json
+      - ./frontend/eslint.config.js:/app/frontend/eslint.config.js
       - ./assistant/backend/static:/app/assistant/backend/static
     environment:
       - NODE_ENV=development

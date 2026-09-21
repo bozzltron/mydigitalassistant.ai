@@ -396,3 +396,40 @@ export async function deleteConversation(session_id: string, user_id: number): P
 export async function getOGPreview(url: string): Promise<OgPreviewResponse> {
   return api<OgPreviewResponse>(`/og-preview?url=${encodeURIComponent(url)}`)
 }
+
+export interface Alert {
+  id: number
+  user_id: number
+  type: string
+  title: string
+  message: string
+  source_frame_id: number | null
+  source_episode_id: number | null
+  severity: string
+  is_read: boolean
+  created_at: string | null
+  read_at: string | null
+}
+
+export interface AlertsListResponse {
+  alerts: Alert[]
+  unread_count: number
+}
+
+export async function getAlerts(user_id: number, limit: number = 50): Promise<AlertsListResponse> {
+  console.log('Fetching alerts for user:', user_id)
+  return api<AlertsListResponse>(`/alerts?user_id=${user_id}&limit=${limit}`)
+}
+
+export async function markAlertAsRead(alert_id: number, user_id: number): Promise<{ status: string }> {
+  console.log('Marking alert as read:', alert_id)
+  return api<{ status: string }>(
+    `/alerts/${encodeURIComponent(String(alert_id))}/read?user_id=${user_id}`,
+    { method: 'POST' }
+  )
+}
+
+export async function markAllAlertsAsRead(user_id: number): Promise<{ status: string }> {
+  console.log('Marking all alerts as read for user:', user_id)
+  return api<{ status: string }>(`/alerts/read-all?user_id=${user_id}`, { method: 'POST' })
+}

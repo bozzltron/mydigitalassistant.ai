@@ -282,7 +282,7 @@ export default function ChatPage(props: {
     <div id="main">
       <div id="chat-area" class="chat-area">
         <div id="messages" ref={setMessagesContainerRef}>
-          <MessageList messages={messages()} />
+          <MessageList messages={messages} />
           
           <StatusWrapper turnId={currentConvTurnId} />
           

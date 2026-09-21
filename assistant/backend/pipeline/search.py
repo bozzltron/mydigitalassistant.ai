@@ -145,6 +145,19 @@ class SearchResult:
     url: str
     snippet: str
     engine: str
+    thumbnail: str | None = None
+
+
+@dataclass
+class YouTubeVideo:
+    """A YouTube video result from search."""
+    video_id: str
+    title: str
+    channel_title: str | None = None
+    thumbnail_url: str | None = None
+    url: str | None = None
+    published_at: str | None = None
+    duration: str | None = None
 
 
 @dataclass
@@ -160,6 +173,7 @@ class SearchInfo:
     results: list[SearchResult]
     sensitivity: SensitivityResult | None = None  # sensitivity analysis result
     consent_required: bool = False  # true if sensitive query needs user consent
+    video_results: list[YouTubeVideo] | None = None
 
 
 def sanitize_query(query: str) -> str:
@@ -264,8 +278,10 @@ class SearchBackend(ABC):
         return 5
 
     @abstractmethod
-    async def search(self, query: str, num_results: int = 5) -> list[SearchResult]:
-        """Search and return structured results."""
+    async def search(
+        self, query: str, num_results: int = 5
+    ) -> tuple[list[SearchResult], list[YouTubeVideo]]:
+        """Search and return structured results and video results."""
 
     @abstractmethod
     async def health_check(self) -> bool:
@@ -329,6 +345,7 @@ class SearXNGBackend(SearchBackend):
             items = sorted(data.get("results", []), key=_score, reverse=True)
 
             results: list[SearchResult] = []
+            video_results: list[YouTubeVideo] = []
             seen_urls: set[str] = set()
             for item in items:
                 url = item.get("url", "")
@@ -338,12 +355,40 @@ class SearXNGBackend(SearchBackend):
                 if norm in seen_urls:
                     continue
                 seen_urls.add(norm)
+                
+                # Extract thumbnail if available
+                thumbnail = item.get("img_src") or item.get("thumbnail")
+                
+                # Check if it's a YouTube video
+                video_id = None
+                if "youtube.com" in url or "youtu.be" in url:
+                    import re
+                    yt_patterns = [
+                        r"(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})",
+                        r"youtube\.com\/watch\?.*v=([a-zA-Z0-9_-]{11})",
+                    ]
+                    for pattern in yt_patterns:
+                        match = re.search(pattern, url)
+                        if match:
+                            video_id = match.group(1)
+                            break
+                
+                if video_id:
+                    video_results.append(YouTubeVideo(
+                        video_id=video_id,
+                        title=item.get("title", ""),
+                        channel_title=None,
+                        thumbnail_url=f"https://img.youtube.com/vi/{video_id}/maxresdefault.jpg",
+                        url=url,
+                    ))
+                
                 results.append(
                     SearchResult(
                         title=item.get("title", ""),
                         url=url,
                         snippet=item.get("content", ""),
                         engine=item.get("engine", "searxng"),
+                        thumbnail=thumbnail,
                     )
                 )
                 if len(results) >= num_results:
@@ -353,7 +398,7 @@ class SearXNGBackend(SearchBackend):
                 "SearXNG returned %d results for %d candidates (q=%r)",
                 len(results), len(items), params["q"][:80],
             )
-            return results
+            return results, video_results
         except Exception as e:
             logger.error("SearXNG search failed: %s", e)
             return []
@@ -421,6 +466,7 @@ class BraveBackend(SearchBackend):
             if not web_results:
                 return []
             results: list[SearchResult] = []
+            video_results: list[YouTubeVideo] = []
             seen: set[str] = set()
             for item in web_results:
                 url = item.get("url", "")
@@ -430,12 +476,44 @@ class BraveBackend(SearchBackend):
                 if norm in seen:
                     continue
                 seen.add(norm)
+
+                # Extract thumbnail if available
+                thumbnail = item.get("thumbnail") or item.get("image")
+
+                # Check if it's a YouTube video
+                video_id = None
+                if "youtube.com" in url or "youtu.be" in url:
+                    import re
+                    yt_patterns = [
+                        r"(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})",
+                        r"youtube\.com\/watch\?.*v=([a-zA-Z0-9_-]{11})",
+                    ]
+                    for pattern in yt_patterns:
+                        match = re.search(pattern, url)
+                        if match:
+                            video_id = match.group(1)
+                            break
+
+                if video_id:
+                    video_results.append(
+                        YouTubeVideo(
+                            video_id=video_id,
+                            title=item.get("title", ""),
+                            channel_title=item.get("meta", {}).get("author")
+                            if item.get("meta")
+                            else None,
+                            thumbnail_url=f"https://img.youtube.com/vi/{video_id}/maxresdefault.jpg",
+                            url=url,
+                        )
+                    )
+
                 results.append(
                     SearchResult(
                         title=item.get("title", ""),
                         url=url,
                         snippet=item.get("description", "") or item.get("snippet", ""),
                         engine="brave",
+                        thumbnail=thumbnail,
                     )
                 )
                 if len(results) >= num_results:
@@ -444,7 +522,7 @@ class BraveBackend(SearchBackend):
                 "Brave returned %d results (q=%r)",
                 len(results), params["q"][:80],
             )
-            return results
+            return results, video_results
         except Exception as e:
             logger.error("Brave search failed: %s", e)
             return []
@@ -484,6 +562,15 @@ class WebSearchTool(SearchBackend):
     @property
     def backend_name(self) -> str:
         return self._backend.backend_name
+
+    async def search(
+        self, query: str, num_results: int = 5
+    ) -> tuple[list[SearchResult], list[YouTubeVideo]]:
+        """Search and return results with video results."""
+        if not self.enabled:
+            logger.warning("Search is disabled in config")
+            return [], []
+        return await self._backend.search(sanitize_query(query), num_results)
 
     async def search_with_info(
         self, query: str, num_results: int = 5, llm_client=None, user_consent: bool = False
@@ -535,19 +622,13 @@ class WebSearchTool(SearchBackend):
                     consent_required=True,
                 )
         
-        results = await self._backend.search(raw_query, num_results)
+        results, video_results = await self._backend.search(raw_query, num_results)
         info = SearchInfo(
             backend=self.backend_name,
             query=raw_query,
             results=results,
             sensitivity=sensitivity,
             consent_required=consent_required,
+            video_results=video_results,
         )
         return results, info
-
-    async def search(
-        self, query: str, num_results: int = 5
-    ) -> list[SearchResult]:
-        """Legacy compat: returns results only. Prefer search_with_info()."""
-        results, _ = await self.search_with_info(query, num_results)
-        return results
