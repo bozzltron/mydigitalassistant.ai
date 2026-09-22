@@ -392,6 +392,10 @@ async def test_orchestrator_correction_when_utility_returns_null(store):
     classify_response = MagicMock()
     classify_response.content = '{"task_type": "correction"}'
 
+    # Parallel extraction (store_turn_memory) - returns empty extraction
+    parallel_extract_response = MagicMock()
+    parallel_extract_response.content = '{"slots": [], "associations": []}'
+
     extract_response = MagicMock()
     extract_response.content = '{"frame_name": null, "slot_key": null, "new_value": null}'
 
@@ -402,7 +406,7 @@ async def test_orchestrator_correction_when_utility_returns_null(store):
     )
 
     mock_llm.chat = AsyncMock(
-        side_effect=[classify_response, extract_response, chat_response]
+        side_effect=[classify_response, parallel_extract_response, extract_response, chat_response]
     )
     mock_llm.embed = AsyncMock(return_value=MagicMock(embedding=[0.1] * 768))
 
@@ -428,7 +432,7 @@ async def test_orchestrator_correction_when_utility_returns_null(store):
 
     assert response.task_type == "correction"
     assert response.response
-    assert mock_llm.chat.call_count == 3
+    assert mock_llm.chat.call_count == 4
     assert "apologize" in response.response.lower() or "clarify" in response.response.lower()
 
 

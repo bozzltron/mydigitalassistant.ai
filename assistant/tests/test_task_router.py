@@ -125,23 +125,28 @@ async def test_route_wants_search_invalid_type_becomes_none():
 
 
 async def test_route_heuristic_match_has_no_search_signal():
+    """Heuristic matches are no longer used; LLM classifies everything."""
     mock_llm = AsyncMock()
+    mock_llm.chat.return_value.content = '{"task_type": "introspective", "wants_search": false}'
+    mock_llm.utility_model = "qwen2.5:3b"
     result = await route("What do you remember about dogs?", mock_llm)
     assert result.task_type == TaskType.INTROSPECTIVE
-    assert result.wants_search is None
-    mock_llm.chat.assert_not_called()
+    assert result.wants_search is False
+    mock_llm.chat.assert_called_once()
 
 
-async def test_classify_uses_heuristic_first():
-    """If heuristic matches, LLM should NOT be called."""
+async def test_classify_uses_llm_always():
+    """classify() now always calls LLM (no heuristic fast-path)."""
     mock_llm = AsyncMock()
+    mock_llm.chat.return_value.content = '{"task_type": "introspective"}'
+    mock_llm.utility_model = "qwen2.5:3b"
     result = await classify("What do you remember about dogs?", mock_llm)
     assert result == TaskType.INTROSPECTIVE
-    mock_llm.chat.assert_not_called()
+    mock_llm.chat.assert_called_once()
 
 
 async def test_classify_falls_back_to_llm_when_ambiguous():
-    """If heuristic doesn't match, LLM should be called."""
+    """If query doesn't match patterns, LLM is called (same as before)."""
     mock_llm = AsyncMock()
     mock_llm.chat.return_value.content = '{"task_type": "functional"}'
     mock_llm.utility_model = "qwen2.5:3b"
@@ -151,12 +156,14 @@ async def test_classify_falls_back_to_llm_when_ambiguous():
     mock_llm.chat.assert_called_once()
 
 
-async def test_classify_no_llm_fallback_defaults_to_functional():
-    """When use_llm_fallback=False, ambiguous -> functional."""
+async def test_classify_no_llm_fallback_removed():
+    """use_llm_fallback parameter removed; LLM is always used."""
     mock_llm = AsyncMock()
-    result = await classify("Random ambiguous query", mock_llm, use_llm_fallback=False)
+    mock_llm.chat.return_value.content = '{"task_type": "functional"}'
+    mock_llm.utility_model = "qwen2.5:3b"
+    result = await classify("Random ambiguous query", mock_llm)
     assert result == TaskType.FUNCTIONAL
-    mock_llm.chat.assert_not_called()
+    mock_llm.chat.assert_called_once()
 
 
 async def test_classify_handles_llm_exception_by_falling_back_to_functional():

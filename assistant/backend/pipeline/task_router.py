@@ -169,29 +169,17 @@ Respond with ONLY valid JSON:
 async def classify(
     text: str,
     llm_client: "OllamaClient",
-    use_llm_fallback: bool = True,
 ) -> TaskType:
-    """Classify a user query. Heuristic first; LLM fallback for ambiguous cases.
-
-    Single classification -- no double blocking call. If heuristic matches,
-    return immediately. Otherwise (and use_llm_fallback=True), call LLM once.
-    """
-    return (await route(text, llm_client, use_llm_fallback)).task_type
+    """Classify a user query using the LLM (no heuristic fast-path)."""
+    return (await route(text, llm_client)).task_type
 
 
 async def route(
     text: str,
     llm_client: "OllamaClient",
-    use_llm_fallback: bool = True,
 ) -> ClassificationResult:
-    """Full routing decision: task type + search intent in one pass.
+    """Full routing decision: task type + search intent in one LLM pass.
 
-    Heuristic first; LLM fallback for ambiguous cases. wants_search is None
-    when the heuristic path decided (no LLM judgment available).
+    Always uses the LLM classifier for consistent model-driven reasoning.
     """
-    heuristic_result = classify_heuristic(text)
-    if heuristic_result is not None:
-        return ClassificationResult(task_type=heuristic_result)
-    if not use_llm_fallback:
-        return ClassificationResult(task_type=TaskType.FUNCTIONAL)
     return await classify_with_llm(text, llm_client)

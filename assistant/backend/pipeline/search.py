@@ -65,7 +65,9 @@ Categories to watch for:
 - "pii_email": email addresses
 - "pii_phone": phone numbers  
 - "pii_address": physical addresses
-- "pii_name": PRIVATE individuals' full names (NOT public figures, celebrities, historical figures, authors, politicians, actors, musicians, athletes, etc.)
+- "pii_name": PRIVATE individuals' full names (NOT public figures,
+  celebrities, historical figures, authors, politicians, actors,
+  musicians, athletes, etc.)
 - "pii_ssn": social security / national ID numbers
 - "pii_dob": date of birth
 - "medical": health conditions, medications, diagnoses
@@ -110,34 +112,59 @@ Respond with ONLY valid JSON.""",
     )
     user = ChatMessage(role="user", content=f"Query: {query}")
     
-    try:
-        response = await llm_client.chat(
-            [system, user],
-            model=llm_client.utility_model,
-            format="json",
-            temperature=0.0,
-            think=False,
-        )
-        data = json.loads(response.content)
-        level_str = data.get("level", "ambiguous").lower()
-        valid_levels = ("safe", "sensitive", "ambiguous")
-        level = (
-            QuerySensitivity(level_str)
-            if level_str in valid_levels
-            else QuerySensitivity.AMBIGUOUS
-        )
-        return SensitivityResult(
-            level=level,
-            reason=data.get("reason", ""),
-            categories=data.get("categories", []),
-        )
-    except Exception as e:
-        logger.warning("Sensitivity classification failed: %s", e)
-        return SensitivityResult(
-            level=QuerySensitivity.AMBIGUOUS,
-            reason="Classification error",
-            categories=[],
-        )
+    for attempt in range(3):
+        try:
+            response = await llm_client.chat(
+                [system, user],
+                model=llm_client.utility_model,
+                format="json",
+                temperature=0.0,
+                think=False,
+            )
+            if not response.content or not response.content.strip():
+                logger.warning(
+                    "Sensitivity classification returned empty content (attempt %d)",
+                    attempt + 1,
+                )
+                if attempt < 2:
+                    extra = (
+                        "\n\nIMPORTANT: Output ONLY valid JSON. "
+                        "No markdown, no preamble. Do not output empty response."
+                    )
+                    system = ChatMessage(role="system", content=system.content + extra)
+                continue
+            data = json.loads(response.content)
+            level_str = data.get("level", "ambiguous").lower()
+            valid_levels = ("safe", "sensitive", "ambiguous")
+            level = (
+                QuerySensitivity(level_str)
+                if level_str in valid_levels
+                else QuerySensitivity.AMBIGUOUS
+            )
+            return SensitivityResult(
+                level=level,
+                reason=data.get("reason", ""),
+                categories=data.get("categories", []),
+            )
+        except (json.JSONDecodeError, ValueError) as e:
+            logger.warning(
+                "Sensitivity classification parse failed (attempt %d): %s",
+                attempt + 1,
+                e,
+            )
+            if attempt < 2:
+                extra = "\n\nIMPORTANT: Output ONLY valid JSON. No markdown, no preamble."
+                system = ChatMessage(role="system", content=system.content + extra)
+            else:
+                logger.error(
+                    "Sensitivity classification failed after retries for query: %s",
+                    query[:100],
+                )
+    return SensitivityResult(
+        level=QuerySensitivity.AMBIGUOUS,
+        reason="Classification error after retries",
+        categories=[],
+    )
 
 # Tracking/query junk stripped during URL normalization so that the same page
 # reached through different campaign links dedups to one entry.

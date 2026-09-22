@@ -1,5 +1,5 @@
 import { createSignal, createMemo, onMount, onCleanup, Show } from 'solid-js'
-import { voice } from '../../state/voice'
+import { voice, isListening, isProcessing, isSpeaking } from '../../state/voice'
 
 interface VoiceStatusIndicatorProps {
   isVoiceMode: boolean
@@ -14,9 +14,9 @@ export default function VoiceStatusIndicator(props: VoiceStatusIndicatorProps) {
   const status = createMemo(() => {
     const v = voice()
     return {
-      isListening: v.isListening,
-      isProcessing: v.isProcessing,
-      isSpeaking: v.isSpeaking,
+      isListening: isListening(),
+      isProcessing: isProcessing(),
+      isSpeaking: isSpeaking(),
       status: v.status,
     }
   })

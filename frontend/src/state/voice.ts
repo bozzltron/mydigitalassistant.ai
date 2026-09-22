@@ -78,7 +78,8 @@ export const endDictation = () => {
 // Helper to get computed state for UI
 export const isListening = () => voice.status === 'listening'
 export const isProcessing = () => voice.status === 'processing'
-export const isSpeaking = () => voice.status === 'speaking'
+// Speaking includes both voice mode speaking and TTS playback
+export const isSpeaking = () => voice.status === 'speaking' || voice.isTtsSpeaking
 export const isIdle = () => voice.status === 'idle'
 export const isError = () => voice.status === 'error'
 export const isTtsSpeaking = () => voice.isTtsSpeaking

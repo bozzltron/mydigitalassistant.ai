@@ -5,7 +5,8 @@ import {
   startProcessing,
   exitVoiceMode,
   registerStopRecording,
-  unregisterStopRecording
+  unregisterStopRecording,
+  isTtsSpeaking
 } from '../state/voice'
 
 interface UseVoiceRecordingOptions {
@@ -101,6 +102,25 @@ export function useVoiceRecording({
   
   createEffect(() => {
     registerStopRecording(stopRecordingFn)
+  })
+
+  // Pause/resume recording during TTS playback
+  createEffect(() => {
+    const ttsSpeaking = isTtsSpeaking()
+    const voiceMode = getIsVoiceMode()
+    
+    if (ttsSpeaking && isRecording()) {
+      console.log('[useVoiceRecording] TTS started — pausing recording')
+      stopRecording()
+    } else if (!ttsSpeaking && voiceMode && !isRecording()) {
+      console.log('[useVoiceRecording] TTS ended — resuming listening')
+      // Small delay to ensure TTS has fully stopped
+      setTimeout(() => {
+        if (!isTtsSpeaking() && getIsVoiceMode() && !isRecording()) {
+          startListeningForVoice()
+        }
+      }, 100)
+    }
   })
 
   // Auto-start recording when voice mode is activated

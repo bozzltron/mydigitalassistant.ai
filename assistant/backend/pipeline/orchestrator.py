@@ -346,41 +346,74 @@ class Orchestrator:
         episode_log_time = time.monotonic() - turn_start
         logger.debug("Episode logging: %.3fs", episode_log_time)
 
-        # 3. Classify task type + search intent (single LLM pass when needed)
+        # 3. Classify task type + search intent AND Retrieve memory context IN PARALLEL
+        # Router doesn't need memory; retrieval doesn't need router result.
         await self._report(progress, "routing", "reading your message")
+        await self._report(progress, "recall", "checking my memory")
+        
         routing_start = time.monotonic()
+        recall_start = time.monotonic()
+        
         if skip_route:
             task_type = TaskType.FUNCTIONAL
+            classification = None
+            # Still need retrieval even when skipping route
+            memory_context = await self.retriever.retrieve(
+                query=request.message,
+                user_id=request.user_id,
+                session_id=session_id,
+            )
         else:
-            classification = await route(request.message, self.llm_client)
+            # Run routing and retrieval concurrently
+            route_task = asyncio.create_task(route(request.message, self.llm_client))
+            retrieve_task = asyncio.create_task(
+                self.retriever.retrieve(
+                    query=request.message,
+                    user_id=request.user_id,
+                    session_id=session_id,
+                )
+            )
+            classification, memory_context = await asyncio.gather(route_task, retrieve_task)
             task_type = classification.task_type
+        
         routing_time = time.monotonic() - routing_start
-        logger.debug("Routing: %.3fs", routing_time)
+        recall_time = time.monotonic() - recall_start
+        logger.debug("Routing: %.3fs, Memory recall: %.3fs (parallel)", routing_time, recall_time)
 
         # 3b. Handle scheduled task intent
         if task_type == TaskType.SCHEDULED and not skip_route:
             return await self._handle_scheduled_task(request, session_id)
 
-        # 4. Retrieve memory context
-        await self._report(progress, "recall", "checking my memory")
-        recall_start = time.monotonic()
-        memory_context = await self.retriever.retrieve(
-            query=request.message,
-            user_id=request.user_id,
-            session_id=session_id,
-        )
-        recall_time = time.monotonic() - recall_start
-        logger.debug("Memory recall: %.3fs", recall_time)
-
         # 5. Reason: decide action based on memory sufficiency
+        # 6. Extract user-stated facts BEFORE generation (parallel with reasoner)
+        # Both need memory_context, but extraction only needs
+        # user_message + empty assistant_response
         plan_start = time.monotonic()
-        plan = classify_intent(
+        extraction_start = time.monotonic()
+        
+        plan_task = asyncio.create_task(asyncio.to_thread(
+            classify_intent,
             query=request.message,
             task_type=task_type.value,
             memory=memory_context,
+        ))
+        # Report learning stage before parallel extraction
+        await self._report(progress, "learning", "learning from our conversation")
+        extraction_task = asyncio.create_task(
+            store_turn_memory(
+                user_message=request.message,
+                assistant_response="",
+                store=self.store,
+                llm_client=self.llm_client,
+                source_episode_id=user_episode.id,
+            )
         )
+        
+        plan, extraction_summary = await asyncio.gather(plan_task, extraction_task)
+        
         plan_time = time.monotonic() - plan_start
-        logger.debug("Reasoner: %.3fs", plan_time)
+        extraction_time = time.monotonic() - extraction_start
+        logger.debug("Reasoner: %.3fs, Extraction: %.3fs (parallel)", plan_time, extraction_time)
 
         # 5a. Storage statements must not trigger external search: the user is
         # giving information, not requesting a lookup. The router's wants_search
@@ -528,21 +561,6 @@ class Orchestrator:
                 citations=[],
                 search_info=None,
             )
-
-        # 6. Extract user-stated facts BEFORE generation so the reply can
-        # acknowledge them truthfully (no "sure, I remember" over empty stores).
-        await self._report(progress, "learning", "learning from our conversation")
-        extraction_summary: dict = {}
-        try:
-            extraction_summary = await store_turn_memory(
-                user_message=request.message,
-                assistant_response="",
-                store=self.store,
-                llm_client=self.llm_client,
-                source_episode_id=user_episode.id,
-            )
-        except Exception as e:
-            logger.error("Extraction failed: %s", e)
 
         stored_slots = extraction_summary.get("slots") or []
 
@@ -715,22 +733,28 @@ class Orchestrator:
                             ],
                             return_exceptions=True,
                         )
-                        document_extractions: list = []
-                        for result, body in zip(
-                            search_results[: settings.max_search_results_in_prompt],
-                            bodies,
-                            strict=True,
-                        ):
-                            if isinstance(body, Exception) or not body:
-                                continue
-                            doc_extraction = await extract_facts_from_document(
-                                body, result.url, self.llm_client
+                        # Parallelize document extraction
+                        extraction_tasks = [
+                            extract_facts_from_document(body, result.url, self.llm_client)
+                            for result, body in zip(
+                                search_results[: settings.max_search_results_in_prompt],
+                                bodies,
+                                strict=True,
                             )
-                            document_extractions.append(doc_extraction)
-                        if document_extractions:
-                            snippet_extraction = merge_extractions(
-                                snippet_extraction, *document_extractions
+                            if not isinstance(body, Exception) and body
+                        ]
+                        if extraction_tasks:
+                            document_extractions = await asyncio.gather(
+                                *extraction_tasks, return_exceptions=True
                             )
+                            valid_extractions = [
+                                ext for ext in document_extractions
+                                if not isinstance(ext, Exception) and ext
+                            ]
+                            if valid_extractions:
+                                snippet_extraction = merge_extractions(
+                                    snippet_extraction, *valid_extractions
+                                )
                     except Exception as e:
                         logger.warning("Brave full-page fetch failed: %s", e)
 
