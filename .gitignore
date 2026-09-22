@@ -89,3 +89,4 @@ assistant.db.unencrypted.backup
 
 eval_results/
 data/
+*.assistant-brain
