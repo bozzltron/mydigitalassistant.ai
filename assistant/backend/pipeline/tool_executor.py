@@ -844,7 +844,11 @@ async def execute_list_files(args: dict, user_id: str, session_id: str) -> ToolR
                 sandbox_info = sandbox_by_name.get(file_safe_name, {})
 
                 file_size_val = slots_dict.get("file_size")
-                file_size = int(file_size_val) if file_size_val and str(file_size_val).strip() else None
+                file_size = (
+                    int(file_size_val)
+                    if file_size_val and str(file_size_val).strip()
+                    else None
+                )
 
                 files.append({
                     "frame_id": frame.id,
