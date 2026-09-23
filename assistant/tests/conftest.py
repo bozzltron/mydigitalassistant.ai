@@ -92,6 +92,7 @@ class StubLLMClient(OllamaClient):
         think: bool | None = None,
         num_predict: int | None = None,
         tools: list[dict] | None = None,
+        tool_choice: str | None = None,
     ) -> ChatResponse:
         system = messages[0].content
         self.system_prompts.append(system)

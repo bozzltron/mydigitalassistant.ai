@@ -139,6 +139,10 @@ async def lifespan(app: FastAPI):
     _state["orchestrator"] = orchestrator
     _state["search_tool"] = search_tool
 
+    # Initialize tool executor with store and embed function for recall tool
+    from assistant.backend.pipeline.tool_executor import init_store
+    init_store(db_path, embed_fn=orchestrator.embed_fn())
+
     scheduler_task = None
     if settings.scheduler_enabled:
         import signal
@@ -363,15 +367,53 @@ async def chat(
             entry["stage"] = stage
             entry["detail"] = detail
 
-    # Process any attached files from the request
+    # Process attached files: upload to memory so agent can use read_file tool
+    uploaded_files = []
     file_contents = []
     if request.attached_files:
         for fc in request.attached_files:
+            filename = fc.get("name", "unknown")
+            ext = fc.get("ext", "txt")
+            text_content = fc.get("text", "")
+            content_bytes = text_content.encode("utf-8")
+            
+            # Validate file type
+            allowed_types = {"txt", "csv", "json", "xml", "html", "ics"}
+            if ext not in allowed_types:
+                # Skip unsupported files but log
+                logger.warning(f"Skipping unsupported file type: .{ext}")
+                continue
+            
+            # Size limit (10MB)
+            if len(content_bytes) > 10_000_000:
+                logger.warning(f"Skipping file too large: {filename}")
+                continue
+            
+            # Upload file to memory and disk
+            try:
+                upload_result = await upload_file_to_memory(
+                    filename=filename,
+                    content=content_bytes,
+                    ext=ext,
+                    store=store,
+                    user_id=request.user_id,
+                )
+                uploaded_files.append({
+                    "frame_id": upload_result["frame_id"],
+                    "frame_name": upload_result["frame_name"],
+                    "file_name": upload_result["file_name"],
+                    "file_ext": upload_result["file_ext"],
+                })
+            except Exception as e:
+                logger.error(f"Failed to upload attached file {filename}: {e}")
+                continue
+            
+            # Also keep the content for message context
             file_contents.append({
-                "name": fc.get("name", "unknown"),
-                "ext": fc.get("ext", "txt"),
+                "name": filename,
+                "ext": ext,
                 "preview": fc.get("preview", "")[:500],
-                "text": fc.get("text", ""),
+                "text": text_content,
                 "key_entities": fc.get("key_entities", []),
                 "open_questions": fc.get("open_questions", []),
             })
@@ -380,14 +422,19 @@ async def chat(
     enhanced_message = request.message
     if file_contents:
         file_summaries = []
-        for fc in file_contents:
+        for i, fc in enumerate(file_contents):
             entities_str = (
                 ", ".join(fc.get("key_entities", [])[:3]) if fc.get("key_entities") else ""
             )
             questions_str = (
                 " ".join(fc.get("open_questions", [])[:2]) if fc.get("open_questions") else ""
             )
-            file_summaries.append(f"File: {fc['name']} ({fc['ext']}) - {fc['preview']}")
+            # Include frame info so agent can use read_file tool
+            frame_info = ""
+            if i < len(uploaded_files):
+                uf = uploaded_files[i]
+                frame_info = f" [frame_id: {uf['frame_id']}, frame_name: {uf['frame_name']}]"
+            file_summaries.append(f"File: {fc['name']} ({fc['ext']}) - {fc['preview']}{frame_info}")
             if entities_str:
                 file_summaries[-1] += f" [entities: {entities_str}]"
             if questions_str:
@@ -398,13 +445,22 @@ async def chat(
             enhanced_message = "\n\n" + "\n".join(file_summaries)
 
     try:
+        # Combine file_contents with uploaded frame info for the orchestrator
+        orch_attached_files = []
+        for i, fc in enumerate(file_contents):
+            file_info = dict(fc)
+            if i < len(uploaded_files):
+                file_info["frame_id"] = uploaded_files[i]["frame_id"]
+                file_info["frame_name"] = uploaded_files[i]["frame_name"]
+            orch_attached_files.append(file_info)
+        
         return await orch.chat(
             ChatRequest(
                 user_id=request.user_id,
                 message=enhanced_message,
                 session_id=request.session_id,
                 turn_id=request.turn_id,
-                attached_files=[fc for fc in file_contents],
+                attached_files=orch_attached_files,
                 search_consent=request.search_consent,
             ),
             progress=progress,
@@ -1567,44 +1623,28 @@ async def restore_conversation(
     return {"status": "ok", "session_id": session_id}
 
 
-@app.post("/files/upload", response_model=dict)
-async def upload_file(
-    file: UploadFile = File(...),
-    store: MemoryStore = _Depends(get_store),
-):
-    """Upload and process a file.
-
-    Supported formats: .txt, .csv, .json, .xml, .html
-    Returns file metadata and extracted content.
+async def upload_file_to_memory(
+    filename: str,
+    content: bytes,
+    ext: str,
+    store: MemoryStore,
+    user_id: int = 1,
+) -> dict:
+    """Upload a file to memory and disk. Returns file metadata and frame info.
+    
+    This is the core file upload logic shared by /files/upload endpoint and chat attached files.
     """
-    # Validate file type
-    filename = file.filename or "unknown"
-    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
-    allowed_types = {"txt", "csv", "json", "xml", "html", "ics"}
-    
-    if ext not in allowed_types:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unsupported file type: .{ext}. Allowed: .txt, .csv, .json, .xml, .html",
-        )
-    
-    # Size limit (10MB)
-    content = await file.read()
-    if len(content) > 10_000_000:
-        raise HTTPException(
-            status_code=400,
-            detail="File too large. Maximum size: 10MB",
-        )
-    
-    # Store file in data directory
     import re
+    from datetime import datetime
     from pathlib import Path
-    
+
+    from assistant.backend.pipeline.files import extract_file_content
+
+    # Store file in data directory
     data_dir = Path("/app/data")
     data_dir.mkdir(exist_ok=True)
     
     # Preserve original filename (sanitized) with timestamp prefix for uniqueness
-    # Remove path components, keep only basename, replace non-alphanumeric with underscore
     original_base = filename.rsplit(".", 1)[0] if "." in filename else filename
     sanitized_base = re.sub(r'[^a-zA-Z0-9_.-]', '_', original_base)[:100]
     safe_filename = f"upload_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{sanitized_base}.{ext}"
@@ -1615,12 +1655,7 @@ async def upload_file(
         f.write(content)
     
     # Extract content based on type
-    from assistant.backend.pipeline.files import extract_file_content
     extraction_result = await extract_file_content(file_path, ext, content)
-    
-    # Store file metadata and content in memory
-    # Get or create a user context - use user_id=1 as default
-    user_id = 1
     
     # Create a frame for this file
     frame_name = f"file_{safe_filename}"
@@ -1734,7 +1769,6 @@ async def upload_file(
             )
         
         # Create row frames
-        import re
         for i, row in enumerate(extraction_result.row_data):
             row_frame_name = f"file_{safe_filename}_row_{i+1}"
             row_frame = await store.create_frame(
@@ -1766,9 +1800,6 @@ async def upload_file(
     else:
         row_count = 0
     
-    # File is kept at /app/data/{safe_filename} for later retrieval
-    # via the file content endpoints
-    
     return {
         "status": "ok",
         "file_name": filename,
@@ -1783,6 +1814,38 @@ async def upload_file(
         "row_count": row_count,
         "row_frame_ids": row_frame_ids,
     }
+
+
+@app.post("/files/upload", response_model=dict)
+async def upload_file(
+    file: UploadFile = File(...),
+    store: MemoryStore = _Depends(get_store),
+):
+    """Upload and process a file.
+
+    Supported formats: .txt, .csv, .json, .xml, .html
+    Returns file metadata and extracted content.
+    """
+    # Validate file type
+    filename = file.filename or "unknown"
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    allowed_types = {"txt", "csv", "json", "xml", "html", "ics"}
+    
+    if ext not in allowed_types:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type: .{ext}. Allowed: .txt, .csv, .json, .xml, .html",
+        )
+    
+    # Size limit (10MB)
+    content = await file.read()
+    if len(content) > 10_000_000:
+        raise HTTPException(
+            status_code=400,
+            detail="File too large. Maximum size: 10MB",
+        )
+    
+    return await upload_file_to_memory(filename, content, ext, store)
 
 
 # --- File API Endpoints ---

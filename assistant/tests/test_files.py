@@ -10,6 +10,7 @@ from assistant.backend.config import settings
 from assistant.backend.main import _state, app, get_orchestrator, get_store
 from assistant.backend.memory.retrieval import Retriever
 from assistant.backend.pipeline.orchestrator import Orchestrator, OrchestratorDeps
+from assistant.backend.pipeline.tool_executor import init_store
 
 
 @pytest.fixture
@@ -34,6 +35,9 @@ async def client(store, stub_llm, stub_search):
     _state["orchestrator"] = orchestrator
     _state["search_tool"] = stub_search
 
+    # Initialize tool executor with store and embed function
+    init_store(store.db_path, embed_fn=orchestrator.embed_fn())
+
     # Create user 1 (required by file upload endpoint)
     await store.create_user("test_user")
 
@@ -51,6 +55,40 @@ async def client(store, stub_llm, stub_search):
         settings.scheduler_enabled = original_scheduler
         app.dependency_overrides.clear()
         _state.clear()
+
+
+@pytest.fixture
+def tool_executor(store, stub_llm, stub_search):
+    """Initialize tool executor for direct tool testing."""
+    retriever = Retriever(store=store, llm_client=stub_llm)
+    orchestrator = Orchestrator(
+        deps=OrchestratorDeps(
+            store=store,
+            retriever=retriever,
+            llm_client=stub_llm,
+            search_tool=stub_search,
+        )
+    )
+    init_store(store.db_path, embed_fn=orchestrator.embed_fn())
+    # Create test user for foreign key constraints
+    import asyncio
+    asyncio.run(store.create_user("test_user"))
+    return orchestrator
+
+
+@pytest.fixture(autouse=True)
+async def clean_sandbox():
+    """Clean sandbox directory before each test."""
+    import shutil
+    from pathlib import Path
+    sandbox = Path("/app/data")
+    if sandbox.exists():
+        for item in sandbox.iterdir():
+            if item.is_file():
+                item.unlink()
+            else:
+                shutil.rmtree(item)
+    yield
 
 
 class TestFileExtraction:
@@ -275,3 +313,248 @@ class TestFileViewerBackend:
             assert row_after is not None, f"row frame {row_frame_id} should still exist"
 
         # Verify part_of associations remain (they're not cascaded in soft delete)
+
+
+class TestFileSandboxTools:
+    """Regression tests for agent file sandbox tools (write, read, edit, delete, glob, recall)."""
+
+    @pytest.fixture(autouse=True)
+    async def _init_tools(self, tool_executor):
+        """Ensure tool executor is initialized for each test."""
+        self.tool_executor = tool_executor
+
+    @pytest.mark.asyncio
+    async def test_write_file_creates_file_and_frame(self, store, stub_llm):
+        """write_file tool creates file in sandbox and memory frame."""
+        from pathlib import Path
+
+        from assistant.backend.pipeline.tool_executor import execute_write_file
+
+        result = await execute_write_file(
+            {"path": "test_agent.txt", "content": "Hello from agent"},
+            user_id="1", session_id="test"
+        )
+        assert result.success
+        assert result.data["path"] == "test_agent.txt"
+
+        # Verify physical file
+        assert Path("/app/data/test_agent.txt").read_text() == "Hello from agent"
+
+        # Verify memory frame
+        frame = await store.get_frame_by_name("file_test_agent.txt")
+        assert frame is not None
+        slots = await store.get_slots_for_frame(frame.id)
+        assert any(s.key == "file_content_preview" and "Hello" in s.value for s in slots)
+
+    @pytest.mark.asyncio
+    async def test_write_file_rejects_traversal(self, store, stub_llm):
+        """write_file rejects paths escaping sandbox."""
+        from assistant.backend.pipeline.tool_executor import execute_write_file
+
+        result = await execute_write_file(
+            {"path": "../../../etc/passwd", "content": "evil"},
+            user_id="1", session_id="test"
+        )
+        assert not result.success
+        assert "escapes sandbox" in result.error
+
+    @pytest.mark.asyncio
+    async def test_write_file_overwrite_protection(self, store, stub_llm):
+        """write_file rejects overwrite without flag."""
+        from assistant.backend.pipeline.tool_executor import execute_write_file
+
+        await execute_write_file({"path": "same.txt", "content": "first"}, "1", "test")
+        result = await execute_write_file({"path": "same.txt", "content": "second"}, "1", "test")
+        assert not result.success
+        assert "exists" in result.error
+
+        # With overwrite=true should work
+        result = await execute_write_file(
+            {"path": "same.txt", "content": "second", "overwrite": True}, "1", "test"
+        )
+        assert result.success
+
+    @pytest.mark.asyncio
+    async def test_read_file_by_user_visible_name(self, store, stub_llm):
+        """read_file reads by relative path (not frame_id)."""
+        from assistant.backend.pipeline.tool_executor import execute_read_file, execute_write_file
+
+        await execute_write_file(
+            {"path": "notes/readme.md", "content": "# Readme\nContent here"}, "1", "test"
+        )
+
+        result = await execute_read_file({"path": "notes/readme.md"}, "1", "test")
+        assert result.success
+        assert result.data["content"] == "# Readme\nContent here"
+
+    @pytest.mark.asyncio
+    async def test_read_file_rejects_traversal(self, store, stub_llm):
+        """read_file rejects paths escaping sandbox."""
+        from assistant.backend.pipeline.tool_executor import execute_read_file
+
+        result = await execute_read_file({"path": "../../../etc/passwd"}, "1", "test")
+        assert not result.success
+        assert "escapes sandbox" in result.error
+
+    @pytest.mark.asyncio
+    async def test_edit_file_surgical_replace(self, store, stub_llm):
+        """edit_file replaces exact text match."""
+        from assistant.backend.pipeline.tool_executor import (
+            execute_edit_file,
+            execute_read_file,
+            execute_write_file,
+        )
+
+        await execute_write_file({"path": "edit_test.txt", "content": "foo bar baz"}, "1", "test")
+
+        result = await execute_edit_file(
+            {"path": "edit_test.txt", "old_text": "bar", "new_text": "BAR"},
+            "1", "test"
+        )
+        assert result.success
+        assert result.data["changes"] == 1
+
+        read_result = await execute_read_file({"path": "edit_test.txt"}, "1", "test")
+        assert "foo BAR baz" in read_result.data["content"]
+
+    @pytest.mark.asyncio
+    async def test_edit_file_replace_all_false(self, store, stub_llm):
+        """edit_file with replace_all=false replaces only first occurrence."""
+        from assistant.backend.pipeline.tool_executor import (
+            execute_edit_file,
+            execute_read_file,
+            execute_write_file,
+        )
+
+        await execute_write_file({"path": "multi.txt", "content": "foo bar baz bar"}, "1", "test")
+
+        result = await execute_edit_file(
+            {"path": "multi.txt", "old_text": "bar", "new_text": "BAR", "replace_all": False},
+            "1", "test"
+        )
+        assert result.success
+        assert result.data["changes"] == 1
+
+        read_result = await execute_read_file({"path": "multi.txt"}, "1", "test")
+        assert read_result.data["content"] == "foo BAR baz bar"
+
+    @pytest.mark.asyncio
+    async def test_delete_file_removes_file_and_frame(self, store, stub_llm):
+        """delete_file removes physical file and soft-deletes memory frame."""
+        from pathlib import Path
+
+        from assistant.backend.pipeline.tool_executor import execute_delete_file, execute_write_file
+
+        await execute_write_file({"path": "to_delete.txt", "content": "delete me"}, "1", "test")
+
+        result = await execute_delete_file({"path": "to_delete.txt"}, "1", "test")
+        assert result.success
+
+        # Physical file gone
+        assert not Path("/app/data/to_delete.txt").exists()
+
+        # Frame soft-deleted
+        frame = await store.get_frame_by_name("file_to_delete.txt")
+        assert frame is not None
+        assert frame.priority == 0
+
+    @pytest.mark.asyncio
+    async def test_glob_finds_files_by_pattern(self, store, stub_llm):
+        """glob tool finds files matching pattern."""
+        from assistant.backend.pipeline.tool_executor import execute_glob, execute_write_file
+
+        await execute_write_file({"path": "notes/a.txt", "content": "a"}, "1", "test")
+        await execute_write_file({"path": "notes/b.txt", "content": "b"}, "1", "test")
+        await execute_write_file({"path": "scripts/c.py", "content": "c"}, "1", "test")
+
+        result = await execute_glob({"pattern": "notes/*.txt"}, "1", "test")
+        assert result.success
+        assert result.data["count"] == 2
+        paths = [f["path"] for f in result.data["files"]]
+        assert "notes/a.txt" in paths
+        assert "notes/b.txt" in paths
+        assert "scripts/c.py" not in paths
+
+    @pytest.mark.asyncio
+    async def test_glob_rejects_traversal(self, store, stub_llm):
+        """glob rejects patterns with traversal."""
+        from assistant.backend.pipeline.tool_executor import execute_glob
+
+        result = await execute_glob({"pattern": "../../../etc/*"}, "1", "test")
+        assert not result.success
+        assert "escapes sandbox" in result.error or "traversal" in result.error
+
+    @pytest.mark.asyncio
+    async def test_recall_returns_semantic_matches(self, store, stub_llm):
+        """recall tool embeds query and searches frames."""
+        from assistant.backend.pipeline.tool_executor import execute_recall
+
+        # Create some frames with known content
+        frame = await store.create_frame("person_alice", "person", owner_user_id=1)
+        await store.upsert_slot(frame.id, "name", "Alice", source_type="test")
+        await store.upsert_slot(frame.id, "role", "engineer", source_type="test")
+
+        # Embed and index using stub_llm's embed method (deterministic)
+        embed_resp = await stub_llm.embed("Alice engineer")
+        await store.store_frame_embedding(frame.id, embed_resp.embedding, "nomic-embed-text")
+
+        result = await execute_recall({"query": "Alice engineer"}, "1", "test")
+        assert result.success
+        assert result.data["count"] >= 1
+        assert any("Alice" in str(r["slots"]) for r in result.data["results"])
+
+    @pytest.mark.asyncio
+    async def test_csv_write_creates_row_frames(self, store, stub_llm):
+        """write_file with CSV content creates parent + row frames."""
+        from assistant.backend.pipeline.tool_executor import execute_write_file
+
+        csv_content = "name,email\nAlice,a@b.com\nBob,b@c.com"
+        result = await execute_write_file(
+            {"path": "users.csv", "content": csv_content},
+            "1", "test"
+        )
+        assert result.success
+
+        # Verify parent frame has row_count
+        frame = await store.get_frame_by_name("file_users.csv")
+        row_count = await store.get_slot(frame.id, "row_count")
+        assert row_count.value == "2"
+
+        # Verify row frames exist
+        associations = await store.get_all_associations_for_frame(frame.id)
+        part_of = [a for a in associations if a.relation_type == "part_of"]
+        assert len(part_of) == 2
+
+    @pytest.mark.asyncio
+    async def test_csv_delete_cascades_to_row_frames(self, store, stub_llm):
+        """delete_file on CSV parent also soft-deletes row frames."""
+        from assistant.backend.pipeline.tool_executor import execute_delete_file, execute_write_file
+
+        csv_content = "name,email\nAlice,a@b.com\nBob,b@c.com"
+        await execute_write_file({"path": "users.csv", "content": csv_content}, "1", "test")
+
+        frame = await store.get_frame_by_name("file_users.csv")
+        associations = await store.get_all_associations_for_frame(frame.id)
+        row_frame_ids = [a.to_frame_id for a in associations if a.relation_type == "part_of"]
+
+        # Delete parent
+        await execute_delete_file({"path": "users.csv"}, "1", "test")
+
+        # Row frames should be soft-deleted
+        for row_id in row_frame_ids:
+            row_frame = await store.get_frame(row_id)
+            assert row_frame is not None
+            assert row_frame.priority == 0
+
+    @pytest.mark.asyncio
+    async def test_list_files_shows_sandbox_files(self, store, stub_llm):
+        """list_files returns files from sandbox with memory enrichment."""
+        from assistant.backend.pipeline.tool_executor import execute_list_files, execute_write_file
+
+        await execute_write_file({"path": "notes/list_test.txt", "content": "listed"}, "1", "test")
+
+        result = await execute_list_files({}, "1", "test")
+        assert result.success
+        assert result.data["count"] >= 1
+        paths = [f.get("path") for f in result.data["files"]]
+        assert "notes/list_test.txt" in paths

@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import Callable
 
 from pydantic import ValidationError
 
@@ -19,12 +20,15 @@ logger = logging.getLogger(__name__)
 
 # Global store instance (set during initialization)
 _store: MemoryStore | None = None
+# Global embed function for recall tool
+_embed_fn: Callable | None = None
 
 
-def init_store(db_path: str) -> None:
-    """Initialize the global MemoryStore instance."""
-    global _store
+def init_store(db_path: str, embed_fn: Callable | None = None) -> None:
+    """Initialize the global MemoryStore instance and embed function."""
+    global _store, _embed_fn
     _store = MemoryStore(db_path)
+    _embed_fn = embed_fn
     _register_builtin_tools()
 
 
@@ -32,8 +36,12 @@ def _register_builtin_tools() -> None:
     """Register all builtin tools with their executors."""
     from assistant.backend.pipeline.tools import (
         ComputeArgs,
+        DeleteFileArgs,
+        EditFileArgs,
         FetchUrlArgs,
         FinalizeArgs,
+        GlobArgs,
+        ListFilesArgs,
         MarkEssentialArgs,
         PlanArgs,
         ReadFileArgs,
@@ -44,8 +52,15 @@ def _register_builtin_tools() -> None:
         UpsertAssociationArgs,
         UpsertSlotArgs,
         WebSearchArgs,
+        WriteFileArgs,
     )
 
+    register_tool("list_files", ListFilesArgs, execute_list_files)
+    register_tool("write_file", WriteFileArgs, execute_write_file)
+    register_tool("read_file", ReadFileArgs, execute_read_file)
+    register_tool("edit_file", EditFileArgs, execute_edit_file)
+    register_tool("delete_file", DeleteFileArgs, execute_delete_file)
+    register_tool("glob", GlobArgs, execute_glob)
     register_tool("upsert_slot", UpsertSlotArgs, execute_upsert_slot)
     register_tool("upsert_association", UpsertAssociationArgs, execute_upsert_association)
     register_tool("mark_essential", MarkEssentialArgs, execute_mark_essential)
@@ -57,7 +72,6 @@ def _register_builtin_tools() -> None:
     register_tool("search_episodes", SearchEpisodesArgs, execute_search_episodes)
     register_tool("web_search", WebSearchArgs, execute_web_search)
     register_tool("fetch_url", FetchUrlArgs, execute_fetch_url)
-    register_tool("read_file", ReadFileArgs, execute_read_file)
     register_tool("run_scheduled_task", RunScheduledTaskArgs, execute_run_scheduled_task)
     register_tool("compute", ComputeArgs, execute_compute)
     register_tool("plan", PlanArgs, execute_plan)
@@ -93,6 +107,11 @@ TOOL_TIMEOUTS: dict[str, float] = {
     "web_search": 30.0,
     "fetch_url": 30.0,
     "read_file": 10.0,
+    "write_file": 10.0,
+    "edit_file": 10.0,
+    "delete_file": 10.0,
+    "glob": 10.0,
+    "list_files": 10.0,
     "run_scheduled_task": 60.0,
     "compute": 60.0,
     "upsert_slot": 10.0,
@@ -280,13 +299,64 @@ async def execute_recall(args: dict, user_id: str, session_id: str = "") -> Tool
     """Semantic memory lookup via embedding + graph walk."""
     if _store is None:
         return ToolResult(success=False, error="MemoryStore not initialized")
+    if _embed_fn is None:
+        return ToolResult(success=False, error="Embedding function not initialized")
 
     try:
-        _ = args.get("query", "")
+        query = args.get("query", "")
+        if not query:
+            return ToolResult(success=False, error="query required")
 
-        # Need to embed the query first - use a simple approach
-        # For now, return empty results as embedding requires LLM client
-        return ToolResult(success=True, data={"results": []})
+        frame_types = args.get("frame_types")
+        max_results = args.get("max_results", 10)
+        min_confidence = args.get("min_confidence", 0.3)
+        include_associations = args.get("include_associations", True)
+
+        # Embed the query
+        embedding_resp = await _embed_fn(query)
+        if hasattr(embedding_resp, "embedding"):
+            embedding = embedding_resp.embedding
+        else:
+            embedding = embedding_resp
+
+        # Search frames via sqlite-vec
+        results = await _store.search_similar_frames(
+            embedding=embedding,
+            user_id=int(user_id),
+            limit=max_results,
+            min_distance=1.0 - min_confidence,
+        )
+
+        # Format results
+        formatted = []
+        for frame, slots, similarity in results:
+            if frame_types and not any(frame.name.startswith(ft) for ft in frame_types):
+                continue
+
+            slot_data = {s.key: {"value": s.value, "confidence": s.confidence} for s in slots}
+
+            assoc_data = []
+            if include_associations:
+                associations = await _store.get_all_associations_for_frame(frame.id)
+                for assoc in associations:
+                    assoc_data.append({
+                        "source": assoc.source_frame,
+                        "target": assoc.target_frame,
+                        "relation": assoc.relation_type,
+                        "confidence": assoc.confidence
+                    })
+
+            formatted.append({
+                "frame_id": frame.id,
+                "frame_name": frame.name,
+                "frame_type": frame.type,
+                "confidence": frame.confidence,
+                "similarity": similarity,
+                "slots": slot_data,
+                "associations": assoc_data
+            })
+
+        return ToolResult(success=True, data={"results": formatted, "count": len(formatted)})
     except Exception as e:
         logger.error(f"recall failed: {e}", exc_info=True)
         return ToolResult(success=False, error=str(e))
@@ -408,66 +478,332 @@ async def execute_fetch_url(args: dict, user_id: str) -> ToolResult:
 
 
 async def execute_read_file(args: dict, user_id: str, session_id: str) -> ToolResult:
-    """Read the content of an uploaded file by frame ID or frame name."""
-    if _store is None:
-        return ToolResult(success=False, error="MemoryStore not initialized")
-
+    """Read the content of a file in the sandbox by relative path."""
     try:
-        frame_id = args.get("frame_id")
-        frame_name = args.get("frame_name")
-
-        if not frame_id and not frame_name:
-            return ToolResult(success=False, error="Either frame_id or frame_name must be provided")
-
-        # Get the frame
-        if frame_id:
-            frame = await _store.get_frame(frame_id)
-        else:
-            frame = await _store.get_frame_by_name(frame_name)
-
-        if frame is None:
-            return ToolResult(success=False, error="File frame not found")
-
-        # Get slots to find file_safe_name
-        slots = await _store.get_slots_for_frame(frame.id)
-        slots_dict = {slot.key: slot.value for slot in slots}
-
-        file_safe_name = slots_dict.get("file_safe_name")
-        file_name = slots_dict.get("file_name", "unknown")
-        file_ext = slots_dict.get("file_ext", "")
-
-        if not file_safe_name:
-            return ToolResult(
-                success=False,
-                error="File not found on disk (missing file_safe_name slot)",
-            )
-
-        # Read file from disk
         from pathlib import Path
-        data_dir = Path("/app/data")
-        file_path = data_dir / file_safe_name
 
-        if not file_path.exists():
-            return ToolResult(success=False, error=f"File not found on disk: {file_safe_name}")
+        from assistant.backend.pipeline.filesystem import (
+            PathTraversalError,
+            SizeLimitError,
+            read_sandbox_file,
+        )
 
-        try:
-            content = file_path.read_text(encoding="utf-8", errors="replace")
-        except Exception as e:
-            return ToolResult(success=False, error=f"Failed to read file: {e}")
+        path = args.get("path", "")
+        if not path:
+            return ToolResult(success=False, error="path is required")
+
+        content = read_sandbox_file(path)
+
+        # Also try to find and update memory frame preview
+        if _store is not None:
+            frame_name = f"file_{Path(path).name}"
+            frame = await _store.get_frame_by_name(frame_name)
+            if frame:
+                await _store.upsert_slot(
+                    frame.id, "file_content_preview", content[:200], source_type="file_read"
+                )
 
         return ToolResult(
             success=True,
-            data={
-                "frame_id": frame.id,
-                "frame_name": frame.name,
-                "file_name": file_name,
-                "file_ext": file_ext,
-                "content": content,
-                "size": len(content),
-            },
+            data={"path": path, "content": content, "size": len(content)},
         )
+    except PathTraversalError as e:
+        return ToolResult(success=False, error=str(e))
+    except SizeLimitError as e:
+        return ToolResult(success=False, error=str(e))
+    except FileNotFoundError as e:
+        return ToolResult(success=False, error=str(e))
     except Exception as e:
         logger.error(f"read_file failed: {e}", exc_info=True)
+        return ToolResult(success=False, error=str(e))
+
+
+async def execute_write_file(args: dict, user_id: str, session_id: str) -> ToolResult:
+    """Create or overwrite a file in the sandbox."""
+    try:
+        import csv
+        import json
+        import re
+        from pathlib import Path
+
+        from assistant.backend.pipeline.filesystem import (
+            PathTraversalError,
+            SizeLimitError,
+            write_sandbox_file,
+        )
+
+        path = args.get("path", "")
+        content = args.get("content", "")
+        overwrite = args.get("overwrite", False)
+
+        if not path:
+            return ToolResult(success=False, error="path is required")
+
+        written_path = write_sandbox_file(path, content, overwrite)
+
+        # Create/update memory frame
+        if _store is not None:
+            frame_name = f"file_{written_path.name}"
+            frame = await _store.get_frame_by_name(frame_name)
+            if not frame:
+                try:
+                    user_id_int = int(user_id)
+                except ValueError:
+                    user_id_int = 1
+                frame = await _store.create_frame(
+                    frame_name, "entity",
+                    source_type="file_create", owner_user_id=user_id_int, source_reliability=0.8
+                )
+
+            await _store.upsert_slot(
+                frame.id, "file_name", written_path.name, source_type="file_create"
+            )
+            await _store.upsert_slot(
+                frame.id, "file_ext", written_path.suffix.lstrip("."), source_type="file_create"
+            )
+            await _store.upsert_slot(
+                frame.id, "file_size", str(len(content)), source_type="file_create"
+            )
+            await _store.upsert_slot(
+                frame.id, "file_safe_name", written_path.name, source_type="file_create"
+            )
+            await _store.upsert_slot(
+                frame.id, "file_content_preview", content[:200], source_type="file_create"
+            )
+
+            # CSV special handling: create row frames
+            if written_path.suffix.lower() == ".csv":
+                try:
+                    reader = csv.reader(content.splitlines())
+                    rows = list(reader)
+                    if rows:
+                        headers = rows[0]
+                        for i, row in enumerate(rows[1:], 1):
+                            row_frame = await _store.create_frame(
+                                f"file_{written_path.name}_row_{i}", "record",
+                                source_type="csv_row", owner_user_id=user_id_int
+                            )
+                            for col, val in zip(headers, row, strict=True):
+                                slot_key = re.sub(r'[^a-zA-Z0-9_]', '_', col.lower().strip())
+                                if not slot_key:
+                                    slot_key = f"col_{i}"
+                                await _store.upsert_slot(
+                                    row_frame.id, slot_key, val, source_type="csv_row"
+                                )
+                            await _store.create_association(frame.id, row_frame.id, "part_of")
+                        await _store.upsert_slot(
+                            frame.id, "row_count", str(len(rows) - 1), source_type="file_create"
+                        )
+                        await _store.upsert_slot(
+                            frame.id, "columns", json.dumps(headers), source_type="file_create"
+                        )
+                except Exception as e:
+                    logger.warning(f"CSV row frame creation failed: {e}")
+
+        return ToolResult(success=True, data={
+            "path": str(written_path.relative_to(Path("/app/data"))),
+            "size": len(content),
+            "frame_id": frame.id if _store and frame else None
+        })
+    except PathTraversalError as e:
+        return ToolResult(success=False, error=str(e))
+    except SizeLimitError as e:
+        return ToolResult(success=False, error=str(e))
+    except FileExistsError as e:
+        return ToolResult(success=False, error=str(e))
+    except Exception as e:
+        logger.error(f"write_file failed: {e}", exc_info=True)
+        return ToolResult(success=False, error=str(e))
+
+
+async def execute_edit_file(args: dict, user_id: str, session_id: str) -> ToolResult:
+    """Make a surgical edit to an existing file."""
+    try:
+        from pathlib import Path
+
+        from assistant.backend.pipeline.filesystem import (
+            PathTraversalError,
+            SizeLimitError,
+            read_sandbox_file,
+            write_sandbox_file,
+        )
+
+        path = args.get("path", "")
+        old_text = args.get("old_text", "")
+        new_text = args.get("new_text", "")
+        replace_all = args.get("replace_all", True)
+
+        if not path:
+            return ToolResult(success=False, error="path is required")
+        if old_text == "":
+            return ToolResult(success=False, error="old_text cannot be empty")
+
+        # Read current content
+        content = read_sandbox_file(path)
+
+        if old_text not in content:
+            return ToolResult(success=False, error="old_text not found in file")
+
+        if replace_all:
+            new_content = content.replace(old_text, new_text)
+            changes = content.count(old_text)
+        else:
+            new_content = content.replace(old_text, new_text, 1)
+            changes = 1
+
+        if new_content == content:
+            return ToolResult(success=False, error="No changes made")
+
+        # Atomic write
+        write_sandbox_file(path, new_content, overwrite=True)
+
+        # Update memory frame
+        if _store is not None:
+            frame_name = f"file_{Path(path).name}"
+            frame = await _store.get_frame_by_name(frame_name)
+            if frame:
+                await _store.upsert_slot(
+                    frame.id, "file_content_preview", new_content[:200], source_type="file_edit"
+                )
+                await _store.upsert_slot(
+                    frame.id, "file_size", str(len(new_content)), source_type="file_edit"
+                )
+
+        return ToolResult(success=True, data={
+            "path": path, "changes": changes, "new_size": len(new_content)
+        })
+    except PathTraversalError as e:
+        return ToolResult(success=False, error=str(e))
+    except SizeLimitError as e:
+        return ToolResult(success=False, error=str(e))
+    except FileNotFoundError as e:
+        return ToolResult(success=False, error=str(e))
+    except Exception as e:
+        logger.error(f"edit_file failed: {e}", exc_info=True)
+        return ToolResult(success=False, error=str(e))
+
+
+async def execute_delete_file(args: dict, user_id: str, session_id: str) -> ToolResult:
+    """Delete a file from the sandbox."""
+    try:
+        from pathlib import Path
+
+        from assistant.backend.pipeline.filesystem import (
+            PathTraversalError,
+            delete_sandbox_file,
+        )
+
+        path = args.get("path", "")
+        if not path:
+            return ToolResult(success=False, error="path is required")
+
+        delete_sandbox_file(path)
+
+        # Soft-delete memory frame and any row frames
+        if _store is not None:
+            frame_name = f"file_{Path(path).name}"
+            frame = await _store.get_frame_by_name(frame_name)
+            if frame:
+                # Check for CSV row frames
+                row_count_slot = await _store.get_slot(frame.id, "row_count")
+                if row_count_slot and int(row_count_slot.value or "0") > 0:
+                    associations = await _store.get_all_associations_for_frame(frame.id)
+                    for assoc in associations:
+                        if assoc.relation_type == "part_of":
+                            await _store.forget_frame(assoc.to_frame_id)
+                await _store.forget_frame(frame.id)
+
+        return ToolResult(success=True, data={"path": path})
+    except PathTraversalError as e:
+        return ToolResult(success=False, error=str(e))
+    except FileNotFoundError as e:
+        return ToolResult(success=False, error=str(e))
+    except Exception as e:
+        logger.error(f"delete_file failed: {e}", exc_info=True)
+        return ToolResult(success=False, error=str(e))
+
+
+async def execute_glob(args: dict, user_id: str, session_id: str) -> ToolResult:
+    """Find files matching a glob pattern in the sandbox."""
+    try:
+        from assistant.backend.pipeline.filesystem import PathTraversalError, list_sandbox_files
+
+        pattern = args.get("pattern", "**/*")
+        files = list_sandbox_files(pattern)
+
+        return ToolResult(success=True, data={"files": files, "count": len(files)})
+    except PathTraversalError as e:
+        return ToolResult(success=False, error=str(e))
+    except Exception as e:
+        logger.error(f"glob failed: {e}", exc_info=True)
+        return ToolResult(success=False, error=str(e))
+
+
+async def execute_list_files(args: dict, user_id: str, session_id: str) -> ToolResult:
+    """List all files in the sandbox, enriched with memory frame data."""
+    try:
+        from pathlib import Path
+
+        from assistant.backend.pipeline.filesystem import list_sandbox_files
+
+        # Get physical files from sandbox
+        sandbox_files = list_sandbox_files("**/*")
+        sandbox_by_name = {f["path"]: f for f in sandbox_files}
+
+        files = []
+
+        # Also get memory frames for enrichment
+        if _store is not None:
+            frames = await _store.list_frames(owner_user_id=int(user_id))
+            file_frames = [
+                f
+                for f in frames
+                if f.source_type in ("file_upload", "file_create") and f.priority > 0
+            ]
+
+            for frame in file_frames:
+                slots = await _store.get_slots_for_frame(frame.id)
+                slots_dict = {slot.key: slot.value for slot in slots}
+
+                file_name = slots_dict.get("file_name", "unknown")
+                file_safe_name = slots_dict.get("file_safe_name", "")
+
+                # Try to find matching sandbox file
+                sandbox_info = sandbox_by_name.get(file_safe_name, {})
+
+                files.append({
+                    "frame_id": frame.id,
+                    "frame_name": frame.name,
+                    "file_name": file_name,
+                    "file_ext": slots_dict.get("file_ext", ""),
+                    "file_size": slots_dict.get("file_size"),
+                    "content_preview": slots_dict.get("file_content_preview", ""),
+                    "created_at": frame.created_at if frame.created_at else None,
+                    "path": sandbox_info.get("path"),
+                    "modified": sandbox_info.get("modified"),
+                })
+
+        # Add any sandbox files that don't have memory frames (orphaned)
+        for sf in sandbox_files:
+            if not any(f.get("path") == sf["path"] for f in files):
+                files.append({
+                    "frame_id": None,
+                    "frame_name": None,
+                    "file_name": Path(sf["path"]).name,
+                    "file_ext": sf["ext"],
+                    "file_size": sf["size"],
+                    "content_preview": "",
+                    "created_at": None,
+                    "path": sf["path"],
+                    "modified": sf["modified"],
+                })
+
+        return ToolResult(
+            success=True,
+            data={"files": files, "count": len(files)}
+        )
+    except Exception as e:
+        logger.error(f"list_files failed: {e}", exc_info=True)
         return ToolResult(success=False, error=str(e))
 
 
@@ -608,6 +944,8 @@ async def execute_tool(
         ToolResult with success/data/error metadata
     """
     start = time.time()
+
+    logger.info("DEBUG execute_tool: Called tool=%s args=%s", tool_name, raw_args)
 
     # 1. Validate args
     validated = validate_args(tool_name, raw_args)

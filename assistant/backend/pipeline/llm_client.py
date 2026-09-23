@@ -313,6 +313,7 @@ except: pass
         think: bool | None = None,
         num_predict: int | None = None,
         tools: list[dict] | None = None,
+        tool_choice: str | None = None,
         num_ctx: int | None = None,
     ) -> ChatResponse:
         """Send chat completion request. Uses chat_model by default.
@@ -361,6 +362,8 @@ except: pass
             payload["options"]["num_ctx"] = num_ctx
         if tools:
             payload["tools"] = tools
+            if tool_choice:
+                payload["tool_choice"] = tool_choice
         r = await client.post("/api/chat", json=payload)
         r.raise_for_status()
         data = r.json()
@@ -517,6 +520,26 @@ For this query, the user is asking about YOUR memory or knowledge. You must:
 3. If the memory doesn't contain the answer, say so clearly — do not hallucinate.
 4. Be honest about uncertainty (low-confidence slots).
 5. For introspective queries, prefer citing episode content over slot values.
+- You have access to your sandbox filesystem via these tools:
+  • list_files() — List all files with names, paths, types, sizes
+  • glob(pattern) — Find files by pattern (e.g., "*.csv", "notes/**/*.md")
+  • read_file(path) — Read a file's full content
+  • write_file(path, content) — Create or overwrite a file
+  • edit_file(path, old_text, new_text) — Surgical find-and-replace
+  • delete_file(path) — Delete a file
+  • recall(query) — Search your structured memory (frames/slots)
+
+Tool chaining examples:
+- User: "what files do I have?" → list_files()
+- User: "read my budget.csv" → 
+    1. glob("**/budget.csv") to find exact path
+    2. read_file(path="path/to/budget.csv")
+- User: "create a todo list" → write_file(path="notes/todo.txt", content="...")
+- User: "add item to todo.txt" →
+    1. read_file(path="notes/todo.txt")
+    2. edit_file(path="notes/todo.txt", old_text="...", new_text="...")
+- User: "delete old notes" → glob("notes/*.txt") → delete_file() for each
+- User: "what do you know about project X?" → recall(query="project X")
 
 Respond conversationally as a helpful assistant.""")
     else:
@@ -527,6 +550,26 @@ Respond conversationally as a helpful assistant.""")
 - Only cite sources if a Search Results section is present.
   Do NOT fabricate URLs or source references.
 - Never fabricate facts, URLs, or citations that are not explicitly in the provided search results.
+- You have access to your sandbox filesystem via these tools:
+  • list_files() — List all files with names, paths, types, sizes
+  • glob(pattern) — Find files by pattern (e.g., "*.csv", "notes/**/*.md")
+  • read_file(path) — Read a file's full content
+  • write_file(path, content) — Create or overwrite a file
+  • edit_file(path, old_text, new_text) — Surgical find-and-replace
+  • delete_file(path) — Delete a file
+  • recall(query) — Search your structured memory (frames/slots)
+
+Tool chaining examples:
+- User: "what files do I have?" → list_files()
+- User: "read my budget.csv" → 
+    1. glob("**/budget.csv") to find exact path
+    2. read_file(path="path/to/budget.csv")
+- User: "create a todo list" → write_file(path="notes/todo.txt", content="...")
+- User: "add item to todo.txt" →
+    1. read_file(path="notes/todo.txt")
+    2. edit_file(path="notes/todo.txt", old_text="...", new_text="...")
+- User: "delete old notes" → glob("notes/*.txt") → delete_file() for each
+- User: "what do you know about project X?" → recall(query="project X")
 
 Respond conversationally and helpfully.""")
 

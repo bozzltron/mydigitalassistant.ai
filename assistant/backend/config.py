@@ -29,7 +29,12 @@ class Settings(BaseSettings):
     think_num_predict_cap: int = 4096
     # Native tool-calling on the chat model (Phase 6 M5). The web_search tool
     # additionally depends on SearXNG availability.
-    tools_enabled: bool = False
+    tools_enabled: bool = True
+
+    # File sandbox settings
+    sandbox_max_file_size: int = 10_000_000      # 10MB max write
+    sandbox_max_read_size: int = 1_000_000       # 1MB max read
+    sandbox_max_glob_results: int = 1000         # max glob results
 
     # Context windows per call class (Phase 6 plan §4.4). Without these,
     # Ollama defaults to 32K context on large-RAM hosts and allocates a

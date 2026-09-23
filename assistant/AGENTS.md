@@ -16,6 +16,30 @@ Web search for retrieval-only; learned facts stored locally in memory frames/slo
 - Measure before adding new models, new network calls, or new LLM invocations to the
   synchronous response path.
 
+### Known Issue: Tool Calling Timeout
+**Current behavior:** Tool calling runs on `utility_model` (default qwen2.5:3b / qwen3.5:4b) 
+via `run_tool_loop()`. The tool loop makes multiple sequential LLM calls (up to `MAX_TOOL_ROUNDS=3`),
+each with full system prompt + tools schema + conversation history.
+
+**Symptoms:**
+- First tool call: 5-15s (cold model + large prefill)
+- Subsequent turns: 3-10s each
+- Total turn time can exceed 30-60s, causing HTTP timeouts at reverse proxy (Caddy default 30s)
+
+**Root causes:**
+1. System prompt + tools schema = ~4000-6000 tokens prefill per call
+2. Sequential calls (no parallelization within tool loop)
+3. 4B model still slow on tool-calling workloads with many tools (17+)
+
+**Mitigations (planned):**
+1. **Streaming responses** — return first token immediately, reduce perceived latency
+2. **Reduce tool count** for tool model — only expose tools it actually needs
+3. **Smaller context** for tool calls — strip memory context from tool loop iterations
+4. **Dedicated fast tools model** — 1.5B model fine-tuned for function calling
+5. **Async tool execution** — parallelize independent tool calls (currently sequential)
+
+**Workaround:** Increase Caddy `response_header_timeout` and client timeouts for tool-heavy sessions.
+
 ## Web Search
 - **Default backend:** local SearXNG instance at `SEARCH_BASE_URL`. No query leaves
   the machine in the default configuration.

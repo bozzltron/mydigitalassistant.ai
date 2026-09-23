@@ -29,6 +29,8 @@ services:
       - DAILY_TASKS_TIME=${DAILY_TASKS_TIME:-09:00}
       - DAILY_TASKS_TZ=${DAILY_TASKS_TZ:-}
       - TZ=${TZ:-}
+      # Tool calling (Phase 6 M5): enables list_files, read_file, web_search, etc.
+      - TOOLS_ENABLED=${TOOLS_ENABLED:-false}
     volumes:
       - assistant-data:/app/data
       - ./assistant/backend/static:/app/assistant/backend/static:ro

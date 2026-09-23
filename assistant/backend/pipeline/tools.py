@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field
 
 from assistant.backend.config import settings
 from assistant.backend.memory.store import MemoryStore
-from assistant.backend.pipeline.llm_client import OllamaClient
+from assistant.backend.pipeline.llm_client import ChatMessage, OllamaClient
 
 logger = logging.getLogger(__name__)
 
@@ -310,10 +310,36 @@ class FetchUrlArgs(BaseModel):
 
 
 class ReadFileArgs(BaseModel):
-    frame_id: int | None = Field(
-        None, description="Frame ID of the uploaded file")
-    frame_name: str | None = Field(
-        None, description="Frame name of the uploaded file (e.g., 'file_test_config.txt')")
+    path: str = Field(
+        ..., description="Relative path in sandbox (e.g., 'notes/todo.txt', 'data.csv')")
+
+
+class ListFilesArgs(BaseModel):
+    pass
+
+
+# File sandbox tool args
+class WriteFileArgs(BaseModel):
+    path: str = Field(
+        ..., description="Relative path in sandbox (e.g., 'notes/todo.txt', 'scripts/analyze.py')")
+    content: str = Field(..., description="File content to write")
+    overwrite: bool = Field(False, description="Allow overwriting existing file")
+
+
+class EditFileArgs(BaseModel):
+    path: str = Field(..., description="Relative path in sandbox")
+    old_text: str = Field(..., description="Exact text to replace")
+    new_text: str = Field(..., description="Replacement text")
+    replace_all: bool = Field(True, description="Replace all occurrences (default: true)")
+
+
+class DeleteFileArgs(BaseModel):
+    path: str = Field(..., description="Relative path in sandbox")
+
+
+class GlobArgs(BaseModel):
+    pattern: str = Field(
+        ..., description="Glob pattern (e.g., '*.txt', 'notes/**/*.md', '**/*.py')")
 
 
 class RunScheduledTaskArgs(BaseModel):
@@ -382,6 +408,55 @@ def builtin_tools(
         }
 
     tools = [
+        _make_def(
+            "list_files",
+            "List all files in the assistant's sandbox directory. "
+            "Returns file names, paths, types, sizes. "
+            "Use for: discovering what files exist, getting a full inventory.",
+            ListFilesArgs,
+        ),
+        _make_def(
+            "write_file",
+            (
+                "Create a new file or overwrite an existing file in the sandbox. "
+                "Use for: saving notes, creating scripts, writing reports, "
+                "generating code, drafting documents. "
+                "Path is relative to sandbox root (e.g., 'notes/meeting.txt', "
+                "'scripts/analyze.py'). "
+                "Set overwrite=true to replace existing file. Auto-creates parent "
+                "directories."
+            ),
+            WriteFileArgs,
+        ),
+        _make_def(
+            "read_file",
+            "Read the full content of a file in the sandbox by its relative path. "
+            "Use when you need to examine a file's contents before editing or referencing it. "
+            "Path is relative to sandbox root (e.g., 'notes/meeting.txt', 'data.csv').",
+            ReadFileArgs,
+        ),
+        _make_def(
+            "edit_file",
+            "Make a surgical edit to an existing file by replacing exact text. "
+            "Use for: modifying config files, fixing code, updating documents, correcting typos. "
+            "Provide the exact old_text to replace and the new_text. "
+            "Set replace_all=false to replace only the first occurrence.",
+            EditFileArgs,
+        ),
+        _make_def(
+            "delete_file",
+            "Delete a file from the sandbox. Also removes the associated memory frame. "
+            "Use when a file is no longer needed. Path is relative to sandbox root.",
+            DeleteFileArgs,
+        ),
+        _make_def(
+            "glob",
+            "Find files matching a glob pattern in the sandbox. "
+            "Use for: discovering files, listing directory contents, finding files by extension. "
+            "Patterns: '*.txt' (all txt files), 'notes/*.md' (md files in notes/), "
+            "'**/*.py' (all Python files recursively).",
+            GlobArgs,
+        ),
         _make_def(
             "upsert_slot",
             "Store or update a fact in memory. Creates frame if missing.",
@@ -490,6 +565,9 @@ async def run_tool_loop(
     max_rounds: int | None = None,
     reasoning_effort: str = "medium",
     stream: bool = False,
+    think: bool = False,
+    num_predict: int | None = None,
+    model: str | None = None,
 ) -> dict[str, object]:
     """Main function-calling memory loop.
 
@@ -502,6 +580,10 @@ async def run_tool_loop(
     from assistant.backend.pipeline.tool_executor import execute_tool
 
     logger = logging.getLogger(__name__)
+
+    tool_names = [t["function"]["name"] for t in tools]
+    logger.info("DEBUG run_tool_loop: Starting with tools: %s", tool_names)
+    logger.debug("DEBUG run_tool_loop: Full tool definitions: %s", tools)
 
     # Define turn limits inline
     max_reasoning_turns: dict[str, int] = {
@@ -538,14 +620,29 @@ async def run_tool_loop(
         turn += 1
 
         # Call LLM with tool definitions
+        # Use provided model or default to utility_model for faster tool calling
+        loop_model = model or settings.utility_model
+        logger.info(
+            "DEBUG run_tool_loop: Turn %d, calling LLM (%s) with %d messages, "
+            "think=%s, num_predict=%s",
+            turn,
+            loop_model,
+            len(messages),
+            think,
+            num_predict,
+        )
         response = await llm_client.chat(
             messages=messages,
             tools=tools,
             tool_choice="auto",
-            model=settings.chat_model,
+            model=loop_model,
             temperature=temperature,
-            think=True,
+            think=think,
+            num_predict=num_predict,
         )
+
+        logger.info("DEBUG run_tool_loop: LLM response: tool_calls=%s, content=%s", 
+            bool(response.tool_calls), response.content[:100] if response.content else "None")
 
         # Check for tool calls
         if response.tool_calls:
@@ -553,6 +650,8 @@ async def run_tool_loop(
             for call in response.tool_calls:
                 tool_name = call.name
                 raw_args = call.arguments or {}
+
+                logger.info("DEBUG run_tool_loop: Executing tool=%s args=%s", tool_name, raw_args)
 
                 # Execute tool with timeout
                 try:
@@ -574,6 +673,12 @@ async def run_tool_loop(
                             "metadata": {},
                         }(),
                     )()
+
+                logger.info("DEBUG run_tool_loop: Tool %s result: success=%s, data=%s, error=%s",
+                    tool_name,
+                    getattr(result, "success", None),
+                    str(getattr(result, "data", {}))[:200],
+                    getattr(result, "error", None))
 
                 # finalize ends the loop immediately
                 if tool_name == "finalize":
@@ -611,7 +716,7 @@ async def run_tool_loop(
 
                 # Add tool result to messages for next iteration
                 messages.append(
-                    {"role": "tool", "content": str(result.data)}
+                    ChatMessage(role="tool", content=str(result.data), name=tool_name)
                 )
         else:
             # No tool calls = direct answer (finalize)

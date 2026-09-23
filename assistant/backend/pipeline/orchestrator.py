@@ -573,6 +573,11 @@ class Orchestrator:
             self_context=await self._get_self_context(),
         )
 
+        # DEBUG: Log system prompt for file tools visibility
+        logger.info("DEBUG system_prompt contains file tools guidance: %s", 
+            "list_files" in system_prompt and "read_file" in system_prompt)
+        logger.debug("DEBUG system_prompt (first 500 chars): %s", system_prompt[:500])
+
         if stored_slots:
             lines = [f"- {s['frame_name']}.{s['key']} = {s['value']}" for s in stored_slots]
             system_prompt += (
@@ -879,20 +884,25 @@ class Orchestrator:
             await self._report(progress, "responding", "writing a reply")
         try:
             if settings.tools_enabled:
+                logger.info("DEBUG: tools_enabled=True, building tools list")
                 tools = builtin_tools(
                     self.search_tool,
                     store=self.store,
                     llm_client=self.llm_client,
                     embed_fn=self.embed_fn(),
                 )
+                tool_names = [t["function"]["name"] for t in tools]
+                logger.info("DEBUG: Available tools: %s", tool_names)
                 llm_response = await run_tool_loop(
                     self.llm_client,
                     messages,
                     tools,
                     think=think,
                     num_predict=num_predict,
+                    model=settings.utility_model,
                 )
             else:
+                logger.info("DEBUG: tools_enabled=False, skipping tool loop")
                 llm_response = await self.llm_client.chat(
                     messages,
                     think=think,
@@ -925,21 +935,25 @@ class Orchestrator:
             )
 
         # 8. Log assistant episode
-        reasoning_trace = (
-            llm_response.get("reasoning_trace")
-            if isinstance(llm_response, dict)
-            else None
-        )
+        # run_tool_loop returns dict, llm_client.chat returns ChatResponse
+        if isinstance(llm_response, dict):
+            answer = llm_response.get("answer", "")
+            reasoning_trace = llm_response.get("reasoning_trace")
+            _ = llm_response.get("memory_updated", False)
+        else:
+            answer = llm_response.content
+            reasoning_trace = llm_response.thinking
+
         await self._log_episode(
             request.user_id,
             session_id,
             role="assistant",
-            content=llm_response.content,
+            content=answer,
             reasoning_trace=reasoning_trace,
         )
 
         # 9. Append sources to response — only for informational/search tasks
-        response_text = llm_response.content or llm_response.thinking or ""
+        response_text = answer
         if not response_text:
             response_text = "I'm not sure how to respond to that."
             logger.warning("Empty LLM response for: " + repr(request.message[:50]))

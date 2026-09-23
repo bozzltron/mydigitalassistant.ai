@@ -301,6 +301,247 @@ class TestFetchUrlHandlerIntegration:
             assert result.startswith("Error fetching")
 
 
+async def test_list_files_tool(store):
+    """Test the list_files tool returns uploaded files."""
+    from assistant.backend.pipeline.tool_executor import execute_tool, init_store
+    init_store(str(store.db_path))
+    await store.create_user("test_user")
+
+    # Create a file frame directly
+    frame = await store.create_frame(
+        "file_test_upload.txt",
+        "entity",
+        source_type="file_upload",
+        owner_user_id=1,
+        source_reliability=0.7,
+    )
+    
+    await store.upsert_slot(
+        frame_id=frame.id,
+        key="file_name",
+        value="test_upload.txt",
+        essential=0,
+        priority=0.5,
+        source_type="file_upload",
+        source_reliability=0.8,
+    )
+    await store.upsert_slot(
+        frame_id=frame.id,
+        key="file_content_preview",
+        value="Hello world",
+        essential=0,
+        priority=0.5,
+        source_type="file_upload",
+        source_reliability=0.8,
+    )
+    await store.upsert_slot(
+        frame_id=frame.id,
+        key="file_size",
+        value="11",
+        essential=0,
+        priority=0.5,
+        source_type="file_upload",
+        source_reliability=0.8,
+    )
+    await store.upsert_slot(
+        frame_id=frame.id,
+        key="file_ext",
+        value="txt",
+        essential=0,
+        priority=0.5,
+        source_type="file_upload",
+        source_reliability=0.8,
+    )
+    await store.upsert_slot(
+        frame_id=frame.id,
+        key="file_safe_name",
+        value="test_upload.txt",
+        essential=0,
+        priority=0.5,
+        source_type="file_upload",
+        source_reliability=0.7,
+    )
+
+    result = await execute_tool("list_files", {}, "1", "test_session")
+    assert result.success
+    assert "files" in result.data
+    assert result.data["count"] >= 1
+    assert any(f["file_name"] == "test_upload.txt" for f in result.data["files"])
+
+
+async def test_list_files_filters_by_user(store):
+    """Test list_files only returns files for the requesting user."""
+    from assistant.backend.pipeline.tool_executor import execute_tool, init_store
+    init_store(str(store.db_path))
+    await store.create_user("test_user")
+    await store.create_user("other_user")
+
+    # Create file for user 1
+    frame1 = await store.create_frame(
+        "file_user1.txt",
+        "entity",
+        source_type="file_upload",
+        owner_user_id=1,
+        source_reliability=0.7,
+    )
+    await store.upsert_slot(frame_id=frame1.id, key="file_name", value="user1.txt",
+        essential=0, priority=0.5, source_type="file_upload", source_reliability=0.8)
+    await store.upsert_slot(frame_id=frame1.id, key="file_content_preview", value="User 1 file",
+        essential=0, priority=0.5, source_type="file_upload", source_reliability=0.8)
+    await store.upsert_slot(frame_id=frame1.id, key="file_size", value="11",
+        essential=0, priority=0.5, source_type="file_upload", source_reliability=0.8)
+    await store.upsert_slot(frame_id=frame1.id, key="file_ext", value="txt",
+        essential=0, priority=0.5, source_type="file_upload", source_reliability=0.8)
+    await store.upsert_slot(frame_id=frame1.id, key="file_safe_name", value="user1.txt",
+        essential=0, priority=0.5, source_type="file_upload", source_reliability=0.7)
+
+    # Create file for user 2
+    frame2 = await store.create_frame(
+        "file_user2.txt",
+        "entity",
+        source_type="file_upload",
+        owner_user_id=2,
+        source_reliability=0.7,
+    )
+    await store.upsert_slot(frame_id=frame2.id, key="file_name", value="user2.txt",
+        essential=0, priority=0.5, source_type="file_upload", source_reliability=0.8)
+    await store.upsert_slot(frame_id=frame2.id, key="file_content_preview", value="User 2 file",
+        essential=0, priority=0.5, source_type="file_upload", source_reliability=0.8)
+    await store.upsert_slot(frame_id=frame2.id, key="file_size", value="11",
+        essential=0, priority=0.5, source_type="file_upload", source_reliability=0.8)
+    await store.upsert_slot(frame_id=frame2.id, key="file_ext", value="txt",
+        essential=0, priority=0.5, source_type="file_upload", source_reliability=0.8)
+    await store.upsert_slot(frame_id=frame2.id, key="file_safe_name", value="user2.txt",
+        essential=0, priority=0.5, source_type="file_upload", source_reliability=0.7)
+
+    # User 1 should only see their file
+    result = await execute_tool("list_files", {}, "1", "test_session")
+    assert result.success
+    assert result.data["count"] == 1
+    assert result.data["files"][0]["file_name"] == "user1.txt"
+
+    # User 2 should only see their file
+    result = await execute_tool("list_files", {}, "2", "test_session")
+    assert result.success
+    assert result.data["count"] == 1
+    assert result.data["files"][0]["file_name"] == "user2.txt"
+
+
+async def test_list_files_excludes_soft_deleted(store):
+    """Test list_files excludes files with frame priority=0 (soft deleted)."""
+    from assistant.backend.pipeline.tool_executor import execute_tool, init_store
+    init_store(str(store.db_path))
+    await store.create_user("test_user")
+
+    # Create active file (default frame priority is 0.5)
+    frame1 = await store.create_frame(
+        "file_active.txt",
+        "entity",
+        source_type="file_upload",
+        owner_user_id=1,
+        source_reliability=0.7,
+    )
+    await store.upsert_slot(frame_id=frame1.id, key="file_name", value="active.txt",
+        essential=0, priority=0.5, source_type="file_upload", source_reliability=0.8)
+    await store.upsert_slot(frame_id=frame1.id, key="file_content_preview", value="Active file",
+        essential=0, priority=0.5, source_type="file_upload", source_reliability=0.8)
+    await store.upsert_slot(frame_id=frame1.id, key="file_size", value="11",
+        essential=0, priority=0.5, source_type="file_upload", source_reliability=0.8)
+    await store.upsert_slot(frame_id=frame1.id, key="file_ext", value="txt",
+        essential=0, priority=0.5, source_type="file_upload", source_reliability=0.8)
+    await store.upsert_slot(frame_id=frame1.id, key="file_safe_name", value="active.txt",
+        essential=0, priority=0.5, source_type="file_upload", source_reliability=0.7)
+
+    # Create soft-deleted file (frame priority=0)
+    frame2 = await store.create_frame(
+        "file_deleted.txt",
+        "entity",
+        source_type="file_upload",
+        owner_user_id=1,
+        source_reliability=0.7,
+        priority=0.0,  # Frame-level soft delete
+    )
+    await store.upsert_slot(frame_id=frame2.id, key="file_name", value="deleted.txt",
+        essential=0, priority=0.5, source_type="file_upload", source_reliability=0.8)
+    await store.upsert_slot(frame_id=frame2.id, key="file_content_preview", value="Deleted file",
+        essential=0, priority=0.5, source_type="file_upload", source_reliability=0.8)
+    await store.upsert_slot(frame_id=frame2.id, key="file_size", value="11",
+        essential=0, priority=0.5, source_type="file_upload", source_reliability=0.8)
+    await store.upsert_slot(frame_id=frame2.id, key="file_ext", value="txt",
+        essential=0, priority=0.5, source_type="file_upload", source_reliability=0.8)
+    await store.upsert_slot(frame_id=frame2.id, key="file_safe_name", value="deleted.txt",
+        essential=0, priority=0.5, source_type="file_upload", source_reliability=0.7)
+
+    # Should only see active file
+    result = await execute_tool("list_files", {}, "1", "test_session")
+    assert result.success
+    assert result.data["count"] == 1
+    assert result.data["files"][0]["file_name"] == "active.txt"
+
+
+async def test_read_file_after_list_files(store):
+    """Test the full flow: list_files -> read_file."""
+    import tempfile
+    from pathlib import Path
+
+    from assistant.backend.pipeline.tool_executor import execute_tool, init_store
+    init_store(str(store.db_path))
+    await store.create_user("test_user")
+
+    # Create a temp file on disk
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False, dir="/app/data") as f:
+        f.write("name,email\nAlice,a@b.com\nBob,b@c.com")
+        temp_path = Path(f.name)
+        safe_name = temp_path.name
+
+    try:
+        # Create file frame
+        frame = await store.create_frame(
+            f"file_{safe_name}",
+            "entity",
+            source_type="file_upload",
+            owner_user_id=1,
+            source_reliability=0.7,
+        )
+        await store.upsert_slot(frame_id=frame.id, key="file_name", value="test.csv",
+            essential=0, priority=0.5, source_type="file_upload", source_reliability=0.8)
+        await store.upsert_slot(
+            frame_id=frame.id,
+            key="file_content_preview",
+            value="name,email...",
+            essential=0,
+            priority=0.5,
+            source_type="file_upload",
+            source_reliability=0.8,
+        )
+        await store.upsert_slot(frame_id=frame.id, key="file_size", value="30",
+            essential=0, priority=0.5, source_type="file_upload", source_reliability=0.8)
+        await store.upsert_slot(frame_id=frame.id, key="file_ext", value="csv",
+            essential=0, priority=0.5, source_type="file_upload", source_reliability=0.8)
+        await store.upsert_slot(frame_id=frame.id, key="file_safe_name", value=safe_name,
+            essential=0, priority=0.5, source_type="file_upload", source_reliability=0.7)
+
+        # List files
+        list_result = await execute_tool("list_files", {}, "1", "test_session")
+        assert list_result.success
+        assert list_result.data["count"] >= 1
+        csv_file = next(f for f in list_result.data["files"] if f["file_ext"] == "csv")
+
+        # Read the file using frame_id from list
+        read_result = await execute_tool(
+            "read_file",
+            {"frame_id": csv_file["frame_id"]},
+            "1",
+            "test_session",
+        )
+        assert read_result.success
+        assert "Alice" in read_result.data["content"]
+        assert "Bob" in read_result.data["content"]
+        assert read_result.data["file_ext"] == "csv"
+    finally:
+        temp_path.unlink(missing_ok=True)
+
+
 class MockResponse:
     """Minimal httpx response stand-in for mock_httpx_get."""
 
