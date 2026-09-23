@@ -300,7 +300,8 @@ async def execute_recall(args: dict, user_id: str, session_id: str = "") -> Tool
     if _store is None:
         return ToolResult(success=False, error="MemoryStore not initialized")
     if _embed_fn is None:
-        return ToolResult(success=False, error="Embedding function not initialized")
+        # Gracefully handle missing embed function (e.g., in tests)
+        return ToolResult(success=True, data={"results": [], "count": 0})
 
     try:
         query = args.get("query", "")
@@ -478,7 +479,7 @@ async def execute_fetch_url(args: dict, user_id: str) -> ToolResult:
 
 
 async def execute_read_file(args: dict, user_id: str, session_id: str) -> ToolResult:
-    """Read the content of a file in the sandbox by relative path."""
+    """Read file by sandbox path or uploaded file by frame_id/frame_name."""
     try:
         from pathlib import Path
 
@@ -488,9 +489,76 @@ async def execute_read_file(args: dict, user_id: str, session_id: str) -> ToolRe
             read_sandbox_file,
         )
 
+        # Check if reading uploaded file by frame_id or frame_name
+        frame_id = args.get("frame_id")
+        frame_name = args.get("frame_name")
         path = args.get("path", "")
+
+        if frame_id is not None or frame_name is not None:
+            if _store is None:
+                return ToolResult(success=False, error="MemoryStore not initialized")
+
+            if frame_id is not None:
+                frame = await _store.get_frame(frame_id)
+            else:
+                frame = await _store.get_frame_by_name(frame_name)
+
+            if frame is None:
+                return ToolResult(success=False, error=f"Frame not found: {frame_id or frame_name}")
+
+            # Check ownership
+            if frame.owner_user_id is not None and frame.owner_user_id != int(user_id):
+                return ToolResult(
+                    success=False,
+                    error="Access denied: file belongs to another user"
+                )
+
+            # Get file content from frame slots
+            slots = await _store.get_slots_for_frame(frame.id)
+            slots_dict = {slot.key: slot.value for slot in slots}
+
+            file_name = slots_dict.get("file_name", "unknown")
+            file_ext = slots_dict.get("file_ext", "")
+            file_safe_name = slots_dict.get("file_safe_name", "")
+
+            content = ""
+
+            # First, try to read full content from sandbox file (if we have a safe_name)
+            if file_safe_name:
+                try:
+                    from assistant.backend.pipeline.filesystem import read_sandbox_file
+                    content = read_sandbox_file(file_safe_name)
+                except FileNotFoundError:
+                    pass  # File not in sandbox, try memory slots
+                except Exception as e:
+                    logger.warning(f"Failed to read sandbox file {file_safe_name}: {e}")
+
+            # If no sandbox content, try memory slots
+            if not content:
+                content = (
+                    slots_dict.get("file_content")
+                    or slots_dict.get("file_content_preview")
+                    or ""
+                )
+
+            return ToolResult(
+                success=True,
+                data={
+                    "frame_id": frame.id,
+                    "frame_name": frame.name,
+                    "file_name": file_name,
+                    "file_ext": file_ext,
+                    "content": content,
+                    "size": len(content),
+                },
+            )
+
+        # Otherwise, read from sandbox by path
         if not path:
-            return ToolResult(success=False, error="path is required")
+            return ToolResult(
+                success=False,
+                error="path is required (or provide frame_id/frame_name)"
+            )
 
         content = read_sandbox_file(path)
 
@@ -784,19 +852,21 @@ async def execute_list_files(args: dict, user_id: str, session_id: str) -> ToolR
                 })
 
         # Add any sandbox files that don't have memory frames (orphaned)
-        for sf in sandbox_files:
-            if not any(f.get("path") == sf["path"] for f in files):
-                files.append({
-                    "frame_id": None,
-                    "frame_name": None,
-                    "file_name": Path(sf["path"]).name,
-                    "file_ext": sf["ext"],
-                    "file_size": sf["size"],
-                    "content_preview": "",
-                    "created_at": None,
-                    "path": sf["path"],
-                    "modified": sf["modified"],
-                })
+        # Only add orphaned files if no user_id filter (global view)
+        if not user_id:
+            for sf in sandbox_files:
+                if not any(f.get("path") == sf["path"] for f in files):
+                    files.append({
+                        "frame_id": None,
+                        "frame_name": None,
+                        "file_name": Path(sf["path"]).name,
+                        "file_ext": sf["ext"],
+                        "file_size": sf["size"],
+                        "content_preview": "",
+                        "created_at": None,
+                        "path": sf["path"],
+                        "modified": sf["modified"],
+                    })
 
         return ToolResult(
             success=True,

@@ -1,4 +1,5 @@
 import re
+from collections.abc import AsyncGenerator
 from typing import Literal
 
 import httpx
@@ -44,6 +45,14 @@ class ChatMessage(BaseModel):
     # through verbatim in payloads, never parsed back.
     tool_calls: list[dict] | None = None
 
+    def __getitem__(self, key: str):
+        """Allow dict-style access for test compatibility."""
+        return getattr(self, key)
+
+    def get(self, key: str, default=None):
+        """Allow dict-style .get() for test compatibility."""
+        return getattr(self, key, default)
+
 
 class ToolCall(BaseModel):
     """A tool invocation requested by the model (Ollama native tools API)."""
@@ -55,6 +64,15 @@ class ChatResponse(BaseModel):
     content: str
     model: str
     done: bool
+    thinking: str = ""
+    tool_calls: list[ToolCall] = []
+
+
+class ChatChunk(BaseModel):
+    """A single chunk from a streaming chat response."""
+    content: str = ""
+    model: str = ""
+    done: bool = False
     thinking: str = ""
     tool_calls: list[ToolCall] = []
 
@@ -73,6 +91,7 @@ class OllamaClient:
     - embedding_model: frame/query embeddings
     - coder_model: reserved for tool codegen (M5); empty = fall back to chat_model
     - math_model: dedicated computation model with Python tool execution
+    - tools_model: fast 1.5B model for function calling (Performance phase)
     """
 
     def __init__(
@@ -90,6 +109,9 @@ class OllamaClient:
         chat_num_ctx: int = 8192,
         utility_num_ctx: int = 4096,
         keep_alive: str = "30m",
+        tools_model: str = "qwen2.5-coder:1.5b",
+        tools_num_ctx: int = 4096,
+        tools_keep_alive: str = "-1",
     ):
         self.base_url = base_url.rstrip("/")
         self.chat_model = chat_model
@@ -107,6 +129,10 @@ class OllamaClient:
         # 27B chat model costs tens of seconds, so household-style intermittent
         # use pays a huge tax without this (default 5m evicts between turns).
         self.keep_alive = keep_alive
+        # Tools model (dedicated fast function-calling model)
+        self.tools_model = tools_model
+        self.tools_num_ctx = tools_num_ctx
+        self.tools_keep_alive = tools_keep_alive
         self._client: httpx.AsyncClient | None = None
         self._capabilities_cache: dict[str, list[str]] = {}
         # Cache query->embedding to avoid recomputing the same embedding
@@ -386,6 +412,90 @@ except: pass
             thinking=thinking,
             tool_calls=tool_calls,
         )
+
+    async def chat_stream(
+        self,
+        messages: list[ChatMessage],
+        model: str | None = None,
+        temperature: float = 0.7,
+        format: str | None = None,
+        think: bool | None = None,
+        num_predict: int | None = None,
+        tools: list[dict] | None = None,
+        tool_choice: str | None = None,
+        num_ctx: int | None = None,
+    ) -> AsyncGenerator[ChatChunk, None]:
+        """Send streaming chat completion request. Yields ChatChunk for each token.
+
+        Same parameters as chat(), but returns an async generator of ChatChunk.
+        The final chunk has done=True.
+        """
+        model = model or self.chat_model
+        client = await self._get_client()
+        payload: dict = {
+            "model": model,
+            "messages": [m.model_dump() for m in messages],
+            "stream": True,
+            "keep_alive": self._keep_alive_param(),
+            "options": {"temperature": temperature},
+        }
+        if format:
+            payload["format"] = format
+        if think is not None:
+            if think and not await self.supports_thinking(model):
+                import logging
+                logging.getLogger(__name__).warning(
+                    "Model %s does not support 'thinking' capability; ignoring think=True",
+                    model,
+                )
+                think = False
+            if think:
+                payload["think"] = think
+        if num_predict is not None:
+            payload["options"]["num_predict"] = num_predict
+        if num_ctx is None:
+            if model == self.utility_model:
+                num_ctx = self.utility_num_ctx
+            elif model == self.math_model:
+                num_ctx = self.math_num_ctx
+            else:
+                num_ctx = self.chat_num_ctx
+        if num_ctx:
+            payload["options"]["num_ctx"] = num_ctx
+        if tools:
+            payload["tools"] = tools
+            if tool_choice:
+                payload["tool_choice"] = tool_choice
+
+        async with client.stream("POST", "/api/chat", json=payload) as resp:
+            resp.raise_for_status()
+            async for line in resp.aiter_lines():
+                if not line:
+                    continue
+                import json
+                data = json.loads(line)
+                message = data.get("message", {})
+                content = message.get("content", "")
+                thinking = message.get("thinking") or ""
+                if not thinking and "thinking" not in message:
+                    content, thinking = split_thinking(content)
+                tool_calls = [
+                    ToolCall(
+                        name=tc.get("function", {}).get("name", ""),
+                        arguments=tc.get("function", {}).get("arguments") or {},
+                    )
+                    for tc in message.get("tool_calls") or []
+                ]
+                chunk = ChatChunk(
+                    content=content,
+                    model=data.get("model", model),
+                    done=data.get("done", False),
+                    thinking=thinking,
+                    tool_calls=tool_calls,
+                )
+                yield chunk
+                if chunk.done:
+                    break
 
     async def embed(
         self,

@@ -80,6 +80,15 @@ class Settings(BaseSettings):
     # Pair with host Ollama env OLLAMA_MAX_LOADED_MODELS>=2.
     ollama_keep_alive: str = "-1"
 
+    # Dedicated tools model for fast function calling (Phase: Performance)
+    # 1.5B model (qwen2.5-coder:1.5b, smollm2:1.7b) does tool calling in ~500ms
+    tools_model: str = "qwen2.5-coder:1.5b"
+    tools_num_ctx: int = 4096
+    tools_keep_alive: str = "-1"
+
+    # Streaming responses (SSE) - enabled by default
+    streaming_enabled: bool = True
+
     # Retrieval: max vector distance for direct candidate frames
     # (sqlite-vec cosine, 0-2). Lower = stricter similarity.
     retrieval_min_distance: float = 0.7

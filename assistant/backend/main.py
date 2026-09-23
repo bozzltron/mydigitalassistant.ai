@@ -112,6 +112,9 @@ async def lifespan(app: FastAPI):
         utility_num_ctx=settings.utility_num_ctx,
         timeout=settings.ollama_timeout,
         keep_alive=settings.ollama_keep_alive,
+        tools_model=settings.tools_model,
+        tools_num_ctx=settings.tools_num_ctx,
+        tools_keep_alive=settings.tools_keep_alive,
     )
     retriever = Retriever(
         store=store,
@@ -469,6 +472,143 @@ async def chat(
         entry = _turn_progress.get(turn_id)
         if entry is not None:
             entry["done"] = True
+
+
+@app.post("/chat/stream")
+async def chat_stream(
+    request: ChatRequest,
+    orch: Orchestrator = _Depends(get_orchestrator),
+    store: MemoryStore = _Depends(get_store),
+):
+    """Send a message to the assistant with streaming response (SSE).
+
+    Returns Server-Sent Events for real-time UI updates.
+    """
+    from fastapi.responses import StreamingResponse
+
+    turn_id = request.turn_id
+    if turn_id:
+        _prune_turn_progress()
+        _turn_progress[turn_id] = {
+            "stage": "queued",
+            "detail": "getting started",
+            "started_at": time.time(),
+            "done": False,
+        }
+
+    async def progress(stage: str, detail: str) -> None:
+        entry = _turn_progress.get(turn_id)
+        if entry is not None:
+            entry["stage"] = stage
+            entry["detail"] = detail
+
+    # Process attached files (same as regular chat)
+    uploaded_files = []
+    file_contents = []
+    if request.attached_files:
+        for fc in request.attached_files:
+            filename = fc.get("name", "unknown")
+            ext = fc.get("ext", "txt")
+            text_content = fc.get("text", "")
+            content_bytes = text_content.encode("utf-8")
+
+            allowed_types = {"txt", "csv", "json", "xml", "html", "ics"}
+            if ext not in allowed_types:
+                logger.warning(f"Skipping unsupported file type: .{ext}")
+                continue
+
+            if len(content_bytes) > 10_000_000:
+                logger.warning(f"Skipping file too large: {filename}")
+                continue
+
+            try:
+                upload_result = await upload_file_to_memory(
+                    filename=filename,
+                    content=content_bytes,
+                    ext=ext,
+                    store=store,
+                    user_id=request.user_id,
+                )
+                uploaded_files.append({
+                    "frame_id": upload_result["frame_id"],
+                    "frame_name": upload_result["frame_name"],
+                    "file_name": upload_result["file_name"],
+                    "file_ext": upload_result["file_ext"],
+                })
+            except Exception as e:
+                logger.error(f"Failed to upload attached file {filename}: {e}")
+                continue
+
+            file_contents.append({
+                "name": filename,
+                "ext": ext,
+                "preview": fc.get("preview", "")[:500],
+                "text": text_content,
+                "key_entities": fc.get("key_entities", []),
+                "open_questions": fc.get("open_questions", []),
+            })
+
+    # Build enhanced message
+    enhanced_message = request.message
+    if file_contents:
+        file_summaries = []
+        for i, fc in enumerate(file_contents):
+            entities_str = (
+                ", ".join(fc.get("key_entities", [])[:3]) if fc.get("key_entities") else ""
+            )
+            questions_str = (
+                " ".join(fc.get("open_questions", [])[:2]) if fc.get("open_questions") else ""
+            )
+            frame_info = ""
+            if i < len(uploaded_files):
+                uf = uploaded_files[i]
+                frame_info = f" [frame_id: {uf['frame_id']}, frame_name: {uf['frame_name']}]"
+            file_summaries.append(f"File: {fc['name']} ({fc['ext']}) - {fc['preview']}{frame_info}")
+            if entities_str:
+                file_summaries[-1] += f" [entities: {entities_str}]"
+            if questions_str:
+                file_summaries[-1] += f" [questions: {questions_str}]"
+        if request.message:
+            enhanced_message = request.message + "\n\n" + "\n".join(file_summaries)
+        else:
+            enhanced_message = "\n\n" + "\n".join(file_summaries)
+
+    orch_attached_files = []
+    for i, fc in enumerate(file_contents):
+        file_info = dict(fc)
+        if i < len(uploaded_files):
+            file_info["frame_id"] = uploaded_files[i]["frame_id"]
+            file_info["frame_name"] = uploaded_files[i]["frame_name"]
+        orch_attached_files.append(file_info)
+
+    async def event_generator():
+        try:
+            async for event in orch.chat_stream(
+                ChatRequest(
+                    user_id=request.user_id,
+                    message=enhanced_message,
+                    session_id=request.session_id,
+                    turn_id=request.turn_id,
+                    attached_files=orch_attached_files,
+                    search_consent=request.search_consent,
+                ),
+                progress=progress,
+            ):
+                yield event
+        finally:
+            entry = _turn_progress.get(turn_id)
+            if entry is not None:
+                entry["done"] = True
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # Disable nginx buffering
+        }
+    )
 
 
 @app.get("/chat/status/{turn_id}")

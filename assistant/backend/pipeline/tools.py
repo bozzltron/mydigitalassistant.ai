@@ -310,8 +310,12 @@ class FetchUrlArgs(BaseModel):
 
 
 class ReadFileArgs(BaseModel):
-    path: str = Field(
-        ..., description="Relative path in sandbox (e.g., 'notes/todo.txt', 'data.csv')")
+    path: str | None = Field(
+        None, description="Relative path in sandbox (e.g., 'notes/todo.txt', 'data.csv')")
+    frame_id: int | None = Field(
+        None, description="Frame ID of uploaded file to read")
+    frame_name: str | None = Field(
+        None, description="Frame name of uploaded file to read")
 
 
 class ListFilesArgs(BaseModel):
@@ -385,6 +389,31 @@ class FinalizeArgs(BaseModel):
 # ---------------------------------------------------------------------------
 # Builtin tools registry – returns LLM-ready tool definitions
 # ---------------------------------------------------------------------------
+
+# Reduced tool set for the fast 1.5B tools model (Phase: Performance)
+# Only tools that the tools model actually needs for file ops, memory writes, and reasoning
+TOOLS_FOR_TOOL_MODEL = {
+    "write_file", "read_file", "edit_file", "delete_file", "glob", "list_files",
+    "recall", "upsert_slot", "upsert_association", "mark_essential",
+    "think", "finalize",
+}
+# Excluded: web_search, fetch_url, compute, run_scheduled_task, plan, search_episodes
+
+
+def _get_tools_for_model(
+    tools: list[dict],
+    model_name: str,
+    llm_client: OllamaClient | None = None,
+) -> list[dict]:
+    """Filter tools based on the model being used.
+
+    The tools model (1.5B) gets a reduced set for faster function calling.
+    Other models get the full tool set.
+    """
+    if model_name == getattr(llm_client, "tools_model", "qwen2.5-coder:1.5b"):
+        return [t for t in tools if t["function"]["name"] in TOOLS_FOR_TOOL_MODEL]
+    return tools
+
 
 def builtin_tools(
     search_tool=None,
@@ -574,10 +603,18 @@ async def run_tool_loop(
     Runs until LLM calls finalize() or max_turns reached.
     Returns dict with answer, loop_terminated, memory_updated, turns,
     reasoning_effort.
+
+    Uses the dedicated tools_model (1.5B) by default for faster tool calling.
+    Uses async parallel execution for independent tool calls.
     """
     import logging
 
-    from assistant.backend.pipeline.tool_executor import execute_tool
+    from assistant.backend.pipeline.async_tools import (
+        ToolCall as AsyncToolCall,
+    )
+    from assistant.backend.pipeline.async_tools import (
+        execute_tools_parallel,
+    )
 
     logger = logging.getLogger(__name__)
 
@@ -615,13 +652,14 @@ async def run_tool_loop(
     tool_results: list[dict] = []
     reasoning_trace: list[str] = []
 
+    # Use tools_model (1.5B) by default for faster tool calling
+    # Fall back to utility_model if tools_model is not available (e.g., in tests)
+    loop_model = model or getattr(llm_client, "tools_model", None) or settings.utility_model
+
     # Main loop
     while turn < max_turns:
         turn += 1
 
-        # Call LLM with tool definitions
-        # Use provided model or default to utility_model for faster tool calling
-        loop_model = model or settings.utility_model
         logger.info(
             "DEBUG run_tool_loop: Turn %d, calling LLM (%s) with %d messages, "
             "think=%s, num_predict=%s",
@@ -646,39 +684,29 @@ async def run_tool_loop(
 
         # Check for tool calls
         if response.tool_calls:
-            # Execute each tool call
-            for call in response.tool_calls:
+            # Convert to async tool calls
+            async_calls = [
+                AsyncToolCall(name=call.name, arguments=call.arguments or {})
+                for call in response.tool_calls
+            ]
+
+            # Execute tools in parallel where possible
+            tool_results_list = await execute_tools_parallel(
+                async_calls,
+                user_id=user_id,
+                session_id=session_id,
+            )
+
+            # Process results in order
+            for call, result in zip(response.tool_calls, tool_results_list, strict=True):
                 tool_name = call.name
                 raw_args = call.arguments or {}
 
-                logger.info("DEBUG run_tool_loop: Executing tool=%s args=%s", tool_name, raw_args)
-
-                # Execute tool with timeout
-                try:
-                    result = await execute_tool(
-                        tool_name,
-                        raw_args,
-                        user_id=user_id,
-                        session_id=session_id,
-                    )
-                except Exception as e:
-                    logger.error(f"Tool execution error: {e}")
-                    result = type(
-                        "ToolResult",
-                        (),
-                        {
-                            "success": False,
-                            "error": str(e),
-                            "data": {},
-                            "metadata": {},
-                        }(),
-                    )()
-
                 logger.info("DEBUG run_tool_loop: Tool %s result: success=%s, data=%s, error=%s",
                     tool_name,
-                    getattr(result, "success", None),
-                    str(getattr(result, "data", {}))[:200],
-                    getattr(result, "error", None))
+                    result.success,
+                    str(result.data)[:200],
+                    result.error)
 
                 # finalize ends the loop immediately
                 if tool_name == "finalize":
@@ -701,11 +729,11 @@ async def run_tool_loop(
                     {
                         "call": {"name": tool_name, "args": raw_args},
                         "result": {
-                            "success": result.success if hasattr(result, "success") else True,
-                            "data": result.data if hasattr(result, "data") else {},
-                            "error": result.error if hasattr(result, "error") else "",
+                            "success": result.success,
+                            "data": result.data,
+                            "error": result.error,
                         },
-                        "metadata": getattr(result, "metadata", {}),
+                        "metadata": result.metadata or {},
                     }
                 )
 

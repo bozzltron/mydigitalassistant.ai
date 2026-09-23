@@ -1,11 +1,12 @@
 """Orchestrator: runs the cognitive loop for chat turns."""
 
 import asyncio
+import json
 import logging
 import re
 import time
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from html.parser import HTMLParser
@@ -899,7 +900,6 @@ class Orchestrator:
                     tools,
                     think=think,
                     num_predict=num_predict,
-                    model=settings.utility_model,
                 )
             else:
                 logger.info("DEBUG: tools_enabled=False, skipping tool loop")
@@ -1411,6 +1411,452 @@ class Orchestrator:
             logger.warning("Scheduled task extraction failed: %s", e)
 
         return response_text
+
+    async def chat_stream(
+        self,
+        request: ChatRequest,
+        progress: "Callable[[str, str], Awaitable[None]] | None" = None,
+        skip_route: bool = False,
+    ) -> AsyncGenerator[str, None]:
+        """Run the cognitive loop with streaming response (SSE format).
+
+        Yields SSE-formatted events for real-time UI updates.
+        """
+        # Import here to avoid circular imports
+        from assistant.backend.pipeline.llm_client import ChatMessage
+        from assistant.backend.pipeline.streaming import stream_final_answer
+
+        # 1. Session
+        session_id = request.session_id or str(uuid.uuid4())
+
+        # 2. Log user episode
+        user_episode = await self._log_episode(
+            request.user_id,
+            session_id,
+            role="user",
+            content=request.message,
+        )
+
+        # 3. Classify task type + search intent AND Retrieve memory context IN PARALLEL
+        await self._report(progress, "routing", "reading your message")
+        await self._report(progress, "recall", "checking my memory")
+
+        routing_start = time.monotonic()
+        recall_start = time.monotonic()
+
+        if skip_route:
+            task_type = TaskType.FUNCTIONAL
+            classification = None
+            # Still need retrieval even when skipping route
+            memory_context = await self.retriever.retrieve(
+                query=request.message,
+                user_id=request.user_id,
+                session_id=session_id,
+            )
+        else:
+            # Run routing and retrieval concurrently
+            route_task = asyncio.create_task(route(request.message, self.llm_client))
+            retrieve_task = asyncio.create_task(
+                self.retriever.retrieve(
+                    query=request.message,
+                    user_id=request.user_id,
+                    session_id=session_id,
+                )
+            )
+            classification, memory_context = await asyncio.gather(route_task, retrieve_task)
+            task_type = classification.task_type
+
+        routing_time = time.monotonic() - routing_start
+        recall_time = time.monotonic() - recall_start
+        logger.debug("Routing: %.3fs, Memory recall: %.3fs (parallel)", routing_time, recall_time)
+
+        # 3b. Handle scheduled task intent
+        if task_type == TaskType.SCHEDULED and not skip_route:
+            # For scheduled tasks, fall back to non-streaming
+            response = await self._handle_scheduled_task(request, session_id)
+            event = {
+                'type': 'finalize',
+                'answer': response.response,
+                'reasoning_trace': None
+            }
+            yield f"data: {json.dumps(event)}\n\n"
+            return
+
+        # 5. Reason: decide action based on memory sufficiency
+        # 6. Extract user-stated facts BEFORE generation (parallel with reasoner)
+        plan_start = time.monotonic()
+        extraction_start = time.monotonic()
+
+        plan_task = asyncio.create_task(asyncio.to_thread(
+            classify_intent,
+            query=request.message,
+            task_type=task_type.value,
+            memory=memory_context,
+        ))
+        # Report learning stage before parallel extraction
+        await self._report(progress, "learning", "learning from our conversation")
+        extraction_task = asyncio.create_task(
+            store_turn_memory(
+                user_message=request.message,
+                assistant_response="",
+                store=self.store,
+                llm_client=self.llm_client,
+                source_episode_id=user_episode.id,
+            )
+        )
+
+        plan, extraction_summary = await asyncio.gather(plan_task, extraction_task)
+
+        plan_time = time.monotonic() - plan_start
+        extraction_time = time.monotonic() - extraction_start
+        logger.debug("Reasoner: %.3fs, Extraction: %.3fs (parallel)", plan_time, extraction_time)
+
+        # 5a. Storage statements must not trigger external search
+        if (
+            plan.search_needed
+            and task_type != TaskType.SEARCH
+            and not skip_route
+            and classification is not None
+            and classification.wants_search is False
+        ):
+            logger.info("Search vetoed by router for storage-style turn")
+            plan.action = Action.ANSWER
+            plan.search_needed = False
+
+        # 5b. Handle correction intent
+        if plan.action == Action.CORRECT:
+            # For corrections, fall back to non-streaming
+            response = await self.chat(request, progress=progress, skip_route=skip_route)
+            event = {
+                'type': 'finalize',
+                'answer': response.response,
+                'reasoning_trace': None
+            }
+            yield f"data: {json.dumps(event)}\n\n"
+            return
+
+        stored_slots = extraction_summary.get("slots") or []
+
+        # 7. Build system prompt with memory context + reasoner guidance
+        plan_instructions = format_plan_for_prompt(plan)
+        system_prompt = build_system_prompt(
+            memory_context=memory_context.formatted,
+            task_type=task_type.value,
+            planinstructions=plan_instructions,
+            self_context=await self._get_self_context(),
+        )
+
+        if stored_slots:
+            lines = [f"- {s['frame_name']}.{s['key']} = {s['value']}" for s in stored_slots]
+            system_prompt += (
+                "\n\n**Facts you just stored this turn:**\n"
+                + "\n".join(lines)
+                + "\nAcknowledge these naturally, in your own words."
+            )
+
+        # Math computation path
+        computation_result = None
+        if await self._detect_math_intent(request.message):
+            if self.llm_client.math_model:
+                try:
+                    await self._report(progress, "computing", "running mathematical computation")
+                    computation_result = await self.llm_client.execute_python(
+                        f"Solve this step by step: {request.message}"
+                    )
+                    logger.info("Math computation completed: %d chars", len(computation_result))
+                except Exception as e:
+                    logger.warning("Math computation failed: %s", e)
+
+        if computation_result:
+            system_prompt += (
+                f"\n\n**Computed Result (verified via Python execution):**\n"
+                f"{computation_result}\n"
+                f"Incorporate this result into your response. Cite as 'computed'."
+            )
+
+        # 7b. Execute search if reasoner says it's needed
+        search_results: list[SearchResult] = []
+        search_extraction_summary: dict = {}
+        search_info: SearchInfo | None = None
+        if plan.search_needed:
+            await self._report(progress, "searching", "searching the web")
+            from assistant.backend.pipeline.search import (
+                filter_relevant,
+                sanitize_query,
+            )
+
+            query = classification.search_query or sanitize_query(request.message)
+            logger.info("Reasoner triggered search for: %s", query[:80])
+            backend_name = self.search_tool.backend_name
+            extraction_budget = self.search_tool.max_results_for_extraction
+            relevance_threshold = (
+                settings.brave_search_min_relevance
+                if backend_name == "brave"
+                else settings.search_min_relevance
+            )
+
+            user_consent = getattr(request, 'search_consent', False)
+            try:
+                search_results, search_info = await self.search_tool.search_with_info(
+                    query,
+                    num_results=extraction_budget,
+                    llm_client=self.llm_client,
+                    user_consent=user_consent
+                )
+            except Exception as e:
+                logger.warning("Search failed, continuing without results: %s", e)
+                search_results = []
+                search_info = None
+
+            if search_info and search_info.consent_required:
+                sensitivity = search_info.sensitivity
+                categories = (
+                    ", ".join(sensitivity.categories)
+                    if sensitivity.categories
+                    else "general"
+                )
+                consent_msg = (
+                    f"This search query may contain sensitive information "
+                    f"({sensitivity.level.value}: {sensitivity.reason}). "
+                    f"Categories: {categories}. "
+                    f"Search via Brave would send this query to their servers. "
+                    f"Do you want to proceed?"
+                )
+                event = {
+                    'type': 'finalize',
+                    'answer': consent_msg,
+                    'reasoning_trace': None
+                }
+                yield f"data: {json.dumps(event)}\n\n"
+                return
+
+            # Relevance gate
+            search_results = await filter_relevant(
+                search_results, query, self.embed_fn(), min_relevance=relevance_threshold
+            )
+
+            if search_results:
+                display_results = search_results[: settings.max_search_results_in_prompt]
+                search_text = "\n".join(
+                    f"- [{r.title}]({r.url}) - {r.snippet}" for r in display_results
+                )
+                system_prompt += f"\n\n**Search Results:**\n{search_text}"
+
+                # Extract facts from search results
+                from assistant.backend.pipeline.extractor import (
+                    apply_search_extraction,
+                    extract_facts_from_document,
+                    extract_facts_from_search,
+                    filter_duplicate_slots,
+                    merge_extractions,
+                )
+
+                snippet_extraction = await extract_facts_from_search(
+                    request.message, search_results, self.llm_client
+                )
+
+                # Brave: fetch top result bodies in parallel
+                if backend_name == "brave" and search_results:
+                    try:
+                        bodies = await asyncio.gather(
+                            *[
+                                _fetch_url_body(r.url)
+                                for r in search_results[: settings.max_search_results_in_prompt]
+                            ],
+                            return_exceptions=True,
+                        )
+                        extraction_tasks = [
+                            extract_facts_from_document(body, result.url, self.llm_client)
+                            for result, body in zip(
+                                search_results[: settings.max_search_results_in_prompt],
+                                bodies,
+                                strict=True,
+                            )
+                            if not isinstance(body, Exception) and body
+                        ]
+                        if extraction_tasks:
+                            document_extractions = await asyncio.gather(
+                                *extraction_tasks, return_exceptions=True
+                            )
+                            valid_extractions = [
+                                ext for ext in document_extractions
+                                if not isinstance(ext, Exception) and ext
+                            ]
+                            if valid_extractions:
+                                snippet_extraction = merge_extractions(
+                                    snippet_extraction, *valid_extractions
+                                )
+                    except Exception as e:
+                        logger.warning("Brave full-page fetch failed: %s", e)
+
+                search_extraction = filter_duplicate_slots(
+                    snippet_extraction,
+                    stored_slots,
+                )
+                search_extraction_summary = await apply_search_extraction(
+                    search_extraction,
+                    search_results,
+                    self.store,
+                    embed_fn=self.embed_fn(),
+                    backend_name=backend_name,
+                )
+                logger.info(
+                    "Search extraction: %d slots, %d assocs",
+                    search_extraction_summary.get("slots_applied", 0),
+                    search_extraction_summary.get("associations_created", 0),
+                )
+
+                if search_extraction_summary.get("frame_ids"):
+                    async def get_embedding(text: str) -> list[float]:
+                        resp = await self.llm_client.embed(text)
+                        return resp.embedding
+
+                    await self.store.embed_frames(
+                        search_extraction_summary["frame_ids"],
+                        get_embedding,
+                    )
+
+                if search_extraction_summary.get("slots_applied", 0) > 0:
+                    conflicts = search_extraction_summary.get("conflicts_created", 0)
+                    if conflicts > 0:
+                        fact_word = "fact was" if conflicts == 1 else "facts were"
+                        conflict_note = (
+                            f" {conflicts} conflicting {fact_word} auto-resolved — "
+                            "the new value is stored and the old is preserved in history."
+                        )
+                    else:
+                        conflict_note = ""
+                    system_prompt += (
+                        f"\n\n**Learned from search:** "
+                        f"{search_extraction_summary['slots_applied']} new facts stored in memory."
+                        f"{conflict_note}"
+                    )
+            else:
+                system_prompt += (
+                    "\n\n**Search Status: No results or SearXNG unavailable.**\n"
+                    "You MUST NOT fabricate facts. Say you couldn't fetch current information "
+                    "and offer to try again later or answer from memory only."
+                )
+
+        # Collect citations from search results only
+        citations: list[str] = []
+        for result in search_results:
+            if result.url:
+                citations.append(result.url)
+
+        # Build conversation history
+        history_messages: list[ChatMessage] = []
+        if session_id:
+            session_episodes = await self.store.get_episodes_for_session(session_id)
+            prior_turns = [
+                ep for ep in session_episodes if ep.user_id == request.user_id
+            ][:-1]
+            max_turns = min(len(prior_turns), 6)
+            prior_turns = prior_turns[-max_turns:] if max_turns > 0 else []
+            for ep in prior_turns:
+                history_messages.append(ChatMessage(role=ep.role, content=ep.content))
+
+        # Hard limit on system prompt
+        max_system_prompt_chars = settings.max_system_prompt_chars
+        truncated = False
+        if len(system_prompt) > max_system_prompt_chars:
+            logger.warning(
+                "System prompt truncated from %d to %d chars",
+                len(system_prompt), max_system_prompt_chars
+            )
+            system_prompt = system_prompt[:max_system_prompt_chars] + "\n\n[... truncated ...]"
+            truncated = True
+
+        # Structured logging
+        logger.info(
+            "context_stats: prompt_chars=%d frames=%d episodes=%d search_results=%d truncated=%s",
+            len(system_prompt),
+            len(memory_context.retrieved_frames),
+            len(memory_context.recent_episodes),
+            len(search_results),
+            truncated,
+        )
+
+        # Build messages
+        messages = [ChatMessage(role="system", content=system_prompt)]
+        messages.extend(history_messages)
+        messages.append(ChatMessage(role="user", content=request.message))
+
+        # Convert to dict format for streaming
+        messages_dict = [m.model_dump() for m in messages]
+
+        # Check if tools enabled
+        if settings.tools_enabled:
+            tools = builtin_tools(
+                self.search_tool,
+                store=self.store,
+                llm_client=self.llm_client,
+                embed_fn=self.embed_fn(),
+            )
+            tool_names = [t["function"]["name"] for t in tools]
+            logger.info("DEBUG: Available tools for streaming: %s", tool_names)
+
+            # Determine think and num_predict
+            supports_thinking = await self.llm_client.supports_thinking(self.llm_client.chat_model)
+            think = False
+            if plan.think and supports_thinking:
+                think = True
+            elif settings.chat_think_default and supports_thinking:
+                think = True
+            num_predict = settings.think_num_predict_cap if think else None
+
+            if think:
+                await self._report(progress, "reasoning", "thinking it through")
+            else:
+                await self._report(progress, "responding", "writing a reply")
+
+            # Stream the final answer (Phase 1: stream final answer only)
+            async for event in stream_final_answer(
+                self.llm_client,
+                messages_dict,
+                tools,
+                think=think,
+                num_predict=num_predict,
+            ):
+                yield event
+
+            # Log assistant episode after streaming
+            # Note: we don't have the full answer here easily, but the streaming
+            # already yielded it. For episode logging, we'd need to buffer.
+            # For now, skip episode logging in streaming mode (can be added later)
+        else:
+            # No tools - just stream the chat response
+            supports_thinking = await self.llm_client.supports_thinking(self.llm_client.chat_model)
+            think = False
+            if plan.think and supports_thinking:
+                think = True
+            elif settings.chat_think_default and supports_thinking:
+                think = True
+            num_predict = settings.think_num_predict_cap if think else None
+
+            if think:
+                await self._report(progress, "reasoning", "thinking it through")
+            else:
+                await self._report(progress, "responding", "writing a reply")
+
+            # Simple streaming without tools
+            async for chunk in self.llm_client.chat_stream(
+                messages,
+                model=self.llm_client.chat_model,
+                think=think,
+                num_predict=num_predict,
+            ):
+                if chunk.content:
+                    event = {'type': 'text_delta', 'delta': chunk.content}
+                    yield f"data: {json.dumps(event)}\n\n"
+                if chunk.done:
+                    event = {
+                        'type': 'finalize',
+                        'answer': '',
+                        'reasoning_trace': chunk.thinking
+                    }
+                    yield f"data: {json.dumps(event)}\n\n"
+                    break
 
 
 def _parse_iso_ts_safe(value: str | None):
