@@ -16,6 +16,10 @@ https://localhost {
         transport http {
             response_header_timeout 300s
         }
+        # SSE streaming: disable buffering, force immediate flush
+        flush_interval -1
+        # Allow long-running SSE connections (default is no timeout)
+        stream_timeout 0
     }
     
     # Route all other requests to frontend dev server (port 5173 inside container)
