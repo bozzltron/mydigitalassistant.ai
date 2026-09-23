@@ -97,7 +97,7 @@ class TestSearXNGBacking:
         backend = _backend_with_transport(
             lambda req: httpx.Response(200, json=payload)
         )
-        results = asyncio.run(backend.search("q", num_results=2))
+        results, _ = asyncio.run(backend.search("q", num_results=2))
         assert [r.title for r in results] == ["high", "mid"]
 
     def test_dedups_tracking_param_variants(self):
@@ -108,7 +108,7 @@ class TestSearXNGBacking:
         backend = _backend_with_transport(
             lambda req: httpx.Response(200, json=payload)
         )
-        results = asyncio.run(backend.search("q"))
+        results, _ = asyncio.run(backend.search("q"))
         assert [r.title for r in results] == ["one"]
 
     def test_non_numeric_scores_do_not_crash(self):
@@ -119,27 +119,38 @@ class TestSearXNGBacking:
         backend = _backend_with_transport(
             lambda req: httpx.Response(200, json=payload)
         )
-        results = asyncio.run(backend.search("q"))
+        results, _ = asyncio.run(backend.search("q"))
         assert {r.title for r in results} == {"str-score", "none"}
 
     def test_http_error_returns_empty_list(self):
         backend = _backend_with_transport(
             lambda req: httpx.Response(503, text="down")
         )
-        assert asyncio.run(backend.search("q")) == []
+        results, _ = asyncio.run(backend.search("q"))
+        assert results == []
 
     def test_disabled_tool_returns_empty_list(self):
         tool = WebSearchTool(enabled=False)
-        assert asyncio.run(tool.search("anything")) == []
+        results, videos = asyncio.run(tool.search("anything"))
+        assert results == []
+        assert videos == []
 
 
 def _fake_embed(vectors_by_prefix):
-    """Deterministic embed_fn keyed on first token of the text."""
+    """Deterministic embed_fn keyed on first token of the text.
 
-    async def embed(text: str) -> list[float]:
+    Now handles both single strings and lists of strings.
+    """
+
+    def embed_single(text: str) -> list[float]:
         key = text.split()[0] if text.split() else ""
         vec = vectors_by_prefix.get(key, vectors_by_prefix["_default"])
         return list(vec)
+
+    async def embed(text: str | list[str]) -> list[float] | list[list[float]]:
+        if isinstance(text, list):
+            return [embed_single(t) for t in text]
+        return embed_single(text)
 
     return embed
 

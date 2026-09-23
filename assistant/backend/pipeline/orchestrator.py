@@ -703,8 +703,18 @@ class Orchestrator:
 
             # Relevance gate: drop links that don't belong to the query
             # before they can pollute the system prompt or citations.
-            search_results = await filter_relevant(
-                search_results, query, self.embed_fn(), min_relevance=relevance_threshold
+            # Add overall timeout to prevent search pipeline from hanging
+            try:
+                search_results = await asyncio.wait_for(
+                    filter_relevant(
+                        search_results, query, self.embed_fn(), min_relevance=relevance_threshold
+                    ),
+                    timeout=settings.search_timeout,
+                )
+            except TimeoutError:
+                logger.warning(
+                "filter_relevant timed out after %.1fs; keeping all results",
+                settings.search_timeout,
             )
 
             if search_results:
@@ -725,9 +735,21 @@ class Orchestrator:
                     merge_extractions,
                 )
 
-                snippet_extraction = await extract_facts_from_search(
-                    request.message, search_results, self.llm_client
-                )
+                # Extract facts from search snippets with timeout
+                try:
+                    snippet_extraction = await asyncio.wait_for(
+                        extract_facts_from_search(
+                            request.message, search_results, self.llm_client
+                        ),
+                        timeout=settings.search_timeout,
+                    )
+                except TimeoutError:
+                    logger.warning(
+                "extract_facts_from_search timed out after %.1fs",
+                settings.search_timeout,
+            )
+                    from assistant.backend.pipeline.extractor import ExtractionResult
+                    snippet_extraction = ExtractionResult()
 
                 # Brave: fetch top result bodies in parallel for richer extraction
                 if backend_name == "brave" and search_results:
@@ -739,9 +761,12 @@ class Orchestrator:
                             ],
                             return_exceptions=True,
                         )
-                        # Parallelize document extraction
+                        # Parallelize document extraction with timeout
                         extraction_tasks = [
-                            extract_facts_from_document(body, result.url, self.llm_client)
+                            asyncio.wait_for(
+                                extract_facts_from_document(body, result.url, self.llm_client),
+                                timeout=settings.search_timeout,
+                            )
                             for result, body in zip(
                                 search_results[: settings.max_search_results_in_prompt],
                                 bodies,
@@ -768,13 +793,25 @@ class Orchestrator:
                     snippet_extraction,
                     stored_slots,
                 )
-                search_extraction_summary = await apply_search_extraction(
-                    search_extraction,
-                    search_results,
-                    self.store,
-                    embed_fn=self.embed_fn(),
-                    backend_name=backend_name,
-                )
+                # Apply search extraction with timeout
+                try:
+                    search_extraction_summary = await asyncio.wait_for(
+                        apply_search_extraction(
+                            search_extraction,
+                            search_results,
+                            self.store,
+                            embed_fn=self.embed_fn(),
+                            backend_name=backend_name,
+                        ),
+                        timeout=settings.search_timeout,
+                    )
+                except TimeoutError:
+                    logger.warning(
+                "apply_search_extraction timed out after %.1fs",
+                settings.search_timeout,
+            )
+                    search_extraction_summary = {}
+
                 logger.info(
                     "Search extraction: %d slots, %d assocs",
                     search_extraction_summary.get("slots_applied", 0),
@@ -787,10 +824,19 @@ class Orchestrator:
                         resp = await self.llm_client.embed(text)
                         return resp.embedding
 
-                    await self.store.embed_frames(
-                        search_extraction_summary["frame_ids"],
-                        get_embedding,
-                    )
+                    try:
+                        await asyncio.wait_for(
+                            self.store.embed_frames(
+                                search_extraction_summary["frame_ids"],
+                                get_embedding,
+                            ),
+                            timeout=settings.search_timeout,
+                        )
+                    except TimeoutError:
+                        logger.warning(
+                "embed_frames timed out after %.1fs",
+                settings.search_timeout,
+            )
 
                 search_time = (
                 time.monotonic() - search_start
@@ -1651,9 +1697,21 @@ class Orchestrator:
                     merge_extractions,
                 )
 
-                snippet_extraction = await extract_facts_from_search(
-                    request.message, search_results, self.llm_client
-                )
+                # Extract facts from search snippets with timeout
+                try:
+                    snippet_extraction = await asyncio.wait_for(
+                        extract_facts_from_search(
+                            request.message, search_results, self.llm_client
+                        ),
+                        timeout=settings.search_timeout,
+                    )
+                except TimeoutError:
+                    logger.warning(
+                "extract_facts_from_search timed out after %.1fs",
+                settings.search_timeout,
+            )
+                    from assistant.backend.pipeline.extractor import ExtractionResult
+                    snippet_extraction = ExtractionResult()
 
                 # Brave: fetch top result bodies in parallel
                 if backend_name == "brave" and search_results:
@@ -1693,13 +1751,25 @@ class Orchestrator:
                     snippet_extraction,
                     stored_slots,
                 )
-                search_extraction_summary = await apply_search_extraction(
-                    search_extraction,
-                    search_results,
-                    self.store,
-                    embed_fn=self.embed_fn(),
-                    backend_name=backend_name,
-                )
+                # Apply search extraction with timeout
+                try:
+                    search_extraction_summary = await asyncio.wait_for(
+                        apply_search_extraction(
+                            search_extraction,
+                            search_results,
+                            self.store,
+                            embed_fn=self.embed_fn(),
+                            backend_name=backend_name,
+                        ),
+                        timeout=settings.search_timeout,
+                    )
+                except TimeoutError:
+                    logger.warning(
+                "apply_search_extraction timed out after %.1fs",
+                settings.search_timeout,
+            )
+                    search_extraction_summary = {}
+
                 logger.info(
                     "Search extraction: %d slots, %d assocs",
                     search_extraction_summary.get("slots_applied", 0),

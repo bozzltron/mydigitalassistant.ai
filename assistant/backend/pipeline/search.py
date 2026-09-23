@@ -272,6 +272,8 @@ async def filter_relevant(
     embedding similarity decides what actually belongs. Graceful by design —
     if the embedder is unavailable or errors, everything passes through
     rather than silently blinding search.
+
+    Now batches embeddings for better performance.
     """
     if not results or embed_fn is None:
         return results
@@ -282,10 +284,13 @@ async def filter_relevant(
     )
     try:
         qvec = await embed_fn(sanitize_query(query))
+        
+        # Batch embed all result texts at once
+        texts = [f"{r.title}. {r.snippet}"[:1000] for r in results]
+        rvecs = await embed_fn(texts)
+        
         kept: list[SearchResult] = []
-        for r in results:
-            text = f"{r.title}. {r.snippet}"[:1000]
-            rvec = await embed_fn(text)
+        for r, rvec in zip(results, rvecs, strict=True):
             score = _cosine(qvec, rvec)
             if score >= threshold:
                 kept.append(r)
@@ -440,7 +445,7 @@ class SearXNGBackend(SearchBackend):
             return results, video_results
         except Exception as e:
             logger.error("SearXNG search failed: %s", e)
-            return []
+            return [], []
 
 
 class BraveBackend(SearchBackend):

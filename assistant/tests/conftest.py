@@ -236,7 +236,15 @@ class StubLLMClient(OllamaClient):
             slots = []
         return json.dumps({"slots": slots, "associations": []})
 
-    async def embed(self, text: str, model: str | None = None) -> EmbeddingResponse:
+    async def embed(self,
+        text: str | list[str],
+        model: str | None = None,
+    ) -> EmbeddingResponse | list[EmbeddingResponse]:
+        if isinstance(text, list):
+            return [
+                EmbeddingResponse(embedding=deterministic_embedding(t), model=self.embedding_model)
+                for t in text
+            ]
         return EmbeddingResponse(
             embedding=deterministic_embedding(text),
             model=self.embedding_model,
