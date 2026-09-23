@@ -94,7 +94,7 @@ class Settings(BaseSettings):
     retrieval_min_distance: float = 0.7
     # Max past-conversation turns injected per retrieval cycle (semantic
     # episode recall). 0 disables episode search entirely.
-    retrieval_episode_limit: int = 3
+    retrieval_episode_limit: int = 0
 
     # System prompt budget (context window protection)
     # Limits total prompt chars before LLM call; truncates least-relevant first

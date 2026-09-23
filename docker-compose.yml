@@ -12,9 +12,13 @@ services:
       - OLLAMA_TIMEOUT=${OLLAMA_TIMEOUT:-600}
       - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:--1}
       - CHAT_MODEL=${CHAT_MODEL:-qwen2.5:7b}
-      - UTILITY_MODEL=${UTILITY_MODEL:-qwen2.5:3}
+      - UTILITY_MODEL=${UTILITY_MODEL:-qwen3.5:4b}
       - EMBEDDING_MODEL=${EMBEDDING_MODEL:-nomic-embed-text}
       - CODER_MODEL=${CODER_MODEL:-}
+      # Tools model for fast function calling (Phase 6 M5). Use an available model.
+      - TOOLS_MODEL=${TOOLS_MODEL:-qwen3.5:4b}
+      - TOOLS_NUM_CTX=${TOOLS_NUM_CTX:-4096}
+      - TOOLS_KEEP_ALIVE=${TOOLS_KEEP_ALIVE:--1}
       # Binds inside the container only. Exposure is controlled by port
       # publishing: the assistant service publishes NO ports; Caddy is the
       # single published surface (127.0.0.1:8443). Loopback-in-container would
