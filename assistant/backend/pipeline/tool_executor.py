@@ -833,18 +833,25 @@ async def execute_list_files(args: dict, user_id: str, session_id: str) -> ToolR
                 slots = await _store.get_slots_for_frame(frame.id)
                 slots_dict = {slot.key: slot.value for slot in slots}
 
+                # Only process frames that have proper file metadata
+                if not slots_dict.get("file_name") or not slots_dict.get("file_ext"):
+                    continue
+
                 file_name = slots_dict.get("file_name", "unknown")
                 file_safe_name = slots_dict.get("file_safe_name", "")
 
                 # Try to find matching sandbox file
                 sandbox_info = sandbox_by_name.get(file_safe_name, {})
 
+                file_size_val = slots_dict.get("file_size")
+                file_size = int(file_size_val) if file_size_val and str(file_size_val).strip() else None
+
                 files.append({
                     "frame_id": frame.id,
                     "frame_name": frame.name,
                     "file_name": file_name,
                     "file_ext": slots_dict.get("file_ext", ""),
-                    "file_size": slots_dict.get("file_size"),
+                    "file_size": file_size,
                     "content_preview": slots_dict.get("file_content_preview", ""),
                     "created_at": frame.created_at if frame.created_at else None,
                     "path": sandbox_info.get("path"),

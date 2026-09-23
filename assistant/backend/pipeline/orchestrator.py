@@ -944,6 +944,8 @@ class Orchestrator:
                     self.llm_client,
                     messages,
                     tools,
+                    user_id=str(request.user_id),
+                    session_id=request.session_id,
                     think=think,
                     num_predict=num_predict,
                 )
@@ -1887,6 +1889,8 @@ class Orchestrator:
                 tools,
                 think=think,
                 num_predict=num_predict,
+                user_id=str(request.user_id),
+                session_id=request.session_id,
             ):
                 yield event
 

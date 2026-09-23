@@ -94,6 +94,8 @@ async def stream_final_answer(
     think: bool = False,
     num_predict: int | None = None,
     model: str | None = None,
+    user_id: str = "",
+    session_id: str = "",
 ) -> AsyncGenerator[str, None]:
     """Stream the final answer from the chat model (SSE format).
 
@@ -115,6 +117,8 @@ async def stream_final_answer(
             llm_client,
             chat_messages,
             tools or [],
+            user_id=user_id,
+            session_id=session_id,
             think=think,
             num_predict=num_predict,
             model=loop_model,

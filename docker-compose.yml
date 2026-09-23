@@ -15,7 +15,7 @@ services:
       - UTILITY_MODEL=${UTILITY_MODEL:-qwen3.5:4b}
       - EMBEDDING_MODEL=${EMBEDDING_MODEL:-nomic-embed-text}
       - CODER_MODEL=${CODER_MODEL:-}
-      # Tools model for fast function calling (Phase 6 M5). Use an available model.
+      # Tools model for fast function calling (Phase 6 M5). 4B model works reliably with tools
       - TOOLS_MODEL=${TOOLS_MODEL:-qwen3.5:4b}
       - TOOLS_NUM_CTX=${TOOLS_NUM_CTX:-4096}
       - TOOLS_KEEP_ALIVE=${TOOLS_KEEP_ALIVE:--1}
