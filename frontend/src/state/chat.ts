@@ -211,7 +211,7 @@ export async function postChatMessageStream(
           accumulatedResponse += event.delta
           // Update the streaming message in real-time
           if (session_id) {
-            updateStreamingMessage(session_id, assistantMessageId, accumulatedResponse)
+            setStreamingMessageContent(session_id, assistantMessageId, accumulatedResponse)
           }
         } else if (event.type === 'stage' && event.stage) {
           // Live pipeline progress rides the SSE stream itself.
@@ -220,12 +220,12 @@ export async function postChatMessageStream(
           accumulatedResponse = event.answer || accumulatedResponse
           // Final update
           if (session_id) {
-            finalizeStreamingMessage(session_id, assistantMessageId, accumulatedResponse)
+            setStreamingMessageContent(session_id, assistantMessageId, accumulatedResponse, false)
           }
         } else if (event.type === 'error') {
           console.error('Stream error:', event.error)
           if (session_id) {
-            finalizeStreamingMessage(session_id, assistantMessageId, 'Error: ' + event.error)
+            setStreamingMessageContent(session_id, assistantMessageId, 'Error: ' + event.error, false)
           }
         }
       }
@@ -242,7 +242,7 @@ export async function postChatMessageStream(
   } catch (error) {
     console.error('Error sending streaming message:', error)
     if (session_id) {
-      finalizeStreamingMessage(session_id, assistantMessageId, 'Error: Failed to send message')
+      setStreamingMessageContent(session_id, assistantMessageId, 'Error: Failed to send message', false)
     }
     throw error
   } finally {
@@ -264,24 +264,20 @@ export async function postChatMessageStream(
   }
 }
 
-function updateStreamingMessage(sessionIdParam: string, messageId: string, content: string): void {
+function setStreamingMessageContent(
+  sessionIdParam: string,
+  messageId: string,
+  content: string,
+  streamingState?: boolean
+): void {
   setChatState('conversationMessages', (prev: Map<string, ChatMessage[]>) => {
     const next = new Map(prev)
-    const existing = next.get(sessionIdParam) || []
-    const updated = existing.map(msg => 
-      msg.id === messageId ? { ...msg, content } : msg
-    )
-    next.set(sessionIdParam, updated)
-    return next
-  })
-}
-
-function finalizeStreamingMessage(sessionIdParam: string, messageId: string, content: string): void {
-  setChatState('conversationMessages', (prev: Map<string, ChatMessage[]>) => {
-    const next = new Map(prev)
-    const existing = next.get(sessionIdParam) || []
-    const updated = existing.map(msg => 
-      msg.id === messageId ? { ...msg, content, meta: { ...msg.meta, isStreaming: false } } : msg
+    const updated = (next.get(sessionIdParam) || []).map(msg =>
+      msg.id === messageId
+        ? streamingState === undefined
+          ? { ...msg, content }
+          : { ...msg, content, meta: { ...msg.meta, isStreaming: streamingState } }
+        : msg
     )
     next.set(sessionIdParam, updated)
     return next

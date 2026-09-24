@@ -246,8 +246,6 @@ export async function postChatStream(
     search_consent,
   }
 
-  console.log('Sending streaming chat request:', requestBody)
-
   const url = `${BASE_URL}/chat/stream`
   const response = await fetch(url, {
     method: 'POST',
@@ -257,8 +255,6 @@ export async function postChatStream(
     credentials: 'include',
     body: JSON.stringify(requestBody),
   })
-
-  console.log('[api] Stream response:', response.status, response.statusText)
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: 'Unknown error' }))

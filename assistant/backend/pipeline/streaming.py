@@ -117,15 +117,15 @@ async def stream_tool_loop(
     import logging
 
     from assistant.backend.pipeline.llm_client import ChatMessage
-    from assistant.backend.pipeline.tool_executor import execute_tool
+    from assistant.backend.pipeline.tool_executor import ToolResult, execute_tool
+    from assistant.backend.pipeline.tools import MAX_TOOL_ROUNDS
 
     logger = logging.getLogger(__name__)
 
     chat_messages = [ChatMessage(**m) for m in messages]
     loop_model = model or llm_client.tools_model
 
-    # Determine max turns
-    max_turns = 3  # Default from tools.py
+    max_turns = MAX_TOOL_ROUNDS
 
     turn = 0
     tool_results: list[dict] = []
@@ -172,16 +172,7 @@ async def stream_tool_loop(
                     )
                 except Exception as e:
                     logger.error(f"Tool execution error: {e}")
-                    result = type(
-                        "ToolResult",
-                        (),
-                        {
-                            "success": False,
-                            "error": str(e),
-                            "data": {},
-                            "metadata": {},
-                        },
-                    )()
+                    result = ToolResult(success=False, data={}, error=str(e))
 
                 tool_results.append(
                     {

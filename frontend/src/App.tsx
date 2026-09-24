@@ -2,7 +2,6 @@ import { createSignal, createEffect } from 'solid-js'
 import { useConversations } from './hooks/useConversations'
 import { useActiveConversation } from './hooks/useActiveConversation'
 import { useAppInit } from './hooks/useAppInit'
-import { useChat } from './hooks/useChat'
 import ChatPage from './components/chat/ChatPage'
 import TopBar from './components/ui/TopBar'
 import { Modal } from './components/ui/Modal'
@@ -19,7 +18,6 @@ export default function App() {
     initializeFromSavedSession,
   } = useActiveConversation(conversations)
   const { initialized } = useAppInit([assistantName, setAssistantName])
-  useChat()
 
   const handleNewConversationClick = () => {
     setNewConvTitle('')
