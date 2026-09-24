@@ -48,3 +48,32 @@ Object.defineProperty(window, 'webkitSpeechRecognition', {
   writable: true,
   value: window.SpeechRecognition,
 })
+
+// jsdom has no speechSynthesis; stub it like the other Web Speech APIs above.
+const speechSynthesisMock = {
+  getVoices: vi.fn(() => [
+    { name: 'Default', lang: 'en-US', default: true, localService: true, url: '' },
+  ]),
+  speak: vi.fn(),
+  cancel: vi.fn(),
+  pause: vi.fn(),
+  resume: vi.fn(),
+  addEventListener: vi.fn(),
+  removeEventListener: vi.fn(),
+  onvoiceschanged: null,
+}
+Object.defineProperty(window, 'speechSynthesis', {
+  writable: true,
+  value: speechSynthesisMock,
+})
+
+// Default fetch stub: component tests must not hit the real network.
+// api.test.ts overrides global.fetch at module scope for its own cases.
+const defaultFetchResponse = {
+  ok: true,
+  status: 200,
+  statusText: 'OK',
+  json: async () => ({}),
+  text: async () => '',
+} as Response
+global.fetch = vi.fn(async () => defaultFetchResponse) as unknown as typeof fetch

@@ -105,10 +105,13 @@ Implemented in `assistant/backend/memory/`.
 - **`backend/pipeline/llm_client.py`** — `OllamaClient`.
 - Requests carry `keep_alive` (default `30m`, `OLLAMA_KEEP_ALIVE`) so models stay
   resident between turns; reloading a 27B model costs tens of seconds.
-- Supports three model roles:
-  - `chat_model` — user-facing responses (default `qwen2.5:7b`)
-  - `utility_model` — cheap classification/routing/extraction (default `qwen2.5:3b`)
-  - `reasoning_model` — fact extraction from search, citation/context tasks (default `qwen2.5:7b`)
+- Supports six model roles (see `docs/MODEL_SELECTION.md` for the fleet and re-assessment process):
+  - `chat_model` — user-facing responses (default `qwen3.5:9b`)
+  - `utility_model` — cheap classification/routing/extraction (default `qwen3.5:4b`)
+  - `tools_model` — tool loop (same brain as chat by default, `qwen3.5:9b`)
+  - `embedding_model` — frame/query vectors (default `qwen3-embedding:0.6b`, 1024-dim)
+  - `max_model` — on-demand escalation tier (`qwen3.8:27b`; think on, `keep_alive=10m`)
+  - `math_model` — on-demand `compute` tool (shares the max model by default)
 
 ### 3.6 Reasoner and task router
 
@@ -197,7 +200,7 @@ When a new slot value contradicts an existing one, a conflict is logged. Auto-re
 
 ### 5.1 Retrieval pipeline
 
-1. Embed user query with `nomic-embed-text`.
+1. Embed user query with `qwen3-embedding:0.6b`.
 2. Cosine similarity search over `frame_embeddings` via sqlite-vec.
 3. Score by `similarity × confidence × priority`.
 4. Graph-walk 1-2 hops over associations, decaying relevance per hop.
@@ -266,10 +269,12 @@ Environment variables (via Pydantic Settings / `.env`):
 |----------|---------|---------|
 | `OLLAMA_URL` | Ollama base URL | `http://127.0.0.1:11434` |
 | `OLLAMA_KEEP_ALIVE` | How long Ollama keeps models resident between requests | `30m` |
-| `CHAT_MODEL` | User-facing chat model | `qwen2.5:7b` |
-| `UTILITY_MODEL` | Routing / cheap extraction | `qwen2.5:3b` |
-| `REASONING_MODEL` | Search extraction / context / citations | `qwen2.5:7b` |
-| `EMBEDDING_MODEL` | Embedding model | `nomic-embed-text` |
+| `CHAT_MODEL` | User-facing chat model | `qwen3.5:9b` |
+| `UTILITY_MODEL` | Routing / cheap extraction | `qwen3.5:4b` |
+| `TOOLS_MODEL` | Tool loop (default = chat model) | `qwen3.5:9b` |
+| `EMBEDDING_MODEL` | Embedding model (1024-dim) | `qwen3-embedding:0.6b` |
+| `MAX_MODEL` | On-demand escalation tier | `qwen3.8:27b` |
+| `MATH_MODEL` | On-demand `compute` tool | `qwen3.8:27b` |
 | `BACKEND_HOST` | FastAPI bind host | `127.0.0.1` |
 | `BACKEND_PORT` | FastAPI port | `8000` |
 | `DATABASE_PATH` | SQLite path | `./assistant.db` |

@@ -111,7 +111,10 @@ class StubLLMClient(OllamaClient):
                 )
             if any(
                 k in user_lower
-                for k in ("remember", "what do you know", "tell me about what you")
+                for k in (
+                    "remember", "what do you know", "tell me about what you",
+                    "pick up", "tell me more about", "more about",
+                )
             ):
                 task = "introspective"
             elif any(k in user_lower for k in (

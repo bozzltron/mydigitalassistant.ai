@@ -102,7 +102,8 @@ export async function loadConversationMessages(sessionIdParam: string, userId: n
 export async function postChatMessage(
   message: string,
   session_id?: string,
-  attached_files?: AttachedFile[]
+  attached_files?: AttachedFile[],
+  max_intelligence?: boolean
 ): Promise<{
   response: string
   task_type?: string
@@ -126,7 +127,7 @@ export async function postChatMessage(
   startStatusPolling(turnId)
 
   try {
-    const result = await postChat(message, session_id, attached_files, turnId)
+    const result = await postChat(message, session_id, attached_files, turnId, undefined, max_intelligence)
     return {
       response: result.response,
       task_type: result.task_type,
@@ -159,7 +160,8 @@ export async function postChatMessageStream(
   message: string,
   session_id?: string,
   attached_files?: AttachedFile[],
-  search_consent?: boolean
+  search_consent?: boolean,
+  max_intelligence?: boolean
 ): Promise<{
   response: string
   task_type?: string
@@ -206,6 +208,7 @@ export async function postChatMessageStream(
       attached_files,
       turnId,
       search_consent,
+      max_intelligence,
       (event) => {
         if (event.type === 'text_delta' && event.delta) {
           accumulatedResponse += event.delta

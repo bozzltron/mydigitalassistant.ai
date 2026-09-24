@@ -136,4 +136,27 @@ describe('InputBar', () => {
     // Verify the button click works by checking the function was called
     expect(removeBtn).toBeInTheDocument()
   })
+
+  it('renders the Max intelligence toggle', () => {
+    render(() => <InputBar onSend={defaultProps.onSend} isSending={defaultProps.isSending} onDictationStart={defaultProps.onDictationStart} onDictationStop={defaultProps.onDictationStop} isDictating={defaultProps.isDictating} onToggleMax={vi.fn()} />)
+    
+    expect(screen.getByRole('button', { name: /max intelligence/i })).toBeInTheDocument()
+  })
+
+  it('fires onToggleMax when the Max button is clicked', () => {
+    const onToggleMax = vi.fn()
+    render(() => <InputBar onSend={defaultProps.onSend} isSending={defaultProps.isSending} onDictationStart={defaultProps.onDictationStart} onDictationStop={defaultProps.onDictationStop} isDictating={defaultProps.isDictating} onToggleMax={onToggleMax} />)
+    
+    const maxBtn = screen.getByRole('button', { name: /max intelligence/i })
+    fireEvent.click(maxBtn)
+    
+    expect(onToggleMax).toHaveBeenCalled()
+  })
+
+  it('marks the Max button active when maxEnabled', () => {
+    render(() => <InputBar onSend={defaultProps.onSend} isSending={defaultProps.isSending} onDictationStart={defaultProps.onDictationStart} onDictationStop={defaultProps.onDictationStop} isDictating={defaultProps.isDictating} maxEnabled={true} onToggleMax={vi.fn()} />)
+    
+    const maxBtn = screen.getByRole('button', { name: /max intelligence/i })
+    expect(maxBtn).toHaveClass('active')
+  })
 })

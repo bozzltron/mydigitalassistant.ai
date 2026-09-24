@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { messages, queue, setQueue, isTurnActive, setTurnActive, sessionId, setSessionId, currentTurnId, setCurrentTurnId, postChatMessage, loadConversationMessages, initChat } from '../state/chat'
+import { messages, queue, setQueue, isTurnActive, setTurnActive, sessionId, setSessionId, currentTurnId, setCurrentTurnId, postChatMessage, postChatMessageStream, loadConversationMessages, initChat } from '../state/chat'
 import * as api from '../services/api'
 import * as status from '../services/status'
 
 vi.mock('../services/api', () => ({
   postChat: vi.fn(),
+  postChatStream: vi.fn(),
   createTurnId: vi.fn(() => 'test-turn-id-123'),
   getSessionMessages: vi.fn(),
 }))
@@ -94,7 +95,7 @@ describe('chat state', () => {
 
       const result = await postChatMessage('Hi')
 
-      expect(api.postChat).toHaveBeenCalledWith('Hi', undefined, undefined, 'test-turn-id-123')
+      expect(api.postChat).toHaveBeenCalledWith('Hi', undefined, undefined, 'test-turn-id-123', undefined, undefined)
       expect(result).toEqual(mockResponse)
       expect(isTurnActive()).toBe(false)
       expect(currentTurnId()).toBeNull()
@@ -127,6 +128,61 @@ describe('chat state', () => {
       expect(isTurnActive()).toBe(false)
       expect(currentTurnId()).toBeNull()
       expect(status.stopStatusPolling).toHaveBeenCalled()
+    })
+  })
+
+  describe('postChatMessageStream', () => {
+    it('renders the streamed answer into the conversation bubbles', async () => {
+      setSessionId('session-123')
+      let onEvent: ((e: api.StreamEvent) => void) | undefined
+      const streamPromise = new Promise<{ response: string; session_id: string }>(resolve => {
+        resolve({ response: 'Hi there!', session_id: 'session-123' })
+      })
+      vi.mocked(api.postChatStream).mockImplementation(
+        async (_message, _session, _files, _turn, _consent, _max, callback) => {
+          onEvent = callback
+          return streamPromise
+        }
+      )
+      vi.mocked(status.startStatusPolling).mockImplementation(() => {})
+      vi.mocked(status.stopStatusPolling).mockImplementation(() => {})
+
+      const promise = postChatMessageStream('Hi', 'session-123')
+
+      // Placeholder assistant bubble exists before any tokens arrive.
+      await Promise.resolve()
+      expect(messages()).toHaveLength(1)
+      expect(messages()[0].role).toBe('assistant')
+      expect(messages()[0].meta?.isStreaming).toBe(true)
+
+      // Streamed tokens render incrementally.
+      onEvent!({ type: 'text_delta', delta: 'Hi ' })
+      expect(messages()[0].content).toBe('Hi ')
+      onEvent!({ type: 'text_delta', delta: 'there!' })
+      expect(messages()[0].content).toBe('Hi there!')
+
+      // Finalize stores the full answer and clears the streaming flag.
+      onEvent!({ type: 'finalize', answer: 'Hi there!' })
+      expect(messages()[0].content).toBe('Hi there!')
+      expect(messages()[0].meta?.isStreaming).toBe(false)
+
+      const result = await promise
+      expect(result.response).toBe('Hi there!')
+      expect(isTurnActive()).toBe(false)
+    })
+
+    it('never leaves a dangling empty bubble after a non-ok stream', async () => {
+      setSessionId('session-err-987')
+      vi.mocked(api.postChatStream).mockRejectedValue(new Error('HTTP 500'))
+      vi.mocked(status.startStatusPolling).mockImplementation(() => {})
+      vi.mocked(status.stopStatusPolling).mockImplementation(() => {})
+
+      await expect(postChatMessageStream('Hi', 'session-err-987')).rejects.toThrow('HTTP 500')
+
+      // The stream failed before any token — the placeholder is replaced by an
+      // error bubble, not left as empty/streaming state.
+      expect(messages()).toHaveLength(1)
+      expect(messages()[0].content).toBe('Error: Failed to send message')
     })
   })
 

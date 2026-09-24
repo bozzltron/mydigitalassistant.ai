@@ -91,15 +91,17 @@ class OllamaClient:
     - embedding_model: frame/query embeddings
     - coder_model: reserved for tool codegen (M5); empty = fall back to chat_model
     - math_model: dedicated computation model with Python tool execution
-    - tools_model: fast 1.5B model for function calling (Performance phase)
+    - tools_model: fast function-calling model (Performance phase)
+    - max_model: max-intelligence escalation tier (M6) — 27B-class brain loaded
+      on demand with a short keep_alive, never resident next to the warm set.
     """
 
     def __init__(
         self,
         base_url: str = "http://127.0.0.1:11434",
-        chat_model: str = "qwen2.5:7b",
-        utility_model: str = "qwen2.5:3b",
-        embedding_model: str = "nomic-embed-text",
+        chat_model: str = "qwen3.5:9b",
+        utility_model: str = "qwen3.5:4b",
+        embedding_model: str = "qwen3-embedding:0.6b",
         coder_model: str = "",
         math_model: str = "",
         math_num_ctx: int = 16384,
@@ -109,9 +111,12 @@ class OllamaClient:
         chat_num_ctx: int = 8192,
         utility_num_ctx: int = 4096,
         keep_alive: str = "30m",
-        tools_model: str = "qwen2.5-coder:1.5b",
+        tools_model: str = "qwen3.5:9b",
         tools_num_ctx: int = 4096,
         tools_keep_alive: str = "-1",
+        max_model: str = "",
+        max_num_ctx: int = 16384,
+        max_keep_alive: str = "10m",
     ):
         self.base_url = base_url.rstrip("/")
         self.chat_model = chat_model
@@ -133,11 +138,41 @@ class OllamaClient:
         self.tools_model = tools_model
         self.tools_num_ctx = tools_num_ctx
         self.tools_keep_alive = tools_keep_alive
+        # Max-intelligence escalation tier (loaded on demand, short keep_alive)
+        self.max_model = max_model
+        self.max_num_ctx = max_num_ctx
+        self.max_keep_alive = max_keep_alive
         self._client: httpx.AsyncClient | None = None
         self._capabilities_cache: dict[str, list[str]] = {}
         # Cache query->embedding to avoid recomputing the same embedding
         self._embed_cache: dict[str, list[float]] = {}
         self._cache_max_size = 128
+
+    def _keep_alive_for(self, model: str | None) -> str | int:
+        """Resolve the keep_alive that applies to a specific model.
+
+        Per-model keep_alive lets on-demand tiers (math, max-intelligence)
+        evict themselves instead of squatting on RAM next to the warm set.
+        """
+        if model == self.max_model and self.max_model:
+            return self._normalize_keep_alive(self.max_keep_alive)
+        if model == self.math_model and self.math_model:
+            return self._normalize_keep_alive(self.math_keep_alive)
+        if model == self.tools_model and self.tools_model:
+            return self._normalize_keep_alive(self.tools_keep_alive)
+        return self._normalize_keep_alive(self.keep_alive)
+
+    @staticmethod
+    def _normalize_keep_alive(value: str | int) -> str | int:
+        """Normalize a keep_alive config value into an Ollama API value."""
+        if isinstance(value, str):
+            stripped = value.strip()
+            if stripped.lstrip("-").isdigit() and stripped not in ("", "-"):
+                n = int(stripped)
+                if n < 0:
+                    return n
+                return f"{n}s"
+        return value
 
     def _keep_alive_param(self) -> str | int:
         """Normalize the keep_alive config into an Ollama API value.
@@ -149,15 +184,7 @@ class OllamaClient:
         matches intent, so bare integers are rewritten here:
           negative -> JSON number (never unload), positive -> "<n>s".
         """
-        value = self.keep_alive
-        if isinstance(value, str):
-            stripped = value.strip()
-            if stripped.lstrip("-").isdigit() and stripped not in ("", "-"):
-                n = int(stripped)
-                if n < 0:
-                    return n
-                return f"{n}s"
-        return value
+        return self._normalize_keep_alive(self.keep_alive)
 
     async def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
@@ -359,7 +386,7 @@ except: pass
             "model": model,
             "messages": [m.model_dump() for m in messages],
             "stream": stream,
-            "keep_alive": self._keep_alive_param(),
+            "keep_alive": self._keep_alive_for(model),
             "options": {"temperature": temperature},
         }
         if format:
@@ -386,6 +413,8 @@ except: pass
                 num_ctx = self.utility_num_ctx
             elif model == self.math_model:
                 num_ctx = self.math_num_ctx
+            elif model == self.max_model:
+                num_ctx = self.max_num_ctx
             else:
                 num_ctx = self.chat_num_ctx
         if num_ctx:
@@ -440,7 +469,7 @@ except: pass
             "model": model,
             "messages": [m.model_dump() for m in messages],
             "stream": True,
-            "keep_alive": self._keep_alive_param(),
+            "keep_alive": self._keep_alive_for(model),
             "options": {"temperature": temperature},
         }
         if format:
@@ -462,6 +491,8 @@ except: pass
                 num_ctx = self.utility_num_ctx
             elif model == self.math_model:
                 num_ctx = self.math_num_ctx
+            elif model == self.max_model:
+                num_ctx = self.max_num_ctx
             else:
                 num_ctx = self.chat_num_ctx
         if num_ctx:

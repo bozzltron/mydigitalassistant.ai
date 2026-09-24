@@ -6,18 +6,20 @@ export function useChat() {
   const sendMessage = async (
     message: string,
     session_id?: string,
-    attached_files?: AttachedFile[]
+    attached_files?: AttachedFile[],
+    max_intelligence?: boolean
   ) => {
-    return postChatMessage(message, session_id, attached_files)
+    return postChatMessage(message, session_id, attached_files, max_intelligence)
   }
 
   const sendMessageStream = async (
     message: string,
     session_id?: string,
     attached_files?: AttachedFile[],
-    search_consent?: boolean
+    search_consent?: boolean,
+    max_intelligence?: boolean
   ) => {
-    return postChatMessageStream(message, session_id, attached_files, search_consent)
+    return postChatMessageStream(message, session_id, attached_files, search_consent, max_intelligence)
   }
 
   const addMessage = (sessionIdParam: string, message: ChatMessage) => {

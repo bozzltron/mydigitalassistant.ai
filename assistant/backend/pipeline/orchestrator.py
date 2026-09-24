@@ -19,7 +19,12 @@ from assistant.backend.config import settings
 from assistant.backend.memory.retrieval import Retriever
 from assistant.backend.memory.store import MemoryStore
 from assistant.backend.pipeline.llm_client import ChatMessage, OllamaClient, build_system_prompt
-from assistant.backend.pipeline.reasoner import Action, classify_intent, format_plan_for_prompt
+from assistant.backend.pipeline.reasoner import (
+    Action,
+    Plan,
+    classify_intent,
+    format_plan_for_prompt,
+)
 from assistant.backend.pipeline.search import SearchInfo, SearchResult, WebSearchTool
 from assistant.backend.pipeline.task_router import TaskType, route
 from assistant.backend.pipeline.tools import builtin_tools, run_tool_loop
@@ -117,6 +122,8 @@ class ChatRequest(BaseModel):
     attached_files: list[dict] = []
     # User consent for sensitive search queries (Brave)
     search_consent: bool = False
+    # Explicit user "Max" toggle (UI) — escalate generation to MAX_MODEL.
+    max_intelligence: bool = False
 
 
 class ChatResponse(BaseModel):
@@ -295,6 +302,48 @@ class Orchestrator:
             await progress(stage, detail)
         except Exception as e:  # pragma: no cover - defensive
             logger.warning("progress callback failed: %s", e)
+
+    async def _select_generation(
+        self,
+        request: ChatRequest,
+        plan: Plan,
+    ) -> tuple[str | None, bool]:
+        """Pick the generation model and thinking flag for a chat turn.
+
+        Escalation tiers (Phase 6 M6):
+        - Base: the configured default (tool loop runs on tools_model, plain
+          generation on chat_model) with thinking per plan/default.
+        - Max: plan.max_intelligence (auto by the reasoner) or the user's
+          explicit "Max" toggle routes the whole generation phase to
+          MAX_MODEL with thinking on — when that model is configured and
+          supports thinking (and tools, when the tool loop is active).
+
+        Returns (model, think); model=None means "use the role default".
+        """
+        escalated = request.max_intelligence or plan.max_intelligence
+        max_model = self.llm_client.max_model
+        use_max = bool(max_model) and escalated
+        if use_max:
+            supports = await self.llm_client.supports_thinking(max_model)
+            if settings.tools_enabled:
+                supports = supports and await self.llm_client.supports_tools(max_model)
+            if not supports:
+                logger.info(
+                    "max_model=%s lacks thinking/tools capability; falling back to chat model",
+                    max_model,
+                )
+                use_max = False
+        if use_max:
+            return max_model, True
+
+        probe = self.llm_client.chat_model
+        supports_thinking = await self.llm_client.supports_thinking(probe)
+        think = False
+        if plan.think and supports_thinking:
+            think = True
+        elif settings.chat_think_default and supports_thinking:
+            think = True
+        return None, think
 
     async def _get_self_context(self) -> str:
         """The agent's own identity facts, for grounding every response.
@@ -918,14 +967,11 @@ class Orchestrator:
         messages.extend(history_messages)
         messages.append(ChatMessage(role="user", content=request.message))
 
-        supports_thinking = await self.llm_client.supports_thinking(self.llm_client.chat_model)
-        think = False
-        if plan.think and supports_thinking:
-            think = True
-        elif settings.chat_think_default and supports_thinking:
-            think = True
+        gen_model, think = await self._select_generation(request, plan)
         num_predict = settings.think_num_predict_cap if think else None
-        if think:
+        if gen_model:
+            await self._report(progress, "reasoning", "applying maximum intelligence")
+        elif think:
             await self._report(progress, "reasoning", "thinking it through")
         else:
             await self._report(progress, "responding", "writing a reply")
@@ -946,6 +992,7 @@ class Orchestrator:
                     tools,
                     user_id=str(request.user_id),
                     session_id=request.session_id,
+                    model=gen_model,
                     think=think,
                     num_predict=num_predict,
                 )
@@ -953,6 +1000,7 @@ class Orchestrator:
                 logger.info("DEBUG: tools_enabled=False, skipping tool loop")
                 llm_response = await self.llm_client.chat(
                     messages,
+                    model=gen_model,
                     think=think,
                     num_predict=num_predict,
                 )
@@ -1881,16 +1929,13 @@ class Orchestrator:
             tool_names = [t["function"]["name"] for t in tools]
             logger.info("DEBUG: Available tools for streaming: %s", tool_names)
 
-            # Determine think and num_predict
-            supports_thinking = await self.llm_client.supports_thinking(self.llm_client.chat_model)
-            think = False
-            if plan.think and supports_thinking:
-                think = True
-            elif settings.chat_think_default and supports_thinking:
-                think = True
+            # Determine model, think and num_predict (max-intelligence aware)
+            gen_model, think = await self._select_generation(request, plan)
             num_predict = settings.think_num_predict_cap if think else None
 
-            if think:
+            if gen_model:
+                await self._report(progress, "reasoning", "applying maximum intelligence")
+            elif think:
                 await self._report(progress, "reasoning", "thinking it through")
             else:
                 await self._report(progress, "responding", "writing a reply")
@@ -1900,6 +1945,7 @@ class Orchestrator:
                 self.llm_client,
                 messages_dict,
                 tools,
+                model=gen_model,
                 think=think,
                 num_predict=num_predict,
                 user_id=str(request.user_id),
@@ -1908,15 +1954,12 @@ class Orchestrator:
                 yield event
         else:
             # No tools - just stream the chat response
-            supports_thinking = await self.llm_client.supports_thinking(self.llm_client.chat_model)
-            think = False
-            if plan.think and supports_thinking:
-                think = True
-            elif settings.chat_think_default and supports_thinking:
-                think = True
+            gen_model, think = await self._select_generation(request, plan)
             num_predict = settings.think_num_predict_cap if think else None
 
-            if think:
+            if gen_model:
+                await self._report(progress, "reasoning", "applying maximum intelligence")
+            elif think:
                 await self._report(progress, "reasoning", "thinking it through")
             else:
                 await self._report(progress, "responding", "writing a reply")
@@ -1924,7 +1967,7 @@ class Orchestrator:
             # Simple streaming without tools
             async for chunk in self.llm_client.chat_stream(
                 messages,
-                model=self.llm_client.chat_model,
+                model=gen_model or self.llm_client.chat_model,
                 think=think,
                 num_predict=num_predict,
             ):

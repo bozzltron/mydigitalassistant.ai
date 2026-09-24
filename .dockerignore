@@ -1,5 +1,6 @@
 node_modules
 *.log
+*.db
 .env.local
 .env.development.local
 .env.test.local
@@ -13,3 +14,4 @@ node_modules
 README.md
 LICENSE
 .env.example
+assistant/tests

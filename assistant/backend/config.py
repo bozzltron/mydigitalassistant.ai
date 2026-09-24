@@ -9,9 +9,9 @@ class Settings(BaseSettings):
     )
 
     ollama_url: str = "http://127.0.0.1:11434"
-    chat_model: str = "qwen2.5:7b"
-    utility_model: str = "qwen2.5:3b"
-    embedding_model: str = "nomic-embed-text"
+    chat_model: str = "qwen3.5:9b"
+    utility_model: str = "qwen3.5:4b"
+    embedding_model: str = "qwen3-embedding:0.6b"
     # Reserved role (Phase 6 M5). Empty = use chat_model for codegen.
     coder_model: str = ""
 
@@ -86,10 +86,19 @@ class Settings(BaseSettings):
     ollama_keep_alive: str = "-1"
 
     # Dedicated tools model for fast function calling (Phase: Performance)
-    # 1.5B model (qwen2.5-coder:1.5b, smollm2:1.7b) does tool calling in ~500ms
-    tools_model: str = "qwen2.5-coder:1.5b"
+    # qwen3.5:9b matches the chat model so the whole turn (tool calls + final
+    # answer) runs on the same brain with hot KV cache reuse.
+    tools_model: str = "qwen3.5:9b"
     tools_num_ctx: int = 4096
     tools_keep_alive: str = "-1"
+
+    # Max-intelligence escalation tier (Phase 6 M6). The largest local model the
+    # host can serve well (qwen3.8:27b on a 48GB Mac). Loaded on demand with a
+    # short keep_alive — never resident next to the warm chat/utility/embedding
+    # set. Empty = escalation falls back to thinking-mode on the chat model.
+    max_model: str = ""
+    max_num_ctx: int = 16384
+    max_keep_alive: str = "10m"
 
     # Streaming responses (SSE) - enabled by default
     streaming_enabled: bool = True
@@ -98,8 +107,9 @@ class Settings(BaseSettings):
     # (sqlite-vec cosine, 0-2). Lower = stricter similarity.
     retrieval_min_distance: float = 0.7
     # Max past-conversation turns injected per retrieval cycle (semantic
-    # episode recall). 0 disables episode search entirely.
-    retrieval_episode_limit: int = 0
+    # episode recall). Owner-scoped, current session excluded. Disabled (0)
+    # is opt-out; the default of 5 matches .env.example.
+    retrieval_episode_limit: int = 5
 
     # System prompt budget (context window protection)
     # Limits total prompt chars before LLM call; truncates least-relevant first

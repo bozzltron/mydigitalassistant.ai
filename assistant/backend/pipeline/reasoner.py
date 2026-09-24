@@ -39,6 +39,10 @@ class Plan:
     correction_slot: str | None = None  # slot key the user is correcting
     correction_value: str | None = None  # the correct value
     think: bool = False  # escalate to thinking mode (Phase 6 plan §6.2)
+    # Escalate to the max-intelligence tier (MAX_MODEL): genuinely hard
+    # multi-step queries with no memory to lean on (Phase 6 M6). The
+    # orchestrator also honors an explicit user "Max" toggle.
+    max_intelligence: bool = False
 
 
 # Relevance threshold below which a frame is considered "not relevant"
@@ -188,6 +192,28 @@ def _is_multi_step(query: str) -> bool:
     return conjunction_hits >= 2 and len(q.split()) > 12
 
 
+def _should_use_max_intelligence(
+    query: str,
+    task_type: str,
+    sufficiency: MemorySufficiency,
+    escalate: bool,
+) -> bool:
+    """Whether to escalate to the max-intelligence tier (§6.2 M6).
+
+    Auto-escalation is reserved for genuinely hard problems: the query needs
+    thinking (or is otherwise escalated), memory has nothing to lean on, and
+    the query is structurally multi-step. Corrections are targeted edits and
+    never jump to the max tier.
+    """
+    if task_type == "correction":
+        return False
+    return (
+        escalate
+        and sufficiency == MemorySufficiency.NONE
+        and _is_multi_step(query)
+    )
+
+
 def classify_intent(
     query: str,
     task_type: str,
@@ -203,6 +229,9 @@ def classify_intent(
         sufficiency in (MemorySufficiency.PARTIAL, MemorySufficiency.NONE)
         and _is_multi_step(query)
     )
+    max_intelligence = _should_use_max_intelligence(
+        query, task_type, sufficiency, escalate
+    )
 
     if task_type == "correction":
         return Plan(
@@ -212,6 +241,7 @@ def classify_intent(
             # Ambiguous correction validation: memory partially corroborates
             # AND partially conflicts — let thinking mode weigh it (§6.2).
             think=escalate or sufficiency == MemorySufficiency.PARTIAL,
+            max_intelligence=False,
         )
 
     if task_type == "search":
@@ -221,6 +251,7 @@ def classify_intent(
             cited_frame_ids=cited_ids,
             search_needed=True,
             think=escalate,
+            max_intelligence=max_intelligence,
         )
 
     if task_type == "introspective":
@@ -230,6 +261,7 @@ def classify_intent(
             cited_frame_ids=cited_ids,
             introspect=True,
             think=escalate,
+            max_intelligence=max_intelligence,
         )
 
     if sufficiency == MemorySufficiency.NONE:
@@ -238,12 +270,14 @@ def classify_intent(
                 action=Action.ANSWER,
                 sufficiency=MemorySufficiency.NONE,
                 think=_has_explicit_think_intent(query),
+                max_intelligence=max_intelligence,
             )
         return Plan(
             action=Action.SEARCH,
             sufficiency=MemorySufficiency.NONE,
             search_needed=True,
             think=escalate,
+            max_intelligence=max_intelligence,
         )
 
     if sufficiency == MemorySufficiency.PARTIAL:
@@ -257,6 +291,7 @@ def classify_intent(
             cited_frame_ids=cited_ids,
             knowledge_gaps=gaps,
             think=escalate,
+            max_intelligence=max_intelligence,
         )
 
     return Plan(
@@ -264,6 +299,7 @@ def classify_intent(
         sufficiency=MemorySufficiency.HIGH,
         cited_frame_ids=cited_ids,
         think=escalate,
+        max_intelligence=max_intelligence,
     )
 
 

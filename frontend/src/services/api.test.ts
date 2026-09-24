@@ -18,7 +18,7 @@ describe('api service', () => {
     it('makes request with correct headers and credentials', async () => {
       mockFetch.mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve({ data: 'test' }),
+        text: () => Promise.resolve(JSON.stringify({ data: 'test' })),
       })
 
       await api('/test')
@@ -35,7 +35,7 @@ describe('api service', () => {
       mockFetch.mockResolvedValue({
         ok: false,
         status: 400,
-        json: () => Promise.resolve({ detail: 'Bad request' }),
+        text: () => Promise.resolve(JSON.stringify({ detail: 'Bad request' })),
       })
 
       await expect(api('/test')).rejects.toThrow('Bad request')
@@ -45,10 +45,24 @@ describe('api service', () => {
       mockFetch.mockResolvedValue({
         ok: false,
         status: 500,
-        json: () => Promise.reject(new Error('No body')),
+        text: () => Promise.resolve(''),
       })
 
       await expect(api('/test')).rejects.toThrow('Unknown error')
+    })
+
+    it('returns null for a 200 response with a non-JSON body', async () => {
+      // Regression test for the AlertsPanel "Failed to fetch alerts:
+      // SyntaxError: JSON.parse: unexpected character at line 1 column 1"
+      // bug — a proxy/error page returning HTML (or an empty body) with a
+      // 200 status must never throw a JSON parse error.
+      mockFetch.mockResolvedValue({
+        ok: true,
+        status: 200,
+        text: () => Promise.resolve('<html><body>upstream error</body></html>'),
+      })
+
+      await expect(api('/test')).resolves.toBeNull()
     })
   })
 
@@ -61,7 +75,7 @@ describe('api service', () => {
       }
       mockFetch.mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve(mockResponse),
+        text: () => Promise.resolve(JSON.stringify(mockResponse)),
       })
 
       const result = await postChat('Hi there', 'session-123', [], 'turn-456')
@@ -79,6 +93,29 @@ describe('api service', () => {
         credentials: 'include',
       })
       expect(result).toEqual(mockResponse)
+    })
+
+    it('includes max_intelligence in the body when passed', async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        text: () => Promise.resolve(JSON.stringify({ response: 'ok' })),
+      })
+
+      await postChat('hard query', 'session-123', [], 'turn-456', undefined, true)
+
+      expect(mockFetch).toHaveBeenCalledWith('/chat', {
+        method: 'POST',
+        body: JSON.stringify({
+          user_id: 1,
+          message: 'hard query',
+          session_id: 'session-123',
+          attached_files: [],
+          turn_id: 'turn-456',
+          max_intelligence: true,
+        }),
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+      })
     })
   })
 
@@ -102,7 +139,7 @@ describe('api service', () => {
       const mockFrames = [{ id: 1, name: 'Test' }]
       mockFetch.mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve(mockFrames),
+        text: () => Promise.resolve(JSON.stringify(mockFrames)),
       })
 
       const result = await getFrames(1)
@@ -117,7 +154,7 @@ describe('api service', () => {
       const mockAssociations = [{ id: 1, from_frame_id: 1, to_frame_id: 2 }]
       mockFetch.mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve(mockAssociations),
+        text: () => Promise.resolve(JSON.stringify(mockAssociations)),
       })
 
       const result = await getAssociations(1)
@@ -132,7 +169,7 @@ describe('api service', () => {
       const mockResults = { results: [] }
       mockFetch.mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve(mockResults),
+        text: () => Promise.resolve(JSON.stringify(mockResults)),
       })
 
       await getSearchResults('test query', 0.5)
@@ -143,7 +180,7 @@ describe('api service', () => {
     it('searches without minRelevance', async () => {
       mockFetch.mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve({ results: [] }),
+        text: () => Promise.resolve(JSON.stringify({ results: [] })),
       })
 
       await getSearchResults('test query')
@@ -156,7 +193,7 @@ describe('api service', () => {
     it('lists files', async () => {
       mockFetch.mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve([{ id: '1', name: 'test.txt' }]),
+        text: () => Promise.resolve(JSON.stringify([{ id: '1', name: 'test.txt' }])),
       })
 
       const result = await listFiles()
@@ -206,7 +243,7 @@ describe('api service', () => {
     it('fetches user sessions', async () => {
       mockFetch.mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve([{ id: '1', title: 'Session 1' }]),
+        text: () => Promise.resolve(JSON.stringify([{ id: '1', title: 'Session 1' }])),
       })
 
       const result = await getUserSessions(1)
@@ -220,7 +257,7 @@ describe('api service', () => {
     it('creates new conversation', async () => {
       mockFetch.mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve({ session_id: 'new-session', message: 'Created' }),
+        text: () => Promise.resolve(JSON.stringify({ session_id: 'new-session', message: 'Created' })),
       })
 
       const result = await createNewConversation(1)
@@ -238,7 +275,7 @@ describe('api service', () => {
     it('updates conversation title', async () => {
       mockFetch.mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve({ session_id: 'session-123', title: 'New Title' }),
+        text: () => Promise.resolve(JSON.stringify({ session_id: 'session-123', title: 'New Title' })),
       })
 
       const result = await updateConversationTitle('session-123', 1, 'New Title')
@@ -257,7 +294,7 @@ describe('api service', () => {
     it('fetches session messages with limit', async () => {
       mockFetch.mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve([{ role: 'user', content: 'Hi' }]),
+        text: () => Promise.resolve(JSON.stringify([{ role: 'user', content: 'Hi' }])),
       })
 
       const result = await getSessionMessages('session-123', 1, 25)
@@ -271,7 +308,7 @@ describe('api service', () => {
     it('fetches assistant name', async () => {
       mockFetch.mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve({ name: 'Assistant' }),
+        text: () => Promise.resolve(JSON.stringify({ name: 'Assistant' })),
       })
 
       const result = await getAssistantName()
@@ -285,7 +322,7 @@ describe('api service', () => {
     it('fetches settings', async () => {
       mockFetch.mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve({ brave_enabled: true, brave_configured: true }),
+        text: () => Promise.resolve(JSON.stringify({ brave_enabled: true, brave_configured: true })),
       })
 
       const result = await getSettings()
@@ -299,7 +336,7 @@ describe('api service', () => {
     it('posts feedback', async () => {
       mockFetch.mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve({ success: true }),
+        text: () => Promise.resolve(JSON.stringify({ success: true })),
       })
 
       await postFeedback('ep-1', 'msg-1', 'thumbs_up', 'Great!')
@@ -317,7 +354,7 @@ describe('api service', () => {
     it('posts correction', async () => {
       mockFetch.mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve({ success: true }),
+        text: () => Promise.resolve(JSON.stringify({ success: true })),
       })
 
       await postCorrection('ep-1', 'msg-1', 'Correction text')
@@ -354,7 +391,7 @@ describe('api service', () => {
     it('fetches OG preview', async () => {
       mockFetch.mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve({ title: 'Test', image: 'img.png' }),
+        text: () => Promise.resolve(JSON.stringify({ title: 'Test', image: 'img.png' })),
       })
 
       const result = await getOGPreview('https://example.com')
@@ -419,7 +456,7 @@ describe('api service', () => {
       mockFetch.mockResolvedValue(sseResponse(events))
       const seen: Array<{ type: string; stage?: string }> = []
 
-      await postChatStream('Hi', 'session-123', [], 'turn-1', false, (event) => {
+      await postChatStream('Hi', 'session-123', [], 'turn-1', false, undefined, (event) => {
         seen.push(event)
       })
 
@@ -463,6 +500,38 @@ describe('api service', () => {
       })
 
       await expect(postChatStream('Hi')).rejects.toThrow('boom')
+    })
+
+    it('includes max_intelligence in the stream request body when passed', async () => {
+      mockFetch.mockResolvedValue(
+        sseResponse(['data: {"type": "finalize", "answer": "ok"}\n\n']),
+      )
+
+      await postChatStream('hard stream query', 'session-1', [], 'turn-9', false, true)
+
+      expect(mockFetch).toHaveBeenCalled()
+      const call = mockFetch.mock.calls[0]
+      expect(call[0]).toBe('/chat/stream')
+      expect(JSON.parse(call[1].body)).toMatchObject({
+        user_id: 1,
+        message: 'hard stream query',
+        session_id: 'session-1',
+        turn_id: 'turn-9',
+        search_consent: false,
+        max_intelligence: true,
+      })
+    })
+
+    it('omits max_intelligence when not passed', async () => {
+      mockFetch.mockResolvedValue(
+        sseResponse(['data: {"type": "finalize", "answer": "ok"}\n\n']),
+      )
+
+      await postChatStream('plain query', 'session-1', [], 'turn-10')
+
+      const call = mockFetch.mock.calls[0]
+      const body = JSON.parse(call[1].body)
+      expect(body.max_intelligence).toBeUndefined()
     })
   })
 })

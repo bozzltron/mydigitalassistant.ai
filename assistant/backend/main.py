@@ -118,6 +118,9 @@ async def lifespan(app: FastAPI):
         tools_model=settings.tools_model,
         tools_num_ctx=settings.tools_num_ctx,
         tools_keep_alive=settings.tools_keep_alive,
+        max_model=settings.max_model,
+        max_num_ctx=settings.max_num_ctx,
+        max_keep_alive=settings.max_keep_alive,
     )
     retriever = Retriever(
         store=store,
@@ -269,6 +272,7 @@ async def health():
             "utility": settings.utility_model,
             "embedding": settings.embedding_model,
             "coder": settings.coder_model or settings.chat_model,
+            "max": settings.max_model or settings.chat_model,
         },
         "thinking_supported": thinking_supported,
     }
@@ -472,6 +476,7 @@ async def chat(
                 turn_id=request.turn_id,
                 attached_files=orch_attached_files,
                 search_consent=request.search_consent,
+                max_intelligence=request.max_intelligence,
             ),
             progress=progress,
         )
@@ -607,6 +612,7 @@ async def chat_stream(
                         turn_id=request.turn_id,
                         attached_files=orch_attached_files,
                         search_consent=request.search_consent,
+                        max_intelligence=request.max_intelligence,
                     ),
                     progress=progress,
                 ),

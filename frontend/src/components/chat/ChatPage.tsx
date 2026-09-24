@@ -28,6 +28,7 @@ export default function ChatPage(props: {
   const [showTrace, setShowTrace] = createSignal(false)
   const [messagesContainerRef, setMessagesContainerRef] = createSignal<HTMLDivElement | null>(null)
   const [isDictating, setIsDictating] = createSignal(false)
+  const [maxIntelligence, setMaxIntelligence] = createSignal(false)
   const [pendingSearchConsent, setPendingSearchConsent] = createSignal<{
     message: string
     attachedFiles: AttachedFile[]
@@ -119,7 +120,7 @@ export default function ChatPage(props: {
 
       addMessageToConversation(currentSessionId, userMessage)
 
-      const result = await sendMessageStream(message, currentSessionId, processedFiles, search_consent)
+      const result = await sendMessageStream(message, currentSessionId, processedFiles, search_consent, maxIntelligence())
 
       if (result.session_id) {
         setSessionId(result.session_id)
@@ -293,6 +294,8 @@ export default function ChatPage(props: {
             isDictating={isDictating()}
             onDictationStart={handleDictationStart}
             onDictationStop={handleDictationStop}
+            maxEnabled={maxIntelligence()}
+            onToggleMax={() => setMaxIntelligence((v) => !v)}
           />
         </div>
       </div>

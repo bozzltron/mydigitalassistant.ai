@@ -9,13 +9,14 @@ frame/slot memory model. Runs 100% locally via Ollama.
 - Docker installed
 - Ollama running on the host with these models pulled:
   ```bash
-  ollama pull qwen2.5:7b
-  ollama pull qwen2.5:3b
-  ollama pull nomic-embed-text
+  ollama pull qwen3.5:9b
+  ollama pull qwen3.5:4b
+  ollama pull qwen3-embedding:0.6b
+  ollama pull qwen3.8:27b   # on-demand escalation + math tier
   ```
 - Recommended host env so models stay warm between turns (reloading a 27B
   model costs tens of seconds): `OLLAMA_KEEP_ALIVE=-1` and
-  `OLLAMA_MAX_LOADED_MODELS=2`.
+  `OLLAMA_MAX_LOADED_MODELS=4`.
 
 ### Start the backend
 Docker compose files are at the repo root. Run from the repo root:

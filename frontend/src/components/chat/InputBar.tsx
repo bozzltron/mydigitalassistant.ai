@@ -8,6 +8,8 @@ interface InputBarProps {
   isDictating?: boolean
   onDictationStart?: () => void
   onDictationStop?: () => void
+  maxEnabled?: boolean
+  onToggleMax?: () => void
 }
 
 export default function InputBar(props: InputBarProps) {
@@ -149,8 +151,23 @@ export default function InputBar(props: InputBarProps) {
             <line x1="12" x2="12" y1="19" y2="22"/>
           </svg>
         </button>
+
+        <button 
+          type="button"
+          class="max-btn btn-icon"
+          id="max-btn"
+          title="Max intelligence (27B model)"
+          onClick={() => props.onToggleMax?.()}
+          classList={{
+            active: props.maxEnabled,
+          }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+          </svg>
+        </button>
         
-       <button
+        <button
          type="button"
          class="btn-primary"
          id="send-btn"

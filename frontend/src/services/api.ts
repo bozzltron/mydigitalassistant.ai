@@ -175,13 +175,30 @@ export async function api<T>(
   })
 
   console.log('[api] Response:', response.status, response.statusText)
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: 'Unknown error' }))
-    console.error('[api] Error:', error)
-    throw new Error(error.detail || `HTTP ${response.status}`)
+  // Read the body as text and parse defensively: a proxy or error page can
+  // return a non-JSON body (HTML, empty 200, gzip'd error), and response.json()
+  // would throw SyntaxError ("unexpected character at line 1 column 1") that
+  // surfaces as unhelpful "Failed to fetch alerts" style errors. A disturbed
+  // Response stream can't be re-read, so text() first is the only safe order.
+  const bodyText = await response.text()
+  let data: unknown = null
+  if (bodyText.trim()) {
+    try {
+      data = JSON.parse(bodyText)
+    } catch {
+      data = null
+    }
   }
 
-  const data = await response.json()
+  if (!response.ok) {
+    const detail =
+      data && typeof data === 'object' && 'detail' in data
+        ? String((data as { detail: unknown }).detail)
+        : 'Unknown error'
+    console.error('[api] Error:', detail)
+    throw new Error(detail)
+  }
+
   console.log('[api] Response data:', data)
   return data as Promise<T>
 }
@@ -191,7 +208,8 @@ export async function postChat(
   session_id?: string,
   attached_files?: AttachedFile[],
   turn_id?: string,
-  search_consent?: boolean
+  search_consent?: boolean,
+  max_intelligence?: boolean
 ): Promise<ChatResponse> {
   const requestBody = {
     user_id: 1,
@@ -200,6 +218,7 @@ export async function postChat(
     attached_files,
     turn_id,
     search_consent,
+    max_intelligence,
   }
 
   console.log('Sending chat request:', requestBody)
@@ -235,6 +254,7 @@ export async function postChatStream(
   attached_files?: AttachedFile[],
   turn_id?: string,
   search_consent?: boolean,
+  max_intelligence?: boolean,
   onEvent?: (event: StreamEvent) => void
 ): Promise<ChatResponse> {
   const requestBody = {
@@ -244,6 +264,7 @@ export async function postChatStream(
     attached_files,
     turn_id,
     search_consent,
+    max_intelligence,
   }
 
   const url = `${BASE_URL}/chat/stream`

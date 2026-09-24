@@ -65,7 +65,9 @@ class TestEmbedBatching:
         from assistant.backend.pipeline.llm_client import OllamaClient
 
         client = OllamaClient()
-        client._embed_cache = {"nomic-embed-text:cached text": [0.5, 0.5, 0.5]}
+        client._embed_cache = {
+            f"{client.embedding_model}:cached text": [0.5, 0.5, 0.5],
+        }
 
         # Mix of cached and uncached
         texts = ["cached text", "new text"]
@@ -97,8 +99,8 @@ class TestEmbedBatching:
 
         client = OllamaClient()
         client._embed_cache = {
-            "nomic-embed-text:text1": [0.1, 0.1, 0.1],
-            "nomic-embed-text:text2": [0.2, 0.2, 0.2],
+            f"{client.embedding_model}:text1": [0.1, 0.1, 0.1],
+            f"{client.embedding_model}:text2": [0.2, 0.2, 0.2],
         }
         client._get_client = AsyncMock()
 
@@ -130,7 +132,7 @@ class TestEmbedBatching:
         client._cache_max_size = 4
         # Pre-fill cache
         for i in range(4):
-            client._embed_cache[f"nomic-embed-text:text{i}"] = [float(i)] * 3
+            client._embed_cache[f"{client.embedding_model}:text{i}"] = [float(i)] * 3
 
         client._get_client = AsyncMock()
         mock_http_client = AsyncMock()

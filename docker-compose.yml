@@ -11,9 +11,9 @@ services:
       - OLLAMA_URL=http://host.docker.internal:11434
       - OLLAMA_TIMEOUT=${OLLAMA_TIMEOUT:-600}
       - OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:--1}
-      - CHAT_MODEL=${CHAT_MODEL:-qwen2.5:7b}
+      - CHAT_MODEL=${CHAT_MODEL:-qwen3.5:9b}
       - UTILITY_MODEL=${UTILITY_MODEL:-qwen3.5:4b}
-      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-nomic-embed-text}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-qwen3-embedding:0.6b}
       - CODER_MODEL=${CODER_MODEL:-}
       # Math/computation model. OFF by default — a 30B-class model here (e.g.
       # qwen3-coder:30b) competes with chat/utility for host RAM and thrashes
@@ -21,10 +21,17 @@ services:
       - MATH_MODEL=${MATH_MODEL:-}
       - MATH_NUM_CTX=${MATH_NUM_CTX:-16384}
       - MATH_KEEP_ALIVE=${MATH_KEEP_ALIVE:-10m}
-      # Tools model for fast function calling (Phase 6 M5). 4B model works reliably with tools
-      - TOOLS_MODEL=${TOOLS_MODEL:-qwen3.5:4b}
+      # Tools model: same brain as chat so tool calls + final answer share the
+      # hot KV cache (Phase 6 M5 + fleet redesign).
+      - TOOLS_MODEL=${TOOLS_MODEL:-qwen3.5:9b}
       - TOOLS_NUM_CTX=${TOOLS_NUM_CTX:-4096}
       - TOOLS_KEEP_ALIVE=${TOOLS_KEEP_ALIVE:--1}
+      # Max-intelligence escalation tier (Phase 6 M6). On-demand with a short
+      # keep_alive — never resident next to the warm set. Empty = fall back to
+      # thinking-mode on the chat model.
+      - MAX_MODEL=${MAX_MODEL:-}
+      - MAX_NUM_CTX=${MAX_NUM_CTX:-16384}
+      - MAX_KEEP_ALIVE=${MAX_KEEP_ALIVE:-10m}
       # Binds inside the container only. Exposure is controlled by port
       # publishing: the assistant service publishes NO ports; Caddy is the
       # single published surface (127.0.0.1:8443). Loopback-in-container would

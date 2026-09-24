@@ -597,6 +597,7 @@ async def execute_write_file(args: dict, user_id: str, session_id: str) -> ToolR
         from assistant.backend.pipeline.filesystem import (
             PathTraversalError,
             SizeLimitError,
+            get_sandbox_root,
             write_sandbox_file,
         )
 
@@ -633,7 +634,10 @@ async def execute_write_file(args: dict, user_id: str, session_id: str) -> ToolR
                 frame.id, "file_size", str(len(content)), source_type="file_create"
             )
             await _store.upsert_slot(
-                frame.id, "file_safe_name", written_path.name, source_type="file_create"
+                frame.id,
+                "file_safe_name",
+                str(written_path.relative_to(get_sandbox_root())),
+                source_type="file_create",
             )
             await _store.upsert_slot(
                 frame.id, "file_content_preview", content[:200], source_type="file_create"

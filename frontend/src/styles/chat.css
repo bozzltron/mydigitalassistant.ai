@@ -234,6 +234,40 @@
   padding-right: 0.75rem;
 }
 
+.max-btn {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  border-radius: 8px;
+  padding: 0 0.75rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s, box-shadow 0.15s;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  white-space: nowrap;
+}
+
+.max-btn:hover {
+  background: var(--border);
+  color: var(--text);
+}
+
+.max-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+#input-row .max-btn {
+  margin-right: 0.5rem;
+}
+
 #send-btn {
   background: var(--accent);
   border: none;

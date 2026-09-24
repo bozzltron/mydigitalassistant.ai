@@ -182,7 +182,7 @@ The agent must confirm before performing actions that could expose sensitive inf
 - Conflicts: when a new slot value contradicts existing — auto-resolve by a fixed ladder
   (source_reliability → confidence → priority → recency tiebreak). Old value preserved
   in slot_history, flagged for user review via CLI or web UI.
-- Embeddings: frame type + name + slot key=value lines, via nomic-embed-text, stored
+- Embeddings: frame type + name + slot key=value lines, via qwen3-embedding:0.6b, stored
   in sqlite-vec. Conversation turns get their own vectors (`episode_embeddings`) at
   write time (best-effort; consolidation tops up misses).
 
@@ -226,12 +226,20 @@ The agent must confirm before performing actions that could expose sensitive inf
 
 ## Model fleet config
 Role-based model selection. Configurable in `.env`: `CHAT_MODEL`, `UTILITY_MODEL`,
-`EMBEDDING_MODEL`, `CODER_MODEL` (reserved, empty = chat model), `OLLAMA_URL`.
-- Chat model (default `qwen2.5:7b`): user-facing responses. Thinking-capable models accept
+`EMBEDDING_MODEL`, `TOOLS_MODEL`, `MAX_MODEL`, `MATH_MODEL`, `CODER_MODEL`
+(reserved, empty = chat model), `OLLAMA_URL`. See `docs/MODEL_SELECTION.md` for
+the assessment criteria, memory budget, and re-evaluation process.
+- Chat model (default `qwen3.5:9b`): user-facing responses. Thinking-capable models accept
   per-request `think=True/False` (`OllamaClient.chat`); inline `<think>` tags are parsed
   out by the LLM client into a separate `thinking` field on the internal response.
-- Utility model (default `qwen2.5:3b`): extraction, task-routing fallback.
-- Embedding model (default `nomic-embed-text`): frame/query embeddings.
+- Utility model (default `qwen3.5:4b`): extraction, task-routing fallback.
+- Tools model (default `qwen3.5:9b`): drives the tool loop; same brain as chat so
+  tool calls + final answer share the hot KV cache.
+- Embedding model (default `qwen3-embedding:0.6b`, 1024-dim): frame/query embeddings.
+- Max model (default `qwen3.8:27b`): on-demand escalation tier (auto reasoner or
+  "Max" UI toggle); think on, `keep_alive=10m`, never resident next to the warm set.
+- Math model (default `qwen3.8:27b`): on-demand `compute` tool — writes Python for
+  sandboxed execution; shares weights with the max model.
 - Coder model: reserved for tool codegen; falls back to chat model.
 - No separate router/reasoning models: routing reuses utility; reasoning is a thinking-mode
   escalation on the chat model.

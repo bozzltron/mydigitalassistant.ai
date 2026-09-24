@@ -154,11 +154,16 @@ def check_env_example_exists() -> tuple[bool, str]:
 
 
 def check_no_secrets_committed() -> tuple[bool, str]:
-    """Verify no .env file is committed at the repository root."""
+    """Verify .env can never be committed: either absent, or present only
+    while protected by .gitignore. A local .env in a dev checkout is normal;
+    the security invariant is that it is never tracked by git."""
     env_file = ROOT / ".env"
-    if env_file.exists():
-        return False, ".env file exists in source tree — should only be local, never committed"
-    return True, "No .env file in source tree."
+    if not env_file.exists():
+        return True, "No .env file in source tree."
+    gitignore = ROOT / ".gitignore"
+    if gitignore.exists() and ".env" in gitignore.read_text().splitlines():
+        return True, ".env present locally but listed in .gitignore — never committed."
+    return False, ".env exists and is not in .gitignore — risk of committing secrets."
 
 
 def check_localhost_ollama_reachable() -> tuple[bool, str]:

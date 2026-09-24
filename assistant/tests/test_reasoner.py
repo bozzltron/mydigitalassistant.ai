@@ -287,3 +287,54 @@ class TestThinkEscalation:
         )
         # Explicit intent marker inside a search task
         assert plan.think is True
+
+
+class TestMaxIntelligenceEscalation:
+    """Phase 6 M6: max-intelligence tier auto-escalation by the reasoner."""
+
+    def test_none_memory_multi_step_search_max_escalates(self):
+        plan = classify_intent(
+            "and then work out the schedule, because timing matters for everything else here",
+            "search",
+            make_memory([]),
+        )
+        assert plan.think is True
+        assert plan.max_intelligence is True
+
+    def test_none_memory_multi_step_introspective_max_escalates(self):
+        plan = classify_intent(
+            "first, summarize what you learned about my guitar setup, "
+            "and then compare after that with what you know about my barge",
+            "introspective",
+            make_memory([]),
+        )
+        assert plan.max_intelligence is True
+
+    def test_partial_memory_multi_step_uses_thinking_only(self):
+        memory = make_memory([(make_frame(1, confidence=0.4), [], 0.5)])
+        plan = classify_intent(
+            "First check my guitar strings then compare after that with bob's kayak gear",
+            "functional",
+            memory,
+        )
+        assert plan.think is True
+        assert plan.max_intelligence is False
+
+    def test_high_sufficiency_multi_step_no_escalation(self):
+        memory = make_memory([(make_frame(1, confidence=0.9), [], 0.8)])
+        plan = classify_intent(
+            "compare my guitar and then my amp and then my pedals for the gig",
+            "functional",
+            memory,
+        )
+        assert plan.think is False
+        assert plan.max_intelligence is False
+
+    def test_correction_never_max_escalates(self):
+        plan = classify_intent(
+            "actually my guitar has 7 strings and then my amp changed too, "
+            "because I swapped everything out last week",
+            "correction",
+            make_memory([]),
+        )
+        assert plan.max_intelligence is False

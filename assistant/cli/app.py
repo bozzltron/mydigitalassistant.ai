@@ -824,6 +824,22 @@ def cmd_db_reembed(args: argparse.Namespace, client: BackendClient) -> None:
             f"[green]✓ Re-embedded {embedded}/{total} frames."
             f" Metadata updated: embedding_model = {model}[/green]"
         )
+
+        # Episodes: top up any that lack a vector under the new model. After a
+        # model swap every old-model episode lacks a vector, so this re-embeds
+        # the full episode set (keeps "related past conversations" searchable).
+        # NOTE: embed_missing_episodes expects embed_fn -> list[float]; OllamaClient.embed
+        # returns an EmbeddingResponse, so unwrap `.embedding` (regression: passing
+        # the raw response made json.dumps fail and every episode get skipped silently).
+        try:
+            async def _embed_episode(text: str) -> list[float]:
+                resp = await llm_client.embed(text)
+                return resp.embedding
+
+            episode_count = asyncio.run(store.embed_missing_episodes(_embed_episode, model))
+            console.print(f"[green]✓ Embedded {episode_count} episodes with {model}[/green]")
+        except Exception as e:
+            console.print(f"[yellow]Episode re-embed skipped: {e}[/yellow]")
     except Exception as e:
         console.print(f"[red]Re-embed failed: {e}[/red]")
         sys.exit(1)
@@ -844,6 +860,7 @@ def cmd_status(args: argparse.Namespace, client: BackendClient) -> None:
                 f"  Utility model: {models.get('utility', health.get('utility_model', '?'))}\n"
                 f"  Embedding model: {models.get('embedding', '?')}\n"
                 f"  Coder model: {models.get('coder', '?')}\n"
+                f"  Max model: {models.get('max', health.get('max_model', '?'))}\n"
                 f"  Thinking mode: {think}",
                 title="Status",
             )

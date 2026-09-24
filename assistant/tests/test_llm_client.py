@@ -237,7 +237,11 @@ async def test_keep_alive_sent_on_chat_and_embed():
             "message": {"role": "assistant", "content": "ok"},
         })
 
-    client = _client_with_transport(handler, keep_alive="45m")
+    client = _client_with_transport(
+        handler,
+        chat_model="chat-m", tools_model="tools-m",
+        keep_alive="45m",
+    )
     await client.chat([ChatMessage(role="user", content="hi")])
     await client.embed("hello")
     assert captured["/api/chat"]["keep_alive"] == "45m"
@@ -273,3 +277,81 @@ async def test_embed_sends_normalized_keep_alive():
     client = _client_with_transport(handler, keep_alive="-1")
     await client.embed("hello")
     assert captured["payload"]["keep_alive"] == -1
+
+
+# --- max-intelligence tier (M6): num_ctx + keep_alive for the on-demand model ---
+
+
+async def test_chat_max_model_gets_max_num_ctx():
+    """The max tier is a 27B-class model: give it max_num_ctx, not chat_num_ctx."""
+    captured: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.setdefault("num_ctx", []).append(
+            json.loads(request.content)["options"]["num_ctx"]
+        )
+        return httpx.Response(200, json={
+            "model": "m", "done": True,
+            "message": {"role": "assistant", "content": "ok"},
+        })
+
+    client = OllamaClient(
+        chat_model="chat-m", max_model="max-m",
+        chat_num_ctx=8192, max_num_ctx=16384,
+    )
+    client._client = httpx.AsyncClient(
+        transport=httpx.MockTransport(handler), base_url=client.base_url
+    )
+    await client.chat([ChatMessage(role="user", content="hi")], model="max-m")
+    # chat model untouched by the max request keeps its own budget
+    await client.chat([ChatMessage(role="user", content="hi")])
+    assert captured["num_ctx"] == [16384, 8192]
+    await client.close()
+
+
+def test_keep_alive_for_resolves_per_model():
+    """On-demand tiers (max, math, tools) keep their own keep_alive so they
+    evict themselves instead of squatting next to the warm set."""
+    client = OllamaClient(
+        chat_model="chat-m",
+        max_model="max-m", max_keep_alive="10m",
+        math_model="math-m", math_keep_alive="5m",
+        tools_model="tools-m", tools_keep_alive="-1",
+        keep_alive="30m",
+    )
+    assert client._keep_alive_for("max-m") == "10m"
+    assert client._keep_alive_for("math-m") == "5m"
+    assert client._keep_alive_for("tools-m") == -1
+    assert client._keep_alive_for("chat-m") == "30m"
+    assert client._keep_alive_for(None) == "30m"
+
+
+def test_keep_alive_for_ignores_unconfigured_tiers():
+    """Empty per-tier models fall through to the global keep_alive."""
+    client = OllamaClient(keep_alive="30m")  # no max/math/tools configured
+    assert client._keep_alive_for("") == "30m"
+    assert client._keep_alive_for("anything-not-in-fleet") == "30m"
+
+
+async def test_chat_max_model_sends_max_keep_alive():
+    captured: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.setdefault("keep_alive", []).append(
+            json.loads(request.content)["keep_alive"]
+        )
+        return httpx.Response(200, json={
+            "model": "m", "done": True,
+            "message": {"role": "assistant", "content": "ok"},
+        })
+
+    client = _client_with_transport(
+        handler,
+        chat_model="chat-m", tools_model="tools-m",
+        max_model="max-m", max_keep_alive="10m",
+        keep_alive="30m",
+    )
+    await client.chat([ChatMessage(role="user", content="hi")], model="max-m")
+    await client.chat([ChatMessage(role="user", content="hi")])
+    assert captured["keep_alive"] == ["10m", "30m"]
+    await client.close()

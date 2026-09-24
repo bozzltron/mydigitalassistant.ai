@@ -102,7 +102,11 @@ async def env(tmp_path):
     await init_db(db_path)
     store = MemoryStore(db_path)
     llm = ExperimentLLM()
-    retriever = Retriever(store=store, llm_client=llm)
+    # Mirror production (main.py): retrieve with the configured fleet embedding
+    # model so stored frame/episode embeddings are searchable.
+    retriever = Retriever(
+        store=store, llm_client=llm, embedding_model=settings.embedding_model
+    )
     orch = Orchestrator(
         deps=OrchestratorDeps(
             store=store,
@@ -210,7 +214,7 @@ async def test_daily_task_full_loop(env):
     # Generate embedding for daily run frame
     await store.embed_frames(
         [daily_run_frame_id],
-        orch._embed_fn(),
+        orch.embed_fn(),
         embedding_model=settings.embedding_model,
     )
 
@@ -353,7 +357,7 @@ async def test_run_due_endpoint_logic(env):
 
         await store.embed_frames(
             [daily_run_frame_id],
-            orch._embed_fn(),
+            orch.embed_fn(),
             embedding_model=settings.embedding_model,
         )
 
