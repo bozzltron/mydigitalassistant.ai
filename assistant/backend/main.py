@@ -151,7 +151,11 @@ async def lifespan(app: FastAPI):
     # Initialize tool executor with store and embed function for recall tool
     from assistant.backend.pipeline.tool_executor import init_store
     try:
-        init_store(db_path, embed_fn=orchestrator.embed_fn(), embedding_model=orchestrator.llm_client.embedding_model)
+        init_store(
+            db_path,
+            embed_fn=orchestrator.embed_fn(),
+            embedding_model=orchestrator.llm_client.embedding_model,
+        )
         logger.info("Tool executor initialized successfully")
     except Exception as e:
         logger.error("Failed to initialize tool executor: %s", e, exc_info=True)

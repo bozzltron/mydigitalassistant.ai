@@ -26,7 +26,11 @@ _embed_fn: Callable | None = None
 _embedding_model: str = "nomic-embed-text"
 
 
-def init_store(db_path: str, embed_fn: Callable | None = None, embedding_model: str = "nomic-embed-text") -> None:
+def init_store(
+    db_path: str,
+    embed_fn: Callable | None = None,
+    embedding_model: str = "nomic-embed-text",
+) -> None:
     """Initialize the global MemoryStore instance and embed function."""
     global _store, _embed_fn, _embedding_model
     _store = MemoryStore(db_path)
