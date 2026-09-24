@@ -1472,7 +1472,7 @@ class Orchestrator:
         """
         # Import here to avoid circular imports
         from assistant.backend.pipeline.llm_client import ChatMessage
-        from assistant.backend.pipeline.streaming import stream_final_answer
+        from assistant.backend.pipeline.streaming import stream_tool_loop
 
         # 1. Session
         session_id = request.session_id or str(uuid.uuid4())
@@ -1882,22 +1882,17 @@ class Orchestrator:
             else:
                 await self._report(progress, "responding", "writing a reply")
 
-            # Stream the final answer (Phase 1: stream final answer only)
-            async for event in stream_final_answer(
+            # Stream using the tool loop (Phase 4: stream full tool loop including tools)
+            async for event in stream_tool_loop(
                 self.llm_client,
                 messages_dict,
                 tools,
                 think=think,
                 num_predict=num_predict,
                 user_id=str(request.user_id),
-                session_id=request.session_id,
+                session_id=session_id,
             ):
                 yield event
-
-            # Log assistant episode after streaming
-            # Note: we don't have the full answer here easily, but the streaming
-            # already yielded it. For episode logging, we'd need to buffer.
-            # For now, skip episode logging in streaming mode (can be added later)
         else:
             # No tools - just stream the chat response
             supports_thinking = await self.llm_client.supports_thinking(self.llm_client.chat_model)

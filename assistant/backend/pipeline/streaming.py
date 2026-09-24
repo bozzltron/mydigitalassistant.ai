@@ -3,6 +3,7 @@
 Provides event serialization and the streaming response generator.
 """
 
+import asyncio
 import json
 from collections.abc import AsyncGenerator
 
@@ -56,6 +57,15 @@ class ErrorEvent(ToolLoopEvent):
         self.error = error
 
 
+class StageEvent(ToolLoopEvent):
+    """Live pipeline stage update (mirrors /chat/status for the SSE stream)."""
+
+    def __init__(self, stage: str, detail: str):
+        self.type = "stage"
+        self.stage = stage
+        self.detail = detail
+
+
 def serialize_event(event: ToolLoopEvent) -> str:
     """Serialize a tool loop event as an SSE message."""
     if isinstance(event, TextDeltaEvent):
@@ -83,70 +93,11 @@ def serialize_event(event: ToolLoopEvent) -> str:
     elif isinstance(event, ErrorEvent):
         data = {'type': 'error', 'error': event.error}
         return f"data: {json.dumps(data)}\n\n"
+    elif isinstance(event, StageEvent):
+        data = {'type': 'stage', 'stage': event.stage, 'detail': event.detail}
+        return f"data: {json.dumps(data)}\n\n"
     else:
         return f"data: {json.dumps({'type': 'unknown'})}\n\n"
-
-
-async def stream_final_answer(
-    llm_client,
-    messages: list[dict],
-    tools: list[dict] | None = None,
-    think: bool = False,
-    num_predict: int | None = None,
-    model: str | None = None,
-    user_id: str = "",
-    session_id: str = "",
-) -> AsyncGenerator[str, None]:
-    """Stream the final answer from the chat model (SSE format).
-
-    This is Phase 1: stream only the final answer, tool calls remain synchronous.
-    """
-    from assistant.backend.pipeline.llm_client import ChatMessage
-
-    # Convert messages to ChatMessage format
-    chat_messages = [ChatMessage(**m) for m in messages]
-
-    # Use the tools model for tool calling if tools are provided
-    loop_model = model or llm_client.tools_model
-
-    # Run tool loop synchronously first
-    from assistant.backend.pipeline.tools import run_tool_loop
-
-    try:
-        result = await run_tool_loop(
-            llm_client,
-            chat_messages,
-            tools or [],
-            user_id=user_id,
-            session_id=session_id,
-            think=think,
-            num_predict=num_predict,
-            model=loop_model,
-        )
-    except Exception as e:
-        yield serialize_event(ErrorEvent(str(e)))
-        return
-
-    answer = result.get("answer", "")
-    reasoning_trace = result.get("reasoning_trace")
-
-    # Now stream the final answer using the chat model
-    final_messages = chat_messages + [
-        ChatMessage(role="assistant", content=answer)
-    ]
-
-    # Stream the answer from the chat model
-    async for chunk in llm_client.chat_stream(
-        final_messages,
-        model=llm_client.chat_model,
-        think=think,
-        num_predict=num_predict,
-    ):
-        if chunk.content:
-            yield serialize_event(TextDeltaEvent(chunk.content))
-        if chunk.done:
-            yield serialize_event(FinalizeEvent(answer, reasoning_trace))
-            break
 
 
 async def stream_tool_loop(
@@ -156,6 +107,8 @@ async def stream_tool_loop(
     think: bool = False,
     num_predict: int | None = None,
     model: str | None = None,
+    user_id: str = "",
+    session_id: str = "",
 ) -> AsyncGenerator[str, None]:
     """Stream the full tool loop including tool calls and final answer (SSE format).
 
@@ -214,8 +167,8 @@ async def stream_tool_loop(
                     result = await execute_tool(
                         tool_name,
                         raw_args,
-                        user_id="",
-                        session_id="",
+                        user_id=user_id,
+                        session_id=session_id,
                     )
                 except Exception as e:
                     logger.error(f"Tool execution error: {e}")
@@ -229,6 +182,14 @@ async def stream_tool_loop(
                             "metadata": {},
                         },
                     )()
+
+                tool_results.append(
+                    {
+                        "name": tool_name,
+                        "args": raw_args,
+                        "data": getattr(result, "data", {}),
+                    }
+                )
 
                 # Yield tool result event
                 yield serialize_event(
@@ -282,3 +243,54 @@ async def stream_tool_loop(
         "\n\n".join(reasoning_trace) if reasoning_trace else None
     )
     yield serialize_event(event)
+
+
+async def merge_sse(
+    primary: AsyncGenerator[str, None],
+    event_queue: asyncio.Queue,
+    poll: float = 0.05,
+) -> AsyncGenerator[str, None]:
+    """Interleave primary SSE events with side-channel events from a queue.
+
+    The primary generator (e.g. the orchestrator's stream) is drained by a
+    background task, so we never cancel a long-awaited pipeline step while
+    polling for stage updates. Both channels are streamed out with at most
+    ``poll`` seconds of latency. An unexpected exception in ``primary`` is
+    surfaced as an SSE ``error`` event instead of silently ending the stream.
+    """
+    sentinel = object()
+    out: asyncio.Queue = asyncio.Queue()
+
+    async def _drain_primary():
+        try:
+            async for item in primary:
+                out.put_nowait(item)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # surface stream failures as SSE errors
+            out.put_nowait(exc)
+        finally:
+            out.put_nowait(sentinel)
+
+    task = asyncio.create_task(_drain_primary())
+    try:
+        while True:
+            # Side-channel events first (stage updates).
+            while not event_queue.empty():
+                yield event_queue.get_nowait()
+            # Then anything the primary produced since the last poll.
+            while not out.empty():
+                item = out.get_nowait()
+                if item is sentinel:
+                    while not event_queue.empty():
+                        yield event_queue.get_nowait()
+                    return
+                if isinstance(item, Exception):
+                    yield serialize_event(ErrorEvent(str(item)))
+                    while not event_queue.empty():
+                        yield event_queue.get_nowait()
+                    return
+                yield item
+            await asyncio.sleep(poll)
+    finally:
+        task.cancel()

@@ -500,11 +500,19 @@ async def chat_stream(
             "done": False,
         }
 
+    # Stage updates ride the same SSE stream (via merge_sse) so the UI gets
+    # live pipeline progress without a separate status request. The queue is
+    # drained by merge_sse; the /chat/status endpoint remains as a fallback.
+    from assistant.backend.pipeline.streaming import StageEvent, merge_sse, serialize_event
+
+    stage_queue: asyncio.Queue = asyncio.Queue()
+
     async def progress(stage: str, detail: str) -> None:
         entry = _turn_progress.get(turn_id)
         if entry is not None:
             entry["stage"] = stage
             entry["detail"] = detail
+        stage_queue.put_nowait(serialize_event(StageEvent(stage, detail)))
 
     # Process attached files (same as regular chat)
     uploaded_files = []
@@ -587,16 +595,19 @@ async def chat_stream(
 
     async def event_generator():
         try:
-            async for event in orch.chat_stream(
-                ChatRequest(
-                    user_id=request.user_id,
-                    message=enhanced_message,
-                    session_id=request.session_id,
-                    turn_id=request.turn_id,
-                    attached_files=orch_attached_files,
-                    search_consent=request.search_consent,
+            async for event in merge_sse(
+                orch.chat_stream(
+                    ChatRequest(
+                        user_id=request.user_id,
+                        message=enhanced_message,
+                        session_id=request.session_id,
+                        turn_id=request.turn_id,
+                        attached_files=orch_attached_files,
+                        search_consent=request.search_consent,
+                    ),
+                    progress=progress,
                 ),
-                progress=progress,
+                stage_queue,
             ):
                 yield event
         finally:
