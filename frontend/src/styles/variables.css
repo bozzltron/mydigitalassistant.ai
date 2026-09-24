@@ -21,7 +21,7 @@
           'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
   --mono: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas,
           'Liberation Mono', monospace;
-  --msg-font-size: 1.05rem;
+  --msg-font-size: 1.1rem;
 
   /* Semantic aliases for component usage */
   --color-background: var(--bg);

@@ -244,8 +244,11 @@ export default function ChatPage(props: {
   // Note: voice.status === 'speaking' is for voice mode's own speaking state.
   // TTS speaking is tracked separately via isTtsSpeaking() in the hook.
   // We also check isTurnActive to avoid restarting listening during an active chat turn.
+  // IMPORTANT: Only 'listening' counts as voice mode. 'processing' is a transient
+  // transcription state — including it causes a flicker loop where recordings
+  // immediately restart after stopProcessing() is called.
   useVoiceRecording({
-    isVoiceMode: () => voice.status === 'listening' || voice.status === 'processing',
+    isVoiceMode: () => voice.status === 'listening',
     isDictationMode: () => isDictating(),
     isTurnActive: () => isTurnActive(),
     onTranscription: handleSendMessage,

@@ -2,7 +2,7 @@
 
 .msg {
   max-width: min(85%, 48rem);
-  padding: var(--space-md) var(--space-lg);
+  padding: calc(var(--space-md) + 5px) calc(var(--space-lg) + 5px);
   border-radius: var(--radius-lg);
   line-height: 1.7;
   font-size: var(--msg-font-size);
