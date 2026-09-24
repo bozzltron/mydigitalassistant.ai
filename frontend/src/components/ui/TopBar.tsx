@@ -139,49 +139,19 @@ export default function TopBar(props: TopBarProps) {
   const applySettings = () => {
     const s = settings
 
-    // Apply voice settings
-    const voiceSpeed = document.getElementById('voice-speed') as HTMLInputElement
-    const voicePitch = document.getElementById('voice-pitch') as HTMLInputElement
-    const voiceVolume = document.getElementById('voice-volume') as HTMLInputElement
-    const speedValue = document.getElementById('voice-speed-value')
-    const pitchValue = document.getElementById('voice-pitch-value')
-    const volumeValue = document.getElementById('voice-volume-value')
-
-    if (voiceSpeed) voiceSpeed.value = s.voiceSpeed
-    if (voicePitch) voicePitch.value = s.voicePitch
-    if (voiceVolume) voiceVolume.value = s.voiceVolume
-
-    if (speedValue) speedValue.textContent = `${s.voiceSpeed}x`
-    if (pitchValue) pitchValue.textContent = `${s.voicePitch}x`
-    if (volumeValue) volumeValue.textContent = s.voiceVolume.toString()
-
-    // Apply TTS setting
-    const ttsEnabled = document.getElementById('tts-enabled') as HTMLInputElement
-    if (ttsEnabled) ttsEnabled.checked = s.ttsEnabled
-
-    // Apply sound effects setting
-    const soundEffectsEnabled = document.getElementById('sound-effects-enabled') as HTMLInputElement
-    if (soundEffectsEnabled) soundEffectsEnabled.checked = s.soundEffectsEnabled
-
-    // Apply Brave setting
-    const braveEnabled = document.getElementById('brave-enabled') as HTMLInputElement
+    // Apply Brave setting - only for search settings section visibility
     const searchSettingsSection = document.getElementById('search-settings-section')
-    if (braveEnabled) {
-      braveEnabled.checked = s.braveEnabled
-    }
     if (searchSettingsSection) {
       searchSettingsSection.style.display = s.braveEnabled ? 'block' : 'none'
     }
   }
 
-  const handleTTSCChange = () => {
-    const ttsEnabled = document.getElementById('tts-enabled') as HTMLInputElement
-    if (ttsEnabled) updateSetting('ttsEnabled', ttsEnabled.checked)
+  const handleTTSCChange = (e: Event) => {
+    updateSetting('ttsEnabled', (e.target as HTMLInputElement).checked)
   }
 
-  const handleSoundEffectsChange = () => {
-    const soundEffectsEnabled = document.getElementById('sound-effects-enabled') as HTMLInputElement
-    if (soundEffectsEnabled) updateSetting('soundEffectsEnabled', soundEffectsEnabled.checked)
+  const handleSoundEffectsChange = (e: Event) => {
+    updateSetting('soundEffectsEnabled', (e.target as HTMLInputElement).checked)
   }
 
   const handleVoiceSelectChange = (e: Event) => {
@@ -222,23 +192,19 @@ export default function TopBar(props: TopBarProps) {
     updateSetting('voiceVolume', parseFloat(input.value))
   }
 
-  const handleTraceVisibleChange = () => {
-    const traceVisible = document.getElementById('trace-visible') as HTMLInputElement
+  const handleTraceVisibleChange = (e: Event) => {
+    const checked = (e.target as HTMLInputElement).checked
+    updateSetting('traceVisible', checked)
     const tracePanel = document.getElementById('trace-panel')
-    if (traceVisible) {
-      updateSetting('traceVisible', traceVisible.checked)
-      if (tracePanel) tracePanel.classList.toggle('hidden', !traceVisible.checked)
-    }
+    if (tracePanel) tracePanel.classList.toggle('hidden', !checked)
   }
 
-  const handleBraveChange = () => {
-    const braveEnabled = document.getElementById('brave-enabled') as HTMLInputElement
+  const handleBraveChange = (e: Event) => {
+    const checked = (e.target as HTMLInputElement).checked
+    updateSetting('braveEnabled', checked)
     const searchSettingsSection = document.getElementById('search-settings-section')
-    if (braveEnabled) {
-      updateSetting('braveEnabled', braveEnabled.checked)
-    }
     if (searchSettingsSection) {
-      searchSettingsSection.style.display = braveEnabled?.checked ? 'block' : 'none'
+      searchSettingsSection.style.display = checked ? 'block' : 'none'
     }
   }
 
@@ -452,11 +418,21 @@ export default function TopBar(props: TopBarProps) {
           <label>Voice settings</label>
           <div class="toggle-row">
             <span class="toggle-label">Read responses aloud</span>
-            <input type="checkbox" id="tts-enabled" onChange={handleTTSCChange} />
+            <input
+              type="checkbox"
+              id="tts-enabled"
+              checked={settings.ttsEnabled}
+              onChange={handleTTSCChange}
+            />
           </div>
           <div class="toggle-row">
             <span class="toggle-label">Play sound effects (listening/transcribing)</span>
-            <input type="checkbox" id="sound-effects-enabled" onChange={handleSoundEffectsChange} />
+            <input
+              type="checkbox"
+              id="sound-effects-enabled"
+              checked={settings.soundEffectsEnabled}
+              onChange={handleSoundEffectsChange}
+            />
           </div>
           <div class="settings-section">
             <label for="voice-select">Voice</label>
@@ -512,7 +488,12 @@ export default function TopBar(props: TopBarProps) {
           <label>Interface</label>
           <div class="toggle-row">
             <span class="toggle-label">Show trace panel</span>
-            <input type="checkbox" id="trace-visible" onChange={handleTraceVisibleChange} />
+            <input
+              type="checkbox"
+              id="trace-visible"
+              checked={settings.traceVisible}
+              onChange={handleTraceVisibleChange}
+            />
           </div>
         </div>
 
@@ -520,7 +501,12 @@ export default function TopBar(props: TopBarProps) {
           <label>Search backend</label>
           <div class="toggle-row">
             <span class="toggle-label">Use Brave Search API</span>
-            <input type="checkbox" id="brave-enabled" onChange={handleBraveChange} />
+            <input
+              type="checkbox"
+              id="brave-enabled"
+              checked={settings.braveEnabled}
+              onChange={handleBraveChange}
+            />
           </div>
           <p style={{"font-size":"0.75rem","color":"var(--text-dim)","margin-top":"0.25rem"}}>
             When enabled, queries are sent to Brave's servers. Only available when a Brave API key is configured.

@@ -176,7 +176,7 @@ export default function ChatPage(props: {
     }
   }
 
-  // TTS: speak assistant responses when they arrive
+  // TTS: speak assistant responses when they arrive (only finalized, non-streaming)
   // Load spoken message IDs from localStorage
   const [spokenMsgIds, setSpokenMsgIds] = createSignal<Set<string>>(new Set())
   onMount(() => {
@@ -206,10 +206,15 @@ export default function ChatPage(props: {
   createEffect(() => {
     const msgs = messages()
     const lastMsg = msgs[msgs.length - 1]
-    // Only speak newly generated assistant messages (not historical ones loaded from DB)
+    // Only speak newly generated assistant messages that are FINALIZED (not streaming)
     // Historical messages have IDs starting with "history-"
-    // Streaming messages have IDs starting with "streaming-" and are marked with meta.isStreaming
-    if (lastMsg && lastMsg.role === 'assistant' && !spokenMsgIds().has(lastMsg.id)) {
+    // Streaming messages have meta.isStreaming === true - wait for finalize
+    if (
+      lastMsg &&
+      lastMsg.role === 'assistant' &&
+      !spokenMsgIds().has(lastMsg.id) &&
+      !lastMsg.meta?.isStreaming
+    ) {
       // Skip historical messages - they were already spoken in their original conversation
       if (lastMsg.id.startsWith('history-')) {
         markAsSpoken(lastMsg.id)

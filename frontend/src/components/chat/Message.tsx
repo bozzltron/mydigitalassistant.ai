@@ -19,7 +19,10 @@ export default function Message(props: MessageProps) {
   const [showCorrection, setShowCorrection] = createSignal(false)
   const [correctionText, setCorrectionText] = createSignal('')
 
-  const msgId = message().id || `msg-${Date.now()}`
+  // Message ids are stable row keys (history-* / streaming-* / epoch), so
+  // reading the id once is safe even as streamed content updates reconcile
+  // the row in place (For by="id").
+  const msgId = createMemo(() => props.message.id || `msg-${Date.now()}`)
 
   const handleCopy = () => {
     const plain = message().content
@@ -31,40 +34,46 @@ export default function Message(props: MessageProps) {
   }
 
   const handleReact = (kind: 'positive' | 'negative' | 'correction') => {
-    getOnReact()(kind, msgId)
+    getOnReact()(kind, msgId())
   }
 
   const handleCorrect = () => {
     if (correctionText().trim()) {
-      getOnCorrect()(msgId)
+      getOnCorrect()(msgId())
       setShowCorrection(false)
       setCorrectionText('')
     }
   }
 
-  const extractionSummary = message().meta?.extraction_summary
-  const searchExtractionSummary = message().meta?.search_extraction_summary
-  const hasLearned = (!isUser()) && (
-    (extractionSummary?.slots && extractionSummary.slots.length > 0) ||
-    (searchExtractionSummary?.slots && searchExtractionSummary.slots.length > 0)
-  )
+  // Derived values must be reactive memos (not one-shot consts): the streamed
+  // bubble reconciles in place across text_delta/finalize/meta, so late-arriving
+  // search info and extraction summaries need to re-render.
+  const extractionSummary = createMemo(() => message().meta?.extraction_summary)
+  const searchExtractionSummary = createMemo(() => message().meta?.search_extraction_summary)
+  const learnedSlots = createMemo(() => [
+    ...(extractionSummary()?.slots || []),
+    ...(searchExtractionSummary()?.slots || [])
+  ])
+  const hasLearned = createMemo(() => (!isUser() && (
+    (extractionSummary()?.slots && extractionSummary()!.slots.length > 0) ||
+    (searchExtractionSummary()?.slots && searchExtractionSummary()!.slots.length > 0)
+  )))
 
-  const learnedSlots = [
-    ...(extractionSummary?.slots || []),
-    ...(searchExtractionSummary?.slots || [])
-  ]
+  const isSearch = createMemo(() =>
+    searchExtractionSummary()?.slots && searchExtractionSummary()!.slots.length > 0)
+  const conflictCount = createMemo(() => learnedSlots().filter(s => s.conflict).length)
 
-  const isSearch = searchExtractionSummary?.slots && searchExtractionSummary.slots.length > 0
-  const conflictCount = learnedSlots.filter(s => s.conflict).length
-
-  let learnedLabel = 'What I learned'
-  if (conflictCount > 0) learnedLabel += ` (${conflictCount} auto-resolved)`
-  if (isSearch) learnedLabel = 'Found from search'
+  const learnedLabel = createMemo(() => {
+    let label = 'What I learned'
+    if (conflictCount() > 0) label += ` (${conflictCount()} auto-resolved)`
+    if (isSearch()) label = 'Found from search'
+    return label
+  })
 
   const [backendBadge, setBackendBadge] = createSignal<JSX.Element | null>(null)
 
   createEffect(() => {
-    if (isSearch && message().meta?.search_info) {
+    if (isSearch() && message().meta?.search_info) {
       const backend = message().meta.search_info.backend
       const badgeClass = backend === 'brave' ? 'badge-brave' : 'badge-searxng'
       const badgeLabel = backend === 'brave' ? 'Searched via Brave' : 'Searched via local SearXNG'
@@ -94,14 +103,14 @@ export default function Message(props: MessageProps) {
           </div>
         )}
 
-        {!isUser() && hasLearned && (
+        {!isUser() && hasLearned() && (
           <details class="learned-indicator">
-            <summary>{learnedLabel}{backendBadge()}</summary>
+            <summary>{learnedLabel()}{backendBadge()}</summary>
             <div class="learned-items">
-              <For each={learnedSlots}>
+              <For each={learnedSlots()}>
                 {(slot) => (
                   <div
-                    class={`learned-item ${slot.conflict ? 'kind-conflict' : isSearch ? 'kind-search' : 'kind-learned'}`}
+                    class={`learned-item ${slot.conflict ? 'kind-conflict' : isSearch() ? 'kind-search' : 'kind-learned'}`}
                   >
                     {slot.conflict
                       ? `Auto-resolved: ${slot.frame_name} \u2192 ${slot.key}: ${slot.value}`

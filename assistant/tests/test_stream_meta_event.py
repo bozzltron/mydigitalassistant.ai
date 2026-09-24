@@ -201,3 +201,75 @@ async def test_chat_stream_consent_required_emits_meta_before_finalize(store, st
     # stream ends there (no answer/extraction events follow the question).
     assert events[-2]["type"] == "meta"
     assert events[-1]["type"] == "finalize"
+
+
+async def test_chat_stream_persists_assistant_episode(store, stub_llm):
+    """A streamed turn persists the assistant episode to the database."""
+    add_embedding_cluster("hello", "world")
+
+    # Simple non-search, non-tool response
+    async def fake_search_with_info(query, num_results=5, llm_client=None, user_consent=False):
+        return [], SearchInfo(backend="test", query=query, results=[])
+
+    stub_search = WebSearchTool(enabled=True)
+    stub_search.search_with_info = fake_search_with_info
+
+    orchestrator = _build_orchestrator(store, stub_llm, stub_search)
+    user = await store.create_user("alice")
+
+    # Make chat return a simple response (no tools, no search)
+    async def chat_fn(messages, model=None, temperature=0.7, format=None,
+                      stream=False, **kwargs):
+        system = messages[0].content.lower()
+        if "classify" in system:
+            return ChatResponse(
+                content='{"task_type": "functional", "wants_search": false, '
+                        '"search_query": null}',
+                model=stub_llm.utility_model,
+                done=True,
+            )
+        if "extract" in system:
+            return ChatResponse(
+                content='{"slots": [], "associations": []}',
+                model=stub_llm.utility_model,
+                done=True,
+            )
+        return ChatResponse(
+            content="Hello! How can I help you?",
+            model=stub_llm.chat_model,
+            done=True,
+        )
+
+    original_chat = stub_llm.chat
+    stub_llm.chat = chat_fn
+
+    async def no_think(model=None):
+        return False
+    stub_llm.supports_thinking = no_think
+
+    try:
+        events = await _collect(
+            orchestrator.chat_stream(
+                ChatRequest(
+                    user_id=user.id,
+                    message="Hello",
+                    session_id="s-stream-persist-1",
+                )
+            )
+        )
+    finally:
+        stub_llm.chat = original_chat
+
+    # Verify we got a finalize event with content
+    finalize_events = [e for e in events if e["type"] == "finalize"]
+    assert len(finalize_events) == 1
+    assert "Hello" in finalize_events[0]["answer"]
+
+    # Verify the assistant episode was persisted
+    episodes = await store.get_episodes_for_session("s-stream-persist-1")
+    user_episodes = [ep for ep in episodes if ep.role == "user"]
+    assistant_episodes = [ep for ep in episodes if ep.role == "assistant"]
+    assert len(user_episodes) == 1
+    assert user_episodes[0].content == "Hello"
+    assert len(assistant_episodes) == 1
+    assert "Hello" in assistant_episodes[0].content

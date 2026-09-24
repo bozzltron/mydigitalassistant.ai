@@ -17,27 +17,23 @@ marked.use({
   }
 })
 
-interface MessageContentProps {
-  message: ChatMessage
+export default function MessageContent(props: {
+  message: () => ChatMessage
   onOpenLightbox?: (media: MediaContent, index: number, allMedia: MediaContent[]) => void
-}
-
-export default function MessageContent(props: MessageContentProps) {
-  const { message, onOpenLightbox } = props
-
-  const media = createMemo(() => extractAllMedia(message()))
+}) {
+  const media = createMemo(() => extractAllMedia(props.message()))
   const heroMedia = createMemo(() => getHeroMedia(media()))
   const gridMedia = createMemo(() => getGridMedia(media(), heroMedia()))
   const previewCards = createMemo(() => getPreviewCards(media()))
 
-  const htmlContent = createMemo(() => marked.parse(message().content || '') as string)
+  const htmlContent = createMemo(() => marked.parse(props.message().content || '') as string)
 
   return (
     <div class="message-content">
       {heroMedia() && (
         <MediaCard
           media={heroMedia()!}
-          onOpenLightbox={onOpenLightbox}
+          onOpenLightbox={props.onOpenLightbox}
         />
       )}
 
@@ -47,7 +43,7 @@ export default function MessageContent(props: MessageContentProps) {
       {gridMedia().length > 0 && (
         <MediaGrid
           media={gridMedia()}
-          onOpenLightbox={onOpenLightbox}
+          onOpenLightbox={props.onOpenLightbox}
         />
       )}
 

@@ -1960,17 +1960,38 @@ class Orchestrator:
                 await self._report(progress, "responding", "writing a reply")
 
             # Stream using the tool loop (Phase 4: stream full tool loop including tools)
-            async for event in stream_tool_loop(
-                self.llm_client,
-                messages_dict,
-                tools,
-                model=gen_model,
-                think=think,
-                num_predict=num_predict,
-                user_id=str(request.user_id),
-                session_id=session_id,
-            ):
+            # We need to capture the final answer to persist it as an episode
+            final_answer = ""
+            final_reasoning = None
+            
+            async def _stream_and_capture():
+                nonlocal final_answer, final_reasoning
+                async for event in stream_tool_loop(
+                    self.llm_client,
+                    messages_dict,
+                    tools,
+                    model=gen_model,
+                    think=think,
+                    num_predict=num_predict,
+                    user_id=str(request.user_id),
+                    session_id=session_id,
+                ):
+                    # Parse event to capture final answer
+                    try:
+                        import json
+                        event_data = json.loads(event.replace("data: ", "").strip())
+                        if event_data.get("type") == "text_delta":
+                            final_answer += event_data.get("delta", "")
+                        elif event_data.get("type") == "finalize":
+                            final_answer = event_data.get("answer", final_answer)
+                            final_reasoning = event_data.get("reasoning_trace")
+                    except Exception:
+                        pass
+                    yield event
+            
+            async for event in _stream_and_capture():
                 yield event
+
         else:
             # No tools - just stream the chat response
             gen_model, think = await self._select_generation(request, plan)
@@ -1983,7 +2004,8 @@ class Orchestrator:
             else:
                 await self._report(progress, "responding", "writing a reply")
 
-            # Simple streaming without tools
+            # Simple streaming without tools - collect deltas
+            accumulated_content = ""
             async for chunk in self.llm_client.chat_stream(
                 messages,
                 model=gen_model or self.llm_client.chat_model,
@@ -1991,16 +2013,31 @@ class Orchestrator:
                 num_predict=num_predict,
             ):
                 if chunk.content:
+                    accumulated_content += chunk.content
                     event = {'type': 'text_delta', 'delta': chunk.content}
                     yield f"data: {json.dumps(event)}\n\n"
                 if chunk.done:
+                    final_answer = accumulated_content
+                    final_reasoning = chunk.thinking
                     event = {
                         'type': 'finalize',
-                        'answer': '',
+                        'answer': final_answer,
                         'reasoning_trace': chunk.thinking
                     }
                     yield f"data: {json.dumps(event)}\n\n"
                     break
+
+        # Persist assistant episode to database
+        if final_answer and session_id:
+            try:
+                await self._log_episode(
+                    request.user_id,
+                    session_id,
+                    role="assistant",
+                    content=final_answer,
+                )
+            except Exception as e:
+                logger.warning("Failed to log assistant episode: %s", e)
 
         # Final metadata: same transparency the non-streaming ChatResponse carries
         # (session id, task type, extraction/search summaries, search info). The UI

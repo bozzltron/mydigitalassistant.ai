@@ -5,7 +5,7 @@
   padding: var(--space-md) var(--space-lg);
   border-radius: var(--radius-lg);
   line-height: 1.7;
-  font-size: 1rem;
+  font-size: var(--msg-font-size);
   color: var(--text);
 }
 
