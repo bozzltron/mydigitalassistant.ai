@@ -3,6 +3,7 @@ import { createSignal, onCleanup, onMount, For } from 'solid-js'
 interface InputBarProps {
   onSend: (message: string, attachedFiles?: File[]) => void
   isSending?: boolean
+  isStreaming?: boolean
   onAttachFile?: () => void
   isDictating?: boolean
   onDictationStart?: () => void
@@ -25,7 +26,8 @@ export default function InputBar(props: InputBarProps) {
 
   const handleSubmit = (e: Event) => {
     e.preventDefault()
-    if (message().trim() && !props.isSending) {
+    const isProcessing = props.isSending || props.isStreaming
+    if (message().trim() && !isProcessing) {
       props.onSend(message(), attachedFiles())
       setMessage('')
       setAttachedFiles([])
@@ -152,10 +154,10 @@ export default function InputBar(props: InputBarProps) {
          type="button"
          class="btn-primary"
          id="send-btn"
-         disabled={!message().trim() || props.isSending}
+         disabled={!message().trim() || props.isSending || props.isStreaming}
          onClick={handleSubmit}
        >
-         {props.isSending ? 'Sending...' : 'Send'}
+         {props.isStreaming ? 'Streaming...' : props.isSending ? 'Sending...' : 'Send'}
        </button>
      </>
   )

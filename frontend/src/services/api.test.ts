@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { api, postChat, getFrames, getAssociations, getSearchResults, listFiles, postFileUpload, deleteFile, getUserSessions, createNewConversation, updateConversationTitle, getSessionMessages, getAssistantName, getSettings, postFeedback, postCorrection, transcribeAudio, getOGPreview, createTurnId } from '../services/api'
+import { api, postChat, postChatStream, getFrames, getAssociations, getSearchResults, listFiles, postFileUpload, deleteFile, getUserSessions, createNewConversation, updateConversationTitle, getSessionMessages, getAssistantName, getSettings, postFeedback, postCorrection, transcribeAudio, getOGPreview, createTurnId } from '../services/api'
 
 const mockFetch = vi.fn()
 global.fetch = mockFetch
@@ -361,6 +361,80 @@ describe('api service', () => {
 
       expect(mockFetch).toHaveBeenCalledWith('/og-preview?url=https%3A%2F%2Fexample.com', expect.any(Object))
       expect(result).toEqual({ title: 'Test', image: 'img.png' })
+    })
+  })
+
+  describe('postChatStream', () => {
+    function sseResponse(events: string[]): Response {
+      const encoder = new TextEncoder()
+      const stream = new ReadableStream({
+        start(controller) {
+          for (const ev of events) {
+            controller.enqueue(encoder.encode(ev))
+          }
+          controller.close()
+        },
+      })
+      return { ok: true, status: 200, body: stream } as unknown as Response
+    }
+
+    it('accumulates streamed text and returns without ReferenceError', async () => {
+      // Regression test: the return object previously referenced undeclared
+      // `finalSessionId`/`finalTaskType`/etc., throwing a ReferenceError the
+      // moment the stream completed and erasing the good streamed answer.
+      const events = [
+        'data: {"type": "stage", "stage": "recall", "detail": "checking my memory"}\n\n',
+        'data: {"type": "text_delta", "delta": "Hello"}\n\n',
+        'data: {"type": "text_delta", "delta": " world"}\n\n',
+        'data: {"type": "finalize", "answer": "Hello world"}\n\n',
+      ]
+      mockFetch.mockResolvedValue(sseResponse(events))
+
+      const result = await postChatStream('Hi', 'session-123', [], 'turn-1')
+
+      expect(result.response).toBe('Hello world')
+      expect(result.session_id).toBe('session-123')
+      // Fields the backend does not send over SSE stay undefined — they must
+      // not throw.
+      expect(result.task_type).toBeUndefined()
+    })
+
+    it('falls back to an empty session id when none is provided', async () => {
+      mockFetch.mockResolvedValue(
+        sseResponse(['data: {"type": "finalize", "answer": "ok"}\n\n']),
+      )
+
+      const result = await postChatStream('Hi')
+
+      expect(result.session_id).toBe('')
+      expect(result.response).toBe('ok')
+    })
+
+    it('emits stage and text events through onEvent in order', async () => {
+      const events = [
+        'data: {"type": "stage", "stage": "recall", "detail": "checking my memory"}\n\n',
+        'data: {"type": "text_delta", "delta": "Hi"}\n\n',
+        'data: {"type": "finalize", "answer": "Hi"}\n\n',
+      ]
+      mockFetch.mockResolvedValue(sseResponse(events))
+      const seen: Array<{ type: string; stage?: string }> = []
+
+      await postChatStream('Hi', 'session-123', [], 'turn-1', false, (event) => {
+        seen.push(event)
+      })
+
+      expect(seen.map((e) => e.type)).toEqual(['stage', 'text_delta', 'finalize'])
+      expect(seen[0].stage).toBe('recall')
+    })
+
+    it('throws a useful error when the stream returns non-ok', async () => {
+      mockFetch.mockResolvedValue({
+        ok: false,
+        status: 500,
+        json: () => Promise.resolve({ detail: 'boom' }),
+      })
+
+      await expect(postChatStream('Hi')).rejects.toThrow('boom')
     })
   })
 })

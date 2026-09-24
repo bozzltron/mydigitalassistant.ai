@@ -19,7 +19,7 @@ export default function App() {
     initializeFromSavedSession,
   } = useActiveConversation(conversations)
   const { initialized } = useAppInit([assistantName, setAssistantName])
-  const { sendMessage } = useChat()
+  useChat()
 
   const handleNewConversationClick = () => {
     setNewConvTitle('')
@@ -90,7 +90,7 @@ export default function App() {
           assistantName={assistantName()}
           onRefreshConversations={fetchSessionsFromAPI}
         />
-        <ChatPage conversation={activeConversation()} sendMessage={sendMessage} />
+        <ChatPage conversation={activeConversation()} />
       </div>
     </>
   )

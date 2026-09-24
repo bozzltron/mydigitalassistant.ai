@@ -1,7 +1,7 @@
 import { createSignal, createMemo } from 'solid-js'
 import { createStore } from 'solid-js/store'
-import { postChat, createTurnId } from '../services/api'
-import { startStatusPolling, stopStatusPolling } from '../services/status'
+import { postChat, postChatStream, createTurnId } from '../services/api'
+import { startStatusPolling, stopStatusPolling, setStreamStage } from '../services/status'
 import { getSessionMessages } from '../services/api'
 import type {
   ChatMessage,
@@ -27,6 +27,8 @@ export const [sessionId, setSessionId] = createSignal<string | null>(null)
 export const [queue, setQueue] = createSignal<QueuedMessage[]>([])
 export const [isTurnActive, setTurnActive] = createSignal(false)
 export const [currentTurnId, setCurrentTurnId] = createSignal<string | null>(null)
+export const [isStreaming, setIsStreaming] = createSignal(false)
+export const [streamingMessageId, setStreamingMessageId] = createSignal<string | null>(null)
 
 export const messages = createMemo(() => {
   const sid = sessionId()
@@ -151,6 +153,139 @@ export async function postChatMessage(
 
     drainQueue()
   }
+}
+
+export async function postChatMessageStream(
+  message: string,
+  session_id?: string,
+  attached_files?: AttachedFile[],
+  search_consent?: boolean
+): Promise<{
+  response: string
+  task_type?: string
+  extraction_summary?: ExtractionSummary
+  search_extraction_summary?: ExtractionSummary
+  search_info?: SearchInfo
+  session_id?: string
+}> {
+  const turnId = createTurnId()
+  setCurrentTurnId(turnId)
+  setTurnActive(true)
+  setIsStreaming(true)
+
+  if (session_id) {
+    setChatState('conversationTurnIds', (prev: Map<string, string>) => {
+      const next = new Map(prev)
+      next.set(session_id, turnId)
+      return next
+    })
+  }
+
+  startStatusPolling(turnId)
+
+  // Create a placeholder assistant message that will be updated during streaming
+  const assistantMessageId = `streaming-${turnId}-assistant`
+  setStreamingMessageId(assistantMessageId)
+
+  if (session_id) {
+    const placeholderMessage: ChatMessage = {
+      role: 'assistant',
+      content: '',
+      id: assistantMessageId,
+      meta: { isStreaming: true }
+    }
+    addMessageToConversation(session_id, placeholderMessage)
+  }
+
+  let accumulatedResponse = ''
+
+  try {
+    const result = await postChatStream(
+      message,
+      session_id,
+      attached_files,
+      turnId,
+      search_consent,
+      (event) => {
+        if (event.type === 'text_delta' && event.delta) {
+          accumulatedResponse += event.delta
+          // Update the streaming message in real-time
+          if (session_id) {
+            updateStreamingMessage(session_id, assistantMessageId, accumulatedResponse)
+          }
+        } else if (event.type === 'stage' && event.stage) {
+          // Live pipeline progress rides the SSE stream itself.
+          setStreamStage(turnId, event.stage, event.detail)
+        } else if (event.type === 'finalize') {
+          accumulatedResponse = event.answer || accumulatedResponse
+          // Final update
+          if (session_id) {
+            finalizeStreamingMessage(session_id, assistantMessageId, accumulatedResponse)
+          }
+        } else if (event.type === 'error') {
+          console.error('Stream error:', event.error)
+          if (session_id) {
+            finalizeStreamingMessage(session_id, assistantMessageId, 'Error: ' + event.error)
+          }
+        }
+      }
+    )
+
+    return {
+      response: accumulatedResponse,
+      task_type: result.task_type,
+      extraction_summary: result.extraction_summary,
+      search_extraction_summary: result.search_extraction_summary,
+      search_info: result.search_info,
+      session_id: result.session_id,
+    }
+  } catch (error) {
+    console.error('Error sending streaming message:', error)
+    if (session_id) {
+      finalizeStreamingMessage(session_id, assistantMessageId, 'Error: Failed to send message')
+    }
+    throw error
+  } finally {
+    stopStatusPolling(turnId)
+    setCurrentTurnId(null)
+    setTurnActive(false)
+    setIsStreaming(false)
+    setStreamingMessageId(null)
+
+    if (session_id) {
+      setChatState('conversationTurnIds', (prev: Map<string, string>) => {
+        const next = new Map(prev)
+        next.delete(session_id)
+        return next
+      })
+    }
+
+    drainQueue()
+  }
+}
+
+function updateStreamingMessage(sessionIdParam: string, messageId: string, content: string): void {
+  setChatState('conversationMessages', (prev: Map<string, ChatMessage[]>) => {
+    const next = new Map(prev)
+    const existing = next.get(sessionIdParam) || []
+    const updated = existing.map(msg => 
+      msg.id === messageId ? { ...msg, content } : msg
+    )
+    next.set(sessionIdParam, updated)
+    return next
+  })
+}
+
+function finalizeStreamingMessage(sessionIdParam: string, messageId: string, content: string): void {
+  setChatState('conversationMessages', (prev: Map<string, ChatMessage[]>) => {
+    const next = new Map(prev)
+    const existing = next.get(sessionIdParam) || []
+    const updated = existing.map(msg => 
+      msg.id === messageId ? { ...msg, content, meta: { ...msg.meta, isStreaming: false } } : msg
+    )
+    next.set(sessionIdParam, updated)
+    return next
+  })
 }
 
 export function addMessageToConversation(sessionIdParam: string, message: ChatMessage): void {

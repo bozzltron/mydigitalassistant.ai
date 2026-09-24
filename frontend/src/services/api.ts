@@ -210,6 +210,160 @@ export async function postChat(
   })
 }
 
+export interface StreamEvent {
+  type: 'text_delta' | 'tool_call' | 'tool_result' | 'finalize' | 'error' | 'stage' | 'meta'
+  delta?: string
+  tool_calls?: Array<{ name: string; arguments: Record<string, unknown> }>
+  tool_name?: string
+  success?: boolean
+  data?: Record<string, unknown>
+  error?: string
+  answer?: string
+  reasoning_trace?: string | null
+  stage?: string
+  detail?: string
+  session_id?: string
+  task_type?: string
+  extraction_summary?: ExtractionSummary
+  search_extraction_summary?: ExtractionSummary
+  search_info?: SearchInfo
+}
+
+export async function postChatStream(
+  message: string,
+  session_id?: string,
+  attached_files?: AttachedFile[],
+  turn_id?: string,
+  search_consent?: boolean,
+  onEvent?: (event: StreamEvent) => void
+): Promise<ChatResponse> {
+  const requestBody = {
+    user_id: 1,
+    message,
+    session_id,
+    attached_files,
+    turn_id,
+    search_consent,
+  }
+
+  console.log('Sending streaming chat request:', requestBody)
+
+  const url = `${BASE_URL}/chat/stream`
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    credentials: 'include',
+    body: JSON.stringify(requestBody),
+  })
+
+  console.log('[api] Stream response:', response.status, response.statusText)
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Unknown error' }))
+    console.error('[api] Stream error:', error)
+    throw new Error(error.detail || `HTTP ${response.status}`)
+  }
+
+  if (!response.body) {
+    throw new Error('No response body')
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  let finalAnswer = ''
+  // Accumulators for the ChatResponse-shaped return value. These were
+  // previously referenced without being declared, which threw a ReferenceError
+  // the moment the stream completed (and the caller then overwrote the good
+  // streamed text with 'Error: Failed to send message').
+  let finalSessionId: string | undefined
+  let finalTaskType: string | undefined
+  let finalExtractionSummary: ExtractionSummary | undefined
+  let finalSearchExtractionSummary: ExtractionSummary | undefined
+  let finalSearchInfo: SearchInfo | undefined
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      buffer += decoder.decode(value, { stream: true })
+
+      // Split by double newline for SSE events
+      const events = buffer.split('\n\n')
+      buffer = events.pop() || ''
+
+      for (const eventText of events) {
+        if (!eventText.trim()) continue
+        if (!eventText.startsWith('data: ')) continue
+
+        const data = eventText.slice(6).trim()
+        if (!data || data === '[DONE]') continue
+
+        try {
+          const event: StreamEvent = JSON.parse(data)
+
+          if (onEvent) {
+            onEvent(event)
+          }
+
+          // Accumulate final answer for return value
+          if (event.type === 'text_delta' && event.delta) {
+            finalAnswer += event.delta
+          } else if (event.type === 'finalize') {
+            finalAnswer = event.answer || finalAnswer
+            // The finalize event doesn't include task_type, extraction_summary, etc.
+            // Those would need to be sent in a separate event or we need to handle differently
+          } else if (event.type === 'meta') {
+            if (event.session_id) finalSessionId = event.session_id
+            if (event.task_type) finalTaskType = event.task_type
+            if (event.extraction_summary) finalExtractionSummary = event.extraction_summary
+            if (event.search_extraction_summary) finalSearchExtractionSummary = event.search_extraction_summary
+            if (event.search_info) finalSearchInfo = event.search_info
+          }
+        } catch (e) {
+          console.warn('Failed to parse SSE event:', e, data)
+        }
+      }
+    }
+
+    // Process any remaining buffer
+    if (buffer.trim() && buffer.startsWith('data: ')) {
+      const data = buffer.slice(6).trim()
+      try {
+        const event: StreamEvent = JSON.parse(data)
+        if (onEvent) onEvent(event)
+        if (event.type === 'finalize' && event.answer) {
+          finalAnswer = event.answer
+        } else if (event.type === 'meta') {
+          if (event.session_id) finalSessionId = event.session_id
+          if (event.task_type) finalTaskType = event.task_type
+          if (event.extraction_summary) finalExtractionSummary = event.extraction_summary
+          if (event.search_extraction_summary) finalSearchExtractionSummary = event.search_extraction_summary
+          if (event.search_info) finalSearchInfo = event.search_info
+        }
+      } catch (e) {
+        console.warn('Failed to parse final SSE event:', e)
+      }
+    }
+  } finally {
+    reader.releaseLock()
+  }
+
+  // Return a ChatResponse-like object (note: missing some fields that only come from non-streaming)
+  return {
+    session_id: finalSessionId || session_id || '',
+    response: finalAnswer,
+    task_type: finalTaskType,
+    extraction_summary: finalExtractionSummary,
+    search_extraction_summary: finalSearchExtractionSummary,
+    search_info: finalSearchInfo,
+  } as ChatResponse
+}
+
 export function createTurnId(): string {
   return crypto.randomUUID()
 }

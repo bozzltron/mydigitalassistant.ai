@@ -114,6 +114,23 @@ export function startStatusPolling(turnId: string) {
   }, 600)
 }
 
+/**
+ * Update a turn's status directly from the SSE stream (stage events).
+ *
+ * Streaming carries live pipeline stages, so the UI can show progress without
+ * waiting for the next /chat/status poll. Falls back to creating the turn
+ * entry if polling never started.
+ */
+export function setStreamStage(turnId: string, stage: string, detail?: string): void {
+  const entry = getOrCreateTurnStatus(turnId)
+  entry.status[1]({
+    stage,
+    detail: detail || stage,
+    elapsed_s: 0,
+    done: false,
+  })
+}
+
 export function stopStatusPolling(turnId?: string) {
   const targetTurnId = turnId || activeTurnId
   if (!targetTurnId) return

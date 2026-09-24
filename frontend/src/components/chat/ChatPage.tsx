@@ -3,14 +3,14 @@ import MessageList from './MessageList'
 import InputBar from './InputBar'
 import StatusIndicator from './StatusIndicator'
 import { Modal } from '../ui/Modal'
-import { messages, sessionId, setSessionId, isTurnActive, useConversationTurnId, addMessageToConversation, enqueueMessage, removeQueuedMessage, queue } from '../../state/chat'
+import { messages, sessionId, setSessionId, isTurnActive, useConversationTurnId, addMessageToConversation, enqueueMessage, removeQueuedMessage, queue, isStreaming } from '../../state/chat'
 import { Session } from '../../state/session'
 import { useTurnStatus } from '../../services/status'
 import { useVoiceRecording } from '../../hooks/useVoiceRecording'
+import { useChat } from '../../hooks/useChat'
 import { voice, setTtsSpeaking } from '../../state/voice'
 import { settings } from '../../state/settings'
 import type {
-  ExtractionSummary,
   SearchInfo,
   AttachedFile,
 } from '../../types'
@@ -21,19 +21,10 @@ function StatusWrapper(props: { turnId: () => string | undefined }) {
   return <StatusIndicator turnStatus={turnStatus} isPolling={isPolling} />
 }
 
-interface SendMessageResult {
-  response: string
-  task_type?: string
-  extraction_summary?: ExtractionSummary
-  search_extraction_summary?: ExtractionSummary
-  search_info?: SearchInfo
-  session_id?: string
-}
-
 export default function ChatPage(props: {
   conversation: Session | null
-  sendMessage: (message: string, session_id?: string, attached_files?: AttachedFile[], search_consent?: boolean) => Promise<SendMessageResult>
 }) {
+  const { sendMessage: sendMessageStream } = useChat()
   const [showTrace, setShowTrace] = createSignal(false)
   const [messagesContainerRef, setMessagesContainerRef] = createSignal<HTMLDivElement | null>(null)
   const [isDictating, setIsDictating] = createSignal(false)
@@ -128,14 +119,15 @@ export default function ChatPage(props: {
 
       addMessageToConversation(currentSessionId, userMessage)
 
-      const result = await props.sendMessage(message, currentSessionId, processedFiles, search_consent)
+      const result = await sendMessageStream(message, currentSessionId, processedFiles, search_consent)
 
       if (result.session_id) {
         setSessionId(result.session_id)
         localStorage.setItem('session_id', result.session_id)
       }
 
-      // Handle search consent required
+      // Handle search consent required - this would come from the non-streaming response
+      // For streaming, we'd need to handle it differently (backend doesn't send it in stream yet)
       if (result.task_type === 'search_consent_required' && result.search_info) {
         setPendingSearchConsent({
           message,
@@ -158,19 +150,8 @@ export default function ChatPage(props: {
         return
       }
 
-      const assistantMessage = {
-        role: 'assistant' as const,
-        content: result.response,
-        id: Date.now().toString() + '-assistant',
-        meta: {
-          task_type: result.task_type,
-          extraction_summary: result.extraction_summary,
-          search_extraction_summary: result.search_extraction_summary,
-          search_info: result.search_info,
-        }
-      }
-
-      addMessageToConversation(currentSessionId, assistantMessage)
+      // Note: With streaming, the assistant message is added during streaming in postChatMessageStream
+      // The final message update is handled by the streaming callback
     } catch (error) {
       console.error('Error sending message:', error)
       const errorMessage = {
@@ -320,6 +301,7 @@ export default function ChatPage(props: {
           <InputBar 
             onSend={handleSendMessage} 
             isSending={isSending()}
+            isStreaming={isStreaming()}
             isDictating={isDictating()}
             onDictationStart={handleDictationStart}
             onDictationStop={handleDictationStop}
