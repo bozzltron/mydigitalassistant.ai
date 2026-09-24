@@ -12,6 +12,7 @@ export interface Settings {
   traceVisible: boolean
   braveEnabled: boolean
   language: string
+  soundEffectsEnabled: boolean
 }
 
 // Create store for settings
@@ -25,7 +26,8 @@ const [settings, setSettings] = createStore<Settings>({
   voiceVolume: 1.0,
   traceVisible: false,
   braveEnabled: false,
-  language: 'en'
+  language: 'en',
+  soundEffectsEnabled: false
 })
 
 // Save settings to localStorage

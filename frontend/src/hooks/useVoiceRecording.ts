@@ -8,6 +8,7 @@ import {
   unregisterStopRecording,
   isTtsSpeaking
 } from '../state/voice'
+import { settings } from '../state/settings'
 
 interface UseVoiceRecordingOptions {
   isVoiceMode: boolean
@@ -29,6 +30,9 @@ const MAX_RECORDING_MS = 180000
 const MONITOR_INTERVAL_MS = 80
 
 function playEarcon(type: 'start' | 'stop' | 'error') {
+  // Check if sound effects are enabled
+  if (!settings.soundEffectsEnabled) return
+  
   if (!window.AudioContext && !window.webkitAudioContext) return
   try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)()

@@ -1,4 +1,4 @@
-import { For } from 'solid-js'
+import { For, Show } from 'solid-js'
 import Message from './Message'
 import { ChatMessage } from '../../state/chat'
 import { postFeedback } from '../../services/api'
@@ -34,14 +34,20 @@ export default function MessageList(props: { messages: () => ChatMessage[] }) {
   }
 
   return (
-    <For each={props.messages()}>
+    // Key by stable message id (not object reference): streamed updates replace
+    // the message object on every text_delta/finalize, so by="id" lets Solid
+    // reconcile the bubble in place instead of recreating the row each update.
+    <For each={props.messages()} by="id">
       {(message) => (
-        <Message 
-          message={message}
-          onReact={handleReact}
-          onCopy={handleCopy}
-          onCorrect={handleCorrect}
-        />
+        // Don't render empty streaming assistant messages (wait for first token)
+        <Show when={!(message.role === 'assistant' && message.meta?.isStreaming && !message.content.trim())}>
+          <Message 
+            message={message}
+            onReact={handleReact}
+            onCopy={handleCopy}
+            onCorrect={handleCorrect}
+          />
+        </Show>
       )}
     </For>
   )

@@ -24,7 +24,7 @@ function StatusWrapper(props: { turnId: () => string | undefined }) {
 export default function ChatPage(props: {
   conversation: Session | null
 }) {
-  const { sendMessage: sendMessageStream } = useChat()
+  const { sendMessageStream } = useChat()
   const [showTrace, setShowTrace] = createSignal(false)
   const [messagesContainerRef, setMessagesContainerRef] = createSignal<HTMLDivElement | null>(null)
   const [isDictating, setIsDictating] = createSignal(false)
@@ -99,9 +99,9 @@ export default function ChatPage(props: {
     const currentSessionId = sessionId()
     if (!currentSessionId) return
 
-    // If a turn is active, queue the message instead of sending immediately
+    // If a turn is active for THIS conversation, queue the message instead of sending immediately
     if (isSending()) {
-      enqueueMessage(message.trim())
+      enqueueMessage(message.trim(), currentSessionId)
       return
     }
 
@@ -206,7 +206,15 @@ export default function ChatPage(props: {
   createEffect(() => {
     const msgs = messages()
     const lastMsg = msgs[msgs.length - 1]
+    // Only speak newly generated assistant messages (not historical ones loaded from DB)
+    // Historical messages have IDs starting with "history-"
+    // Streaming messages have IDs starting with "streaming-" and are marked with meta.isStreaming
     if (lastMsg && lastMsg.role === 'assistant' && !spokenMsgIds().has(lastMsg.id)) {
+      // Skip historical messages - they were already spoken in their original conversation
+      if (lastMsg.id.startsWith('history-')) {
+        markAsSpoken(lastMsg.id)
+        return
+      }
       markAsSpoken(lastMsg.id)
       if (settings.ttsEnabled && 'speechSynthesis' in window) {
         const utterance = new SpeechSynthesisUtterance(lastMsg.content)
@@ -237,7 +245,7 @@ export default function ChatPage(props: {
   })
 
   const handleRemoveQueued = (id: string) => {
-    removeQueuedMessage(id)
+    removeQueuedMessage(id, sessionId())
   }
 
   const handleDictationStart = () => {

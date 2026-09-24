@@ -159,6 +159,10 @@ export default function TopBar(props: TopBarProps) {
     const ttsEnabled = document.getElementById('tts-enabled') as HTMLInputElement
     if (ttsEnabled) ttsEnabled.checked = s.ttsEnabled
 
+    // Apply sound effects setting
+    const soundEffectsEnabled = document.getElementById('sound-effects-enabled') as HTMLInputElement
+    if (soundEffectsEnabled) soundEffectsEnabled.checked = s.soundEffectsEnabled
+
     // Apply Brave setting
     const braveEnabled = document.getElementById('brave-enabled') as HTMLInputElement
     const searchSettingsSection = document.getElementById('search-settings-section')
@@ -173,6 +177,11 @@ export default function TopBar(props: TopBarProps) {
   const handleTTSCChange = () => {
     const ttsEnabled = document.getElementById('tts-enabled') as HTMLInputElement
     if (ttsEnabled) updateSetting('ttsEnabled', ttsEnabled.checked)
+  }
+
+  const handleSoundEffectsChange = () => {
+    const soundEffectsEnabled = document.getElementById('sound-effects-enabled') as HTMLInputElement
+    if (soundEffectsEnabled) updateSetting('soundEffectsEnabled', soundEffectsEnabled.checked)
   }
 
   const handleVoiceSelectChange = (e: Event) => {
@@ -444,6 +453,10 @@ export default function TopBar(props: TopBarProps) {
           <div class="toggle-row">
             <span class="toggle-label">Read responses aloud</span>
             <input type="checkbox" id="tts-enabled" onChange={handleTTSCChange} />
+          </div>
+          <div class="toggle-row">
+            <span class="toggle-label">Play sound effects (listening/transcribing)</span>
+            <input type="checkbox" id="sound-effects-enabled" onChange={handleSoundEffectsChange} />
           </div>
           <div class="settings-section">
             <label for="voice-select">Voice</label>

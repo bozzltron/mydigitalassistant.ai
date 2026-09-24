@@ -7,9 +7,7 @@ import type { AttachedFile } from '../services/api'
 interface ChatModule {
   messages: () => ChatMessage[]
   queue: () => QueuedMessage[]
-  setQueue: (v: QueuedMessage[]) => void
   isTurnActive: () => boolean
-  setTurnActive: (v: boolean) => void
   sessionId: () => string | null
   setSessionId: (v: string | null) => void
   currentTurnId: () => string | null
@@ -73,8 +71,6 @@ beforeEach(async () => {
   vi.mocked(apiModule.getSessionMessages).mockResolvedValue([])
 
   localStorage.clear()
-  chatModule.setQueue([])
-  chatModule.setTurnActive(false)
   chatModule.setSessionId(null)
   chatModule.setCurrentTurnId(null)
   chatModule.initChat()

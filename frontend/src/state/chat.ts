@@ -16,16 +16,30 @@ import type {
 interface ChatState {
   conversationMessages: Map<string, ChatMessage[]>
   conversationTurnIds: Map<string, string>
+  conversationTurnActive: Map<string, boolean>
+  conversationQueues: Map<string, QueuedMessage[]>
 }
 
 const [chatState, setChatState] = createStore<ChatState>({
   conversationMessages: new Map(),
   conversationTurnIds: new Map(),
+  conversationTurnActive: new Map(),
+  conversationQueues: new Map(),
 })
 
 export const [sessionId, setSessionId] = createSignal<string | null>(null)
-export const [queue, setQueue] = createSignal<QueuedMessage[]>([])
-export const [isTurnActive, setTurnActive] = createSignal(false)
+// Per-conversation turn active state
+export const isTurnActive = createMemo(() => {
+  const sid = sessionId()
+  if (!sid) return false
+  return chatState.conversationTurnActive.get(sid) === true
+})
+// Per-conversation queue
+export const queue = createMemo(() => {
+  const sid = sessionId()
+  if (!sid) return []
+  return chatState.conversationQueues.get(sid) || []
+})
 export const [currentTurnId, setCurrentTurnId] = createSignal<string | null>(null)
 export const [isStreaming, setIsStreaming] = createSignal(false)
 export const [streamingMessageId, setStreamingMessageId] = createSignal<string | null>(null)
@@ -86,7 +100,22 @@ export async function loadConversationMessages(sessionIdParam: string, userId: n
     })
     setChatState('conversationMessages', (prev: Map<string, ChatMessage[]>) => {
       const next = new Map(prev)
-      next.set(sessionIdParam, loadedMessages)
+      const existing = next.get(sessionIdParam) || []
+      // Preserve optimistic messages that the server hasn't persisted yet:
+      // a history load racing an in-flight turn would otherwise wipe the user
+      // bubble and the streaming placeholder, orphaning the live stream (the
+      // response then only appears after a refresh). Skip history rows and
+      // anything the server already saved to avoid duplicates.
+      const active = existing.filter(m => {
+        if (m.id.startsWith('history-')) return false
+        if (m.meta?.isStreaming === true) return true
+        if (m.role !== 'user') return false
+        const persisted = loadedMessages.some(
+          lm => lm.role === 'user' && lm.content === m.content && m.content !== ''
+        )
+        return !persisted
+      })
+      next.set(sessionIdParam, [...loadedMessages, ...active])
       return next
     })
   } catch (error) {
@@ -114,9 +143,13 @@ export async function postChatMessage(
 }> {
   const turnId = createTurnId()
   setCurrentTurnId(turnId)
-  setTurnActive(true)
-
+  // Set turn active for this specific conversation
   if (session_id) {
+    setChatState('conversationTurnActive', (prev: Map<string, boolean>) => {
+      const next = new Map(prev)
+      next.set(session_id, true)
+      return next
+    })
     setChatState('conversationTurnIds', (prev: Map<string, string>) => {
       const next = new Map(prev)
       next.set(session_id, turnId)
@@ -142,9 +175,13 @@ export async function postChatMessage(
   } finally {
     stopStatusPolling(turnId)
     setCurrentTurnId(null)
-    setTurnActive(false)
 
     if (session_id) {
+      setChatState('conversationTurnActive', (prev: Map<string, boolean>) => {
+        const next = new Map(prev)
+        next.delete(session_id)
+        return next
+      })
       setChatState('conversationTurnIds', (prev: Map<string, string>) => {
         const next = new Map(prev)
         next.delete(session_id)
@@ -152,7 +189,7 @@ export async function postChatMessage(
       })
     }
 
-    drainQueue()
+    drainQueue(session_id)
   }
 }
 
@@ -172,10 +209,14 @@ export async function postChatMessageStream(
 }> {
   const turnId = createTurnId()
   setCurrentTurnId(turnId)
-  setTurnActive(true)
   setIsStreaming(true)
 
   if (session_id) {
+    setChatState('conversationTurnActive', (prev: Map<string, boolean>) => {
+      const next = new Map(prev)
+      next.set(session_id, true)
+      return next
+    })
     setChatState('conversationTurnIds', (prev: Map<string, string>) => {
       const next = new Map(prev)
       next.set(session_id, turnId)
@@ -266,11 +307,15 @@ export async function postChatMessageStream(
   } finally {
     stopStatusPolling(turnId)
     setCurrentTurnId(null)
-    setTurnActive(false)
     setIsStreaming(false)
     setStreamingMessageId(null)
 
     if (session_id) {
+      setChatState('conversationTurnActive', (prev: Map<string, boolean>) => {
+        const next = new Map(prev)
+        next.delete(session_id)
+        return next
+      })
       setChatState('conversationTurnIds', (prev: Map<string, string>) => {
         const next = new Map(prev)
         next.delete(session_id)
@@ -278,7 +323,7 @@ export async function postChatMessageStream(
       })
     }
 
-    drainQueue()
+    drainQueue(session_id)
   }
 }
 
@@ -338,29 +383,51 @@ export function useConversationTurnId(sessionIdParam: () => string | null | unde
   })
 }
 
-export function enqueueMessage(message: string): void {
+export function enqueueMessage(message: string, sessionIdParam?: string): void {
+  const targetSessionId = sessionIdParam || sessionId()
+  if (!targetSessionId) return
+  
   const queuedMessage: QueuedMessage = {
     id: `queued-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     message,
     timestamp: Date.now()
   }
-  setQueue(prev => [...prev, queuedMessage])
+  setChatState('conversationQueues', (prev: Map<string, QueuedMessage[]>) => {
+    const next = new Map(prev)
+    const existing = next.get(targetSessionId) || []
+    next.set(targetSessionId, [...existing, queuedMessage])
+    return next
+  })
 }
 
-export function removeQueuedMessage(id: string): void {
-  setQueue(prev => prev.filter(q => q.id !== id))
+export function removeQueuedMessage(id: string, sessionIdParam?: string): void {
+  const targetSessionId = sessionIdParam || sessionId()
+  if (!targetSessionId) return
+  
+  setChatState('conversationQueues', (prev: Map<string, QueuedMessage[]>) => {
+    const next = new Map(prev)
+    const existing = next.get(targetSessionId) || []
+    next.set(targetSessionId, existing.filter(q => q.id !== id))
+    return next
+  })
 }
 
-export function drainQueue(): void {
-  setQueue(prev => {
-    const [next, ...rest] = prev
-    if (next) {
-      const currentSessionId = sessionId()
-      if (currentSessionId) {
-        postChatMessage(next.message, currentSessionId)
-      }
+export function drainQueue(sessionIdParam?: string): void {
+  const targetSessionId = sessionIdParam || sessionId()
+  if (!targetSessionId) return
+  
+  setChatState('conversationQueues', (prev: Map<string, QueuedMessage[]>) => {
+    const next = new Map(prev)
+    const currentQueue = next.get(targetSessionId) || []
+    const [nextMsg, ...rest] = currentQueue
+    if (nextMsg) {
+      next.set(targetSessionId, rest)
+      // Route queued messages through the streaming path so the assistant
+      // reply lands in the conversation store and renders (the non-streaming
+      // postChatMessage never adds the response to the UI).
+      postChatMessageStream(nextMsg.message, targetSessionId)
     }
-    return rest
+    return next
   })
 }
 
