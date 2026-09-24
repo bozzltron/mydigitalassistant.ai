@@ -216,6 +216,21 @@ export async function postChatMessageStream(
         } else if (event.type === 'stage' && event.stage) {
           // Live pipeline progress rides the SSE stream itself.
           setStreamStage(turnId, event.stage, event.detail)
+        } else if (event.type === 'meta') {
+          // Final stream metadata (task type, extraction/search summaries, search
+          // info) lands on the streaming bubble so search + learning transparency
+          // renders (Brave indicator, "what I learned", trace panel, media).
+          if (session_id && (event.task_type || event.extraction_summary ||
+              event.search_extraction_summary || event.search_info)) {
+            mergeStreamingMessageMeta(session_id, assistantMessageId, {
+              ...(event.task_type ? { task_type: event.task_type } : {}),
+              ...(event.extraction_summary ? { extraction_summary: event.extraction_summary } : {}),
+              ...(event.search_extraction_summary
+                ? { search_extraction_summary: event.search_extraction_summary }
+                : {}),
+              ...(event.search_info ? { search_info: event.search_info } : {}),
+            })
+          }
         } else if (event.type === 'finalize') {
           accumulatedResponse = event.answer || accumulatedResponse
           // Final update
@@ -278,6 +293,21 @@ function setStreamingMessageContent(
           ? { ...msg, content }
           : { ...msg, content, meta: { ...msg.meta, isStreaming: streamingState } }
         : msg
+    )
+    next.set(sessionIdParam, updated)
+    return next
+  })
+}
+
+function mergeStreamingMessageMeta(
+  sessionIdParam: string,
+  messageId: string,
+  meta: Partial<NonNullable<ChatMessage['meta']>>
+): void {
+  setChatState('conversationMessages', (prev: Map<string, ChatMessage[]>) => {
+    const next = new Map(prev)
+    const updated = (next.get(sessionIdParam) || []).map(msg =>
+      msg.id === messageId ? { ...msg, meta: { ...msg.meta, ...meta } } : msg
     )
     next.set(sessionIdParam, updated)
     return next

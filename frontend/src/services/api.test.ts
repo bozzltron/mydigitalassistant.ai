@@ -427,6 +427,34 @@ describe('api service', () => {
       expect(seen[0].stage).toBe('recall')
     })
 
+    it('surfaces meta fields (task_type, search_info, summaries) on the result', async () => {
+      // Regression test: the backend now emits a final meta event with the
+      // transparency fields the non-streaming response used to carry. They
+      // must land on the resolved ChatResponse so the consent dialog, "what
+      // I learned", and the search trace can render.
+      const events = [
+        'data: {"type": "text_delta", "delta": "Yes"}\n\n',
+        'data: {"type": "finalize", "answer": "Yes"}\n\n',
+        'data: {"type": "meta", "session_id": "session-456", "task_type": "search", '
+          + '"extraction_summary": {"slots_applied": 1}, '
+          + '"search_extraction_summary": {"slots_applied": 2}, '
+          + '"search_info": {"backend": "brave", "query": "capital of texas", "results": []}}\n\n',
+      ]
+      mockFetch.mockResolvedValue(sseResponse(events))
+
+      const result = await postChatStream('Find the capital of Texas', 'session-456', [], 'turn-2')
+
+      expect(result.session_id).toBe('session-456')
+      expect(result.task_type).toBe('search')
+      expect(result.extraction_summary).toEqual({ slots_applied: 1 })
+      expect(result.search_extraction_summary).toEqual({ slots_applied: 2 })
+      expect(result.search_info).toEqual({
+        backend: 'brave',
+        query: 'capital of texas',
+        results: [],
+      })
+    })
+
     it('throws a useful error when the stream returns non-ok', async () => {
       mockFetch.mockResolvedValue({
         ok: false,

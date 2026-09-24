@@ -1472,7 +1472,11 @@ class Orchestrator:
         """
         # Import here to avoid circular imports
         from assistant.backend.pipeline.llm_client import ChatMessage
-        from assistant.backend.pipeline.streaming import stream_tool_loop
+        from assistant.backend.pipeline.streaming import (
+            MetaEvent,
+            serialize_event,
+            stream_tool_loop,
+        )
 
         # 1. Session
         session_id = request.session_id or str(uuid.uuid4())
@@ -1675,6 +1679,15 @@ class Orchestrator:
                     'answer': consent_msg,
                     'reasoning_trace': None
                 }
+                # Emit metadata first so the UI can open the consent dialog with
+                # the search_info transparency record (backend, query, sources).
+                yield serialize_event(
+                    MetaEvent(
+                        session_id=session_id,
+                        task_type="search_consent_required",
+                        search_info=search_info,
+                    )
+                )
                 yield f"data: {json.dumps(event)}\n\n"
                 return
 
@@ -1926,6 +1939,19 @@ class Orchestrator:
                     }
                     yield f"data: {json.dumps(event)}\n\n"
                     break
+
+        # Final metadata: same transparency the non-streaming ChatResponse carries
+        # (session id, task type, extraction/search summaries, search info). The UI
+        # uses it for the consent dialog, search trace, and "what I learned".
+        yield serialize_event(
+            MetaEvent(
+                session_id=session_id,
+                task_type=task_type,
+                extraction_summary=extraction_summary,
+                search_extraction_summary=search_extraction_summary,
+                search_info=search_info,
+            )
+        )
 
 
 def _parse_iso_ts_safe(value: str | None):

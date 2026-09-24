@@ -126,27 +126,15 @@ export default function ChatPage(props: {
         localStorage.setItem('session_id', result.session_id)
       }
 
-      // Handle search consent required - this would come from the non-streaming response
-      // For streaming, we'd need to handle it differently (backend doesn't send it in stream yet)
+      // Search consent rides the stream via the meta event: the backend emits
+      // task_type='search_consent_required' + search_info before the finalize.
+      // The consent question itself is already rendered by the streamed bubble.
       if (result.task_type === 'search_consent_required' && result.search_info) {
         setPendingSearchConsent({
           message,
           attachedFiles: processedFiles,
           searchInfo: result.search_info,
         })
-        // Show the consent message as assistant response
-        const consentMessage = {
-          role: 'assistant' as const,
-          content: result.response,
-          id: Date.now().toString() + '-assistant',
-          meta: {
-            task_type: result.task_type,
-            extraction_summary: result.extraction_summary,
-            search_extraction_summary: result.search_extraction_summary,
-            search_info: result.search_info,
-          }
-        }
-        addMessageToConversation(currentSessionId, consentMessage)
         return
       }
 

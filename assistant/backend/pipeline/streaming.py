@@ -6,6 +6,8 @@ Provides event serialization and the streaming response generator.
 import asyncio
 import json
 from collections.abc import AsyncGenerator
+from dataclasses import asdict, is_dataclass
+from enum import Enum
 
 
 class ToolLoopEvent:
@@ -66,6 +68,39 @@ class StageEvent(ToolLoopEvent):
         self.detail = detail
 
 
+class MetaEvent(ToolLoopEvent):
+    """Final stream metadata: session id, task type, extraction/search summaries, search info.
+
+    Carries the same transparency fields the non-streaming ChatResponse exposes
+    (search backend + query, "what I learned", task type) onto the SSE stream so
+    the UI can render them without a separate request.
+    """
+
+    def __init__(
+        self,
+        session_id: str | None,
+        task_type: str,
+        extraction_summary: dict | None = None,
+        search_extraction_summary: dict | None = None,
+        search_info: object | None = None,
+    ):
+        self.type = "meta"
+        self.session_id = session_id
+        self.task_type = task_type
+        self.extraction_summary = extraction_summary
+        self.search_extraction_summary = search_extraction_summary
+        self.search_info = search_info
+
+
+def _event_json_default(obj: object) -> object:
+    """JSON fallback for SSE payloads: recurse dataclasses, unwrap enums."""
+    if isinstance(obj, Enum):
+        return obj.value
+    if is_dataclass(obj) and not isinstance(obj, type):
+        return asdict(obj)
+    return str(obj)
+
+
 def serialize_event(event: ToolLoopEvent) -> str:
     """Serialize a tool loop event as an SSE message."""
     if isinstance(event, TextDeltaEvent):
@@ -96,6 +131,16 @@ def serialize_event(event: ToolLoopEvent) -> str:
     elif isinstance(event, StageEvent):
         data = {'type': 'stage', 'stage': event.stage, 'detail': event.detail}
         return f"data: {json.dumps(data)}\n\n"
+    elif isinstance(event, MetaEvent):
+        data = {
+            'type': 'meta',
+            'session_id': event.session_id,
+            'task_type': event.task_type,
+            'extraction_summary': event.extraction_summary,
+            'search_extraction_summary': event.search_extraction_summary,
+            'search_info': event.search_info,
+        }
+        return f"data: {json.dumps(data, default=_event_json_default)}\n\n"
     else:
         return f"data: {json.dumps({'type': 'unknown'})}\n\n"
 

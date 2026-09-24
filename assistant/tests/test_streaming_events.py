@@ -11,6 +11,7 @@ import json
 
 from assistant.backend.pipeline.streaming import (
     ErrorEvent,
+    MetaEvent,
     StageEvent,
     merge_sse,
     serialize_event,
@@ -30,6 +31,50 @@ def test_serialize_error_event():
     """Error events match the frontend's expected wire format."""
     msg = serialize_event(ErrorEvent("boom"))
     assert msg == 'data: {"type": "error", "error": "boom"}\n\n'
+
+
+def test_serialize_meta_event():
+    """Meta events serialize dataclass/enum payloads (the SearchInfo shape)."""
+    from dataclasses import dataclass
+    from enum import Enum
+
+    class Level(Enum):
+        SAFE = "safe"
+
+    @dataclass
+    class Snippet:
+        title: str
+        url: str
+
+    @dataclass
+    class SearchInfoLike:
+        backend: str
+        query: str
+        level: Level
+        results: list
+
+    msg = serialize_event(
+        MetaEvent(
+            session_id="s-1",
+            task_type="search",
+            extraction_summary={"slots_applied": 1},
+            search_info=SearchInfoLike(
+                backend="brave",
+                query="hi there",
+                level=Level.SAFE,
+                results=[Snippet(title="t", url="u")],
+            ),
+        )
+    )
+    parsed = json.loads(msg[len("data: "):].strip("\n"))
+    assert parsed["type"] == "meta"
+    assert parsed["session_id"] == "s-1"
+    assert parsed["task_type"] == "search"
+    assert parsed["extraction_summary"] == {"slots_applied": 1}
+    # Nested dataclasses are expanded; enums become their string values.
+    assert parsed["search_info"]["backend"] == "brave"
+    assert parsed["search_info"]["level"] == "safe"
+    assert parsed["search_info"]["results"] == [{"title": "t", "url": "u"}]
 
 
 async def _collect(agen):
