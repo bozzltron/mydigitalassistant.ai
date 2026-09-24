@@ -15,8 +15,8 @@ export default function VoiceControls(props: VoiceControlsProps) {
   const isDictationMode = !isVoiceMode
 
   const { isRecording: hookIsRecording, startRecording, stopRecording } = useVoiceRecording({
-    isVoiceMode,
-    isDictationMode,
+    isVoiceMode: () => isVoiceMode,
+    isDictationMode: () => isDictationMode,
     onTranscription: props.onTranscription || (() => {}),
   })
 

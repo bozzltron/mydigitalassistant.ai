@@ -1,6 +1,10 @@
 """Tests for math model integration (Phase 1)."""
 
+import os
 import pytest
+
+
+RUN_MATH_INTEGRATION = os.environ.get("RUN_MATH_INTEGRATION", "").lower() in ("1", "true", "yes")
 
 
 class TestMathIntentDetection:
@@ -138,8 +142,8 @@ class TestMathModelIntegration:
     """Integration tests for math model computation (requires Ollama)."""
 
     @pytest.mark.skipif(
-        True,  # Skip by default - enable when testing with live Ollama
-        reason="Requires local Ollama with qwen3-coder:30b model"
+        not RUN_MATH_INTEGRATION,
+        reason="Requires local Ollama with qwen3-coder:30b model (set RUN_MATH_INTEGRATION=1)"
     )
     @pytest.mark.asyncio
     async def test_simple_calculation(self):
@@ -164,8 +168,8 @@ class TestMathModelIntegration:
             await client.close()
 
     @pytest.mark.skipif(
-        True,  # Skip by default
-        reason="Requires local Ollama with qwen3-coder:30b model"
+        not RUN_MATH_INTEGRATION,
+        reason="Requires local Ollama with math model (set RUN_MATH_INTEGRATION=1)"
     )
     @pytest.mark.asyncio
     async def test_financial_npv(self):
@@ -198,8 +202,8 @@ print(f'NPV: {npv:.2f}')
             await client.close()
 
     @pytest.mark.skipif(
-        True,  # Skip by default
-        reason="Requires local Ollama with qwen3-coder:30b model"
+        not RUN_MATH_INTEGRATION,
+        reason="Requires local Ollama with math model (set RUN_MATH_INTEGRATION=1)"
     )
     @pytest.mark.asyncio
     async def test_statistical_computation(self):
@@ -232,11 +236,17 @@ print(f'Mean: {mean:.2f}, StdDev: {stdev:.2f}')
             await client.close()
 
     @pytest.mark.skipif(
-        True,  # Skip by default
-        reason="Requires local Ollama with qwen3-coder:30b model"
+        not RUN_MATH_INTEGRATION,
+        reason="Requires local Ollama with math model and sympy (set RUN_MATH_INTEGRATION=1)"
     )
     @pytest.mark.asyncio
     async def test_calculus_symbolic(self):
+        """Test symbolic calculus with sympy."""
+        # Check if sympy is available in the sandbox
+        try:
+            import sympy
+        except ImportError:
+            pytest.skip("sympy not available in test environment")
         """Test symbolic calculus with sympy."""
         from assistant.backend.config import settings
         from assistant.backend.pipeline.llm_client import OllamaClient

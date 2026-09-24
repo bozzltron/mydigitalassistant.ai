@@ -11,8 +11,9 @@ import {
 import { settings } from '../state/settings'
 
 interface UseVoiceRecordingOptions {
-  isVoiceMode: boolean
-  isDictationMode: boolean
+  isVoiceMode: () => boolean
+  isDictationMode: () => boolean
+  isTurnActive?: () => boolean
   onTranscription: (text: string) => void
 }
 
@@ -74,11 +75,12 @@ function playEarcon(type: 'start' | 'stop' | 'error') {
 export function useVoiceRecording({
   isVoiceMode,
   isDictationMode,
+  isTurnActive = () => false,
   onTranscription,
 }: UseVoiceRecordingOptions): UseVoiceRecordingReturn {
-  // Call getters if they are functions
-  const getIsVoiceMode = typeof isVoiceMode === 'function' ? isVoiceMode : () => isVoiceMode
-  const getIsDictationMode = typeof isDictationMode === 'function' ? isDictationMode : () => isDictationMode
+  const getIsVoiceMode = isVoiceMode
+  const getIsDictationMode = isDictationMode
+  const getIsTurnActive = isTurnActive
   
   console.log('[useVoiceRecording] init')
   const [mediaRecorder, setMediaRecorder] = createSignal<MediaRecorder | null>(null)
@@ -116,26 +118,27 @@ export function useVoiceRecording({
     if (ttsSpeaking && isRecording()) {
       console.log('[useVoiceRecording] TTS started — pausing recording')
       stopRecording()
-    } else if (!ttsSpeaking && voiceMode && !isRecording()) {
+    } else if (!ttsSpeaking && voiceMode && !isRecording() && !getIsTurnActive()) {
       console.log('[useVoiceRecording] TTS ended — resuming listening')
       // Small delay to ensure TTS has fully stopped
       setTimeout(() => {
-        if (!isTtsSpeaking() && getIsVoiceMode() && !isRecording()) {
+        if (!isTtsSpeaking() && getIsVoiceMode() && !isRecording() && !getIsTurnActive()) {
           startListeningForVoice()
         }
       }, 100)
     }
   })
 
-  // Auto-start recording when voice mode is activated
+  // Auto-start recording when voice mode is activated (but not during active turn)
   createEffect(() => {
     const voiceMode = getIsVoiceMode()
-    console.log('[useVoiceRecording] createEffect check', { voiceMode, isRecording: isRecording() })
-    if (voiceMode && !isRecording()) {
+    const turnActive = getIsTurnActive()
+    console.log('[useVoiceRecording] createEffect check', { voiceMode, turnActive, isRecording: isRecording() })
+    if (voiceMode && !turnActive && !isRecording()) {
       // Small delay to ensure UI is ready
       setTimeout(() => {
-        console.log('[useVoiceRecording] timeout check', { voiceMode: getIsVoiceMode(), isRecording: isRecording() })
-        if (getIsVoiceMode() && !isRecording()) {
+        console.log('[useVoiceRecording] timeout check', { voiceMode: getIsVoiceMode(), turnActive: getIsTurnActive(), isRecording: isRecording() })
+        if (getIsVoiceMode() && !getIsTurnActive() && !isRecording()) {
           console.log('[useVoiceRecording] auto-starting recording')
           startRecording()
         }
@@ -148,6 +151,15 @@ export function useVoiceRecording({
     const voiceMode = getIsVoiceMode()
     if (!voiceMode && isRecording()) {
       console.log('[useVoiceRecording] voice mode deactivated — stopping recording')
+      stopRecording()
+    }
+  })
+
+  // Also stop recording if a turn becomes active (user sent a message)
+  createEffect(() => {
+    const turnActive = getIsTurnActive()
+    if (turnActive && isRecording()) {
+      console.log('[useVoiceRecording] Turn became active — stopping recording')
       stopRecording()
     }
   })
@@ -373,7 +385,7 @@ export function useVoiceRecording({
   function scheduleListenRetry(message: string, delayMs = 1200) {
     startProcessing()
     window.setTimeout(() => {
-      if (getIsVoiceMode()) {
+      if (getIsVoiceMode() && !getIsTurnActive()) {
         startListeningForVoice()
       }
     }, delayMs)

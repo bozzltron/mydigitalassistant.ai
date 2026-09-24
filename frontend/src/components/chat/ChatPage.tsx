@@ -243,9 +243,11 @@ export default function ChatPage(props: {
   // Voice recording hook - runs when voice mode is active
   // Note: voice.status === 'speaking' is for voice mode's own speaking state.
   // TTS speaking is tracked separately via isTtsSpeaking() in the hook.
+  // We also check isTurnActive to avoid restarting listening during an active chat turn.
   useVoiceRecording({
     isVoiceMode: () => voice.status === 'listening' || voice.status === 'processing',
     isDictationMode: () => isDictating(),
+    isTurnActive: () => isTurnActive(),
     onTranscription: handleSendMessage,
   })
 

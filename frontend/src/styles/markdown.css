@@ -1,11 +1,20 @@
 /* Markdown - Enhanced markdown rendering for chat messages */
 
+.msg-markdown {
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+}
+
 .msg-assistant .content {
   line-height: 1.7;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
 }
 
 .msg-assistant .content p {
   margin: 0 0 var(--space-sm);
+  overflow-wrap: break-word;
+  word-wrap: break-word;
 }
 
 .msg-assistant .content p:last-child {
