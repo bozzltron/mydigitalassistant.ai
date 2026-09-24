@@ -277,10 +277,17 @@ class Orchestrator:
 
     async def _generate_fallback_response(self, original_message: str) -> str:
         """Generate a fallback response when the model returned empty."""
+        system = ChatMessage(
+            role="system",
+            content=(
+                "You are a helpful cognitive assistant. The previous response was empty. "
+                "Generate a brief, natural response to the user's message."
+            ),
+        )
         for _attempt in range(2):
             content = f"I need to respond to: {original_message[:200]}"
             resp = await self.llm_client.chat(
-                [ChatMessage(role="user", content=content)],
+                [system, ChatMessage(role="user", content=content)],
                 model=self.llm_client.chat_model,
                 temperature=0.7,
                 think=False,
@@ -583,8 +590,17 @@ class Orchestrator:
                     )
             else:
                 logger.info("Correction could not be parsed — generating natural response")
+                # Provide a system prompt so the model doesn't hallucinate
+                system = ChatMessage(
+                    role="system",
+                    content=(
+                        "You are a helpful cognitive assistant. The user sent a message "
+                        "that looked like a correction but couldn't be parsed. Respond "
+                        "naturally and ask for clarification if needed."
+                    ),
+                )
                 natural_response = await self.llm_client.chat(
-                    [ChatMessage(role="user", content=request.message)],
+                    [system, ChatMessage(role="user", content=request.message)],
                     model=self.llm_client.chat_model,
                     temperature=0.7,
                     think=True,
@@ -851,6 +867,7 @@ class Orchestrator:
                             self.store,
                             embed_fn=self.embed_fn(),
                             backend_name=backend_name,
+                            embedding_model=self.llm_client.embedding_model,
                         ),
                         timeout=settings.search_timeout,
                     )
@@ -1432,6 +1449,7 @@ class Orchestrator:
                     await apply_search_extraction(
                         extraction, search_results, self.store,
                         embed_fn=self.embed_fn(),
+                        embedding_model=self.llm_client.embedding_model,
                     )
                 except Exception as e:
                     logger.error("Search extraction failed: %s", e)
@@ -1823,6 +1841,7 @@ class Orchestrator:
                             self.store,
                             embed_fn=self.embed_fn(),
                             backend_name=backend_name,
+                            embedding_model=self.llm_client.embedding_model,
                         ),
                         timeout=settings.search_timeout,
                     )

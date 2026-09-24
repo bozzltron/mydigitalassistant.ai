@@ -36,7 +36,8 @@ async def client(store, stub_llm, stub_search):
     _state["search_tool"] = stub_search
 
     # Initialize tool executor with store and embed function
-    init_store(store.db_path, embed_fn=orchestrator.embed_fn())
+    # Use nomic-embed-text (768 dims) to match test embeddings
+    init_store(store.db_path, embed_fn=orchestrator.embed_fn(), embedding_model="nomic-embed-text")
 
     # Create user 1 (required by file upload endpoint)
     await store.create_user("test_user")
@@ -69,7 +70,7 @@ def tool_executor(store, stub_llm, stub_search):
             search_tool=stub_search,
         )
     )
-    init_store(store.db_path, embed_fn=orchestrator.embed_fn())
+    init_store(store.db_path, embed_fn=orchestrator.embed_fn(), embedding_model="nomic-embed-text")
     # Create test user for foreign key constraints
     import asyncio
     asyncio.run(store.create_user("test_user"))

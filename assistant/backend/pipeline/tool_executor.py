@@ -22,13 +22,16 @@ logger = logging.getLogger(__name__)
 _store: MemoryStore | None = None
 # Global embed function for recall tool
 _embed_fn: Callable | None = None
+# Embedding model name for search_similar_frames
+_embedding_model: str = "nomic-embed-text"
 
 
-def init_store(db_path: str, embed_fn: Callable | None = None) -> None:
+def init_store(db_path: str, embed_fn: Callable | None = None, embedding_model: str = "nomic-embed-text") -> None:
     """Initialize the global MemoryStore instance and embed function."""
-    global _store, _embed_fn
+    global _store, _embed_fn, _embedding_model
     _store = MemoryStore(db_path)
     _embed_fn = embed_fn
+    _embedding_model = embedding_model
     _register_builtin_tools()
 
 
@@ -326,6 +329,7 @@ async def execute_recall(args: dict, user_id: str, session_id: str = "") -> Tool
             user_id=int(user_id),
             limit=max_results,
             min_distance=1.0 - min_confidence,
+            embedding_model=_embedding_model,
         )
 
         # Format results

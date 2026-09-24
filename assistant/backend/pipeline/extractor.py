@@ -253,6 +253,7 @@ async def resolve_or_create_frame(
     source_url: str | None = None,
     source_reliability: float | None = None,
     embed_fn=None,
+    embedding_model: str = "nomic-embed-text",
     known: dict[str, tuple[int, str]] | None = None,
 ) -> int:
     """Resolve a frame name to an existing frame id, or create a new frame.
@@ -295,6 +296,7 @@ async def resolve_or_create_frame(
             matches = await store.search_similar_frames(
                 query_embedding,
                 user_id=None,
+                embedding_model=embedding_model,
                 limit=5,
                 min_distance=settings.canonical_name_distance,
             )
@@ -520,6 +522,7 @@ async def apply_extraction(
     source_url: str | None = None,
     source_reliability: float | None = None,
     embed_fn=None,
+    embedding_model: str = "nomic-embed-text",
 ) -> dict:
     """Apply an ExtractionResult to the MemoryStore.
 
@@ -548,6 +551,7 @@ async def apply_extraction(
             source_url=source_url,
             source_reliability=source_reliability,
             embed_fn=embed_fn,
+            embedding_model=embedding_model,
             known=known,
         )
 
@@ -615,6 +619,7 @@ async def apply_search_extraction(
     store: "MemoryStore",
     embed_fn=None,
     backend_name: str = "searxng",
+    embedding_model: str = "nomic-embed-text",
 ) -> dict:
     """Apply search extraction with corroboration support.
 
@@ -753,6 +758,7 @@ async def apply_search_extraction(
             ftype_hints.get(name, "entity"),
             source_type="search",
             embed_fn=embed_fn,
+            embedding_model=embedding_model,
             known=known,
         )
 
@@ -961,7 +967,11 @@ async def extract_and_apply(
             return resp.embedding
 
         result = await apply_extraction(
-            extraction, store, source_episode_id, embed_fn=get_embedding
+            extraction,
+            store,
+            source_episode_id,
+            embed_fn=get_embedding,
+            embedding_model=llm_client.embedding_model,
         )
         if result.get("frame_ids"):
             await store.embed_frames(result["frame_ids"], get_embedding)
