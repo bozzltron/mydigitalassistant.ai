@@ -140,8 +140,10 @@ async def test_chat_think_false_omits_key():
 
     client = _client_with_transport(handler)
     await client.chat([ChatMessage(role="user", content="hi")], think=False)
-    # think=False should omit the key (default behavior)
-    assert "think" not in captured["payload"]
+    # think=False must reach the server even on thinking-capable models —
+    # dropping it made the model run its default reasoning pass and return
+    # empty content under format="json" (extraction bug: 3 x ~60s empty).
+    assert captured["payload"]["think"] is False
     await client.close()
 
 

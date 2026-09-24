@@ -365,7 +365,12 @@ except: pass
         if format:
             payload["format"] = format
         if think is not None:
-            # Capability-gated thinking: don't send think flag to non-thinking models
+            # Capability-gated thinking: don't send think=True to models that
+            # can't reason. But think=False must ALWAYS reach the server —
+            # dropping it lets a thinking-capable model run its default
+            # reasoning pass, which under format="json" can return done=True
+            # with empty content (extraction bug: 3 attempts, ~60s each, all
+            # empty on qwen3.5:4b).
             if think and not await self.supports_thinking(model):
                 import logging
                 logging.getLogger(__name__).warning(
@@ -373,8 +378,7 @@ except: pass
                     model,
                 )
                 think = False
-            if think:
-                payload["think"] = think
+            payload["think"] = think
         if num_predict is not None:
             payload["options"]["num_predict"] = num_predict
         if num_ctx is None:
