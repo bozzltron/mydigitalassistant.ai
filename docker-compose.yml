@@ -15,6 +15,12 @@ services:
       - UTILITY_MODEL=${UTILITY_MODEL:-qwen3.5:4b}
       - EMBEDDING_MODEL=${EMBEDDING_MODEL:-nomic-embed-text}
       - CODER_MODEL=${CODER_MODEL:-}
+      # Math/computation model. OFF by default — a 30B-class model here (e.g.
+      # qwen3-coder:30b) competes with chat/utility for host RAM and thrashes
+      # the Ollama scheduler. Opt in with MATH_MODEL and keep MATH_NUM_CTX small.
+      - MATH_MODEL=${MATH_MODEL:-}
+      - MATH_NUM_CTX=${MATH_NUM_CTX:-16384}
+      - MATH_KEEP_ALIVE=${MATH_KEEP_ALIVE:-10m}
       # Tools model for fast function calling (Phase 6 M5). 4B model works reliably with tools
       - TOOLS_MODEL=${TOOLS_MODEL:-qwen3.5:4b}
       - TOOLS_NUM_CTX=${TOOLS_NUM_CTX:-4096}

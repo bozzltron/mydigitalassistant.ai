@@ -15,8 +15,13 @@ class Settings(BaseSettings):
     # Reserved role (Phase 6 M5). Empty = use chat_model for codegen.
     coder_model: str = ""
 
-    # Math/computation model (Phase: Math Model Integration). Empty = math computation disabled.
-    math_model: str = "qwen3-coder:30b"
+    # Math/computation model (Phase: Math Model Integration). Empty = math
+    # computation disabled (compute tool is dropped from the tool loop).
+    # NOTE: a large model here (e.g. qwen3-coder:30b) competes with chat +
+    # utility + embedding for host RAM/VRAM and must not be left resident on
+    # the hot path — the default is deliberately OFF. Opt in with MATH_MODEL
+    # and keep math_num_ctx small so it loads alongside the always-warm set.
+    math_model: str = ""
     math_num_ctx: int = 16384
     math_keep_alive: str = "10m"
 
