@@ -1,8 +1,8 @@
 """Tests for math model integration (Phase 1)."""
 
 import os
-import pytest
 
+import pytest
 
 RUN_MATH_INTEGRATION = os.environ.get("RUN_MATH_INTEGRATION", "").lower() in ("1", "true", "yes")
 
@@ -242,12 +242,8 @@ print(f'Mean: {mean:.2f}, StdDev: {stdev:.2f}')
     @pytest.mark.asyncio
     async def test_calculus_symbolic(self):
         """Test symbolic calculus with sympy."""
-        # Check if sympy is available in the sandbox
-        try:
-            import sympy
-        except ImportError:
-            pytest.skip("sympy not available in test environment")
-        """Test symbolic calculus with sympy."""
+        # Skip unless sympy is importable in the sandbox (availability probe).
+        pytest.importorskip("sympy", reason="sympy not available in test environment")
         from assistant.backend.config import settings
         from assistant.backend.pipeline.llm_client import OllamaClient
 
