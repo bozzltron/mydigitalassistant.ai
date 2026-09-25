@@ -1906,9 +1906,17 @@ async def upload_file_to_memory(
         source_reliability=0.7,
     )
     
-    # Store extracted facts/slots if any
+    # Store extracted facts/slots if any — capped so large CSVs don't dump one
+    # entity_* slot per unique cell onto the file frame (FILE_MAX_ENTITY_SLOTS).
+    entity_cap = settings.file_max_entity_slots
     if extraction_result.key_entities:
-        for entity in extraction_result.key_entities:
+        if len(extraction_result.key_entities) > entity_cap:
+            logger.info(
+                "File %s extracted %d entities; storing first %d only "
+                "(FILE_MAX_ENTITY_SLOTS=%d)",
+                filename, len(extraction_result.key_entities), entity_cap, entity_cap,
+            )
+        for entity in extraction_result.key_entities[:entity_cap]:
             await store.upsert_slot(
                 frame_id=frame.id,
                 key=f"entity_{entity}",
@@ -1995,7 +2003,7 @@ async def upload_file_to_memory(
         "file_size": len(content),
         "file_ext": ext,
         "content_preview": content_preview,
-        "key_entities": extraction_result.key_entities,
+        "key_entities": extraction_result.key_entities[: settings.file_max_entity_slots],
         "open_questions": extraction_result.open_questions,
         "frame_name": frame_name,
         "frame_id": frame.id,

@@ -48,6 +48,14 @@ class Settings(BaseSettings):
     # frames + ~5.5k slots — ~60% of the brain — exempt from GC decay at 0.5).
     csv_max_row_frames: int = 100
 
+    # File uploads: cap entity_* slots stored on the file frame. The CSV/JSON
+    # extractors emit one entry per unique cell/value, so a large file would
+    # otherwise dump hundreds-to-thousands of entity slots onto the parent frame
+    # (e.g. 1,140 on a 692-row CSV) — heavy, redundant (content lives on disk
+    # via read_file), and large enough to break embedding (text over nomic's
+    # context => Ollama 500). Small files (few unique values) store all entities.
+    file_max_entity_slots: int = 50
+
     # Context windows per call class (Phase 6 plan §4.4). Without these,
     # Ollama defaults to 32K context on large-RAM hosts and allocates a
     # proportionally huge KV cache on every request.

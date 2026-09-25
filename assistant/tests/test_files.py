@@ -305,6 +305,36 @@ class TestFileViewerBackend:
         assert {a.to_frame_id for a in part_of} == set(second["row_frame_ids"])
 
     @pytest.mark.asyncio
+    async def test_upload_entity_slots_are_capped(self, client, store, tmp_path):
+        """A large CSV must not dump one entity_* slot per unique cell onto the
+        file frame — the upload path caps entities (FILE_MAX_ENTITY_SLOTS=50)."""
+        lines = ["name,email\n"] + [f"person{i},p{i}@x.com\n" for i in range(60)]
+        test_file = tmp_path / "big.csv"
+        test_file.write_text("".join(lines))
+
+        with open(test_file, "rb") as f:
+            resp = client.post(
+                "/files/upload",
+                files={"file": ("big.csv", f.read(), "text/csv")},
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        # Response mirrors what's actually stored
+        assert len(data["key_entities"]) == 50
+
+        slots = await store.get_slots_for_frame(data["parent_frame_id"])
+        entity_count = sum(1 for s in slots if s.key.startswith("entity_"))
+        assert entity_count == 50, f"expected 50 entity slots, got {entity_count}"
+
+        # File metadata slots survive untouched
+        keys = {s.key for s in slots}
+        assert {
+            "file_name", "file_content_preview", "file_size", "file_ext",
+            "file_safe_name", "row_count", "columns",
+        } <= keys
+
+    @pytest.mark.asyncio
     async def test_delete_file_cascades(self, client, store, tmp_path):
         """DELETE /files/{frame_id} removes the frame, its memory, and the file.
 
