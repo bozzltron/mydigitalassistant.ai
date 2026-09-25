@@ -275,6 +275,15 @@ export async function postChatMessageStream(
               ...(event.search_info ? { search_info: event.search_info } : {}),
             })
           }
+        } else if (event.type === 'tool_result') {
+          // Tool completed - check if it's a file operation that should refresh the file list
+          const fileOps = ['write_file', 'edit_file', 'delete_file', 'glob', 'list_files']
+          if (event.tool_name && fileOps.includes(event.tool_name)) {
+            // Dispatch a custom event that FileGrid can listen for
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('files-changed', { detail: { tool: event.tool_name } }))
+            }
+          }
         } else if (event.type === 'finalize') {
           accumulatedResponse = event.answer || accumulatedResponse
           // Final update

@@ -1,4 +1,4 @@
-import { createSignal, Show, For, createEffect } from 'solid-js';
+import { createSignal, Show, For, createEffect, onCleanup } from 'solid-js';
 import { listFiles, deleteFile } from '../../services/api';
 import { Toast } from '../ui/Toast';
 
@@ -38,6 +38,18 @@ export const FileGrid = (props: { onFileSelect?: (file: FileEntry) => void }) =>
   createEffect(() => {
     loadFiles();
   });
+
+  // Listen for file changes from tool calls (write_file, edit_file, delete_file, etc.)
+  createEffect(() => {
+    if (typeof window === 'undefined') return
+    const handleFilesChanged = () => {
+      loadFiles()
+    }
+    window.addEventListener('files-changed', handleFilesChanged)
+    onCleanup(() => {
+      window.removeEventListener('files-changed', handleFilesChanged)
+    })
+  })
 
   const handleDelete = async (fileId: string) => {
     try {
