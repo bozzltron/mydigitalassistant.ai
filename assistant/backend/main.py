@@ -1825,8 +1825,10 @@ async def upload_file_to_memory(
     # Extract content based on type
     extraction_result = await extract_file_content(file_path, ext, content)
     
-    # Create a frame for this file
-    frame_name = f"file_{safe_filename}"
+    # Create a frame for this file — named from the file's own name so it stays
+    # readable in the Files page and brain graph. The timestamped safe_filename
+    # is only the on-disk copy name, tracked in the file_safe_name slot.
+    frame_name = f"file_{sanitized_base}.{ext}"
     existing_frame = await store.get_frame_by_name(frame_name)
     
     if not existing_frame:
@@ -1839,6 +1841,15 @@ async def upload_file_to_memory(
         )
     else:
         frame = existing_frame
+        # Same-name re-upload merges into the existing frame (frame names are
+        # UNIQUE); rebuild its CSV row frames so rows don't accumulate.
+        stale_rows = [
+            a.to_frame_id
+            for a in await store.get_all_associations_for_frame(frame.id)
+            if a.relation_type == "part_of"
+        ]
+        if stale_rows:
+            await store.prune_frames(stale_rows)
     
     # Store file content as a slot
     content_text = extraction_result.text
@@ -1941,7 +1952,7 @@ async def upload_file_to_memory(
         # read via read_file, so memory never explodes per-row).
         row_frame_cap = settings.csv_max_row_frames
         for i, row in enumerate(extraction_result.row_data[:row_frame_cap]):
-            row_frame_name = f"file_{safe_filename}_row_{i+1}"
+            row_frame_name = f"file_{sanitized_base}_row_{i+1}"
             row_frame = await store.create_frame(
                 row_frame_name,
                 "record",
@@ -2032,6 +2043,7 @@ async def upload_file(
 class FileFrameResponse(BaseModel):
     id: int
     name: str
+    file_name: str | None = None
     type: str
     confidence: float
     essential: int
@@ -2067,10 +2079,27 @@ async def list_files(
     frames = await store.list_frames(owner_user_id=user_id)
     # Filter to only file upload frames that are not forgotten (priority > 0)
     file_frames = [f for f in frames if f.source_type == "file_upload" and f.priority > 0]
+
+    # Load the real uploaded filename (file_name slot) for display — the frame
+    # name is the internal handle, while file_name is what the user actually
+    # named the file.
+    file_names: dict[int, str] = {}
+    if file_frames:
+        ids = [f.id for f in file_frames]
+        placeholders = ",".join("?" * len(ids))
+        async with store._connect() as db:
+            rows = await db.execute_fetchall(
+                f"SELECT frame_id, value FROM slots "
+                f"WHERE frame_id IN ({placeholders}) AND key = 'file_name'",
+                ids,
+            )
+        file_names = {row[0]: row[1] for row in rows}
+
     return [
         FileFrameResponse(
             id=frame.id,
             name=frame.name,
+            file_name=file_names.get(frame.id),
             type=frame.type,
             confidence=frame.confidence,
             essential=frame.essential,

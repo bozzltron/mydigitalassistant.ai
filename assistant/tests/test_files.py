@@ -244,6 +244,67 @@ class TestFileViewerBackend:
             )
 
     @pytest.mark.asyncio
+    async def test_upload_frame_name_is_readable(self, client, store, tmp_path):
+        """Upload frames are named from the file's own name — not the timestamped
+        on-disk copy name. The timestamped path is kept in file_safe_name and the
+        real filename is exposed on /files/list for display."""
+        test_file = tmp_path / "members.csv"
+        test_file.write_text("name,email\nAlice,a@b.com\n")
+
+        with open(test_file, "rb") as f:
+            resp = client.post(
+                "/files/upload",
+                files={"file": ("members.csv", f.read(), "text/csv")},
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        # Readable frame name, no upload_<timestamp>_ prefix
+        assert data["frame_name"] == "file_members.csv"
+        frame = await store.get_frame(data["parent_frame_id"])
+        assert frame is not None and frame.name == "file_members.csv"
+
+        # On-disk copy still unique (timestamped), tracked via the slot
+        safe_name = await store.get_slot(frame.id, "file_safe_name")
+        assert safe_name is not None and safe_name.value.startswith("upload_")
+
+        # /files/list exposes the real uploaded filename for the Files page
+        entries = client.get("/files/list").json()
+        entry = next(e for e in entries if e["id"] == data["parent_frame_id"])
+        assert entry["file_name"] == "members.csv"
+
+    @pytest.mark.asyncio
+    async def test_reupload_same_name_rebuilds_rows(self, client, store, tmp_path):
+        """Re-uploading the same filename merges into the existing frame and
+        replaces its CSV row frames instead of accumulating duplicates."""
+        test_file = tmp_path / "users.csv"
+        test_file.write_text("name,email\nAlice,a@b.com\n")
+
+        def upload():
+            with open(test_file, "rb") as f:
+                return client.post(
+                    "/files/upload",
+                    files={"file": ("users.csv", f.read(), "text/csv")},
+                )
+
+        first = upload()
+        assert first.status_code == 200
+        first = first.json()
+        second = upload()
+        assert second.status_code == 200
+        second = second.json()
+
+        # Merged into the same frame (frame names are UNIQUE)
+        assert second["parent_frame_id"] == first["parent_frame_id"]
+        assert second["frame_name"] == first["frame_name"] == "file_users.csv"
+
+        # Only one set of row frames remains — the second upload replaces the first
+        associations = await store.get_all_associations_for_frame(first["parent_frame_id"])
+        part_of = [a for a in associations if a.relation_type == "part_of"]
+        assert len(part_of) == 1, "row frames from the first upload must not linger"
+        assert {a.to_frame_id for a in part_of} == set(second["row_frame_ids"])
+
+    @pytest.mark.asyncio
     async def test_delete_file_cascades(self, client, store, tmp_path):
         """DELETE /files/{frame_id} removes the frame, its memory, and the file.
 

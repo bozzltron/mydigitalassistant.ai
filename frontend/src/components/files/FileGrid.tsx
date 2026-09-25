@@ -5,6 +5,7 @@ import { Toast } from '../ui/Toast';
 interface FileEntry {
   id: string;
   name: string;
+  file_name?: string | null;
   size: number;
   type: string;
   created_at: string;
@@ -101,7 +102,7 @@ export const FileGrid = (props: { onFileSelect?: (file: FileEntry) => void }) =>
               <div class="file-item" onClick={() => props.onFileSelect?.(file)}>
                 <div class="file-cell file-name-cell">
                   <span class="file-icon">{getFileIcon(file.type)}</span>
-                  <span class="file-name">{file.name}</span>
+                  <span class="file-name">{file.file_name || file.name}</span>
                 </div>
                 <div class="file-cell file-type-cell">
                   <span class="file-type">{file.type}</span>

@@ -151,6 +151,7 @@ export interface SearchResult {
 export interface FileEntry {
   id: string
   name: string
+  file_name?: string | null
   size: number
   type: string
   created_at: string
