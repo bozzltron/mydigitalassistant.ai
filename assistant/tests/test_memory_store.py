@@ -464,3 +464,78 @@ async def test_search_similar_frames_interleaved_model_rows(store: MemoryStore):
     assert {fr.name for fr, _, _ in results} == {
         "frame_0", "frame_2", "frame_4",
     }
+
+
+async def test_prune_frames_by_source_type_cascades(store: MemoryStore):
+    """Prune (hard-delete) csv_row frames AND everything attached to them —
+    slots, associations, embeddings — while unrelated memory survives."""
+    parent = await store.create_frame(
+        "subscribers_active.csv", "entity",
+        source_type="file_upload", source_reliability=0.8,
+    )
+    await store.upsert_slot(
+        frame_id=parent.id, key="row_count", value="3",
+        priority=0.5, source_type="file_upload", source_reliability=0.8,
+    )
+
+    row_ids = []
+    for i in range(3):
+        rf = await store.create_frame(
+            f"file_subscribers_active.csv_row_{i+1}", "record", source_type="csv_row"
+        )
+        row_ids.append(rf.id)
+        await store.upsert_slot(
+            frame_id=rf.id, key="name", value=f"user{i}", source_type="csv_row"
+        )
+        await store.create_association(
+            parent.id, rf.id, "part_of", source_type="file_upload"
+        )
+        await store.store_frame_embedding(rf.id, [0.25] * 768, "nomic-embed-text")
+
+    # Control memory of other source types must survive the prune.
+    control = await store.create_frame("some fact", "entity", source_type="search")
+    await store.upsert_slot(
+        frame_id=control.id, key="topic", value="csv", source_type="search"
+    )
+    await store.create_association(
+        parent.id, control.id, "part_of", source_type="file_upload"
+    )
+    await store.store_frame_embedding(control.id, [0.5] * 768, "nomic-embed-text")
+
+    removed = await store.prune_frames_by_source_type("csv_row")
+
+    assert sorted(removed) == sorted(row_ids)
+    for rf_id in row_ids:
+        assert await store.get_frame(rf_id) is None
+
+    # Parent file frame + compact metadata survive (the CSV on disk remains
+    # the source of truth for row data via read_file).
+    assert await store.get_frame(parent.id) is not None
+    row_count = await store.get_slot(parent.id, "row_count")
+    assert row_count is not None and row_count.value == "3"
+
+    # Cascades removed the pruned frames' slots, embeddings, and associations.
+    async with store._connect() as db:
+        placeholders = ",".join("?" * len(row_ids))
+        rows = list(row_ids)
+        slot_count = (
+            await db.execute_fetchall(
+                f"SELECT COUNT(*) FROM slots WHERE frame_id IN ({placeholders})", rows
+            )
+        )[0][0]
+        assert slot_count == 0
+        embed_count = (
+            await db.execute_fetchall(
+                f"SELECT COUNT(*) FROM frame_embeddings WHERE frame_id IN ({placeholders})",
+                rows,
+            )
+        )[0][0]
+        assert embed_count == 0
+
+    assocs = await store.get_all_associations_for_frame(parent.id)
+    assert {a.to_frame_id for a in assocs} == {control.id}
+
+    # Unrelated memory is untouched.
+    assert await store.get_frame(control.id) is not None
+    topic = await store.get_slot(control.id, "topic")
+    assert topic is not None and topic.value == "csv"

@@ -425,6 +425,39 @@ class MemoryStore:
         """Soft-delete a slot by setting priority to 0. Does not affect essential slots."""
         return await self.set_slot_priority(slot_id, forget_priority())
 
+    async def prune_frames_by_source_type(self, source_type: str) -> list[int]:
+        """Hard-delete every frame with the given source_type and cascade attached data.
+
+        This removes frames permanently — unlike ``forget_frame`` (soft-delete to
+        priority 0), which leaves the row alive in ``list_frames()`` and the brain
+        graph. Deleting a frame cascades to its slots, slot_history, associations,
+        frame_embeddings, frame_aliases, and working_memory rows via the ON DELETE
+        CASCADE foreign keys in the schema; alerts that reference a removed frame
+        keep their row with ``source_frame_id`` set to NULL (schema FK policy).
+
+        Use for wholesale cleanup of noisy frame categories — e.g. the per-row
+        ``csv_row`` frames created for every row of an uploaded CSV (one frame per
+        row, ~8 slots each), which otherwise sit at priority 0.5 and are exempt
+        from GC decay. The containing file frame and the CSV on disk are
+        unaffected, so row-level questions still work via ``read_file``.
+
+        Returns the ids of the removed frames.
+        """
+        async with self._connect() as db:
+            rows = await db.execute_fetchall(
+                "SELECT id FROM frames WHERE source_type = ? ORDER BY id",
+                (source_type,),
+            )
+            ids = [row[0] for row in rows]
+            if ids:
+                placeholders = ",".join("?" * len(ids))
+                await db.execute(
+                    f"DELETE FROM frames WHERE id IN ({placeholders})",
+                    ids,
+                )
+                await db.commit()
+            return ids
+
     # Embeddings
     async def store_frame_embedding(
         self,
