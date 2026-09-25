@@ -361,8 +361,8 @@ async def execute_recall(args: dict, user_id: str, session_id: str = "") -> Tool
                 associations = await _store.get_all_associations_for_frame(frame.id)
                 for assoc in associations:
                     assoc_data.append({
-                        "source": assoc.source_frame,
-                        "target": assoc.target_frame,
+                        "source": assoc.from_frame_id,
+                        "target": assoc.to_frame_id,
                         "relation": assoc.relation_type,
                         "confidence": assoc.confidence
                     })
@@ -395,18 +395,22 @@ async def execute_get_frame(args: dict, user_id: str, session_id: str = "") -> T
         if frame is None:
             return ToolResult(success=False, error=f"Frame '{frame_name}' not found")
 
+        # Load slots and associations from store
+        slots = await _store.get_slots_for_frame(frame.id)
+        associations = await _store.get_all_associations_for_frame(frame.id)
+
         # Convert to dict
         slots_dict = {
             slot.key: {"value": slot.value, "confidence": slot.confidence}
-            for slot in frame.slots
+            for slot in slots
         }
 
-        associations = []
-        for assoc in frame.associations:
-            associations.append(
+        associations_list = []
+        for assoc in associations:
+            associations_list.append(
                 {
-                    "source": assoc.source_frame,
-                    "target": assoc.target_frame,
+                    "source": assoc.from_frame_id,
+                    "target": assoc.to_frame_id,
                     "relation": assoc.relation_type,
                     "confidence": assoc.confidence,
                 }
@@ -414,7 +418,13 @@ async def execute_get_frame(args: dict, user_id: str, session_id: str = "") -> T
 
         return ToolResult(
             success=True,
-            data={"frame": {"name": frame.name, "slots": slots_dict, "associations": associations}},
+            data={
+                "frame": {
+                    "name": frame.name,
+                    "slots": slots_dict,
+                    "associations": associations_list,
+                }
+            },
         )
     except Exception as e:
         logger.error(f"get_frame failed: {e}", exc_info=True)

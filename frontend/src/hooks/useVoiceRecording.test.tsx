@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, waitFor } from '@solidjs/testing-library'
+import { render } from '@solidjs/testing-library'
 import { createSignal } from 'solid-js'
 import { useVoiceRecording } from './useVoiceRecording'
 import { setVoice, setTtsSpeaking } from '../state/voice'

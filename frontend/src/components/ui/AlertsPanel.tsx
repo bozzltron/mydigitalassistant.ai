@@ -1,4 +1,4 @@
-import { createSignal, onMount, For, Show } from 'solid-js'
+import { createSignal, onMount, onCleanup, For, Show } from 'solid-js'
 import { getAlerts, markAlertAsRead, markAllAlertsAsRead, type Alert } from '../../services/api'
 import { user } from '../../state/user'
 import { Modal } from './Modal'
@@ -9,6 +9,9 @@ export function AlertsPanel() {
   const [unreadCount, setUnreadCount] = createSignal(0)
   const [isOpen, setIsOpen] = createSignal(false)
   const [isLoading, setIsLoading] = createSignal(false)
+
+  // Per-component interval ID (not module-level)
+  let intervalId: number | null = null
 
   const fetchAlerts = async () => {
     const u = user()
@@ -28,11 +31,17 @@ export function AlertsPanel() {
     }
   }
 
-  // Fetch alerts on mount and periodically
+  // Start interval on mount, stop on unmount
   onMount(() => {
-    fetchAlerts()
-    const interval = setInterval(fetchAlerts, 30000) // Refresh every 30 seconds
-    return () => clearInterval(interval)
+    fetchAlerts() // Initial fetch
+    intervalId = window.setInterval(fetchAlerts, 30000)
+  })
+
+  onCleanup(() => {
+    if (intervalId !== null) {
+      clearInterval(intervalId)
+      intervalId = null
+    }
   })
 
   const markAsRead = async (alertId: number) => {

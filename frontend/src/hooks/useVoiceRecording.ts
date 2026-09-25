@@ -30,6 +30,8 @@ const MIN_AUDIO_FRAMES = 3
 const MAX_RECORDING_MS = 180000
 const MONITOR_INTERVAL_MS = 80
 
+type VoiceModeState = 'idle' | 'starting' | 'recording' | 'processing' | 'paused_tts' | 'user_stopped'
+
 function playEarcon(type: 'start' | 'stop' | 'error') {
   // Check if sound effects are enabled
   if (!settings.soundEffectsEnabled) return
@@ -83,6 +85,8 @@ export function useVoiceRecording({
   const getIsTurnActive = isTurnActive
   
   console.log('[useVoiceRecording] init')
+  
+  // Core recording state
   const [mediaRecorder, setMediaRecorder] = createSignal<MediaRecorder | null>(null)
   const [audioChunks, setAudioChunks] = createSignal<Blob[]>([])
   const [isRecording, setIsRecording] = createSignal(false)
@@ -96,6 +100,28 @@ export function useVoiceRecording({
   const [loudFrameCount, setLoudFrameCount] = createSignal(0)
   const [silenceAfterLoud, setSilenceAfterLoud] = createSignal(false)
   const [monitorIntervalId, setMonitorIntervalId] = createSignal<number | null>(null)
+  
+  // State machine state
+  const [modeState, setModeState] = createSignal<VoiceModeState>('idle')
+  const [userInitiatedStop, setUserInitiatedStop] = createSignal(false)
+  
+  // Track timers for cleanup
+  const [pendingTimeouts, setPendingTimeouts] = createSignal<Set<number>>(new Set())
+  
+  function addTimeout(id: number) {
+    setPendingTimeouts(prev => new Set(prev).add(id))
+  }
+  
+  function clearTimeoutSafe(id: number | null) {
+    if (id !== null) {
+      clearTimeout(id)
+      setPendingTimeouts(prev => {
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      })
+    }
+  }
 
   // Register stopRecording callback for external access (e.g., TopBar buttons)
   onCleanup(() => {
@@ -110,57 +136,87 @@ export function useVoiceRecording({
     registerStopRecording(stopRecordingFn)
   })
 
-  // Pause/resume recording during TTS playback
-  createEffect(() => {
-    const ttsSpeaking = isTtsSpeaking()
-    const voiceMode = getIsVoiceMode()
-    
-    if (ttsSpeaking && isRecording()) {
-      console.log('[useVoiceRecording] TTS started — pausing recording')
-      stopRecording()
-    } else if (!ttsSpeaking && voiceMode && !isRecording() && !getIsTurnActive()) {
-      console.log('[useVoiceRecording] TTS ended — resuming listening')
-      // Small delay to ensure TTS has fully stopped
-      setTimeout(() => {
-        if (!isTtsSpeaking() && getIsVoiceMode() && !isRecording() && !getIsTurnActive()) {
-          startListeningForVoice()
-        }
-      }, 100)
-    }
-  })
-
-  // Auto-start recording when voice mode is activated (but not during active turn)
+  // Unified state machine - single effect managing all transitions
   createEffect(() => {
     const voiceMode = getIsVoiceMode()
     const turnActive = getIsTurnActive()
-    console.log('[useVoiceRecording] createEffect check', { voiceMode, turnActive, isRecording: isRecording() })
-    if (voiceMode && !turnActive && !isRecording()) {
-      // Small delay to ensure UI is ready
-      setTimeout(() => {
-        console.log('[useVoiceRecording] timeout check', { voiceMode: getIsVoiceMode(), turnActive: getIsTurnActive(), isRecording: isRecording() })
-        if (getIsVoiceMode() && !getIsTurnActive() && !isRecording()) {
-          console.log('[useVoiceRecording] auto-starting recording')
+    const ttsSpeaking = isTtsSpeaking()
+    const state = modeState()
+    const recording = isRecording()
+
+    console.log('[useVoiceRecording] state machine tick', { state, voiceMode, turnActive, ttsSpeaking, recording, userStop: userInitiatedStop() })
+
+    switch (state) {
+      case 'idle':
+        if (voiceMode && !turnActive && !ttsSpeaking && !userInitiatedStop()) {
+          console.log('[useVoiceRecording] idle -> starting')
+          setModeState('starting')
           startRecording()
         }
-      }, 100)
-    }
-  })
-
-  // Stop recording when voice mode is deactivated
-  createEffect(() => {
-    const voiceMode = getIsVoiceMode()
-    if (!voiceMode && isRecording()) {
-      console.log('[useVoiceRecording] voice mode deactivated — stopping recording')
-      stopRecording()
-    }
-  })
-
-  // Also stop recording if a turn becomes active (user sent a message)
-  createEffect(() => {
-    const turnActive = getIsTurnActive()
-    if (turnActive && isRecording()) {
-      console.log('[useVoiceRecording] Turn became active — stopping recording')
-      stopRecording()
+        break
+        
+      case 'starting':
+        // Waiting for startRecording to complete (sets isRecording=true)
+        if (!voiceMode || turnActive || ttsSpeaking) {
+          console.log('[useVoiceRecording] starting -> idle (condition lost)')
+          setModeState('idle')
+          if (recording) stopRecording()
+        }
+        break
+        
+      case 'recording':
+        if (!voiceMode || turnActive) {
+          console.log('[useVoiceRecording] recording -> idle (voiceMode/turnActive lost)')
+          setModeState('idle')
+          stopRecording()
+        } else if (ttsSpeaking) {
+          console.log('[useVoiceRecording] recording -> paused_tts (TTS started)')
+          setModeState('paused_tts')
+          stopRecording()
+        } else if (userInitiatedStop()) {
+          console.log('[useVoiceRecording] recording -> user_stopped (user clicked stop)')
+          setModeState('user_stopped')
+          stopRecording()
+          setUserInitiatedStop(false)
+        }
+        break
+        
+      case 'processing':
+        // Transcription in progress
+        if (!voiceMode) {
+          console.log('[useVoiceRecording] processing -> idle (voiceMode lost)')
+          setModeState('idle')
+        } else if (!turnActive && !ttsSpeaking && !userInitiatedStop()) {
+          // Transcription done, ready to resume listening
+          console.log('[useVoiceRecording] processing -> starting (turn complete, resuming)')
+          setModeState('starting')
+        } else if (turnActive) {
+          // Turn became active, wait for it to complete
+          console.log('[useVoiceRecording] processing -> waiting for turn')
+        }
+        break
+        
+      case 'paused_tts':
+        if (!voiceMode || turnActive) {
+          console.log('[useVoiceRecording] paused_tts -> idle (voiceMode/turnActive lost)')
+          setModeState('idle')
+        } else if (!ttsSpeaking && !userInitiatedStop()) {
+          console.log('[useVoiceRecording] paused_tts -> starting (TTS ended)')
+          setModeState('starting')
+        } else if (userInitiatedStop()) {
+          console.log('[useVoiceRecording] paused_tts -> user_stopped (user clicked stop during TTS)')
+          setModeState('user_stopped')
+          setUserInitiatedStop(false)
+        }
+        break
+        
+      case 'user_stopped':
+        // Stay stopped until voice mode is exited
+        if (!voiceMode) {
+          console.log('[useVoiceRecording] user_stopped -> idle (voiceMode exited)')
+          setModeState('idle')
+        }
+        break
     }
   })
 
@@ -200,6 +256,7 @@ export function useVoiceRecording({
           }
         }, SILENCE_DURATION)
         setSilenceTimeout(st)
+        addTimeout(st)
       } else if (loudFrameCount() > 0) {
         console.log('[voice] waiting for silence timeout conditions', { 
           metMinDuration, 
@@ -226,7 +283,7 @@ export function useVoiceRecording({
   }
 
   async function startRecording() {
-    console.log('[voice] startRecording called', { isRecording: isRecording() })
+    console.log('[voice] startRecording called', { isRecording: isRecording(), modeState: modeState() })
     if (isRecording()) return
     try {
       const ctx = audioContext()
@@ -288,17 +345,19 @@ export function useVoiceRecording({
       mr.onstop = async () => {
         const elapsed = Date.now() - recordingStartTime()
         const currentLoudFrames = loudFrameCount()
+        // Capture voice mode state at stop time (before any state changes)
+        const wasVoiceModeAtStop = getIsVoiceMode()
         console.log('[voice] onstop chunks:', audioChunks().length, 'elapsed:', elapsed, 'loudFrames:', currentLoudFrames)
         try {
           if (audioChunks().length === 0) {
-            handleRecordingDiscard("Didn't catch that")
+            handleRecordingDiscard("Didn't catch that", wasVoiceModeAtStop)
             return
           }
           const tooShort = elapsed < MIN_RECORDING_MS
           const notEnoughLoud = currentLoudFrames < MIN_AUDIO_FRAMES
           console.log('[voice] onstop checks tooShort:', tooShort, 'notEnoughLoud:', notEnoughLoud)
           if (tooShort || notEnoughLoud) {
-            handleRecordingDiscard("Didn't catch that")
+            handleRecordingDiscard("Didn't catch that", wasVoiceModeAtStop)
             return
           }
           const blob = new Blob(audioChunks(), { type: currentMimeType() || 'audio/webm' })
@@ -312,7 +371,9 @@ export function useVoiceRecording({
 
       mr.onerror = (e) => {
         console.error('MediaRecorder error:', e)
-        if (getIsVoiceMode()) {
+        // Capture voice mode state at error time
+        const wasVoiceModeAtError = getIsVoiceMode()
+        if (wasVoiceModeAtError) {
           scheduleListenRetry('Recording error, retrying...')
         }
       }
@@ -329,6 +390,7 @@ export function useVoiceRecording({
         if (isRecording()) stopRecording()
       }, MAX_RECORDING_MS)
       setRecordingTimeoutId(timeoutId)
+      addTimeout(timeoutId)
     } catch (e) {
       console.warn('[voice] Failed to start recording:', e)
       if (getIsVoiceMode()) {
@@ -373,29 +435,26 @@ export function useVoiceRecording({
     }
   }
 
-  function handleRecordingDiscard(message: string) {
+  function handleRecordingDiscard(message: string, voiceModeOverride?: boolean) {
     stopRecording()
-    if (getIsDictationMode()) {
+    const voiceMode = voiceModeOverride ?? getIsVoiceMode()
+    const dictationMode = getIsDictationMode()
+    if (dictationMode) {
       endDictation()
-    } else if (getIsVoiceMode()) {
+    } else if (voiceMode) {
       scheduleListenRetry(message)
     }
   }
 
   function scheduleListenRetry(message: string, delayMs = 1200) {
+    // Capture voice mode state before startProcessing changes it
+    const wasVoiceMode = getIsVoiceMode()
     startProcessing()
-    window.setTimeout(() => {
-      if (getIsVoiceMode() && !getIsTurnActive()) {
-        startListeningForVoice()
-      }
+    // State machine will handle transition to 'processing' and back to 'starting'
+    const timeoutId = window.setTimeout(() => {
+      // The state machine effect will handle the restart when conditions are met
     }, delayMs)
-  }
-
-  function startListeningForVoice() {
-    if (!getIsVoiceMode()) return
-    startListening()
-    playEarcon('start')
-    startRecording()
+    addTimeout(timeoutId)
   }
 
   async function sendAudioForTranscription(blob: Blob) {
@@ -405,6 +464,7 @@ export function useVoiceRecording({
     const wasDictationMode = getIsDictationMode()
     if (!wasVoiceMode && !wasDictationMode) return
     startProcessing()
+    // State machine will transition to 'processing'
     playEarcon('stop')
 
     try {
@@ -427,7 +487,7 @@ export function useVoiceRecording({
       console.log('[voice] transcription response:', text)
 
       if (!text) {
-        handleRecordingDiscard("Didn't catch that")
+        handleRecordingDiscard("Didn't catch that", wasVoiceMode)
         return
       }
 
@@ -443,6 +503,9 @@ export function useVoiceRecording({
       }
 
       if (wasVoiceMode) {
+        // State machine will handle transition back to 'starting' after turn completes
+        // Set status to 'listening' so UI shows listening state
+        startListening()
         onTranscription(text)
       }
     } catch (err) {
@@ -457,15 +520,25 @@ export function useVoiceRecording({
     }
   }
 
+  // Cleanup all pending timeouts on unmount
   onCleanup(() => {
     stopRecording()
     stopAudioMonitor()
+    // Clear any pending timeouts
+    pendingTimeouts().forEach(id => clearTimeout(id))
   })
+
+  // Public stopRecording that sets userInitiatedStop flag
+  const handleUserStop = () => {
+    console.log('[useVoiceRecording] User initiated stop')
+    setUserInitiatedStop(true)
+    stopRecording()
+  }
 
   return {
     isRecording,
     startRecording,
-    stopRecording,
+    stopRecording: handleUserStop,
   }
 }
 

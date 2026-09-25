@@ -1,8 +1,8 @@
-import { createEffect, createSignal, For, onMount, Show, createMemo } from 'solid-js'
+import { createSignal, createEffect, For, onMount, Show, createMemo } from 'solid-js'
 import { Session } from '../../state/session'
 import { user } from '../../state/user'
 import { settings, updateSetting } from '../../state/settings'
-import { enterVoiceMode, exitVoiceMode, voice, isListening, isProcessing, isSpeaking, isIdle, isTtsSpeaking, stopRecording, setTtsSpeaking } from '../../state/voice'
+import { enterVoiceMode, exitVoiceMode, voice, isListening, isProcessing, isSpeaking, isIdle, isTtsSpeaking, stopRecording, setTtsSpeaking, isVoiceModeActive } from '../../state/voice'
 import { api, getDeletedSessions, updateConversationTitle, deleteConversation } from '../../services/api'
 import TrashCan from '../chat/TrashCan'
 import { AlertsPanel } from './AlertsPanel'
@@ -208,41 +208,30 @@ export default function TopBar(props: TopBarProps) {
     }
   }
 
-  // Update voice status bar based on voice state
-  createEffect(() => {
-    const statusBar = document.getElementById('voice-status-bar') as HTMLElement
-    const statusDot = document.getElementById('voice-status-dot') as HTMLElement
-    const statusText = document.getElementById('voice-status-text') as HTMLElement
-    const stopBtn = document.getElementById('voice-stop-inline') as HTMLButtonElement
-    const cancelBtn = document.getElementById('voice-cancel-inline') as HTMLButtonElement
-    
-    if (!statusBar || !statusDot || !statusText) return
-
+  // Declarative voice status computed signals
+  const voiceStatusText = createMemo(() => {
     const v = voice
-    const isActive = !isIdle()
-    
-    statusBar.classList.toggle('active', isActive)
-    statusDot.classList.remove('processing', 'speaking')
-    
-    if (isListening()) {
-      statusDot.classList.remove('processing', 'speaking')
-      statusText.textContent = v.isDictating ? 'Dictating...' : 'Listening...'
-      stopBtn.textContent = "I'm done talking"
-      cancelBtn.textContent = 'Cancel'
-    } else if (isProcessing()) {
-      statusDot.classList.add('processing')
-      statusText.textContent = 'Transcribing...'
-      stopBtn.textContent = "I'm done talking"
-      cancelBtn.textContent = 'Cancel'
-    } else if (isSpeaking() || isTtsSpeaking()) {
-      statusDot.classList.add('speaking')
-      statusText.textContent = 'Speaking...'
-      stopBtn.textContent = "I'm done talking"
-      cancelBtn.textContent = 'Cancel'
-    } else {
-      statusText.textContent = 'Idle'
-    }
+    if (isListening()) return v.isDictating ? 'Dictating...' : 'Listening...'
+    if (isProcessing()) return 'Transcribing...'
+    if (isSpeaking() || isTtsSpeaking()) return 'Speaking...'
+    return 'Idle'
   })
+
+  const voiceStatusClass = createMemo(() => {
+    if (isProcessing()) return 'processing'
+    if (isSpeaking() || isTtsSpeaking()) return 'speaking'
+    return ''
+  })
+
+  const voiceStatusActive = createMemo(() => !isIdle())
+
+  const stopBtnText = createMemo(() => 
+    isListening() || isProcessing() || isSpeaking() || isTtsSpeaking() 
+      ? "I'm done talking" 
+      : 'Start'
+  )
+
+  const showStopSpeakingBtn = createMemo(() => isTtsSpeaking())
 
   // Custom dropdown for conversation selection
   const [showConversationDropdown, setShowConversationDropdown] = createSignal(false)
@@ -339,19 +328,18 @@ export default function TopBar(props: TopBarProps) {
           >New</button>
         </div>
         <div class="header-right">
-          {user() && <span class="user-badge" id="user-badge">{user().name}</span>}
           <AlertsPanel />
           <TrashCan />
-          <span class="voice-status-bar" id="voice-status-bar">
-            <span class="voice-dot" id="voice-status-dot" />
-            <span id="voice-status-text">Listening</span>
+          <span class="voice-status-bar" id="voice-status-bar" classList={{ active: voiceStatusActive() }}>
+            <span class="voice-dot" id="voice-status-dot" classList={{ [voiceStatusClass()]: true }} />
+            <span id="voice-status-text">{voiceStatusText()}</span>
             <button 
               class="voice-btn-small" 
               id="voice-stop-inline"
               onClick={() => stopRecording()}
               title="Stop recording and transcribe (I'm done talking)"
             >
-              I'm done talking
+              {stopBtnText()}
             </button>
             <button 
               class="voice-btn-small danger" 
@@ -382,7 +370,7 @@ export default function TopBar(props: TopBarProps) {
           >
             {voice.status !== 'idle' ? 'Stop Conversation' : "Let's talk"}
           </button>
-          <Show when={isTtsSpeaking()}>
+          <Show when={showStopSpeakingBtn()}>
             <button 
               id="stop-speaking-btn" 
               class="voice-btn" 

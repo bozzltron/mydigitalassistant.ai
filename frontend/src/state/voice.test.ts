@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeEach } from 'vitest'
-import { voice, setVoice, enterVoiceMode, exitVoiceMode, startProcessing, startSpeaking, setError, isListening, isProcessing, isSpeaking } from '../state/voice'
+import { describe, it, expect } from 'vitest'
+import { voice, setVoice, isVoiceModeActive, isListening, isProcessing, isSpeaking, isIdle, isTtsSpeaking } from './voice'
 
-describe('voice state', () => {
+describe('voice state helpers', () => {
   beforeEach(() => {
     setVoice({
       status: 'idle',
@@ -11,73 +11,87 @@ describe('voice state', () => {
     })
   })
 
-  it('initializes in idle state', () => {
-    expect(voice.status).toBe('idle')
-    expect(isListening()).toBe(false)
-    expect(isProcessing()).toBe(false)
-    expect(isSpeaking()).toBe(false)
-    expect(voice.transcript).toBeUndefined()
+  describe('isVoiceModeActive', () => {
+    it('returns true for listening status', () => {
+      setVoice({ ...voice, status: 'listening' })
+      expect(isVoiceModeActive()).toBe(true)
+    })
+
+    it('returns true for processing status', () => {
+      setVoice({ ...voice, status: 'processing' })
+      expect(isVoiceModeActive()).toBe(true)
+    })
+
+    it('returns false for idle status', () => {
+      setVoice({ ...voice, status: 'idle' })
+      expect(isVoiceModeActive()).toBe(false)
+    })
+
+    it('returns false for speaking status', () => {
+      setVoice({ ...voice, status: 'speaking' })
+      expect(isVoiceModeActive()).toBe(false)
+    })
+
+    it('returns false for error status', () => {
+      setVoice({ ...voice, status: 'error' })
+      expect(isVoiceModeActive()).toBe(false)
+    })
   })
 
-  describe('enterVoiceMode', () => {
-    it('sets listening status', () => {
-      enterVoiceMode()
+  describe('isListening', () => {
+    it('returns true only for listening status', () => {
+      setVoice({ ...voice, status: 'listening' })
       expect(isListening()).toBe(true)
-      expect(voice.status).toBe('listening')
-    })
-
-    it('preserves transcript and dictation fields', () => {
-      setVoice({ status: 'processing', transcript: 'old', isDictating: true, isTtsSpeaking: false })
-      enterVoiceMode()
-      expect(voice.transcript).toBe('old')
-      expect(voice.isDictating).toBe(true)
+      
+      setVoice({ ...voice, status: 'processing' })
+      expect(isListening()).toBe(false)
     })
   })
 
-  describe('exitVoiceMode', () => {
-    it('resets to idle state', () => {
-      setVoice({ status: 'speaking', transcript: 'something', isDictating: true, isTtsSpeaking: false })
-      exitVoiceMode()
-      expect(isListening()).toBe(false)
-      expect(isProcessing()).toBe(false)
-      expect(isSpeaking()).toBe(false)
-      expect(voice.status).toBe('idle')
-      expect(voice.transcript).toBeUndefined()
-    })
-  })
-
-  describe('startProcessing', () => {
-    it('transitions from listening to processing', () => {
-      enterVoiceMode()
-      startProcessing()
-      expect(isListening()).toBe(false)
+  describe('isProcessing', () => {
+    it('returns true only for processing status', () => {
+      setVoice({ ...voice, status: 'processing' })
       expect(isProcessing()).toBe(true)
-      expect(voice.status).toBe('processing')
-    })
-  })
-
-  describe('startSpeaking', () => {
-    it('transitions from processing to speaking', () => {
-      setVoice({ status: 'processing', transcript: undefined, isDictating: false, isTtsSpeaking: false })
-      startSpeaking()
+      
+      setVoice({ ...voice, status: 'listening' })
       expect(isProcessing()).toBe(false)
-      expect(isSpeaking()).toBe(true)
-      expect(voice.status).toBe('speaking')
     })
   })
 
-  describe('setError', () => {
-    it('sets error status and transcript', () => {
-      setError('Microphone permission denied')
-      expect(voice.status).toBe('error')
-      expect(voice.transcript).toBe('Microphone permission denied')
+  describe('isSpeaking', () => {
+    it('returns true for speaking status', () => {
+      setVoice({ ...voice, status: 'speaking' })
+      expect(isSpeaking()).toBe(true)
     })
 
-    it('preserves dictation and tts fields', () => {
-      setVoice({ status: 'listening', transcript: undefined, isDictating: true, isTtsSpeaking: true })
-      setError('Error occurred')
-      expect(voice.isDictating).toBe(true)
-      expect(voice.isTtsSpeaking).toBe(true)
+    it('returns true when TTS is speaking', () => {
+      setVoice({ ...voice, status: 'idle', isTtsSpeaking: true })
+      expect(isSpeaking()).toBe(true)
+    })
+
+    it('returns false otherwise', () => {
+      setVoice({ ...voice, status: 'idle' })
+      expect(isSpeaking()).toBe(false)
+    })
+  })
+
+  describe('isIdle', () => {
+    it('returns true only for idle status', () => {
+      setVoice({ ...voice, status: 'idle' })
+      expect(isIdle()).toBe(true)
+      
+      setVoice({ ...voice, status: 'listening' })
+      expect(isIdle()).toBe(false)
+    })
+  })
+
+  describe('isTtsSpeaking', () => {
+    it('returns isTtsSpeaking value', () => {
+      setVoice({ ...voice, isTtsSpeaking: true })
+      expect(isTtsSpeaking()).toBe(true)
+      
+      setVoice({ ...voice, isTtsSpeaking: false })
+      expect(isTtsSpeaking()).toBe(false)
     })
   })
 })

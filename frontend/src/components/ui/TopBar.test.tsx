@@ -67,9 +67,9 @@ describe('TopBar', () => {
     expect(trigger).toBeDisabled()
   })
 
-  it('shows user name in badge', () => {
+  it('does not show user name badge', () => {
     render(() => <TopBar conversations={defaultProps.conversations} activeConversation={defaultProps.activeConversation} onConversationChange={defaultProps.onConversationChange} onNewConversationClick={defaultProps.onNewConversationClick} isLoading={defaultProps.isLoading} assistantName={defaultProps.assistantName} />)
-    expect(screen.getByText('Assistant User')).toBeInTheDocument()
+    expect(screen.queryByText('Assistant User')).not.toBeInTheDocument()
   })
 
   it('renders voice mode button', () => {
