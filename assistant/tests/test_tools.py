@@ -618,6 +618,131 @@ async def test_read_file_after_list_files(store):
         temp_path.unlink(missing_ok=True)
 
 
+async def test_read_file_resolves_frame_name_given_as_path(store):
+    """Regression: read_file(path='file_<name>') must resolve via the file frame.
+
+    The model historically passed the frame name (which carries a 'file_'
+    prefix) as the sandbox path. That literal lookup failed even though the
+    uploaded file existed on disk under its exact name.
+    """
+    import tempfile
+    from pathlib import Path
+
+    from assistant.backend.pipeline.tool_executor import execute_tool, init_store
+    init_store(str(store.db_path))
+    await store.create_user("test_user")
+
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False, dir="/app/data") as f:
+        f.write("name,email\nAlice,a@b.com\nBob,b@c.com")
+        temp_path = Path(f.name)
+        safe_name = temp_path.name
+
+    try:
+        frame = await store.create_frame(
+            f"file_{safe_name}",
+            "entity",
+            source_type="file_upload",
+            owner_user_id=1,
+            source_reliability=0.7,
+        )
+        await store.upsert_slot(frame_id=frame.id, key="file_name", value=safe_name,
+            essential=0, priority=0.5, source_type="file_upload", source_reliability=0.8)
+        await store.upsert_slot(frame_id=frame.id, key="file_ext", value="csv",
+            essential=0, priority=0.5, source_type="file_upload", source_reliability=0.8)
+        await store.upsert_slot(frame_id=frame.id, key="file_safe_name", value=safe_name,
+            essential=0, priority=0.5, source_type="file_upload", source_reliability=0.8)
+
+        # The frame name (with 'file_' prefix) is passed as the path.
+        result = await execute_tool("read_file", {"path": frame.name}, "1", "test_session")
+        assert result.success
+        assert "Alice" in result.data["content"]
+        assert result.data["frame_name"] == frame.name
+        assert result.data["path"] == safe_name
+    finally:
+        temp_path.unlink(missing_ok=True)
+
+
+async def test_read_file_resolves_stale_frame_name_from_old_conversation(store):
+    """Regression (logged bug): the model recalled the OLD frame name from a
+    past conversation and passed it to read_file(path=...).
+
+    The current frame is 'file_subscribers_active.csv' but past episodes still
+    quote 'file_upload_20260917_172108_..._subscribers_active.csv'. The stale
+    name must resolve to the current file, not fail the literal lookup.
+    """
+    import tempfile
+    from pathlib import Path
+
+    from assistant.backend.pipeline.tool_executor import execute_tool, init_store
+    init_store(str(store.db_path))
+    await store.create_user("test_user")
+
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False, dir="/app/data") as f:
+        f.write("email,status\na@b.com,active\nc@d.com,inactive")
+        temp_path = Path(f.name)
+        safe_name = temp_path.name
+
+    try:
+        frame = await store.create_frame(
+            "file_subscribers_active.csv",
+            "entity",
+            source_type="file_upload",
+            owner_user_id=1,
+            source_reliability=0.7,
+        )
+        await store.upsert_slot(frame_id=frame.id, key="file_name", value="subscribers_active.csv",
+            essential=0, priority=0.5, source_type="file_upload", source_reliability=0.8)
+        await store.upsert_slot(frame_id=frame.id, key="file_ext", value="csv",
+            essential=0, priority=0.5, source_type="file_upload", source_reliability=0.8)
+        await store.upsert_slot(frame_id=frame.id, key="file_safe_name", value=safe_name,
+            essential=0, priority=0.5, source_type="file_upload", source_reliability=0.8)
+
+        stale = "file_upload_20260917_172108_1789683647_198897719522100940_subscribers_active.csv"
+        result = await execute_tool("read_file", {"path": stale}, "1", "test_session")
+        assert result.success
+        assert "a@b.com" in result.data["content"]
+        assert result.data["frame_name"] == "file_subscribers_active.csv"
+        assert result.data["path"] == safe_name
+    finally:
+        temp_path.unlink(missing_ok=True)
+
+
+async def test_read_file_miss_reports_available_files(store):
+    """A failed read_file must say what the user actually has, so the model
+    can self-correct with a real name instead of retrying blindly."""
+    import tempfile
+    from pathlib import Path
+
+    from assistant.backend.pipeline.tool_executor import execute_tool, init_store
+    init_store(str(store.db_path))
+    await store.create_user("test_user")
+
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False, dir="/app/data") as f:
+        f.write("hello world")
+        temp_path = Path(f.name)
+        safe_name = temp_path.name
+
+    try:
+        frame = await store.create_frame(
+            f"file_{safe_name}",
+            "entity",
+            source_type="file_upload",
+            owner_user_id=1,
+            source_reliability=0.7,
+        )
+        await store.upsert_slot(frame_id=frame.id, key="file_name", value=safe_name,
+            essential=0, priority=0.5, source_type="file_upload", source_reliability=0.8)
+        await store.upsert_slot(frame_id=frame.id, key="file_safe_name", value=safe_name,
+            essential=0, priority=0.5, source_type="file_upload", source_reliability=0.8)
+
+        result = await execute_tool("read_file", {"path": "no_such_thing.csv"}, "1", "test_session")
+        assert not result.success
+        assert "File not found" in result.error
+        assert safe_name in result.error  # the available file is named in the error
+    finally:
+        temp_path.unlink(missing_ok=True)
+
+
 class MockResponse:
     """Minimal httpx response stand-in for mock_httpx_get."""
 

@@ -311,11 +311,29 @@ class FetchUrlArgs(BaseModel):
 
 class ReadFileArgs(BaseModel):
     path: str | None = Field(
-        None, description="Relative path in sandbox (e.g., 'notes/todo.txt', 'data.csv')")
+        None,
+        description=(
+            "Sandbox relative path. For uploaded files this is the file's exact "
+            "name, e.g. 'subscribers_active.csv' (the frame name without the "
+            "'file_' prefix). Stale or partial names also resolve to the "
+            "matching uploaded file."
+        ),
+    )
     frame_id: int | None = Field(
-        None, description="Frame ID of uploaded file to read")
+        None,
+        description=(
+            "Frame ID of the uploaded file to read. Prefer frame_name — it is "
+            "shown in memory context, e.g. file_subscribers_active.csv."
+        ),
+    )
     frame_name: str | None = Field(
-        None, description="Frame name of uploaded file to read")
+        None,
+        description=(
+            "Frame name of the uploaded file, e.g. 'file_subscribers_active.csv'. "
+            "Stale frame names quoted in old conversations resolve to the "
+            "current file."
+        ),
+    )
 
 
 class ListFilesArgs(BaseModel):

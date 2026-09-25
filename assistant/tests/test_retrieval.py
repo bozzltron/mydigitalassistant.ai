@@ -119,6 +119,58 @@ def test_format_memory_context_truncates_many_frames():
     assert count == 5
 
 
+def test_format_memory_context_file_frame_points_to_read_file():
+    """File frames must not leak truncated content into the prompt.
+
+    Before the fix the 200-char file_content_preview slot was injected as a
+    regular slot, and the model answered from that snippet instead of reading
+    the real file. File frames now surface metadata plus an explicit
+    read_file reference, never the content snapshot.
+    """
+    frame = Frame(
+        id=1,
+        name="file_subscribers_active.csv",
+        type="entity",
+        confidence=0.8,
+        source_type="file_upload",
+    )
+    slots = [
+        Slot(
+            id=1, frame_id=1, key="file_name",
+            value="subscribers_active.csv", confidence=0.9,
+        ),
+        Slot(
+            id=2, frame_id=1, key="file_safe_name",
+            value="subscribers_active.csv", confidence=0.9,
+        ),
+        Slot(
+            id=3, frame_id=1, key="file_content_preview",
+            value="email,status\na@b.com,active", confidence=0.9,
+        ),
+        Slot(
+            id=4, frame_id=1, key="file_size", value="45545", confidence=0.9,
+        ),
+    ]
+    rf = RetrievedFrame(
+        frame=frame,
+        slots=slots,
+        associations=[],
+        relevance=0.85,
+        source="direct_match",
+    )
+    ctx = MemoryContext(
+        query="subscribers", retrieved_frames=[rf], recent_episodes=[], formatted=""
+    )
+    formatted = format_memory_context(ctx)
+
+    assert "file_content_preview" not in formatted            # hint slot hidden
+    assert "email,status" not in formatted                    # truncated preview not leaked
+    assert "subscribers_active.csv" in formatted              # file_name still shown
+    assert "file_size = 45545" in formatted
+    assert 'read_file(frame_name="file_subscribers_active.csv")' in formatted
+    assert 'read_file(path="subscribers_active.csv")' in formatted
+
+
 async def test_retrieve_with_no_frames(store):
     """Empty memory should return context with no frames."""
     mock_llm = AsyncMock()

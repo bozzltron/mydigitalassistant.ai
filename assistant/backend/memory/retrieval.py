@@ -12,6 +12,13 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Frame source types whose full content lives on disk (read via read_file)
+# rather than in slots: user uploads and tool-created sandbox files.
+FILE_FRAME_SOURCE_TYPES = ("file_upload", "file_create")
+
+# Content slots on file frames are truncated hints, not the file itself.
+FILE_CONTENT_HINT_SLOTS = ("file_content", "file_content_preview")
+
 
 @dataclass
 class RetrievedFrame:
@@ -85,7 +92,18 @@ def format_memory_context(context: "MemoryContext") -> str:
             lines.append(
                 f"\n### {rf.frame.name} ({rf.frame.type}) [relevance: {rf.relevance:.2f}]"
             )
+            is_file_frame = rf.frame.source_type in FILE_FRAME_SOURCE_TYPES
+            file_safe_name = ""
             for slot in rf.slots:
+                if is_file_frame:
+                    # Content snapshots are truncated on-disk hints. Full
+                    # content lives in the sandbox and is read via read_file —
+                    # never prefill it, or the model answers from a snippet.
+                    if slot.key in FILE_CONTENT_HINT_SLOTS:
+                        continue
+                    if slot.key == "file_safe_name":
+                        file_safe_name = slot.value or ""
+                        continue  # surfaced via the read pointer below
                 source_note = ""
                 if slot.source_url:
                     if "//" in slot.source_url:
@@ -100,6 +118,13 @@ def format_memory_context(context: "MemoryContext") -> str:
                     f"(conf: {slot.confidence:.2f}{source_note})"
                 )
                 lines.append(slot_line)
+            if is_file_frame:
+                if not file_safe_name and rf.frame.name.startswith("file_"):
+                    file_safe_name = rf.frame.name[len("file_"):]
+                pointer = f'  read full contents: read_file(frame_name="{rf.frame.name}")'
+                if file_safe_name:
+                    pointer += f' or read_file(path="{file_safe_name}")'
+                lines.append(pointer)
             if rf.associations:
                 assoc_str = ", ".join(
                     f"{a.relation_type}\u2192frame:{a.to_frame_id}" for a in rf.associations[:3]

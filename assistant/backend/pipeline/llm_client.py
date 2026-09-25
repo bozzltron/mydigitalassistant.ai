@@ -686,6 +686,10 @@ Tool chaining examples:
 - User: "delete old notes" → glob("notes/*.txt") → delete_file() for each
 - User: "what do you know about project X?" → recall(query="project X")
 
+Uploaded files: when memory mentions an uploaded file, read its actual contents
+with read_file — pass the exact file name as `path`, or the `file_<name>` frame
+as `frame_name`. A preview shown in memory is a hint, never the full contents.
+
 Respond conversationally as a helpful assistant.""")
     else:
         parts.append("""**Guidelines:**
@@ -715,6 +719,10 @@ Tool chaining examples:
     2. edit_file(path="notes/todo.txt", old_text="...", new_text="...")
 - User: "delete old notes" → glob("notes/*.txt") → delete_file() for each
 - User: "what do you know about project X?" → recall(query="project X")
+
+Uploaded files: when memory mentions an uploaded file, read its actual contents
+with read_file — pass the exact file name as `path`, or the `file_<name>` frame
+as `frame_name`. A preview shown in memory is a hint, never the full contents.
 
 Respond conversationally and helpfully.""")
 

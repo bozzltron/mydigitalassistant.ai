@@ -5,12 +5,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 from collections.abc import Callable
+from pathlib import Path
 
 from pydantic import ValidationError
 
 from assistant.backend.config import settings
+from assistant.backend.memory.models import Frame
 from assistant.backend.memory.store import MemoryStore
 
 logger = logging.getLogger(__name__)
@@ -487,42 +490,176 @@ async def execute_fetch_url(args: dict, user_id: str) -> ToolResult:
         return ToolResult(success=False, error=str(e))
 
 
-async def execute_read_file(args: dict, user_id: str, session_id: str) -> ToolResult:
-    """Read file by sandbox path or uploaded file by frame_id/frame_name."""
-    try:
-        from pathlib import Path
+# ---------------------------------------------------------------------------
+# File read resolution
+# ---------------------------------------------------------------------------
 
+# Frame source types whose full content lives on disk (read via read_file)
+# rather than in slots: user uploads and tool-created sandbox files.
+FILE_FRAME_SOURCE_TYPES = ("file_upload", "file_create")
+
+# Content slots on file frames are truncated hints, not the file itself.
+FILE_CONTENT_HINT_SLOTS = ("file_content", "file_content_preview")
+
+
+def _strip_frame_prefix(name: str) -> str:
+    """Strip a leading ``file_`` frame-name prefix from a file reference.
+
+    Uploaded files are stored on disk under their exact name (e.g.
+    ``subscribers_active.csv``) while their memory frame is named
+    ``file_subscribers_active.csv``. The model frequently quotes the frame
+    name as a read path, so we map between the two.
+    """
+    base = Path(name).name
+    return base[len("file_"):] if base.startswith("file_") else base
+
+
+def _name_tokens(name: str) -> set[str]:
+    """Significant (non-numeric) filename tokens, for fuzzy matching."""
+    return {t for t in re.split(r"[^A-Za-z0-9]+", name) if t and not t.isdigit()}
+
+
+async def _file_safe_name_for_frame(store: MemoryStore, frame: Frame) -> str:
+    """On-disk sandbox name of a file frame (its ``file_safe_name`` slot)."""
+    slots = await store.get_slots_for_frame(frame.id)
+    return next((s.value for s in slots if s.key == "file_safe_name"), "")
+
+
+def _coerce_user_id(user_id: str | None) -> int | None:
+    """Parse a user id without raising on empty/garbage values."""
+    try:
+        return int(user_id) if user_id not in (None, "") else None
+    except (TypeError, ValueError):
+        return None
+
+
+async def _user_file_frames(store: MemoryStore, user_id: str) -> list[Frame]:
+    """File frames visible to a user (uploads + tool-created files).
+
+    Returns an empty list when the user is unknown; fuzzy resolution must not
+    guess between users' files.
+    """
+    owner = _coerce_user_id(user_id)
+    if owner is None:
+        return []
+    frames = await store.list_frames(owner_user_id=owner)
+    return [
+        f
+        for f in frames
+        if f.source_type in FILE_FRAME_SOURCE_TYPES and f.priority > 0
+    ]
+
+
+async def _resolve_file_frame_fuzzy(
+    store: MemoryStore, user_id: str, reference: str
+) -> Frame | None:
+    """Match a possibly stale file reference to the current file frame.
+
+    Past conversations quote file names that no longer exist verbatim
+    (renames, name-preservation changes). We still resolve them when the
+    reference is unambiguous: same extension plus either exact/suffix name
+    containment or a >=2 significant-token overlap. Only a *unique* best
+    match is returned so we never guess between two similar files.
+    """
+    probe = _strip_frame_prefix(reference)
+    probe_tokens = _name_tokens(probe)
+    probe_ext = Path(reference).suffix.lower()
+
+    best_score = -1
+    best: Frame | None = None
+    best_count = 0
+    for frame in await _user_file_frames(store, user_id):
+        slots = {s.key: s.value for s in await store.get_slots_for_frame(frame.id)}
+        cand_name = slots.get("file_name") or slots.get("file_safe_name") or ""
+        cand_ext = Path(cand_name).suffix.lower()
+        if cand_ext and probe_ext and cand_ext != probe_ext:
+            continue
+        if (
+            cand_name
+            and (probe == cand_name or probe.endswith(cand_name) or cand_name.endswith(probe))
+        ):
+            score = 3
+        else:
+            shared = _name_tokens(cand_name) & probe_tokens
+            if len(shared) < 2:
+                continue
+            score = 2
+        if score > best_score:
+            best_score, best, best_count = score, frame, 1
+        elif score == best_score:
+            best_count += 1
+    return best if best is not None and best_count == 1 else None
+
+
+async def _available_file_names(store: MemoryStore, user_id: str) -> str:
+    """Comma-separated list of the user's file names, for error messages."""
+    names = set()
+    for frame in await _user_file_frames(store, user_id):
+        slots = {s.key: s.value for s in await store.get_slots_for_frame(frame.id)}
+        if slots.get("file_name"):
+            names.add(slots["file_name"])
+    return ", ".join(sorted(names)) or "(none)"
+
+
+async def execute_read_file(args: dict, user_id: str, session_id: str) -> ToolResult:
+    """Read a sandbox file or an uploaded file.
+
+    ``path`` resolution order:
+      1. literal sandbox path (``"subscribers_active.csv"``)
+      2. the frame name of an uploaded file (``"file_subscribers_active.csv"``)
+      3. the path with a leading ``file_`` prefix stripped
+      4. a unique fuzzy match against the user's uploaded files, so names
+         quoted in old conversations still resolve to the current file
+    """
+    try:
         from assistant.backend.pipeline.filesystem import (
             PathTraversalError,
             SizeLimitError,
             read_sandbox_file,
         )
 
-        # Check if reading uploaded file by frame_id or frame_name
         frame_id = args.get("frame_id")
         frame_name = args.get("frame_name")
         path = args.get("path", "")
 
+        # ---- Read an uploaded file by frame_id / frame_name ----------------
         if frame_id is not None or frame_name is not None:
             if _store is None:
                 return ToolResult(success=False, error="MemoryStore not initialized")
 
+            frame: Frame | None = None
             if frame_id is not None:
                 frame = await _store.get_frame(frame_id)
-            else:
+            elif frame_name:
                 frame = await _store.get_frame_by_name(frame_name)
 
             if frame is None:
-                return ToolResult(success=False, error=f"Frame not found: {frame_id or frame_name}")
+                # Stale name from an old conversation -> current frame.
+                frame = await _resolve_file_frame_fuzzy(_store, user_id, frame_name or "")
+
+            if frame is None:
+                available = await _available_file_names(_store, user_id)
+                return ToolResult(
+                    success=False,
+                    error=(
+                        f"Frame not found: {frame_id or frame_name}. "
+                        f"Available uploaded files: {available}. "
+                        "Use list_files() to list current files."
+                    ),
+                )
 
             # Check ownership
-            if frame.owner_user_id is not None and frame.owner_user_id != int(user_id):
+            owner = _coerce_user_id(user_id)
+            if (
+                frame.owner_user_id is not None
+                and owner is not None
+                and frame.owner_user_id != owner
+            ):
                 return ToolResult(
                     success=False,
                     error="Access denied: file belongs to another user"
                 )
 
-            # Get file content from frame slots
             slots = await _store.get_slots_for_frame(frame.id)
             slots_dict = {slot.key: slot.value for slot in slots}
 
@@ -531,18 +668,14 @@ async def execute_read_file(args: dict, user_id: str, session_id: str) -> ToolRe
             file_safe_name = slots_dict.get("file_safe_name", "")
 
             content = ""
-
-            # First, try to read full content from sandbox file (if we have a safe_name)
             if file_safe_name:
                 try:
-                    from assistant.backend.pipeline.filesystem import read_sandbox_file
                     content = read_sandbox_file(file_safe_name)
                 except FileNotFoundError:
-                    pass  # File not in sandbox, try memory slots
+                    pass  # Not on disk — fall back to memory slots.
                 except Exception as e:
                     logger.warning(f"Failed to read sandbox file {file_safe_name}: {e}")
 
-            # If no sandbox content, try memory slots
             if not content:
                 content = (
                     slots_dict.get("file_content")
@@ -562,28 +695,98 @@ async def execute_read_file(args: dict, user_id: str, session_id: str) -> ToolRe
                 },
             )
 
-        # Otherwise, read from sandbox by path
+        # ---- Read from the sandbox by path --------------------------------
         if not path:
             return ToolResult(
                 success=False,
                 error="path is required (or provide frame_id/frame_name)"
             )
 
-        content = read_sandbox_file(path)
+        requested = path
+        content: str | None = None
+        resolved_path = ""
+        resolved_frame: Frame | None = None
 
-        # Also try to find and update memory frame preview
-        if _store is not None:
-            frame_name = f"file_{Path(path).name}"
-            frame = await _store.get_frame_by_name(frame_name)
-            if frame:
+        # 1. literal sandbox path
+        try:
+            content = read_sandbox_file(path)
+            resolved_path = path
+        except FileNotFoundError:
+            pass  # Try resolving it as an uploaded-file reference.
+
+        # 2. frame name given as path, e.g. "file_subscribers_active.csv"
+        if content is None and _store is not None:
+            base = Path(path).name
+            candidate = path if base.startswith("file_") else f"file_{base}"
+            try:
+                frame = await _store.get_frame_by_name(candidate)
+                if frame is not None:
+                    safe = await _file_safe_name_for_frame(_store, frame)
+                    if safe:
+                        try:
+                            content = read_sandbox_file(safe)
+                            resolved_path = safe
+                            resolved_frame = frame
+                        except FileNotFoundError:
+                            pass
+            except Exception as e:  # best-effort: DB may be uninitialized
+                logger.debug(f"read_file frame-name resolution unavailable: {e}")
+
+        # 3. "file_<name>" -> "<name>" (historical disk naming)
+        if content is None:
+            stripped = _strip_frame_prefix(path)
+            if stripped != path:
+                try:
+                    content = read_sandbox_file(stripped)
+                    resolved_path = stripped
+                except FileNotFoundError:
+                    pass
+
+        # 4. stale/partial name -> unique fuzzy match against uploaded files
+        if content is None and _store is not None:
+            try:
+                frame = await _resolve_file_frame_fuzzy(_store, user_id, path)
+                if frame is not None:
+                    safe = await _file_safe_name_for_frame(_store, frame)
+                    if safe:
+                        try:
+                            content = read_sandbox_file(safe)
+                            resolved_path = safe
+                            resolved_frame = frame
+                        except FileNotFoundError:
+                            pass
+            except Exception as e:  # best-effort: DB may be uninitialized
+                logger.debug(f"read_file fuzzy resolution unavailable: {e}")
+
+        if content is None:
+            error = f"File not found: {requested!r}"
+            if _store is not None:
+                try:
+                    available = await _available_file_names(_store, user_id)
+                    error += (
+                        f". Not a sandbox path and no unique uploaded-file match. "
+                        f"Available files: {available}. "
+                        "Use list_files() to list current files."
+                    )
+                except Exception:  # best-effort: DB may be uninitialized
+                    pass
+            return ToolResult(success=False, error=error)
+
+        data: dict = {"path": resolved_path, "content": content, "size": len(content)}
+        if resolved_frame is not None:
+            data["frame_id"] = resolved_frame.id
+            data["frame_name"] = resolved_frame.name
+            if _store is not None:
+                # Refresh the content hint with the freshly read content.
                 await _store.upsert_slot(
-                    frame.id, "file_content_preview", content[:200], source_type="file_read"
+                    resolved_frame.id,
+                    "file_content_preview",
+                    content[:200],
+                    source_type="file_read",
                 )
-
-        return ToolResult(
-            success=True,
-            data={"path": path, "content": content, "size": len(content)},
-        )
+        elif resolved_path != requested:
+            data["resolved_from"] = requested
+        return ToolResult(success=True, data=data)
     except PathTraversalError as e:
         return ToolResult(success=False, error=str(e))
     except SizeLimitError as e:
