@@ -1936,8 +1936,11 @@ async def upload_file_to_memory(
                 source_reliability=0.8,
             )
         
-        # Create row frames
-        for i, row in enumerate(extraction_result.row_data):
+        # Create row frames (capped: past CSV_MAX_ROW_FRAMES the file frame
+        # keeps row_count/columns metadata only — row data lives on disk and is
+        # read via read_file, so memory never explodes per-row).
+        row_frame_cap = settings.csv_max_row_frames
+        for i, row in enumerate(extraction_result.row_data[:row_frame_cap]):
             row_frame_name = f"file_{safe_filename}_row_{i+1}"
             row_frame = await store.create_frame(
                 row_frame_name,
@@ -1965,6 +1968,13 @@ async def upload_file_to_memory(
             
             # Link parent -> row
             await store.create_association(frame.id, row_frame.id, "part_of")
+
+        if row_count > row_frame_cap:
+            logger.info(
+                "CSV %s has %d rows; created row frames for first %d only "
+                "(CSV_MAX_ROW_FRAMES=%d)",
+                filename, row_count, row_frame_cap, row_frame_cap,
+            )
     else:
         row_count = 0
     
@@ -2259,8 +2269,10 @@ async def delete_file(
         row = await cursor.fetchone()
         file_safe_name = row[0] if row else None
 
-    # Soft-delete the frame (set priority to 0)
-    await store.forget_frame(frame_id)
+    # Hard-delete the frame and its CSV row frames — soft-delete (forget_frame)
+    # leaves them visible in list_frames()/the brain graph, dangling after the
+    # file is gone. Deleting a file must clean up its memory.
+    await store.prune_file_frame(frame_id)
 
     # Try to remove the physical file
     from pathlib import Path

@@ -245,8 +245,12 @@ class TestFileViewerBackend:
 
     @pytest.mark.asyncio
     async def test_delete_file_cascades(self, client, store, tmp_path):
-        """DELETE /files/{frame_id} cascades: embeddings, slot_history,
-        associations, slots, frame, physical file."""
+        """DELETE /files/{frame_id} removes the frame, its memory, and the file.
+
+        Regression: file delete used to soft-delete (priority 0) while leaving
+        the frame in list_frames()/the brain graph, dangling after the physical
+        file was gone.
+        """
         test_file = tmp_path / "to_delete.txt"
         test_file.write_text("Delete me.")
 
@@ -270,14 +274,24 @@ class TestFileViewerBackend:
         del_resp = client.delete(f"/files/{frame_id}")
         assert del_resp.status_code == 200
 
-        # Verify frame is soft-deleted (priority=0)
-        frame_after = await store.get_frame(frame_id)
-        assert frame_after is not None, "frame should still exist but be soft-deleted"
-        assert frame_after.priority == 0, "frame should have priority 0"
+        # Frame is permanently gone — not soft-deleted to priority 0
+        assert await store.get_frame(frame_id) is None, "frame should be removed"
 
-        # Verify slots still exist (soft delete doesn't remove slots)
-        slots_after = await store.get_slots_for_frame(frame_id)
-        assert len(slots_after) > 0, "slots should still exist"
+        # All its slots cascade away
+        async with store._connect() as db:
+            slot_count = (
+                await db.execute_fetchall(
+                    "SELECT COUNT(*) FROM slots WHERE frame_id = ?", (frame_id,)
+                )
+            )[0][0]
+            assert slot_count == 0, "slots should be cascaded away"
+
+        # Physical file gone — the upload wrote upload_<ts>_to_delete.txt into
+        # /app/data and the delete must have unlinked it.
+        from pathlib import Path
+        assert not list(Path("/app/data").glob("*to_delete.txt")), (
+            "physical file should be removed"
+        )
 
     @pytest.mark.asyncio
     async def test_delete_csv_removes_row_frames(self, client, store, tmp_path):
@@ -298,22 +312,34 @@ class TestFileViewerBackend:
         assert resp.status_code == 200
         parent_frame_id = resp.json()["parent_frame_id"]
         row_frame_ids = resp.json()["row_frame_ids"]
+        assert len(row_frame_ids) == 2
 
         # Delete parent frame
         del_resp = client.delete(f"/files/{parent_frame_id}")
         assert del_resp.status_code == 200
 
-        # Verify parent is soft-deleted (priority=0)
-        parent_after = await store.get_frame(parent_frame_id)
-        assert parent_after is not None
-        assert parent_after.priority == 0
+        # Parent is permanently gone
+        assert await store.get_frame(parent_frame_id) is None, (
+            "parent frame should be removed"
+        )
 
-        # Verify row frames still exist (endpoint only deletes parent)
+        # Regression: row frames used to survive the delete, so the whole CSV
+        # cluster kept polluting memory after the file was gone.
         for row_frame_id in row_frame_ids:
-            row_after = await store.get_frame(row_frame_id)
-            assert row_after is not None, f"row frame {row_frame_id} should still exist"
+            assert await store.get_frame(row_frame_id) is None, (
+                f"row frame {row_frame_id} should be removed with the file"
+            )
 
-        # Verify part_of associations remain (they're not cascaded in soft delete)
+        # part_of associations cascade away with the frames
+        async with store._connect() as db:
+            assoc_count = (
+                await db.execute_fetchall(
+                    "SELECT COUNT(*) FROM associations "
+                    "WHERE from_frame_id = ? OR to_frame_id = ?",
+                    (parent_frame_id, parent_frame_id),
+                )
+            )[0][0]
+            assert assoc_count == 0, "part_of associations should be removed"
 
 
 class TestFileSandboxTools:
@@ -441,7 +467,7 @@ class TestFileSandboxTools:
 
     @pytest.mark.asyncio
     async def test_delete_file_removes_file_and_frame(self, store, stub_llm):
-        """delete_file removes physical file and soft-deletes memory frame."""
+        """delete_file removes physical file and prunes the memory frame."""
         from pathlib import Path
 
         from assistant.backend.pipeline.tool_executor import execute_delete_file, execute_write_file
@@ -454,10 +480,11 @@ class TestFileSandboxTools:
         # Physical file gone
         assert not Path("/app/data/to_delete.txt").exists()
 
-        # Frame soft-deleted
-        frame = await store.get_frame_by_name("file_to_delete.txt")
-        assert frame is not None
-        assert frame.priority == 0
+        # Regression: frame used to be soft-deleted (priority 0) and stayed
+        # visible in list_frames()/the brain graph after the file was gone.
+        assert await store.get_frame_by_name("file_to_delete.txt") is None, (
+            "frame should be removed with the file"
+        )
 
     @pytest.mark.asyncio
     async def test_glob_finds_files_by_pattern(self, store, stub_llm):
@@ -527,8 +554,31 @@ class TestFileSandboxTools:
         assert len(part_of) == 2
 
     @pytest.mark.asyncio
+    async def test_large_csv_write_keeps_metadata_only(self, store, stub_llm, monkeypatch):
+        """write_file CSV past CSV_MAX_ROW_FRAMES stores metadata only — no row frames."""
+        from assistant.backend.pipeline.tool_executor import execute_write_file
+
+        monkeypatch.setattr(settings, "csv_max_row_frames", 2)
+        csv_content = "name,email\n" + "".join(f"u{i},u{i}@x.com\n" for i in range(4))
+        result = await execute_write_file(
+            {"path": "big.csv", "content": csv_content}, "1", "test"
+        )
+        assert result.success
+
+        frame = await store.get_frame_by_name("file_big.csv")
+        assert frame is not None
+        row_count = await store.get_slot(frame.id, "row_count")
+        columns = await store.get_slot(frame.id, "columns")
+        assert row_count is not None and row_count.value == "4"
+        assert columns is not None and "email" in columns.value
+
+        # No per-row part_of frames past the cap — row data stays on disk.
+        associations = await store.get_all_associations_for_frame(frame.id)
+        assert not [a for a in associations if a.relation_type == "part_of"]
+
+    @pytest.mark.asyncio
     async def test_csv_delete_cascades_to_row_frames(self, store, stub_llm):
-        """delete_file on CSV parent also soft-deletes row frames."""
+        """delete_file on CSV parent also prunes its per-row frames."""
         from assistant.backend.pipeline.tool_executor import execute_delete_file, execute_write_file
 
         csv_content = "name,email\nAlice,a@b.com\nBob,b@c.com"
@@ -537,15 +587,20 @@ class TestFileSandboxTools:
         frame = await store.get_frame_by_name("file_users.csv")
         associations = await store.get_all_associations_for_frame(frame.id)
         row_frame_ids = [a.to_frame_id for a in associations if a.relation_type == "part_of"]
+        assert len(row_frame_ids) == 2
 
         # Delete parent
         await execute_delete_file({"path": "users.csv"}, "1", "test")
 
-        # Row frames should be soft-deleted
+        # Regression: row frames used to be soft-deleted (priority 0) and kept
+        # the entire CSV cluster alive in memory after the file was gone.
+        assert await store.get_frame_by_name("file_users.csv") is None, (
+            "parent frame should be removed"
+        )
         for row_id in row_frame_ids:
-            row_frame = await store.get_frame(row_id)
-            assert row_frame is not None
-            assert row_frame.priority == 0
+            assert await store.get_frame(row_id) is None, (
+                f"row frame {row_id} should be removed with the file"
+            )
 
     @pytest.mark.asyncio
     async def test_list_files_shows_sandbox_files(self, store, stub_llm):

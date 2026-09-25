@@ -10,6 +10,7 @@ from collections.abc import Callable
 
 from pydantic import ValidationError
 
+from assistant.backend.config import settings
 from assistant.backend.memory.store import MemoryStore
 
 logger = logging.getLogger(__name__)
@@ -651,28 +652,39 @@ async def execute_write_file(args: dict, user_id: str, session_id: str) -> ToolR
                 frame.id, "file_content_preview", content[:200], source_type="file_create"
             )
 
-            # CSV special handling: create row frames
+            # CSV special handling: create row frames (capped — past
+            # CSV_MAX_ROW_FRAMES only row_count/columns metadata is stored;
+            # row data stays on disk for read_file, so memory cannot explode).
             if written_path.suffix.lower() == ".csv":
                 try:
                     reader = csv.reader(content.splitlines())
                     rows = list(reader)
                     if rows:
                         headers = rows[0]
-                        for i, row in enumerate(rows[1:], 1):
-                            row_frame = await _store.create_frame(
-                                f"file_{written_path.name}_row_{i}", "record",
-                                source_type="csv_row", owner_user_id=user_id_int
-                            )
-                            for col, val in zip(headers, row, strict=True):
-                                slot_key = re.sub(r'[^a-zA-Z0-9_]', '_', col.lower().strip())
-                                if not slot_key:
-                                    slot_key = f"col_{i}"
-                                await _store.upsert_slot(
-                                    row_frame.id, slot_key, val, source_type="csv_row"
+                        row_count = len(rows) - 1
+                        row_frame_cap = settings.csv_max_row_frames
+                        if row_count <= row_frame_cap:
+                            for i, row in enumerate(rows[1:], 1):
+                                row_frame = await _store.create_frame(
+                                    f"file_{written_path.name}_row_{i}", "record",
+                                    source_type="csv_row", owner_user_id=user_id_int
                                 )
-                            await _store.create_association(frame.id, row_frame.id, "part_of")
+                                for col, val in zip(headers, row, strict=True):
+                                    slot_key = re.sub(r'[^a-zA-Z0-9_]', '_', col.lower().strip())
+                                    if not slot_key:
+                                        slot_key = f"col_{i}"
+                                    await _store.upsert_slot(
+                                        row_frame.id, slot_key, val, source_type="csv_row"
+                                    )
+                                await _store.create_association(frame.id, row_frame.id, "part_of")
+                        else:
+                            logger.warning(
+                                "write_file %s has %d rows; storing metadata only "
+                                "(CSV_MAX_ROW_FRAMES=%d)",
+                                written_path.name, row_count, row_frame_cap,
+                            )
                         await _store.upsert_slot(
-                            frame.id, "row_count", str(len(rows) - 1), source_type="file_create"
+                            frame.id, "row_count", str(row_count), source_type="file_create"
                         )
                         await _store.upsert_slot(
                             frame.id, "columns", json.dumps(headers), source_type="file_create"
@@ -779,19 +791,14 @@ async def execute_delete_file(args: dict, user_id: str, session_id: str) -> Tool
 
         delete_sandbox_file(path)
 
-        # Soft-delete memory frame and any row frames
+        # Memory cleanup: deleting a file prunes its frame and any CSV row
+        # frames permanently — soft-delete (forget_frame) leaves them visible
+        # in the brain graph, dangling after the physical file is gone.
         if _store is not None:
             frame_name = f"file_{Path(path).name}"
             frame = await _store.get_frame_by_name(frame_name)
             if frame:
-                # Check for CSV row frames
-                row_count_slot = await _store.get_slot(frame.id, "row_count")
-                if row_count_slot and int(row_count_slot.value or "0") > 0:
-                    associations = await _store.get_all_associations_for_frame(frame.id)
-                    for assoc in associations:
-                        if assoc.relation_type == "part_of":
-                            await _store.forget_frame(assoc.to_frame_id)
-                await _store.forget_frame(frame.id)
+                await _store.prune_file_frame(frame.id)
 
         return ToolResult(success=True, data={"path": path})
     except PathTraversalError as e:

@@ -41,6 +41,13 @@ class Settings(BaseSettings):
     sandbox_max_read_size: int = 1_000_000       # 1MB max read
     sandbox_max_glob_results: int = 1000         # max glob results
 
+    # CSV uploads: cap per-row memory frames. Files with more rows than this
+    # keep only row_count/columns metadata on the file frame; row data stays on
+    # disk and is read via read_file. Prevents a large CSV from exploding into
+    # thousands of frames/slots (regression: a 698-row upload created 698 row
+    # frames + ~5.5k slots — ~60% of the brain — exempt from GC decay at 0.5).
+    csv_max_row_frames: int = 100
+
     # Context windows per call class (Phase 6 plan §4.4). Without these,
     # Ollama defaults to 32K context on large-RAM hosts and allocates a
     # proportionally huge KV cache on every request.

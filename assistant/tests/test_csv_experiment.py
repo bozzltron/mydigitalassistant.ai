@@ -268,6 +268,47 @@ class TestCSVStructuredMemory:
             assert quantity_slot is not None
             assert name_slot.value in ["Apple", "Carrot", "Steak"]
 
+    @pytest.mark.asyncio
+    async def test_large_csv_upload_keeps_metadata_only(
+        self, client, store, tmp_path, monkeypatch
+    ):
+        """Uploads past CSV_MAX_ROW_FRAMES store row_count/columns — NO row frames.
+
+        Regression: a 698-row subscribers upload exploded into 698 csv_row
+        frames (~5.5k slots, ~60% of the brain) that GC never decays (0.5).
+        Row data must stay on disk for read_file instead.
+        """
+        monkeypatch.setattr(settings, "csv_max_row_frames", 2)
+        big = tmp_path / "big.csv"
+        big.write_text(
+            "name,email\n" + "".join(f"user{i},u{i}@x.com\n" for i in range(5))
+        )
+
+        with open(big, "rb") as f:
+            resp = client.post(
+                "/files/upload",
+                files={"file": ("big.csv", f.read(), "text/csv")},
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["row_count"] == 5, "full row count is still tracked"
+        assert len(data["row_frame_ids"]) == settings.csv_max_row_frames, (
+            "row frames capped at CSV_MAX_ROW_FRAMES"
+        )
+
+        parent = await store.get_frame(data["parent_frame_id"])
+        assert parent is not None
+        columns = await store.get_slot(parent.id, "columns")
+        row_count = await store.get_slot(parent.id, "row_count")
+        assert columns is not None and "name" in columns.value and "email" in columns.value
+        assert row_count is not None and row_count.value == "5"
+
+        # Only the first `cap` rows became frames; the rest stayed on disk.
+        all_frames = await store.list_frames()
+        csv_rows = [f for f in all_frames if f.source_type == "csv_row"]
+        assert len(csv_rows) == settings.csv_max_row_frames
+
 
 class TestCSVPerformance:
     """Performance tests for large CSV handling."""
@@ -296,6 +337,11 @@ class TestCSVPerformance:
         assert resp.status_code == 200
         data = resp.json()
         assert data["row_count"] == 200, f"expected 200 rows, got {data.get('row_count')}"
+        # Past CSV_MAX_ROW_FRAMES (default 100) only the first 100 rows get
+        # per-row frames — the rest stays on disk, read via read_file.
+        assert len(data["row_frame_ids"]) == settings.csv_max_row_frames, (
+            "row frames must be capped at CSV_MAX_ROW_FRAMES"
+        )
         # Should complete in under 300 seconds for 200 rows in CI
         assert elapsed < 300, f"CSV upload took {elapsed:.1f}s, expected < 300s"
 

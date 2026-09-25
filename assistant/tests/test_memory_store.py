@@ -539,3 +539,82 @@ async def test_prune_frames_by_source_type_cascades(store: MemoryStore):
     assert await store.get_frame(control.id) is not None
     topic = await store.get_slot(control.id, "topic")
     assert topic is not None and topic.value == "csv"
+
+
+async def test_prune_frames_by_id_cascades_only_targeted_frames(store: MemoryStore):
+    """prune_frames([id]) removes exactly those frames + their attached rows."""
+    parent = await store.create_frame("file_data.csv", "entity", source_type="file_upload")
+    keep = await store.create_frame("file_data.csv_row_1", "record", source_type="csv_row")
+    drop = await store.create_frame("file_data.csv_row_2", "record", source_type="csv_row")
+    await store.create_association(parent.id, keep.id, "part_of", source_type="file_upload")
+    await store.create_association(parent.id, drop.id, "part_of", source_type="file_upload")
+    await store.upsert_slot(frame_id=drop.id, key="name", value="bot", source_type="csv_row")
+    await store.store_frame_embedding(drop.id, [0.4] * 768, "nomic-embed-text")
+
+    assert await store.prune_frames([]) == []
+    removed = await store.prune_frames([drop.id])
+
+    assert removed == [drop.id]
+    assert await store.get_frame(drop.id) is None
+    assert await store.get_frame(keep.id) is not None
+
+    # drop's slot + embedding cascaded away.
+    async with store._connect() as db:
+        slot_count = (
+            await db.execute_fetchall(
+                "SELECT COUNT(*) FROM slots WHERE frame_id = ?", (drop.id,)
+            )
+        )[0][0]
+        assert slot_count == 0
+        embed_count = (
+            await db.execute_fetchall(
+                "SELECT COUNT(*) FROM frame_embeddings WHERE frame_id = ?", (drop.id,)
+            )
+        )[0][0]
+        assert embed_count == 0
+
+    # keep's part_of edge survives; drop's edge is gone.
+    assocs = await store.get_all_associations_for_frame(parent.id)
+    assert {a.to_frame_id for a in assocs} == {keep.id}
+
+
+async def test_prune_file_frame_removes_rows_and_cascades(store: MemoryStore):
+    """prune_file_frame removes a file frame + its CSV row frames in one shot."""
+    parent = await store.create_frame("file_data.csv", "entity", source_type="file_upload")
+    row1 = await store.create_frame("file_data.csv_row_1", "record", source_type="csv_row")
+    row2 = await store.create_frame("file_data.csv_row_2", "record", source_type="csv_row")
+    other = await store.create_frame("unrelated", "entity", source_type="chat")
+    await store.create_association(parent.id, row1.id, "part_of", source_type="file_upload")
+    await store.create_association(parent.id, row2.id, "part_of", source_type="file_upload")
+    await store.create_association(other.id, parent.id, "mentions", source_type="chat")
+    await store.upsert_slot(frame_id=row1.id, key="name", value="alice", source_type="csv_row")
+    await store.upsert_slot(frame_id=other.id, key="topic", value="unrelated", source_type="chat")
+
+    removed = await store.prune_file_frame(parent.id)
+
+    assert removed == 3
+    assert await store.get_frame(parent.id) is None
+    assert await store.get_frame(row1.id) is None
+    assert await store.get_frame(row2.id) is None
+
+    # Slots and associations cascade away with the pruned frames.
+    async with store._connect() as db:
+        slot_count = (
+            await db.execute_fetchall(
+                "SELECT COUNT(*) FROM slots WHERE frame_id = ?", (row1.id,)
+            )
+        )[0][0]
+        assert slot_count == 0
+        assoc_count = (
+            await db.execute_fetchall(
+                "SELECT COUNT(*) FROM associations "
+                "WHERE from_frame_id = ? OR to_frame_id = ?",
+                (parent.id, parent.id),
+            )
+        )[0][0]
+        assert assoc_count == 0
+
+    # Unrelated memory is untouched.
+    assert await store.get_frame(other.id) is not None
+    topic = await store.get_slot(other.id, "topic")
+    assert topic is not None and topic.value == "unrelated"

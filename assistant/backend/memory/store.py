@@ -425,8 +425,8 @@ class MemoryStore:
         """Soft-delete a slot by setting priority to 0. Does not affect essential slots."""
         return await self.set_slot_priority(slot_id, forget_priority())
 
-    async def prune_frames_by_source_type(self, source_type: str) -> list[int]:
-        """Hard-delete every frame with the given source_type and cascade attached data.
+    async def prune_frames(self, frame_ids: list[int]) -> list[int]:
+        """Hard-delete specific frames (by id) and cascade everything attached.
 
         This removes frames permanently — unlike ``forget_frame`` (soft-delete to
         priority 0), which leaves the row alive in ``list_frames()`` and the brain
@@ -435,13 +435,29 @@ class MemoryStore:
         CASCADE foreign keys in the schema; alerts that reference a removed frame
         keep their row with ``source_frame_id`` set to NULL (schema FK policy).
 
-        Use for wholesale cleanup of noisy frame categories — e.g. the per-row
-        ``csv_row`` frames created for every row of an uploaded CSV (one frame per
-        row, ~8 slots each), which otherwise sit at priority 0.5 and are exempt
-        from GC decay. The containing file frame and the CSV on disk are
-        unaffected, so row-level questions still work via ``read_file``.
+        Use for targeted removal of dangling or noisy frames (e.g. a file frame
+        whose physical file was deleted), or wholesale via
+        ``prune_frames_by_source_type`` for a whole category.
 
-        Returns the ids of the removed frames.
+        Returns the ids of the requested frames (they are removed regardless of
+        whether the ids existed).
+        """
+        if not frame_ids:
+            return []
+        async with self._connect() as db:
+            placeholders = ",".join("?" * len(frame_ids))
+            await db.execute(
+                f"DELETE FROM frames WHERE id IN ({placeholders})",
+                list(frame_ids),
+            )
+            await db.commit()
+            return list(frame_ids)
+
+    async def prune_frames_by_source_type(self, source_type: str) -> list[int]:
+        """Hard-delete every frame with the given source_type and cascade attached data.
+
+        Same semantics as ``prune_frames`` but selects the frame ids to remove by
+        ``source_type``. Returns the ids of the removed frames.
         """
         async with self._connect() as db:
             rows = await db.execute_fetchall(
@@ -449,14 +465,31 @@ class MemoryStore:
                 (source_type,),
             )
             ids = [row[0] for row in rows]
-            if ids:
-                placeholders = ",".join("?" * len(ids))
-                await db.execute(
-                    f"DELETE FROM frames WHERE id IN ({placeholders})",
-                    ids,
-                )
-                await db.commit()
-            return ids
+        return await self.prune_frames(ids)
+
+    async def prune_file_frame(self, frame_id: int) -> int:
+        """Hard-delete a file frame together with its CSV row frames.
+
+        Deleting a file must clean its memory cluster, not just tombstone it:
+        ``forget_frame`` sets priority 0 but the frame and its ``part_of`` row
+        frames stay alive in ``list_frames()`` and the brain graph, pointing at a
+        file that no longer exists. This prunes the frame and all its ``part_of``
+        children (the per-row CSV frames) via the same FK-cascade path as
+        ``prune_frames``. Returns the number of frames pruned (the file frame
+        plus any row frames; like ``prune_frames`` the ids are pruned regardless
+        of whether they still existed).
+        """
+        async with self._connect() as db:
+            rows = await db.execute_fetchall(
+                "SELECT to_frame_id FROM associations "
+                "WHERE from_frame_id = ? AND relation_type = 'part_of'",
+                (frame_id,),
+            )
+            ids = [frame_id] + [row[0] for row in rows]
+        if not ids:
+            return 0
+        await self.prune_frames(ids)
+        return len(ids)
 
     # Embeddings
     async def store_frame_embedding(
