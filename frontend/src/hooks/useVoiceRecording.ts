@@ -400,7 +400,10 @@ export function useVoiceRecording({
 
   async function sendAudioForTranscription(blob: Blob) {
     console.log('[voice] sendAudioForTranscription blob:', blob.size, 'mime:', blob.type, 'voiceMode:', getIsVoiceMode(), 'dictation:', getIsDictationMode())
-    if (!getIsVoiceMode() && !getIsDictationMode()) return
+    // Capture voice mode state BEFORE startProcessing() changes it to 'processing'
+    const wasVoiceMode = getIsVoiceMode()
+    const wasDictationMode = getIsDictationMode()
+    if (!wasVoiceMode && !wasDictationMode) return
     startProcessing()
     playEarcon('stop')
 
@@ -428,7 +431,7 @@ export function useVoiceRecording({
         return
       }
 
-      if (getIsDictationMode()) {
+      if (wasDictationMode) {
         endDictation()
         onTranscription(text)
         return
@@ -439,12 +442,12 @@ export function useVoiceRecording({
         return
       }
 
-      if (getIsVoiceMode()) {
+      if (wasVoiceMode) {
         onTranscription(text)
       }
     } catch (err) {
       console.error('Transcription error:', err)
-      if (getIsDictationMode()) {
+      if (wasDictationMode) {
         endDictation()
         console.error('Transcription failed')
       } else {

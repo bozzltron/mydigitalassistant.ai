@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render } from '@solidjs/testing-library'
+import { render, waitFor } from '@solidjs/testing-library'
 import { createSignal } from 'solid-js'
 import { useVoiceRecording } from './useVoiceRecording'
 import { setVoice, setTtsSpeaking } from '../state/voice'
@@ -300,5 +300,124 @@ describe('useVoiceRecording hook', () => {
       expect(mockMediaRecorder.stop).toHaveBeenCalled()
       expect(mockAudioContext.close).toHaveBeenCalled()
     })
+  })
+
+  describe('Transcription callback', () => {
+    it('calls onTranscription after successful transcription in voice mode (regression test for bug where startProcessing() changed voice status before callback)', async () => {
+      let hookRef: ReturnType<typeof useVoiceRecording> | null = null
+      const onTranscription = vi.fn()
+      
+      render(() => (
+        <TestComponent
+          isVoiceMode={() => true}
+          isDictationMode={() => false}
+          onTranscription={onTranscription}
+          onReady={(h) => { hookRef = h }}
+        />
+      ))
+      
+      // Wait for auto-start
+      await vi.advanceTimersByTimeAsync(150)
+      expect(hookRef?.isRecording()).toBe(true)
+      expect(mockMediaRecorder.start).toHaveBeenCalled()
+      
+      // Simulate loud audio to pass the audio level checks
+      mockAnalyser.getByteFrequencyData.mockImplementation((arr: Uint8Array) => {
+        arr.fill(200) // Loud audio
+      })
+      
+      // Advance time to pass MIN_RECORDING_MS (500ms)
+      await vi.advanceTimersByTimeAsync(600)
+      
+      // Simulate audio data being recorded by calling ondataavailable
+      const mockBlob = new Blob(['test audio'], { type: 'audio/ogg' })
+      if (mockMediaRecorder.ondataavailable) {
+        mockMediaRecorder.ondataavailable({ data: mockBlob })
+      }
+      
+      // Mock fetch to return successful transcription
+      const originalFetch = global.fetch
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ text: 'Hello world' }),
+      })
+      
+      // Trigger onstop by calling stop on the MediaRecorder mock
+      // This simulates stopRecording() being called
+      if (mockMediaRecorder.onstop) {
+        mockMediaRecorder.onstop()
+      }
+      
+      // Wait for async transcription to complete
+      await vi.waitFor(() => {
+        expect(onTranscription).toHaveBeenCalledWith('Hello world')
+      }, { timeout: 15000 })
+      
+      // Restore fetch
+      global.fetch = originalFetch
+    }, 20000)
+    
+    it('calls onTranscription after successful transcription in dictation mode', async () => {
+      let hookRef: ReturnType<typeof useVoiceRecording> | null = null
+      const onTranscription = vi.fn()
+      let voiceMode = true // Start with voice mode true to avoid "voice mode deactivated" effect
+      let dictationMode = false
+      
+      render(() => (
+        <TestComponent
+          isVoiceMode={() => voiceMode}
+          isDictationMode={() => dictationMode}
+          onTranscription={onTranscription}
+          onReady={(h) => { hookRef = h }}
+        />
+      ))
+      
+      // Wait for auto-start in voice mode
+      await vi.advanceTimersByTimeAsync(150)
+      expect(hookRef?.isRecording()).toBe(true)
+      
+      // Switch to dictation mode (voice mode off, dictation on)
+      voiceMode = false
+      dictationMode = true
+      
+      // Manually restart recording for dictation (since voice mode off would stop it)
+      hookRef?.stopRecording()
+      await vi.advanceTimersByTimeAsync(50)
+      hookRef?.startRecording()
+      
+      // Simulate loud audio to pass the audio level checks
+      mockAnalyser.getByteFrequencyData.mockImplementation((arr: Uint8Array) => {
+        arr.fill(200)
+      })
+      
+      // Advance time to pass MIN_RECORDING_MS (500ms)
+      await vi.advanceTimersByTimeAsync(800)
+      
+      // Simulate audio data being recorded
+      const mockBlob = new Blob(['test audio'], { type: 'audio/ogg' })
+      if (mockMediaRecorder.ondataavailable) {
+        mockMediaRecorder.ondataavailable({ data: mockBlob })
+      }
+      
+      // Mock fetch to return successful transcription
+      const originalFetch = global.fetch
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ text: 'Dictation test' }),
+      })
+      
+      // Trigger onstop
+      if (mockMediaRecorder.onstop) {
+        mockMediaRecorder.onstop()
+      }
+      
+      // Wait for async transcription to complete
+      await vi.waitFor(() => {
+        expect(onTranscription).toHaveBeenCalledWith('Dictation test')
+      }, { timeout: 15000 })
+      
+      // Restore fetch
+      global.fetch = originalFetch
+    }, 20000)
   })
 })

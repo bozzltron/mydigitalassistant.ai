@@ -8,7 +8,7 @@ import { Session } from '../../state/session'
 import { useTurnStatus } from '../../services/status'
 import { useVoiceRecording } from '../../hooks/useVoiceRecording'
 import { useChat } from '../../hooks/useChat'
-import { voice, setTtsSpeaking } from '../../state/voice'
+import { voice, setTtsSpeaking, startDictation, endDictation } from '../../state/voice'
 import { settings } from '../../state/settings'
 import type {
   SearchInfo,
