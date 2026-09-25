@@ -245,9 +245,8 @@ class TestFileViewerBackend:
 
     @pytest.mark.asyncio
     async def test_upload_frame_name_is_readable(self, client, store, tmp_path):
-        """Upload frames are named from the file's own name — not the timestamped
-        on-disk copy name. The timestamped path is kept in file_safe_name and the
-        real filename is exposed on /files/list for display."""
+        """Upload frames are named from the file's own name, and the on-disk
+        copy keeps the exact uploaded filename too — nothing is renamed."""
         test_file = tmp_path / "members.csv"
         test_file.write_text("name,email\nAlice,a@b.com\n")
 
@@ -264,14 +263,52 @@ class TestFileViewerBackend:
         frame = await store.get_frame(data["parent_frame_id"])
         assert frame is not None and frame.name == "file_members.csv"
 
-        # On-disk copy still unique (timestamped), tracked via the slot
+        # The on-disk copy keeps the exact uploaded name, tracked via the slot
         safe_name = await store.get_slot(frame.id, "file_safe_name")
-        assert safe_name is not None and safe_name.value.startswith("upload_")
+        assert safe_name is not None and safe_name.value == "members.csv"
 
         # /files/list exposes the real uploaded filename for the Files page
         entries = client.get("/files/list").json()
         entry = next(e for e in entries if e["id"] == data["parent_frame_id"])
         assert entry["file_name"] == "members.csv"
+
+    @pytest.mark.asyncio
+    async def test_upload_preserves_exact_filename_on_disk(self, client, store, tmp_path):
+        """Uploaded files keep their exact name on disk (no upload_<ts>_ prefix),
+        and same-name re-uploads overwrite that single copy instead of leaving
+        timestamped duplicates behind."""
+        from pathlib import Path
+
+        data_dir = Path("/app/data")
+        disk = data_dir / "playlist.csv"
+
+        # Upload -> stored exactly as "playlist.csv"
+        test_file = tmp_path / "playlist.csv"
+        test_file.write_text("song,artist\nA,X\n")
+        with open(test_file, "rb") as f:
+            resp = client.post(
+                "/files/upload",
+                files={"file": ("playlist.csv", f.read(), "text/csv")},
+            )
+        assert resp.status_code == 200
+        first = resp.json()
+        assert disk.exists(), "must be stored under its exact uploaded name"
+        assert disk.read_text() == "song,artist\nA,X\n"
+
+        # Same-name re-upload -> same frame, same disk copy, new content
+        test_file.write_text("song,artist\nB,Y\n")
+        with open(test_file, "rb") as f:
+            resp2 = client.post(
+                "/files/upload",
+                files={"file": ("playlist.csv", f.read(), "text/csv")},
+            )
+        assert resp2.status_code == 200
+        second = resp2.json()
+        assert second["parent_frame_id"] == first["parent_frame_id"]
+        assert disk.read_text() == "song,artist\nB,Y\n"
+
+        safe = await store.get_slot(first["parent_frame_id"], "file_safe_name")
+        assert safe is not None and safe.value == "playlist.csv"
 
     @pytest.mark.asyncio
     async def test_reupload_same_name_rebuilds_rows(self, client, store, tmp_path):

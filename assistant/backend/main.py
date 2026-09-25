@@ -1803,7 +1803,6 @@ async def upload_file_to_memory(
     This is the core file upload logic shared by /files/upload endpoint and chat attached files.
     """
     import re
-    from datetime import datetime
     from pathlib import Path
 
     from assistant.backend.pipeline.files import extract_file_content
@@ -1812,10 +1811,13 @@ async def upload_file_to_memory(
     data_dir = Path("/app/data")
     data_dir.mkdir(exist_ok=True)
     
-    # Preserve original filename (sanitized) with timestamp prefix for uniqueness
+    # Preserve the uploaded file's own name on disk — no timestamp rewrite.
+    # Sanitize only filesystem-unsafe characters; the copy keeps the name the
+    # user gave it. Same-name re-uploads overwrite the same single copy (and
+    # merge at the frame level), so no orphaned timestamped duplicates.
     original_base = filename.rsplit(".", 1)[0] if "." in filename else filename
     sanitized_base = re.sub(r'[^a-zA-Z0-9_.-]', '_', original_base)[:100]
-    safe_filename = f"upload_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{sanitized_base}.{ext}"
+    safe_filename = f"{sanitized_base}.{ext}"
     file_path = data_dir / safe_filename
     
     # Save file
@@ -1826,8 +1828,8 @@ async def upload_file_to_memory(
     extraction_result = await extract_file_content(file_path, ext, content)
     
     # Create a frame for this file — named from the file's own name so it stays
-    # readable in the Files page and brain graph. The timestamped safe_filename
-    # is only the on-disk copy name, tracked in the file_safe_name slot.
+    # readable in the Files page and brain graph. The on-disk copy keeps the
+    # same name (file_safe_name slot); nothing is renamed on upload.
     frame_name = f"file_{sanitized_base}.{ext}"
     existing_frame = await store.get_frame_by_name(frame_name)
     
