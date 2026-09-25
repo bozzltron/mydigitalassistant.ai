@@ -1,4 +1,4 @@
-import { render, waitFor } from '@solidjs/testing-library'
+import { render, waitFor, fireEvent, screen } from '@solidjs/testing-library'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import BrainPage from './BrainPage'
 
@@ -157,5 +157,119 @@ describe('BrainPage', () => {
 
     expect(fetchMock).toHaveBeenCalledWith('/memory/frames')
     expect(fetchMock).toHaveBeenCalledWith('/memory/conflicts')
+  })
+
+  it('searches memory topics and opens the frame detail from a match', async () => {
+    const matches = [
+      {
+        frame: FRAMES[1],
+        slots: [],
+        similarity: 0.9,
+        associations: [],
+        episodes: [],
+        conflicts: [],
+      },
+    ]
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url === '/memory/frames') return Promise.resolve(jsonResponse(FRAMES))
+      if (url === '/memory/associations') return Promise.resolve(jsonResponse(ASSOCIATIONS))
+      if (url === '/memory/conflicts') return Promise.resolve(jsonResponse(CONFLICTS))
+      if (url === '/assistant/name') return Promise.resolve(jsonResponse({ name: 'Echo' }))
+      if (url.startsWith('/memory/search')) {
+        return Promise.resolve(jsonResponse({
+          query: 'quantum',
+          semantic_search: false,
+          backend_rev: 0,
+          matches,
+          summary: '',
+        }))
+      }
+      return Promise.resolve(jsonResponse([]))
+    })
+
+    render(() => <BrainPage />)
+    await waitFor(() => {
+      expect(document.querySelectorAll('.brain-canvas .node circle').length).toBeGreaterThan(0)
+    })
+
+    fireEvent.input(screen.getByPlaceholderText('Search memory by topic...'), {
+      target: { value: 'quantum' },
+    })
+    fireEvent.submit(screen.getByPlaceholderText('Search memory by topic...').closest('form')!)
+
+    await waitFor(() => {
+      expect(document.querySelector('.topic-card')).not.toBeNull()
+    })
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/memory/search?q=quantum'),
+    )
+
+    fireEvent.click(screen.getByText('Quantum computing')!)
+
+    await waitFor(() => {
+      expect(document.querySelector('.frame-detail')).not.toBeNull()
+    })
+    expect(document.querySelector('.frame-detail h3')?.textContent).toBe('Quantum computing')
+  })
+
+  it('resolves a pending conflict from the 2D tooltip and reloads memory', async () => {
+    render(() => <BrainPage />)
+    await waitFor(() => {
+      expect(document.querySelectorAll('.brain-canvas .node circle').length).toBe(FRAMES.length)
+    })
+
+    const firstNode = document.querySelector('.brain-canvas .node') as HTMLElement
+    fireEvent.mouseOver(firstNode.querySelector('circle')!)
+
+    await waitFor(() => {
+      expect(document.querySelector('.tooltip')?.classList.contains('visible')).toBe(true)
+      expect(document.querySelector('[data-conflict-resolve]')).not.toBeNull()
+    })
+
+    fireEvent.click(document.querySelector('[data-conflict-resolve].use-new') as HTMLElement)
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        expect.stringContaining('/memory/conflicts/12/resolve?value=Alice'),
+        expect.objectContaining({ method: 'POST' }),
+      )
+    })
+
+    // Resolution reloads brain data (fresh /memory/frames fetch).
+    await waitFor(() => {
+      const frameCalls = fetchMock.mock.calls.filter(([u]) => String(u) === '/memory/frames')
+      expect(frameCalls.length).toBeGreaterThanOrEqual(2)
+    })
+  })
+
+  it('shows the empty state when memory has no frames', async () => {
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url === '/memory/frames') return Promise.resolve(jsonResponse([]))
+      if (url === '/memory/associations') return Promise.resolve(jsonResponse([]))
+      if (url === '/memory/conflicts') return Promise.resolve(jsonResponse([]))
+      if (url === '/assistant/name') return Promise.resolve(jsonResponse({ name: 'Echo' }))
+      return Promise.resolve(jsonResponse([]))
+    })
+
+    render(() => <BrainPage />)
+    await waitFor(() => {
+      expect(document.querySelector('.empty-state')).not.toBeNull()
+    })
+    expect(document.querySelector('.empty-state h2')?.textContent).toBe('No memories yet')
+  })
+
+  it('shows an error banner when memory loading fails', async () => {
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url === '/memory/frames') return Promise.reject(new Error('boom'))
+      return Promise.resolve(jsonResponse([]))
+    })
+
+    render(() => <BrainPage />)
+    await waitFor(() => {
+      expect(document.querySelector('.error-banner')?.textContent).toContain('Failed to load brain data')
+    })
   })
 })

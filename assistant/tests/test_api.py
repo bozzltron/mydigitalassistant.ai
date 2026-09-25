@@ -147,6 +147,49 @@ def test_list_conflicts_empty(client):
     assert r.json() == []
 
 
+def test_frame_slots_and_associations_endpoints(client, store):
+    """Brain-page detail contract: per-frame slots + associations and the flat
+    associations list are served in the shapes FrameDetail/BrainGraph expect."""
+    import asyncio
+
+    async def seed():
+        guitar = await store.create_frame("guitar", "entity")
+        genre = await store.create_frame("blues", "concept")
+        await store.upsert_slot(guitar.id, "strings", "6")
+        await store.create_association(guitar.id, genre.id, "plays", confidence=0.8)
+        return guitar.id, genre.id
+
+    guitar_id, genre_id = asyncio.run(seed())
+
+    # Per-frame slots: only the guitar has any.
+    r = client.get(f"/memory/frames/{guitar_id}/slots")
+    assert r.status_code == 200
+    slots = r.json()
+    assert len(slots) == 1
+    assert slots[0]["frame_id"] == guitar_id
+    assert slots[0]["key"] == "strings"
+    assert slots[0]["value"] == "6"
+    assert client.get(f"/memory/frames/{genre_id}/slots").json() == []
+
+    # Per-frame associations (incoming + outgoing).
+    r = client.get(f"/memory/frames/{guitar_id}/associations")
+    assert r.status_code == 200
+    assocs = r.json()
+    assert len(assocs) == 1
+    assert assocs[0]["to_frame_id"] == genre_id
+    assert assocs[0]["relation_type"] == "plays"
+    assert assocs[0]["confidence"] == pytest.approx(0.8)
+
+    # Flat association list feeds the graph edges.
+    r = client.get("/memory/associations")
+    assert r.status_code == 200
+    assert len(r.json()) == 1
+
+    # Missing frame: slots degrade to [], the frame endpoint 404s.
+    assert client.get("/memory/frames/999999/slots").json() == []
+    assert client.get("/memory/frames/999999").status_code == 404
+
+
 def test_resolve_conflict_endpoint(client, store):
     """End-to-end: create a conflict via the store, resolve via the API."""
     import asyncio
