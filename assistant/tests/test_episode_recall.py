@@ -49,19 +49,19 @@ def seeded_store(tmp_path):
             user_id=alice,
             session_id="s-old",
             role="user",
-            content="we talked about why not and how desperate it felt",
+            content="we talked about the garden project and how rushed it felt",
         )
         await s.store_episode_embedding(
-            ep_a.id, _embed("why not desperation"), "nomic-embed-text"
+            ep_a.id, _embed("garden project urgency"), "nomic-embed-text"
         )
         ep_b = await s.create_episode(
             user_id=bob,
             session_id="s-old",
             role="user",
-            content="we talked about why not and how desperate it felt",
+            content="we talked about the garden project and how rushed it felt",
         )
         await s.store_episode_embedding(
-            ep_b.id, _embed("why not desperation"), "nomic-embed-text"
+            ep_b.id, _embed("garden project urgency"), "nomic-embed-text"
         )
         return s, alice, bob, ep_a.id
 
@@ -72,7 +72,7 @@ def test_roundtrip_returns_best_first(seeded_store):
     s, alice, _bob, ep_a = seeded_store
     hits = _run(
         s.search_similar_episodes(
-            embedding=_embed("why not desperation"),
+            embedding=_embed("garden project urgency"),
             user_id=alice,
             limit=5,
             min_distance=0.7,
@@ -86,7 +86,7 @@ def test_owner_isolation(seeded_store):
     s, _alice, bob, ep_a = seeded_store
     hits = _run(
         s.search_similar_episodes(
-            embedding=_embed("why not desperation"),
+            embedding=_embed("garden project urgency"),
             user_id=bob,
             limit=10,
             min_distance=0.0,
@@ -117,10 +117,10 @@ def test_excludes_current_session(seeded_store):
             user_id=alice,
             session_id="s-now",
             role="user",
-            content="why not came up again right now",
+            content="garden project came up again right now",
         )
     )
-    await_emb = _embed("why not desperation")
+    await_emb = _embed("garden project urgency")
     _run(s.store_episode_embedding(fresh.id, await_emb, "nomic-embed-text"))
     hits = _run(
         s.search_similar_episodes(
@@ -192,37 +192,37 @@ def test_fk_cascade_removes_vector(tmp_path):
 
 @pytest.mark.asyncio
 async def test_retriever_surfaces_past_conversations(store, stub_llm):
-    add_embedding_cluster("why not")
+    add_embedding_cluster("garden project")
     alice = await store.create_user("erin")
     old = await store.create_episode(
         user_id=alice.id,
         session_id="past-session",
         role="user",
-        content="tell me about why not again",
+        content="tell me about the garden project again",
     )
-    emb = (await stub_llm.embed("tell me about why not again")).embedding
+    emb = (await stub_llm.embed("tell me about the garden project again")).embedding
     await store.store_episode_embedding(old.id, emb, "nomic-embed-text")
 
     retriever = Retriever(store, stub_llm)
     ctx = await retriever.retrieve(
-        query="why did we record why not", user_id=alice.id, session_id="live-now"
+        query="what did we decide about the garden project", user_id=alice.id, session_id="live-now"
     )
     assert any(e.id == old.id for e, _sim in ctx.past_conversations)
     assert "Related past conversations" in ctx.formatted
-    assert "tell me about why not again" in ctx.formatted
+    assert "tell me about the garden project again" in ctx.formatted
 
 
 @pytest.mark.asyncio
 async def test_retriever_empty_frames_still_recalls(store, stub_llm):
-    add_embedding_cluster("why not")
+    add_embedding_cluster("garden project")
     alice = await store.create_user("frank")
     old = await store.create_episode(
-        user_id=alice.id, session_id="old", role="assistant", content="why not notes"
+        user_id=alice.id, session_id="old", role="assistant", content="garden project notes"
     )
-    emb = (await stub_llm.embed("why not notes")).embedding
+    emb = (await stub_llm.embed("garden project notes")).embedding
     await store.store_episode_embedding(old.id, emb, "nomic-embed-text")
 
     retriever = Retriever(store, stub_llm)
-    ctx = await retriever.retrieve(query="why not", user_id=alice.id, session_id="new")
+    ctx = await retriever.retrieve(query="garden project", user_id=alice.id, session_id="new")
     assert ctx.retrieved_frames == []
     assert [e.id for e, _sim in ctx.past_conversations] == [old.id]
