@@ -11,7 +11,11 @@ export default defineConfig({
       output: {
         manualChunks: {
           solid: ['solid-js'],
-          ui: ['@solidjs/meta']
+          ui: ['@solidjs/meta'],
+          // three + 3d-force-graph are only pulled in by the lazy 3D view
+          // (BrainGraph3D). Keeping them in a stable vendor chunk means the
+          // heavy 3D deps are fetched once, cached, and never re-bundled.
+          brain3d: ['three', '3d-force-graph'],
         }
       }
     },

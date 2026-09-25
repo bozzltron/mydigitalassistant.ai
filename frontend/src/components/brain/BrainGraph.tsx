@@ -88,12 +88,12 @@ export default function BrainGraph(props: BrainGraphProps) {
   )
 
   function neighborsOf(id: number): Set<number> {
-    return neighborsMap().get(id) || new Set<number>()
+    return untrack(() => neighborsMap().get(id)) || new Set<number>()
   }
 
   function computeHighlightSet(): Set<number> {
     const lit = new Set<number>()
-    for (const id of props.highlightedNodeIds()) {
+    for (const id of untrack(() => props.highlightedNodeIds())) {
       lit.add(id)
       neighborsOf(id).forEach(n => lit.add(n))
     }
@@ -101,7 +101,7 @@ export default function BrainGraph(props: BrainGraphProps) {
   }
 
   function clearHighlight() {
-    const sel = selections()
+    const sel = untrack(() => selections())
     if (!sel) return
     sel.link.classed('dimmed', false).classed('lit', false)
     sel.node.classed('dimmed', false).classed('lit', false)
@@ -109,7 +109,7 @@ export default function BrainGraph(props: BrainGraphProps) {
   }
 
   function applyHighlight(litIds: Set<number>) {
-    const sel = selections()
+    const sel = untrack(() => selections())
     if (!sel) return
     if (litIds.size === 0) {
       clearHighlight()
@@ -157,10 +157,13 @@ export default function BrainGraph(props: BrainGraphProps) {
   }
 
   function showTooltip(event: MouseEvent, d: GraphNode) {
+    // Tooltip content is a one-shot snapshot, not a reactive binding — read the
+    // conflicts map untracked so hovering never subscribes to future updates.
+    const conflictsByFrame = untrack(() => props.conflictsByFrame())
     fetchSlots(d).then(dWithSlots => {
-      const svg = svgRef()
+      const svg = untrack(() => svgRef())
       if (!svg) return
-      setTooltipContent(tooltipHtml(dWithSlots, props.conflictsByFrame()))
+      setTooltipContent(tooltipHtml(dWithSlots, conflictsByFrame))
       setTooltipVisible(true)
       const rect = svg.getBoundingClientRect()
       let tx = event.clientX - rect.left + 15
@@ -313,18 +316,21 @@ export default function BrainGraph(props: BrainGraphProps) {
     })
 
     node.on('mouseover', (event: MouseEvent, d: GraphNode) => {
-      const lit = new Set<number>([d.id, ...neighborsOf(d.id)])
+      // d3 binds these handlers outside Solid's tracking: snapshot the neighbor
+      // map at hover time instead of subscribing to it.
+      const neighbors = untrack(() => neighborsOf(d.id))
+      const lit = new Set<number>([d.id, ...neighbors])
       applyHighlight(lit)
       showTooltip(event, d)
     })
       .on('mouseout', () => {
         clearHighlight()
-        applyHighlight(computeHighlightSet())
+        applyHighlight(untrack(() => computeHighlightSet()))
         hideTooltip()
       })
       .on('click', (event: MouseEvent, d: GraphNode) => {
         showTooltip(event, d)
-        props.onNodeClick?.(d)
+        untrack(() => props.onNodeClick?.(d))
       })
 
     applyHighlight(computeHighlightSet())
@@ -379,12 +385,9 @@ export default function BrainGraph(props: BrainGraphProps) {
   onMount(() => document.addEventListener('click', handleTooltipAction))
   onCleanup(() => document.removeEventListener('click', handleTooltipAction))
 
-  const is2d = props.mode() === '2d'
-  const is3d = props.mode() === '3d'
-
   return (
     <div class="brain-graph-wrapper" style={{ 'position': 'relative', 'width': '100%', 'height': '100%', 'flex': '1' }}>
-      <Show when={is2d}>
+      <Show when={props.mode() === '2d'}>
         <svg ref={setSvgRef} width={props.width()} height={props.height()} class="brain-canvas">
           <rect width="100%" height="100%" fill="var(--bg)" />
           <g class="stars">
@@ -403,7 +406,7 @@ export default function BrainGraph(props: BrainGraphProps) {
         </svg>
       </Show>
 
-      <Show when={is3d} fallback={<div class="graph-placeholder">Loading 3D view...</div>}>
+      <Show when={props.mode() === '3d'} fallback={<div class="graph-placeholder">Loading 3D view...</div>}>
         <Suspense fallback={<div class="graph-placeholder">Loading 3D view...</div>}>
           <BrainGraph3D
             nodes={props.nodes}

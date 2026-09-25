@@ -1,4 +1,4 @@
-import { createEffect, createSignal, onCleanup, onMount } from 'solid-js'
+import { createEffect, createSignal, onCleanup, onMount, untrack } from 'solid-js'
 import * as THREE from 'three'
 import ForceGraph3D from '3d-force-graph'
 import type { ConfigOptions, ForceGraph3DInstance, LinkObject, NodeObject } from '3d-force-graph'
@@ -153,9 +153,9 @@ export default function BrainGraph3D(props: BrainGraph3DProps) {
   const nodeObjects = new Map<number, THREE.Object3D>()
   const neighborsMap = new Map<number, Set<number>>()
 
-  const stopTourOnInteraction = () => {
+  const stopTourOnInteraction = () => untrack(() => {
     if (props.touring()) props.setTouring(false)
-  }
+  })
 
   function setContainerRef(el: HTMLDivElement | null) {
     containerEl = el
@@ -176,7 +176,9 @@ export default function BrainGraph3D(props: BrainGraph3DProps) {
 
   function applyHighlight() {
     if (!graph) return
-    const lit = highlightedIds()
+    // Snapshot the selection at call time: the tracked effect re-applies
+    // highlights reactively, and the force-graph sinks must not subscribe.
+    const lit = untrack(() => highlightedIds())
 
     // Nodes: our custom objects are not re-colored by the lib, so fade them
     // directly via material opacity.
@@ -217,7 +219,9 @@ export default function BrainGraph3D(props: BrainGraph3DProps) {
     let tx = lastPointer.x - rect.left + 15
     const ty = lastPointer.y - rect.top - 10
     if (tx + 280 > rect.width) tx = lastPointer.x - rect.left - 295
-    props.onTooltip?.(tooltipHtml(node, props.conflictsByFrame()), tx, ty)
+    // One-shot tooltip: snapshot the current conflicts, don't subscribe.
+    const conflictsByFrame = untrack(() => props.conflictsByFrame())
+    untrack(() => props.onTooltip?.(tooltipHtml(node, conflictsByFrame), tx, ty))
   }
 
   function frameCamera(g: GraphInstance) {
@@ -285,7 +289,7 @@ export default function BrainGraph3D(props: BrainGraph3DProps) {
         .d3AlphaDecay(0.05)
         .d3VelocityDecay(0.3)
         .onNodeClick((node) => {
-          props.onNodeClick?.(node)
+          untrack(() => props.onNodeClick?.(node))
           void showNodeTooltip(node)
         })
         .onNodeHover((node) => {
@@ -293,13 +297,13 @@ export default function BrainGraph3D(props: BrainGraph3DProps) {
           if (node) {
             void showNodeTooltip(node)
           } else {
-            props.onHideTooltip?.()
+            untrack(() => props.onHideTooltip?.())
           }
           applyHighlight()
         })
-        .onBackgroundClick(() => props.onHideTooltip?.())
-        .onNodeDragEnd(() => applyHighlight())
-        .onEngineStop(() => frameCamera(g))
+        .onBackgroundClick(() => untrack(() => props.onHideTooltip?.()))
+        .onNodeDragEnd(() => untrack(() => applyHighlight()))
+        .onEngineStop(() => untrack(() => frameCamera(g)))
 
       g.graphData({ nodes: to3DNodes(nodes), links: to3DLinks(links) })
       applyHighlight()
