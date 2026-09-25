@@ -7,9 +7,11 @@ import { messages, sessionId, setSessionId, isTurnActive, useConversationTurnId,
 import { Session } from '../../state/session'
 import { useTurnStatus } from '../../services/status'
 import { useVoiceRecording } from '../../hooks/useVoiceRecording'
+import { useConversationVoiceRecording } from '../../hooks/useConversationVoiceRecording'
 import { useChat } from '../../hooks/useChat'
-import { voice, setTtsSpeaking, startDictation, endDictation, isVoiceModeActive } from '../../state/voice'
+import { setTtsSpeaking, startDictation, endDictation, isVoiceModeActive } from '../../state/voice'
 import { settings } from '../../state/settings'
+import { initQueue } from '../../state/messageQueue'
 import type {
   SearchInfo,
   AttachedFile,
@@ -27,7 +29,7 @@ export default function ChatPage(props: {
   const { sendMessageStream } = useChat()
   const [showTrace, setShowTrace] = createSignal(false)
   const [messagesContainerRef, setMessagesContainerRef] = createSignal<HTMLDivElement | null>(null)
-  const [isDictating, setIsDictating] = createSignal(false)
+  const [localIsDictating, setLocalIsDictating] = createSignal(false)
   const [maxIntelligence, setMaxIntelligence] = createSignal(false)
   const [pendingSearchConsent, setPendingSearchConsent] = createSignal<{
     message: string
@@ -244,17 +246,23 @@ export default function ChatPage(props: {
     }
   })
 
-  // Voice recording hook - runs when voice mode is active
-  // Note: voice.status === 'speaking' is for voice mode's own speaking state.
-  // TTS speaking is tracked separately via isTtsSpeaking() in the hook.
-  // We also check isTurnActive to avoid restarting listening during an active chat turn.
-  // IMPORTANT: Use isVoiceModeActive() which includes both 'listening' and 'processing'
-  // to prevent flicker during transcription phase.
+  // Initialize message queue on mount
+  onMount(() => {
+    initQueue()
+  })
+
+  // Dictation mode (one-shot mic button) - uses original hook
   useVoiceRecording({
-    isVoiceMode: () => isVoiceModeActive(),
-    isDictationMode: () => isDictating(),
+    isVoiceMode: () => false, // Dictation doesn't use voice mode
+    isDictationMode: () => localIsDictating(),
     isTurnActive: () => isTurnActive(),
     onTranscription: handleSendMessage,
+  })
+
+  // Conversation mode (continuous voice) - uses new queue-based hook
+  useConversationVoiceRecording({
+    isVoiceMode: () => isVoiceModeActive(),
+    isTurnActive: () => isTurnActive(),
   })
 
   const handleRemoveQueued = (id: string) => {
@@ -262,12 +270,12 @@ export default function ChatPage(props: {
   }
 
   const handleDictationStart = () => {
-    setIsDictating(true)
+    setLocalIsDictating(true)
     startDictation()
   }
 
   const handleDictationStop = () => {
-    setIsDictating(false)
+    setLocalIsDictating(false)
     endDictation()
   }
 
@@ -312,7 +320,7 @@ export default function ChatPage(props: {
             onSend={handleSendMessage} 
             isSending={isSending()}
             isStreaming={isStreaming()}
-            isDictating={isDictating()}
+            isDictating={localIsDictating()}
             onDictationStart={handleDictationStart}
             onDictationStop={handleDictationStop}
             maxEnabled={maxIntelligence()}
