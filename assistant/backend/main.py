@@ -155,6 +155,7 @@ async def lifespan(app: FastAPI):
             db_path,
             embed_fn=orchestrator.embed_fn(),
             embedding_model=orchestrator.llm_client.embedding_model,
+            search_tool=search_tool,
         )
         logger.info("Tool executor initialized successfully")
     except Exception as e:

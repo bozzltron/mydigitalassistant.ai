@@ -9,12 +9,16 @@ import re
 import time
 from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from pydantic import ValidationError
 
 from assistant.backend.config import settings
 from assistant.backend.memory.models import Frame
 from assistant.backend.memory.store import MemoryStore
+
+if TYPE_CHECKING:
+    from assistant.backend.pipeline.search import WebSearchTool
 
 logger = logging.getLogger(__name__)
 
@@ -28,18 +32,22 @@ _store: MemoryStore | None = None
 _embed_fn: Callable | None = None
 # Embedding model name for search_similar_frames
 _embedding_model: str = "nomic-embed-text"
+# Global search tool instance
+_search_tool: WebSearchTool | None = None
 
 
 def init_store(
     db_path: str,
     embed_fn: Callable | None = None,
     embedding_model: str = "nomic-embed-text",
+    search_tool: WebSearchTool | None = None,
 ) -> None:
-    """Initialize the global MemoryStore instance and embed function."""
-    global _store, _embed_fn, _embedding_model
+    """Initialize the global MemoryStore instance, embed function, and search tool."""
+    global _store, _embed_fn, _embedding_model, _search_tool
     _store = MemoryStore(db_path)
     _embed_fn = embed_fn
     _embedding_model = embedding_model
+    _search_tool = search_tool
     _register_builtin_tools()
 
 
@@ -249,7 +257,7 @@ async def execute_upsert_slot(args: dict, user_id: str, session_id: str) -> Tool
         return ToolResult(success=False, error=str(e))
 
 
-async def execute_upsert_association(args: dict, user_id: str) -> ToolResult:
+async def execute_upsert_association(args: dict, user_id: str, session_id: str = "") -> ToolResult:
     """Create or strengthen a typed relation between two frames."""
     if _store is None:
         return ToolResult(success=False, error="MemoryStore not initialized")
@@ -285,7 +293,7 @@ async def execute_upsert_association(args: dict, user_id: str) -> ToolResult:
         return ToolResult(success=False, error=str(e))
 
 
-async def execute_mark_essential(args: dict, user_id: str) -> ToolResult:
+async def execute_mark_essential(args: dict, user_id: str, session_id: str = "") -> ToolResult:
     """Protect a frame/slot from garbage collection."""
     if _store is None:
         return ToolResult(success=False, error="MemoryStore not initialized")
@@ -375,7 +383,7 @@ async def execute_recall(args: dict, user_id: str, session_id: str = "") -> Tool
         return ToolResult(success=False, error=str(e))
 
 
-async def execute_get_frame(args: dict, user_id: str) -> ToolResult:
+async def execute_get_frame(args: dict, user_id: str, session_id: str = "") -> ToolResult:
     """Retrieve full frame with all slots and associations."""
     if _store is None:
         return ToolResult(success=False, error="MemoryStore not initialized")
@@ -413,7 +421,7 @@ async def execute_get_frame(args: dict, user_id: str) -> ToolResult:
         return ToolResult(success=False, error=str(e))
 
 
-async def execute_get_slot_history(args: dict, user_id: str) -> ToolResult:
+async def execute_get_slot_history(args: dict, user_id: str, session_id: str = "") -> ToolResult:
     """Audit trail for a slot."""
     if _store is None:
         return ToolResult(success=False, error="MemoryStore not initialized")
@@ -433,7 +441,7 @@ async def execute_get_slot_history(args: dict, user_id: str) -> ToolResult:
         return ToolResult(success=False, error=str(e))
 
 
-async def execute_search_episodes(args: dict, user_id: str) -> ToolResult:
+async def execute_search_episodes(args: dict, user_id: str, session_id: str = "") -> ToolResult:
     """Search past conversation turns semantically."""
     if _store is None:
         return ToolResult(success=False, error="MemoryStore not initialized")
@@ -458,15 +466,17 @@ async def execute_search_episodes(args: dict, user_id: str) -> ToolResult:
 # External tool executors
 # ---------------------------------------------------------------------------
 
-async def execute_web_search(args: dict, user_id: str) -> ToolResult:
+async def execute_web_search(args: dict, user_id: str, session_id: str = "") -> ToolResult:
     """Search the web via configured backend."""
+    global _search_tool
     try:
-        from assistant.backend.pipeline.search import search_with_info
+        if _search_tool is None:
+            return ToolResult(success=False, error="Search tool not initialized")
 
         query = args.get("query", "")
         num_results = args.get("num_results", 5)
 
-        results, info = await search_with_info(query, num_results=num_results)
+        results, info = await _search_tool.search_with_info(query, num_results=num_results)
 
         return ToolResult(success=True, data={"results": results, "search_info": info})
     except Exception as e:
@@ -474,7 +484,7 @@ async def execute_web_search(args: dict, user_id: str) -> ToolResult:
         return ToolResult(success=False, error=str(e))
 
 
-async def execute_fetch_url(args: dict, user_id: str) -> ToolResult:
+async def execute_fetch_url(args: dict, user_id: str, session_id: str = "") -> ToolResult:
     """Fetch and extract text from URL. Auto-extracts facts."""
     try:
         from assistant.backend.pipeline.fetch import fetch_and_extract
@@ -1110,7 +1120,7 @@ async def execute_list_files(args: dict, user_id: str, session_id: str) -> ToolR
         return ToolResult(success=False, error=str(e))
 
 
-async def execute_run_scheduled_task(args: dict, user_id: str) -> ToolResult:
+async def execute_run_scheduled_task(args: dict, user_id: str, session_id: str = "") -> ToolResult:
     """Execute a scheduled task immediately (run_now)."""
     try:
         from assistant.backend.scheduler import run_now as scheduler_run_now
@@ -1124,7 +1134,7 @@ async def execute_run_scheduled_task(args: dict, user_id: str) -> ToolResult:
         return ToolResult(success=False, error=str(e))
 
 
-async def execute_compute(args: dict, user_id: str) -> ToolResult:
+async def execute_compute(args: dict, user_id: str, session_id: str = "") -> ToolResult:
     """Execute mathematical computation via dedicated math model."""
     try:
         from assistant.backend.config import settings
@@ -1187,7 +1197,7 @@ async def execute_compute(args: dict, user_id: str) -> ToolResult:
 # Meta tool executors
 # ---------------------------------------------------------------------------
 
-async def execute_plan(args: dict, user_id: str) -> ToolResult:
+async def execute_plan(args: dict, user_id: str, session_id: str = "") -> ToolResult:
     """Return a structured plan step list for orchestrator to execute."""
     try:
         goal = args.get("goal", "")
@@ -1199,7 +1209,7 @@ async def execute_plan(args: dict, user_id: str) -> ToolResult:
         return ToolResult(success=False, error=str(e))
 
 
-async def execute_think(args: dict, user_id: str) -> ToolResult:
+async def execute_think(args: dict, user_id: str, session_id: str = "") -> ToolResult:
     """Internal reasoning step. No external effect. Records to trace."""
     try:
         reasoning = args.get("reasoning", "")
@@ -1213,7 +1223,7 @@ async def execute_think(args: dict, user_id: str) -> ToolResult:
         return ToolResult(success=False, error=str(e))
 
 
-async def execute_finalize(args: dict, user_id: str) -> ToolResult:
+async def execute_finalize(args: dict, user_id: str, session_id: str = "") -> ToolResult:
     """Signal completion. Return final answer to user. Ends the loop."""
     # finalize is handled in the loop, not here
     try:

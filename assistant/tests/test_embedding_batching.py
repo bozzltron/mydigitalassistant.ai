@@ -31,7 +31,10 @@ class TestEmbedBatching:
 
     @pytest.mark.asyncio
     async def test_embed_list_of_strings(self):
-        """Test embedding a list of strings returns list of responses."""
+        """Test embedding a list of strings returns list of responses.
+        
+        Ollama doesn't support batch prompts, so this makes sequential calls.
+        """
         from assistant.backend.pipeline.llm_client import OllamaClient
 
         client = OllamaClient()
@@ -39,14 +42,14 @@ class TestEmbedBatching:
         mock_http_client = AsyncMock()
         client._get_client.return_value = mock_http_client
 
+        # Sequential responses for each text
+        responses = [
+            {"embedding": [0.1, 0.2, 0.3]},
+            {"embedding": [0.4, 0.5, 0.6]},
+            {"embedding": [0.7, 0.8, 0.9]},
+        ]
         mock_response = MagicMock()
-        mock_response.json.return_value = {
-            "embedding": [
-                [0.1, 0.2, 0.3],
-                [0.4, 0.5, 0.6],
-                [0.7, 0.8, 0.9],
-            ],
-        }
+        mock_response.json.side_effect = responses
         mock_response.raise_for_status = MagicMock()
         mock_http_client.post = AsyncMock(return_value=mock_response)
 
@@ -58,6 +61,8 @@ class TestEmbedBatching:
         assert results[0].embedding == [0.1, 0.2, 0.3]
         assert results[1].embedding == [0.4, 0.5, 0.6]
         assert results[2].embedding == [0.7, 0.8, 0.9]
+        # Should have made 3 sequential API calls
+        assert mock_http_client.post.call_count == 3
 
     @pytest.mark.asyncio
     async def test_embed_batch_caching(self):
@@ -78,7 +83,7 @@ class TestEmbedBatching:
 
         mock_response = MagicMock()
         mock_response.json.return_value = {
-            "embedding": [[0.1, 0.2, 0.3]],
+            "embedding": [0.1, 0.2, 0.3],
         }
         mock_response.raise_for_status = MagicMock()
         mock_http_client.post = AsyncMock(return_value=mock_response)
@@ -140,7 +145,7 @@ class TestEmbedBatching:
 
         mock_response = MagicMock()
         mock_response.json.return_value = {
-            "embedding": [[0.9, 0.9, 0.9]],
+            "embedding": [0.9, 0.9, 0.9],
         }
         mock_response.raise_for_status = MagicMock()
         mock_http_client.post = AsyncMock(return_value=mock_response)

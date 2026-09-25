@@ -105,10 +105,10 @@ def serialize_event(event: ToolLoopEvent) -> str:
     """Serialize a tool loop event as an SSE message."""
     if isinstance(event, TextDeltaEvent):
         data = {'type': 'text_delta', 'delta': event.delta}
-        return f"data: {json.dumps(data)}\n\n"
+        return f"data: {json.dumps(data, default=_event_json_default)}\n\n"
     elif isinstance(event, ToolCallEvent):
         data = {'type': 'tool_call', 'tool_calls': event.tool_calls}
-        return f"data: {json.dumps(data)}\n\n"
+        return f"data: {json.dumps(data, default=_event_json_default)}\n\n"
     elif isinstance(event, ToolResultEvent):
         data = {
             'type': 'tool_result',
@@ -117,20 +117,20 @@ def serialize_event(event: ToolLoopEvent) -> str:
             'data': event.data,
             'error': event.error
         }
-        return f"data: {json.dumps(data)}\n\n"
+        return f"data: {json.dumps(data, default=_event_json_default)}\n\n"
     elif isinstance(event, FinalizeEvent):
         data = {
             'type': 'finalize',
             'answer': event.answer,
             'reasoning_trace': event.reasoning_trace
         }
-        return f"data: {json.dumps(data)}\n\n"
+        return f"data: {json.dumps(data, default=_event_json_default)}\n\n"
     elif isinstance(event, ErrorEvent):
         data = {'type': 'error', 'error': event.error}
-        return f"data: {json.dumps(data)}\n\n"
+        return f"data: {json.dumps(data, default=_event_json_default)}\n\n"
     elif isinstance(event, StageEvent):
         data = {'type': 'stage', 'stage': event.stage, 'detail': event.detail}
-        return f"data: {json.dumps(data)}\n\n"
+        return f"data: {json.dumps(data, default=_event_json_default)}\n\n"
     elif isinstance(event, MetaEvent):
         data = {
             'type': 'meta',
@@ -142,7 +142,7 @@ def serialize_event(event: ToolLoopEvent) -> str:
         }
         return f"data: {json.dumps(data, default=_event_json_default)}\n\n"
     else:
-        return f"data: {json.dumps({'type': 'unknown'})}\n\n"
+        return f"data: {json.dumps({'type': 'unknown'}, default=_event_json_default)}\n\n"
 
 
 async def stream_tool_loop(

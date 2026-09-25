@@ -573,7 +573,7 @@ except: pass
     async def _embed_batch(
         self, texts: list[str], model: str
     ) -> list[EmbeddingResponse]:
-        """Batch embedding via single Ollama call."""
+        """Batch embedding via sequential Ollama calls (no batch support in single request)."""
         cache_keys = [f"{model}:{t}" for t in texts]
 
         # Check cache for all
@@ -593,21 +593,20 @@ except: pass
                 EmbeddingResponse(embedding=cached[i], model=model) for i in range(len(texts))
             ]
 
-        # Need API call - get client now
+        # Need API calls - get client now
         client = await self._get_client()
 
-        # Batch request
-        payload = {"model": model, "prompt": uncached_texts, "keep_alive": self._keep_alive_param()}
-        r = await client.post("/api/embeddings", json=payload)
-        r.raise_for_status()
-        data = r.json()
-        embeddings = data["embedding"]  # List of lists
-
-        # Update cache and build results
+        # Sequential requests (Ollama /api/embeddings doesn't support batch prompt)
         results: list[EmbeddingResponse | None] = [None] * len(texts)
-        for idx, emb in zip(uncached_indices, embeddings, strict=True):
-            self._embed_cache[cache_keys[idx]] = emb
-            results[idx] = EmbeddingResponse(embedding=emb, model=model)
+        
+        for idx, text in zip(uncached_indices, uncached_texts, strict=True):
+            payload = {"model": model, "prompt": text, "keep_alive": self._keep_alive_param()}
+            r = await client.post("/api/embeddings", json=payload)
+            r.raise_for_status()
+            data = r.json()
+            embedding = data["embedding"]
+            self._embed_cache[cache_keys[idx]] = embedding
+            results[idx] = EmbeddingResponse(embedding=embedding, model=model)
 
         for idx, emb in cached.items():
             results[idx] = EmbeddingResponse(embedding=emb, model=model)
