@@ -162,7 +162,7 @@ async def test_run_tool_loop_bounded_rounds(store):
     from assistant.backend.pipeline.tool_executor import init_store
     init_store(str(store.db_path))
     await store.create_user("test_user")
-    
+
     looping = ChatResponse(
         content="",
         model="m",
@@ -176,11 +176,87 @@ async def test_run_tool_loop_bounded_rounds(store):
     )
     llm = FakeToolLLM([looping] * 2 + [ChatResponse(content="done", model="m", done=True)])
     content, resp, _ = await _run(llm, max_rounds=2)
-    # Should stop after max_rounds and return a summary
-    assert "considered" in content.lower() or "done" in content.lower()
-    # With max_rounds=2, we get 2 LLM calls (the loop runs 2 iterations)
-    assert len(llm.calls) == 2
-    assert resp is not None
+    # The loop runs 2 iterations, then one model-synthesized wrap-up call.
+    assert len(llm.calls) == 3
+    assert resp["loop_terminated"] == "max_turns"
+    # The final answer is the model's wrap-up text, not raw tool metadata.
+    assert content == "done"
+    assert "Here's what I found" not in content
+
+
+async def test_run_tool_loop_max_turns_synthesizes_wrap_up(store):
+    """Regression: exhausting tool turns must not leak raw tool metadata.
+
+    Before the fix, run_tool_loop returned a hardcoded dump of the tool-call
+    records ("I've considered this for N turns. Here's what I found:
+    [{'name': ...}]"). Now it makes one final text-only model call to wrap up
+    in plain language, and failed tool calls surface their error to the model
+    so it can recover (e.g. pivot to list_files) instead of repeating them.
+    """
+    from assistant.backend.pipeline.tool_executor import init_store
+    init_store(str(store.db_path))
+    await store.create_user("test_user")
+
+    failing = ChatResponse(
+        content="",
+        model="m",
+        done=True,
+        tool_calls=[
+            ToolCall(name="read_file", arguments={"path": "no_such_file.csv"})
+        ],
+    )
+    wrap_up = ChatResponse(
+        content="I couldn't find a file named no_such_file.csv in your sandbox.",
+        model="m",
+        done=True,
+    )
+    llm = FakeToolLLM([failing] * 3 + [wrap_up])
+    content, resp, last_messages = await _run(llm)
+
+    assert resp["loop_terminated"] == "max_turns"
+    assert content == wrap_up.content
+    assert "Here's what I found" not in content
+    assert "read_file" not in content
+
+    # The three failed reads reached the loop model as errors.
+    tool_contents = [
+        str(m.get("content", ""))
+        for m in last_messages
+        if m.get("role") == "tool"
+    ]
+    assert len(tool_contents) == 3
+    assert all(
+        c.startswith("ERROR:") and "File not found" in c for c in tool_contents
+    )
+
+
+async def test_tool_failures_are_surfaced_to_the_loop(store):
+    """Regression: a failed tool call must tell the model *why* it failed.
+
+    Before the fix only result.data reached the model, so a missing-file read
+    came back as an empty {} and the model repeated the exact same call.
+    """
+    from assistant.backend.pipeline.tool_executor import init_store
+    init_store(str(store.db_path))
+    await store.create_user("test_user")
+
+    scripted = [
+        ChatResponse(
+            content="",
+            model="m",
+            done=True,
+            tool_calls=[
+                ToolCall(name="read_file", arguments={"path": "missing.csv"})
+            ],
+        ),
+        ChatResponse(content="Let me check what files exist first.", model="m", done=True),
+    ]
+    llm = FakeToolLLM(scripted)
+    _, resp, last_llm_messages = await _run(llm)
+
+    tool_msg = next(m for m in last_llm_messages if m.get("role") == "tool")
+    assert "ERROR" in str(tool_msg.get("content", ""))
+    assert "File not found" in str(tool_msg.get("content", ""))
 
 
 async def test_tool_results_not_in_thinking_chain(store):

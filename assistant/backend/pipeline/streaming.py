@@ -161,6 +161,7 @@ async def stream_tool_loop(
     """
     import logging
 
+    from assistant.backend.pipeline.async_tools import format_tool_result
     from assistant.backend.pipeline.llm_client import ChatMessage
     from assistant.backend.pipeline.tool_executor import ToolResult, execute_tool
     from assistant.backend.pipeline.tools import MAX_TOOL_ROUNDS
@@ -173,7 +174,6 @@ async def stream_tool_loop(
     max_turns = MAX_TOOL_ROUNDS
 
     turn = 0
-    tool_results: list[dict] = []
     reasoning_trace: list[str] = []
 
     while turn < max_turns:
@@ -219,14 +219,6 @@ async def stream_tool_loop(
                     logger.error(f"Tool execution error: {e}")
                     result = ToolResult(success=False, data={}, error=str(e))
 
-                tool_results.append(
-                    {
-                        "name": tool_name,
-                        "args": raw_args,
-                        "data": getattr(result, "data", {}),
-                    }
-                )
-
                 # Yield tool result event
                 yield serialize_event(
                     ToolResultEvent(
@@ -251,11 +243,12 @@ async def stream_tool_loop(
                 if tool_name == "think":
                     reasoning_trace.append(raw_args.get("reasoning", ""))
 
-                # Add tool result to messages
+                # Add tool result to messages (surface the error on failure so
+                # the model can recover instead of retrying the same call)
                 chat_messages.append(
                     ChatMessage(
                         role="tool",
-                        content=str(getattr(result, "data", {})),
+                        content=format_tool_result(result),
                         name=tool_name
                     )
                 )
@@ -269,11 +262,45 @@ async def stream_tool_loop(
             yield serialize_event(event)
             return
 
-    # Max turns reached
-    answer = (
-        f"I've considered this for {max_turns} turns. "
-        f"Here's what I found: " + str(tool_results)
-    )
+    # Max turns reached - synthesize a graceful wrap-up from the model instead
+    # of dumping raw tool metadata at the user. This extra LLM call only fires
+    # on the already-failing path (per the "lean on the model" principle; a
+    # neutral message is a last resort if even the wrap-up call fails).
+    answer = None
+    try:
+        wrap_up = await llm_client.chat(
+            messages=[
+                *chat_messages,
+                ChatMessage(
+                    role="user",
+                    content=(
+                        "You have used all your available tool-call turns "
+                        "without producing a final answer. Wrap up for the "
+                        "user now in plain language: state what you were able "
+                        "to do, what blocked you (including any tool errors), "
+                        "and what you need from them next. Do not describe "
+                        "the tool loop internals or repeat raw tool data."
+                    ),
+                ),
+            ],
+            tools=tools,
+            tool_choice="none",
+            model=loop_model,
+            temperature=0.3,
+            think=think,
+            num_predict=num_predict,
+        )
+        answer = (wrap_up.content or "").strip() or None
+    except Exception:
+        logger.warning(
+            "Tool wrap-up LLM call failed; using graceful fallback",
+            exc_info=True,
+        )
+    if answer is None:
+        answer = (
+            "I wasn't able to complete that within my allowed steps. "
+            "Let me know how you'd like me to adjust."
+        )
     event = FinalizeEvent(
         answer,
         "\n\n".join(reasoning_trace) if reasoning_trace else None

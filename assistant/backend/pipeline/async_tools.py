@@ -29,6 +29,20 @@ class ToolResult:
     metadata: dict | None = None
 
 
+def format_tool_result(result: ToolResult) -> str:
+    """Render a tool result for the model to consume.
+
+    Failures must be visible to the loop model so it can recover (e.g. pivot
+    to ``list_files`` after a missing ``read_file`` path) instead of blindly
+    repeating the same call. Hides success noise (None/empty data).
+    """
+    if result.error:
+        return f"ERROR: {result.error}"
+    if result.data is None or result.data == "":
+        return "OK (no data)"
+    return str(result.data)
+
+
 # Tool dependency rules: tool A after tool B means A depends on B
 # This is a simple heuristic based on tool types
 TOOL_DEPENDENCIES: dict[str, list[str]] = {

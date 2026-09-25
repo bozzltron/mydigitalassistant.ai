@@ -177,3 +177,69 @@ async def test_merge_sse_emits_stage_events_during_long_pipeline_step():
     assert any('"type": "stage"' in ev for ev in collected)
     # The stage event arrives BEFORE the primary finishes its long step.
     assert collected[-1].startswith("data: ")
+
+
+async def test_stream_tool_loop_max_turns_wraps_up_not_metadata(tmp_path):
+    """Regression: exhausting tool turns streams a model wrap-up, not metadata.
+
+    Before the fix, stream_tool_loop finalized with a hardcoded dump of the
+    tool-call records ("I've considered this for N turns. Here's what I found:
+    [...]"), leaking internal tool state into the user's chat.
+    """
+    from assistant.backend.pipeline.llm_client import ChatResponse, ToolCall
+    from assistant.backend.pipeline.streaming import stream_tool_loop
+    from assistant.backend.pipeline.tool_executor import init_store
+    init_store(str(tmp_path / "stream.db"))
+
+    class StubLLM:
+        def __init__(self, responses):
+            self.responses = list(responses)
+            self.tools_model = "test-model"
+            self.calls = []
+
+        async def chat(self, messages, **kwargs):
+            self.calls.append({"messages": messages, **kwargs})
+            return self.responses.pop(0)
+
+    failing = ChatResponse(
+        content="",
+        model="m",
+        done=True,
+        tool_calls=[ToolCall(name="read_file", arguments={"path": "nope.csv"})],
+    )
+    wrap_up = ChatResponse(
+        content="I couldn't find a file named nope.csv in your sandbox.",
+        model="m",
+        done=True,
+    )
+    llm = StubLLM([failing] * 3 + [wrap_up])
+
+    events = []
+    async for ev in stream_tool_loop(
+        llm,
+        messages=[{"role": "user", "content": "read nope.csv from my files"}],
+        tools=[],
+        model="test-model",
+        user_id="1",
+        session_id="s-1",
+    ):
+        events.append(ev)
+
+    stream = "".join(events)
+    assert "Here's what I found" not in stream
+    assert "read_file" not in "".join(
+        ev for ev in events if '"type": "finalize"' in ev
+    )
+
+    # The finalize event carries the model's plain-language wrap-up.
+    finalize = [ev for ev in events if '"type": "finalize"' in ev]
+    assert finalize
+    assert "I couldn't find a file named nope.csv" in finalize[-1]
+
+    # The wrap-up LLM call was text-only (tool_choice="none").
+    assert llm.calls[-1]["tool_choice"] == "none"
+
+    # Failed reads surfaced on the wire as tool_result errors.
+    assert any(
+        '"type": "tool_result"' in ev and "File not found" in ev for ev in events
+    )

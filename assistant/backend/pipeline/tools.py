@@ -614,6 +614,7 @@ async def run_tool_loop(
     )
     from assistant.backend.pipeline.async_tools import (
         execute_tools_parallel,
+        format_tool_result,
     )
 
     logger = logging.getLogger(__name__)
@@ -742,9 +743,15 @@ async def run_tool_loop(
                     reasoning_trace.append(
                         raw_args.get("reasoning", ""))
 
-                # Add tool result to messages for next iteration
+                # Add tool result to messages for next iteration (surface the
+                # error on failure so the model can recover instead of retrying
+                # the exact same call)
                 messages.append(
-                    ChatMessage(role="tool", content=str(result.data), name=tool_name)
+                    ChatMessage(
+                        role="tool",
+                        content=format_tool_result(result),
+                        name=tool_name
+                    )
                 )
         else:
             # No tool calls = direct answer (finalize)
@@ -760,12 +767,45 @@ async def run_tool_loop(
                 ),
             }
 
-    # Max turns reached - force finalize
-    answer = (
-        f"I've considered this for {max_turns} turns. "
-        "Here's what I found: "
-        + str(tool_results)
-    )
+    # Max turns reached - synthesize a graceful wrap-up from the model instead
+    # of dumping raw tool metadata at the user. This extra LLM call only fires
+    # on the already-failing path (per the "lean on the model" principle; a
+    # neutral message is a last resort if even the wrap-up call fails).
+    answer = None
+    try:
+        wrap_up = await llm_client.chat(
+            messages=[
+                *messages,
+                ChatMessage(
+                    role="user",
+                    content=(
+                        "You have used all your available tool-call turns "
+                        "without producing a final answer. Wrap up for the "
+                        "user now in plain language: state what you were able "
+                        "to do, what blocked you (including any tool errors), "
+                        "and what you need from them next. Do not describe "
+                        "the tool loop internals or repeat raw tool data."
+                    ),
+                ),
+            ],
+            tools=tools,
+            tool_choice="none",
+            model=loop_model,
+            temperature=temperature,
+            think=think,
+            num_predict=num_predict,
+        )
+        answer = (wrap_up.content or "").strip() or None
+    except Exception:
+        logger.warning(
+            "Tool wrap-up LLM call failed; using graceful fallback",
+            exc_info=True,
+        )
+    if answer is None:
+        answer = (
+            "I wasn't able to complete that within my allowed steps. "
+            "Let me know how you'd like me to adjust."
+        )
     return {
         "answer": answer,
         "loop_terminated": "max_turns",
