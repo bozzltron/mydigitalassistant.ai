@@ -86,6 +86,7 @@ export function AlertsPanel() {
   const getTypeIcon = (type: string) => {
     switch (type) {
       case 'task_result': return '📋'
+      case 'task_alert': return '🚨'
       case 'search_result': return '🔍'
       case 'conflict': return '⚠️'
       case 'correction': return '✏️'

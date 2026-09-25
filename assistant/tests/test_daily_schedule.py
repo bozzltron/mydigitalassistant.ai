@@ -34,8 +34,11 @@ class FakeLLM(OllamaClient):
         super().__init__()
         self.intent_reply: dict = {}
         self.extraction_reply: dict = {}
+        self.chat_reply: str | None = None
+        self.chat_calls: list[list] = []
 
     async def chat(self, messages, *args, **kwargs):  # noqa: ANN001, ANN002
+        self.chat_calls.append(messages)
         system = messages[0].content.lower()
         if "task_type" in system and "classify" in system:
             return ChatResponse(
@@ -51,6 +54,10 @@ class FakeLLM(OllamaClient):
             payload = self.extraction_reply or {"slots": [], "associations": []}
             return ChatResponse(
                 content=json.dumps(payload), model="fake", done=True
+            )
+        if self.chat_reply is not None:
+            return ChatResponse(
+                content=self.chat_reply, model="fake", done=True
             )
         return ChatResponse(content="ok", model="fake", done=True)
 
@@ -268,6 +275,100 @@ async def test_run_scheduled_task_episode_has_frame_ids(env):
     frame = await store.get_frame(episode.frame_ids[0])
     assert frame is not None
     assert frame.name == "ai_news"
+
+
+async def test_run_scheduled_task_delivers_task_prompt_to_model(env):
+    """The task's own instruction must reach the model as the user message.
+
+    Regression: the task prompt used to be folded only into the system prompt;
+    a small local model then drifted and answered from whatever was loudest in
+    memory context (e.g. repeating an old "file created" episode for a deals
+    task), making daily tasks useless.
+    """
+    orch, llm, store, user_id = env
+    await orch.run_scheduled_task(
+        prompt="Keep an eye on AI in the news and report anything major",
+        user_id=user_id,
+        task_name="ai_watch",
+    )
+    user_turns = [
+        m.content for call in llm.chat_calls for m in call if m.role == "user"
+    ]
+    assert len(user_turns) >= 1
+    assert any("Keep an eye on AI in the news" in t for t in user_turns)
+
+
+async def test_daily_run_frame_accumulates_task_names(store):
+    """A day's run frame must accumulate task names, not overwrite them.
+
+    Regression: update_daily_run_frame replaced tasks_run with the latest
+    task's name, so a 10-task morning was recorded as a single-task run and
+    "what did my run find?" was unanswerable from the frame itself.
+    """
+    user = await store.create_user("alice")
+    fid = await store.get_or_create_daily_run_frame(
+        "2099_01_01", owner_user_id=user.id
+    )
+    await store.update_daily_run_frame(fid, ["ai_news_briefing"], "completed")
+    await store.update_daily_run_frame(fid, ["track_deals"], "completed")
+    await store.update_daily_run_frame(fid, ["track_deals"], "completed")  # dedupe
+    async with store._connect() as db:
+        rows = await db.execute_fetchall(
+            "SELECT value FROM slots WHERE frame_id = ? AND key = 'tasks_run'",
+            (fid,),
+        )
+    assert rows and rows[0][0] == "ai_news_briefing,track_deals"
+
+
+async def test_extract_agent_alert_parses_footer(env):
+    from assistant.backend.scheduler.runner import _extract_agent_alert
+
+    report = (
+        "Here's today's briefing on AI: agents keep shipping.\n\n"
+        "ALERT: Frontier model released\n"
+        "A major lab shipped a new model yesterday."
+    )
+    title, message, cleaned = _extract_agent_alert(report, "ai_news_briefing")
+    assert title == "Frontier model released"
+    assert "A major lab shipped" in message
+    assert "ALERT" not in cleaned
+    assert "agents keep shipping" in cleaned
+
+    # No alert footer -> passthrough untouched.
+    title2, message2, cleaned2 = _extract_agent_alert("Nothing special today", "t")
+    assert title2 is None and message2 is None
+    assert cleaned2 == "Nothing special today"
+
+
+async def test_execute_task_creates_agent_alert(env):
+    """A task report ending in ALERT: raises an 'important' alert and the
+    stored summary stays clean of the footer."""
+    from assistant.backend.scheduler.runner import execute_and_record_task
+
+    orch, llm, store, user_id = env
+    llm.chat_reply = (
+        "Switch 2 restocks went out this morning.\n\n"
+        "ALERT: Switch 2 restock\n"
+        "Big restock hit Amazon and sold out fast."
+    )
+    fid = await store.upsert_scheduled_task(
+        name="deals", description="", schedule_cron="daily",
+        prompt="Look for deals", owner_user_id=user_id,
+    )
+    ok, _result = await execute_and_record_task(
+        store, orch, fid, "deals", "Look for deals", user_id
+    )
+    assert ok
+
+    task_alerts = [a for a in await store.get_alerts(user_id) if a.type == "task_alert"]
+    assert len(task_alerts) == 1
+    assert task_alerts[0].severity == "important"
+    assert "Switch 2 restock" in task_alerts[0].title
+    assert "Amazon" in task_alerts[0].message
+
+    tasks = await store.get_scheduled_tasks(owner_user_id=user_id)
+    assert "ALERT" not in tasks[0]["last_result_summary"]
+    assert "Switch 2 restocks went out" in tasks[0]["last_result_summary"]
 
 
 async def test_chat_run_now_disables_once_task(env):

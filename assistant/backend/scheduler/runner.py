@@ -26,7 +26,7 @@ from assistant.backend.config import settings
 from assistant.backend.db.sqlcipher import aiosqlite_connect
 from assistant.backend.memory.gc import run_gc
 from assistant.backend.memory.store import MemoryStore
-from assistant.backend.pipeline.orchestrator import Orchestrator
+from assistant.backend.pipeline.orchestrator import SCHEDULED_TASK_ALERT_PREFIX, Orchestrator
 from assistant.backend.scheduler.summarizer import Summarizer
 
 logger = logging.getLogger(__name__)
@@ -110,6 +110,32 @@ def _signal_handler(signum, frame):
     SHUTDOWN = True
 
 
+def _extract_agent_alert(
+    response: str, task_name: str
+) -> tuple[str | None, str | None, str]:
+    """Pull an agent-raised alert footer out of a task report.
+
+    The scheduled-task directive tells the model it may end its report with
+    ``ALERT: <short title>`` followed by a one-sentence reason. This parser
+    treats everything from that line onward as the alert footer: it returns
+    the title, the body, and the remaining report text (footer stripped) so
+    the alert does not get daisy-chained into the stored task summary.
+    """
+    prefix = SCHEDULED_TASK_ALERT_PREFIX
+    for idx, line in enumerate(response.splitlines()):
+        stripped = line.strip()
+        if stripped.upper().startswith(prefix):
+            title = stripped[len(prefix):].strip().strip(":-— ")
+            title = title or f"Important update from {task_name}"
+            body_lines = [ln.strip() for ln in response.splitlines()[idx + 1:] if ln.strip()]
+            message = " ".join(body_lines) or response[:500]
+            cleaned = "\n".join(
+                ln for ln in response.splitlines()[:idx] if ln.strip()
+            ).strip()
+            return title[:200], message[:1000], cleaned
+    return None, None, response
+
+
 async def execute_and_record_task(
     store: MemoryStore,
     orchestrator: Orchestrator,
@@ -139,7 +165,10 @@ async def execute_and_record_task(
             task_name=task_name,
         )
 
-        full = result[:2000] if result else ""
+        agent_alert_title, agent_alert_message, clean_text = _extract_agent_alert(
+            result or "", task_name
+        )
+        full = (clean_text or result or "")[:2000] if result else ""
 
         await store.update_scheduled_task_run(
             frame_id=task_frame_id,
@@ -176,6 +205,25 @@ async def execute_and_record_task(
             )
         except Exception as e:
             logger.warning("Failed to embed daily run frame: %s", e)
+
+        # Agent-judgment alert: the model flagged something worth the user's
+        # attention during this run (parsed from an ALERT: footer).
+        if agent_alert_title:
+            try:
+                await store.create_alert(
+                    user_id=owner_user_id,
+                    type="task_alert",
+                    title=agent_alert_title,
+                    message=agent_alert_message,
+                    source_frame_id=daily_run_frame_id,
+                    severity="important",
+                )
+                logger.info(
+                    "Task '%s' raised an agent alert: %s",
+                    task_name, agent_alert_title,
+                )
+            except Exception as e:
+                logger.warning("Failed to create agent alert: %s", e)
 
         # Create alert for task completion
         try:

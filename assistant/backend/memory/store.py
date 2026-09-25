@@ -2294,13 +2294,29 @@ class MemoryStore:
         tasks_run: list[str],
         status: str = "completed",
     ) -> None:
-        """Update tasks_run and status slots on a daily-run event frame."""
+        """Append task names to tasks_run and update status on a daily-run frame.
+
+        A day's run frame is touched once per task (the scheduler fires tasks
+        sequentially), so ``tasks_run`` must ACCUMULATE — overwriting it with
+        the last task's name made "what did my run find?" unanswerable from
+        the frame itself.
+        """
         async with self._connect() as db:
+            existing = await db.execute_fetchall(
+                "SELECT value FROM slots WHERE frame_id = ? AND key = 'tasks_run'",
+                (frame_id,),
+            )
+            names: list[str] = []
+            if existing and existing[0][0]:
+                names = [n for n in str(existing[0][0]).split(",") if n]
+            for name in tasks_run:
+                if name not in names:
+                    names.append(name)
             await db.execute(
                 "INSERT OR REPLACE INTO slots "
                 "(frame_id, key, value, updated_at) "
                 "VALUES (?, 'tasks_run', ?, datetime('now'))",
-                (frame_id, ",".join(tasks_run)),
+                (frame_id, ",".join(names)),
             )
             await db.execute(
                 "INSERT OR REPLACE INTO slots "

@@ -147,6 +147,34 @@ class OrchestratorDeps:
     search_tool: WebSearchTool  # Always present (required feature)
 
 
+SCHEDULED_TASK_ALERT_PREFIX = "ALERT:"
+
+
+def build_scheduled_task_directive(prompt: str) -> str:
+    """Build the user message delivered to the model for a scheduled task.
+
+    The task's instruction must reach the model as an explicit user turn;
+    when it is only folded into the system prompt, a small local model
+    drifts and regurgitates whatever is loudest in memory context instead
+    of doing the task.
+
+    The trailing ALERT contract lets the model flag genuinely important
+    findings; the scheduler parses a final ``ALERT: <title>`` line (with an
+    optional one-sentence body) into a high-visibility alert for the user.
+    """
+    return (
+        "You are executing one of the user's standing scheduled tasks.\n\n"
+        f"Task: {prompt}\n\n"
+        "Complete the task now: use the search results and memory state above, "
+        "check for the latest information, and deliver a concrete, useful report "
+        "to the user. Do not restate old memories as if they were new findings.\n\n"
+        "If something in your findings is important enough that the user should "
+        f"see it right away, end your report with a line starting with "
+        f"'{SCHEDULED_TASK_ALERT_PREFIX}' followed by a short title, then a "
+        "one-sentence reason on the next line. Otherwise end normally."
+    )
+
+
 class Orchestrator:
     """Runs the full cognitive loop for a chat turn.
 
@@ -1384,7 +1412,9 @@ class Orchestrator:
 
         Called by the scheduler for due tasks and by _handle_scheduled_task
         for run-now requests. Logs an assistant episode so the output is
-        queryable memory.
+        queryable memory. The task's own instruction is delivered to the
+        model as the user message — never just folded into the system prompt,
+        where it gets drowned by memory context.
         """
         date_str = datetime.now(UTC).strftime("%Y_%m_%d")
         session_id = f"scheduled-{task_name}-{date_str}"
@@ -1400,6 +1430,10 @@ class Orchestrator:
             task_type="functional",
             memory=memory_context,
         )
+        # A scheduled task is a standing instruction to CHECK FOR NEW
+        # information. Never let memory sufficiency suppress the search —
+        # an AI-news monitor must not answer purely from yesterday's frames.
+        plan.search_needed = True
 
         plan_instructions = format_plan_for_prompt(plan)
         system_prompt = build_system_prompt(
@@ -1473,7 +1507,10 @@ class Orchestrator:
             truncated,
         )
 
-        messages = [ChatMessage(role="system", content=system_prompt)]
+        messages = [
+            ChatMessage(role="system", content=system_prompt),
+            ChatMessage(role="user", content=build_scheduled_task_directive(prompt)),
+        ]
         use_thinking = await self.llm_client.supports_thinking(self.llm_client.chat_model)
         llm_response = await self.llm_client.chat(
             messages,

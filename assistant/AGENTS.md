@@ -255,13 +255,23 @@ the assessment criteria, memory budget, and re-evaluation process.
 - **Tasks are memory.** Each task is a `scheduled_task` frame with slots for `prompt`,
   `frequency` (`daily`/`once`), `enabled`, `next_run`, `last_run`, and `description`.
   No hidden scheduler-only columns.
-- **Execution uses the full chat loop.** When a task fires, the scheduler calls
-  `orchestrator.chat()` with the task prompt as the user message. The task gets the
-  same retrieval, search, reasoning, extraction, conflict resolution, and episode
-  logging as any chat turn.
+- **Execution uses the full cognitive loop.** When a task fires, the scheduler
+  calls `orchestrator.run_scheduled_task(prompt, …)`, which retrieves memory,
+  runs the reasoner, **always searches for the latest information** (a monitor
+  task must not answer purely from yesterday's frames), and delivers the task's
+  own instruction to the model as the explicit user message — never folded only
+  into the system prompt, where a small local model drifts and regurgitates old
+  episodes instead of doing the task.
+- **Agent-raised alerts.** While executing a task the model may flag something
+  genuinely important by ending its report with `ALERT: <short title>` plus a
+  one-sentence reason. The runner parses that footer into a high-visibility
+  `task_alert` (severity `important`) in the user's alert bell, and strips the
+  footer from the stored task summary so it does not pollute the output memory.
 - **Daily-run event frames.** Each morning the scheduler creates/updates an `event`
   frame named `daily_run_YYYY_MM_DD`. It records `date`, `tasks_run`, and `status`,
   and associations link each task frame to the run and to its output episode.
+  `tasks_run` ACCUMULATES as tasks fire (never overwritten with the last task's
+  name), so the frame answers "what did my morning run cover?".
 - **Outputs are queryable.** The assistant's response from a task run is a normal
   assistant episode. The user can later ask "What did my morning briefing find?"
   and retrieval will surface it.
