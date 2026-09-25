@@ -1,6 +1,6 @@
 /**
  * Shared rendering helpers for the Brain Observatory graph components
- * (BrainGraph 2D + BrainGraphSigma 3D). Kept in one place so both views
+ * (BrainGraph 2D + BrainGraph3D). Kept in one place so both views
  * render nodes/edges/tooltips identically.
  */
 import type { BrainConflict, GraphNode } from '../../types'

@@ -36,8 +36,8 @@ interface BrainGraphProps {
   setTouring: (touring: boolean) => void
 }
 
-// Lazy-loaded 3D component (Sigma.js WebGL)
-const BrainGraph3D = lazy(() => import('./BrainGraphSigma').then(m => ({ default: m.default })))
+// Lazy-loaded 3D component (three.js WebGL, orbital camera)
+const BrainGraph3D = lazy(() => import('./BrainGraph3D').then(m => ({ default: m.default })))
 
 function edgePath(d: SimLink): string {
   const sx = d.source.x ?? 0

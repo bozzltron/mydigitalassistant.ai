@@ -123,14 +123,14 @@ describe('BrainPage', () => {
     expect(fetchMock).toHaveBeenCalledWith('/memory/conflicts')
   })
 
-  it('respects the saved 2D view mode without loading the Sigma/WebGL 3D view', async () => {
+  it('respects the saved 2D view mode without loading the WebGL 3D view', async () => {
     render(() => <BrainPage />)
 
     await waitFor(() => {
       expect(document.querySelectorAll('.brain-canvas .node circle').length).toBeGreaterThan(0)
     })
 
-    expect(document.getElementById('brain-canvas-sigma')).toBeNull()
+    expect(document.getElementById('brain-canvas-3d')).toBeNull()
     expect(document.querySelector('.brain-canvas')).not.toBeNull()
   })
 
@@ -144,5 +144,18 @@ describe('BrainPage', () => {
     const statsText = document.querySelector('.stats-bar')?.textContent ?? ''
     expect(statsText).toContain('2 nodes')
     expect(statsText).toContain('1 edges')
+  })
+
+  it('mounts the 3D viewer canvas when the saved view is 3d', async () => {
+    localStorage.setItem('brain-view', '3d')
+    render(() => <BrainPage />)
+
+    // The 3D container mounts (init is a no-op in jsdom: no WebGL, no layout).
+    await waitFor(() => {
+      expect(document.getElementById('brain-canvas-3d')).not.toBeNull()
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith('/memory/frames')
+    expect(fetchMock).toHaveBeenCalledWith('/memory/conflicts')
   })
 })

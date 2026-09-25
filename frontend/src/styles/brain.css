@@ -326,6 +326,11 @@
   display: block;
 }
 
+/* The three.js canvas is transparent; add subtle depth behind the 3D ball. */
+#brain-canvas-3d {
+  background: radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.045) 0%, transparent 62%);
+}
+
 .graph-placeholder {
   display: flex;
   flex-direction: column;

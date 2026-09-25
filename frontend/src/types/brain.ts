@@ -88,7 +88,7 @@ export interface BrainTopicSearchResponse {
   summary: string
 }
 
-/** A frame prepared for graph layout (2D d3 / 3D sigma). */
+/** A frame prepared for graph layout (2D d3 / 3D force-graph). */
 export interface GraphNode {
   id: number
   name: string
