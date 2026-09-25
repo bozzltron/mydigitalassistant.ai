@@ -1,52 +1,46 @@
 import { createSignal, createMemo, onMount, onCleanup, For, Show } from 'solid-js'
 import BrainGraph from './BrainGraph'
 import FrameDetail from './FrameDetail'
-import type { Frame, Association, Slot, Conflict } from '../../types'
+import type {
+  BrainAssociation,
+  BrainConflict,
+  BrainFrame,
+  BrainTopicMatch,
+  BrainTopicSearchResponse,
+  GraphLink,
+  GraphNode,
+} from '../../types'
+import { TYPE_COLORS } from './brainLib'
 
-interface TopicMatch {
-  frame: Frame
-  slots: Slot[]
-  similarity: number | null
-  associations: Association[]
-  episodes: Array<{ role: string; content: string; timestamp: string }>
-  conflicts: Conflict[]
-}
-
-interface TopicSearchResponse {
-  query: string
-  semantic_search: boolean
-  backend_rev: number
-  matches: TopicMatch[]
-  summary: string
-}
-
-const TYPE_COLORS: Record<string, string> = {
-  person: '#f78166',
-  concept: '#d2a8ff',
-  event: '#79c0ff',
-  household: '#7ee787',
-  entity: '#ffa657',
+function initialViewMode(): '2d' | '3d' {
+  try {
+    const saved = localStorage.getItem('brain-view')
+    return saved === '2d' || saved === '3d' ? saved : '3d'
+  } catch {
+    return '3d'
+  }
 }
 
 export default function BrainPage() {
-  const [frames, setFrames] = createSignal<Frame[]>([])
-  const [associations, setAssociations] = createSignal<Association[]>([])
-  const [conflicts, setConflicts] = createSignal<Conflict[]>([])
-  const [selectedFrame, setSelectedFrame] = createSignal<Frame | null>(null)
+  const [frames, setFrames] = createSignal<BrainFrame[]>([])
+  const [associations, setAssociations] = createSignal<BrainAssociation[]>([])
+  const [conflicts, setConflicts] = createSignal<BrainConflict[]>([])
+  const [selectedFrame, setSelectedFrame] = createSignal<BrainFrame | null>(null)
   const [highlightedNodeIds, setHighlightedNodeIds] = createSignal<Set<number>>(new Set())
   const [isLoading, setIsLoading] = createSignal(true)
   const [error, setError] = createSignal<string | null>(null)
   const [searchQuery, setSearchQuery] = createSignal('')
-  const [searchResults, setSearchResults] = createSignal<TopicMatch[]>([])
+  const [searchResults, setSearchResults] = createSignal<BrainTopicMatch[]>([])
   const [isSearching, setIsSearching] = createSignal(false)
   const [searchError, setSearchError] = createSignal<string | null>(null)
   const [showSearchPanel, setShowSearchPanel] = createSignal(false)
   const [agentName, setAgentName] = createSignal('Brain Observatory')
   const [width, setWidth] = createSignal(800)
   const [height, setHeight] = createSignal(600)
-  const [conflictsByFrame, setConflictsByFrame] = createSignal<Record<number, Conflict[]>>({})
-  // 3D view state
-  const [mode, setMode] = createSignal<'2d' | '3d'>('3d')
+  const [conflictsByFrame, setConflictsByFrame] = createSignal<Record<number, BrainConflict[]>>({})
+  // 3D view state (initial mode read synchronously so saved 2D users never
+  // flash the Sigma/WebGL view)
+  const [mode, setMode] = createSignal<'2d' | '3d'>(initialViewMode())
   const [touring, setTouring] = createSignal(false)
 
   const updateDimensions = () => {
@@ -60,9 +54,6 @@ export default function BrainPage() {
   onMount(() => {
     updateDimensions()
     window.addEventListener('resize', updateDimensions)
-    // Load saved view mode
-    const savedMode = localStorage.getItem('brain-view') as '2d' | '3d' | null
-    if (savedMode) setMode(savedMode)
   })
 
   onCleanup(() => {
@@ -83,13 +74,13 @@ export default function BrainPage() {
         framesRes.json(),
         assocRes.json(),
         conflictsRes.json(),
-      ])
+      ]) as [BrainFrame[], BrainAssociation[], BrainConflict[]]
 
       setFrames(framesData)
       setAssociations(associationsData)
       const pendingConflicts = conflictsData.filter(c => c.status === 'pending')
       setConflicts(pendingConflicts)
-      const conflictsByFrameMap: Record<number, Conflict[]> = {}
+      const conflictsByFrameMap: Record<number, BrainConflict[]> = {}
       for (const c of pendingConflicts) {
         (conflictsByFrameMap[c.frame_id] ||= []).push(c)
       }
@@ -117,7 +108,7 @@ export default function BrainPage() {
     loadAgentName()
   })
 
-  const handleNodeClick = (node: Node) => {
+  const handleNodeClick = (node: GraphNode) => {
     const frame = frames().find(f => f.id === node.id)
     if (frame) {
       setSelectedFrame(frame)
@@ -138,7 +129,7 @@ export default function BrainPage() {
       const params = new URLSearchParams({ q: searchQuery() })
       const res = await fetch(`/memory/search?${params.toString()}`)
       if (!res.ok) throw new Error('Search failed')
-      const data: TopicSearchResponse = await res.json()
+      const data: BrainTopicSearchResponse = await res.json()
       setSearchResults(data.matches)
       setShowSearchPanel(true)
     } catch (err) {
@@ -149,7 +140,7 @@ export default function BrainPage() {
     }
   }
 
-  const handleResultClick = (match: TopicMatch) => {
+  const handleResultClick = (match: BrainTopicMatch) => {
     setSelectedFrame(match.frame)
     const newHighlighted = new Set(highlightedNodeIds())
     newHighlighted.add(match.frame.id)
@@ -159,7 +150,20 @@ export default function BrainPage() {
 
   const handleBack = () => {
     setSelectedFrame(null)
-    setHighlightedNodeIds(new Set())
+    setHighlightedNodeIds(new Set<number>())
+  }
+
+  const handleConflictResolve = async (conflictId: number, value: string) => {
+    try {
+      const params = new URLSearchParams({ value })
+      const res = await fetch(`/memory/conflicts/${conflictId}/resolve?${params.toString()}`, {
+        method: 'POST',
+      })
+      if (!res.ok) throw new Error('Resolve failed')
+      await loadBrainData()
+    } catch (err) {
+      console.error('Failed to resolve conflict:', err)
+    }
   }
 
   const handleModeChange = (newMode: '2d' | '3d') => {
@@ -174,33 +178,24 @@ export default function BrainPage() {
     setTouring(t => !t)
   }
 
-  interface Node {
-    id: number
-    name: string
-    type: string
-    confidence: number
-    priority: number
-    essential: boolean
-    hasConflict: boolean
-  }
-
-  const nodes = createMemo<Node[]>(() => {
-    const conflictKeys = new Set(
-      conflicts().map(c => `${c.frame_id}-${c.slot_key}`)
-    )
+  const nodes = createMemo<GraphNode[]>(() => {
+    const conflictFrameIds = new Set(conflicts().map(c => c.frame_id))
     return frames().map(f => ({
-      ...f,
+      id: f.id,
+      name: f.name,
       type: f.type || 'entity',
-      hasConflict: f.slots?.some((s: Slot) => conflictKeys.has(`${f.id}-${s.key}`)) || false
+      confidence: f.confidence,
+      priority: f.priority,
+      essential: f.essential,
+      hasConflict: conflictFrameIds.has(f.id),
     }))
   })
 
-  const links = createMemo(() => {
+  const links = createMemo<GraphLink[]>(() => {
     const nodeMap = new Map(nodes().map(n => [n.id, n]))
     return associations()
       .filter(a => a.from_frame_id && a.to_frame_id)
       .map(a => ({
-        ...a,
         source: a.from_frame_id,
         target: a.to_frame_id,
         relationType: a.relation_type,
@@ -254,7 +249,7 @@ export default function BrainPage() {
             class="refresh-btn"
             title="Toggle 2D / 3D view"
             onClick={() => handleModeChange(mode() === '3d' ? '2d' : '3d')}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+            style={{ 'display': 'inline-flex', 'align-items': 'center', 'gap': '4px' }}
           >
             {mode() === '3d' ? '2D' : '3D'}
           </button>
@@ -263,7 +258,7 @@ export default function BrainPage() {
             id="tour-btn"
             title="Auto-orbit tour"
             onClick={toggleTour}
-            style={{ display: mode() === '3d' ? 'inline-flex' : 'none', alignItems: 'center', gap: '4px' }}
+            style={{ 'display': mode() === '3d' ? 'inline-flex' : 'none', 'align-items': 'center', 'gap': '4px' }}
           >
             {touring() ? 'Stop Tour' : 'Tour'}
           </button>
@@ -320,7 +315,7 @@ export default function BrainPage() {
 
         <div class="brain-main">
           {selectedFrame() ? (
-            <FrameDetail frame={selectedFrame()} onBack={handleBack} conflicts={conflicts()} />
+            <FrameDetail frame={selectedFrame() ?? undefined} onBack={handleBack} conflicts={conflicts()} onConflictResolved={loadBrainData} />
           ) : (
             <div class="brain-graph-container" id="brain-graph-container">
               <Show when={!isLoading() && nodes().length === 0}>
@@ -340,6 +335,7 @@ export default function BrainPage() {
                   conflictsByFrame={conflictsByFrame}
                   mode={mode}
                   onModeChange={handleModeChange}
+                  onConflictResolve={handleConflictResolve}
                   touring={touring}
                   setTouring={setTouring}
                 />

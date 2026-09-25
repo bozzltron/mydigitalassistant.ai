@@ -2,203 +2,122 @@ import { createSignal, createEffect, onMount, onCleanup } from 'solid-js'
 import Graph from 'graphology'
 import Sigma from 'sigma'
 import ForceAtlas2 from 'graphology-layout-forceatlas2'
-
-interface Conflict {
-  id: number
-  frame_id: number
-  slot_key: string
-  existing_value: string | null
-  new_value: string | null
-  status: string
-}
-
-interface Node {
-  id: number
-  name: string
-  type: string
-  confidence: number
-  priority: number
-  essential: boolean
-  x?: number
-  y?: number
-  z?: number
-  vx?: number
-  vy?: number
-  vz?: number
-  fx?: number | null
-  fy?: number | null
-  fz?: number | null
-  hasConflict: boolean
-  slots?: Array<{ key: string; value: string; confidence?: number }>
-}
-
-interface Link {
-  source: number
-  target: number
-  relationType: string
-  confidence: number
-}
+import type { BrainConflict, GraphLink, GraphNode } from '../../types'
+import { typeColor, hexToRgba, nodeRadius, relationColor, tooltipHtml } from './brainLib'
 
 interface BrainGraphSigmaProps {
-  nodes: () => Node[]
-  links: () => Link[]
+  nodes: () => GraphNode[]
+  links: () => GraphLink[]
   width: () => number
   height: () => number
-  onNodeClick?: (node: Node) => void
+  onNodeClick?: (node: GraphNode) => void
   highlightedNodeIds: () => Set<number>
-  conflictsByFrame: () => Record<number, Conflict[]>
+  conflictsByFrame: () => Record<number, BrainConflict[]>
   touring: () => boolean
   setTouring: (touring: boolean) => void
   onModeChange: (mode: '2d' | '3d') => void
+  onTooltip?: (html: string, x: number, y: number) => void
+  onHideTooltip?: () => void
 }
 
-const TYPE_COLORS: Record<string, string> = {
-  person: '#f78166',
-  concept: '#d2a8ff',
-  event: '#79c0ff',
-  household: '#7ee787',
-  entity: '#ffa657',
-}
-
-const RELATION_GROUPS = [
-  { re: /^(is_a|instance_of|type_of|part_of|has|subclass_of)$/, color: '#79c0ff', label: 'taxonomy / structure' },
-  { re: /(located_in|based_in|place|city|country)/, color: '#7ee787', label: 'spatial' },
-  { re: /(founded|follows|inquir|member|works_for|created|produced|wrote|compared|participation)/, color: '#f78166', label: 'social / agency' },
-  { re: /(source|citation|reference|forecast|compare|lists)/, color: '#d2a8ff', label: 'informational' },
-  { re: /^related_to$|^associated/, color: '#4a5470', label: 'related (generic)' },
-]
-const FALLBACK_EDGE_COLOR = '#8b9bb8'
-
-function relationColor(relationType: string): string {
-  for (const g of RELATION_GROUPS) {
-    if (g.re.test(relationType)) return g.color
+/**
+ * Node attributes stored in the graphology graph. `frameType` holds the
+ * semantic category (person/concept/…) because sigma v2 uses the `type`
+ * attribute to select its WebGL render program ("circle", "line", …) — a
+ * category value there makes sigma throw. `type` is deliberately left unset
+ * so sigma applies its default render program.
+ *
+ * `withPosition` is disabled when merging attributes into an existing node so
+ * its ForceAtlas2-computed layout position is preserved.
+ */
+function nodeAttributes(n: GraphNode, withPosition = true) {
+  return {
+    ...(withPosition
+      ? {
+          x: n.x ?? Math.random() * 800 - 400,
+          y: n.y ?? Math.random() * 600 - 300,
+        }
+      : {}),
+    size: nodeRadius(n),
+    color: typeColor(n.type),
+    label: n.name,
+    name: n.name,
+    frameType: n.type,
+    confidence: n.confidence,
+    priority: n.priority,
+    essential: n.essential,
+    hasConflict: n.hasConflict,
+    slots: n.slots,
   }
-  return FALLBACK_EDGE_COLOR
 }
 
-function nodeRadius(d: Node): number {
-  const base = 4
-  const conf = d.confidence || 0.5
-  return base + conf * 8
+function edgeAttributes(l: GraphLink) {
+  return {
+    relationType: l.relationType,
+    confidence: l.confidence,
+    color: relationColor(l.relationType),
+    size: Math.max(0.5, 2 * (l.confidence || 0.5)),
+  }
 }
 
-function hexToRgba(hex: string, alpha: number): string {
-  const r = parseInt(hex.slice(1, 3), 16)
-  const g = parseInt(hex.slice(3, 5), 16)
-  const b = parseInt(hex.slice(5, 7), 16)
-  return `rgba(${r},${g},${b},${alpha})`
+/** Deduplicate associations by unordered pair; graphology is not a multi-graph. */
+function uniquePairs(links: GraphLink[]): [GraphLink, string][] {
+  const seen = new Set<string>()
+  const out: [GraphLink, string][] = []
+  for (const l of links) {
+    if (l.source === l.target) continue
+    const pair = l.source < l.target ? `${l.source}-${l.target}` : `${l.target}-${l.source}`
+    if (seen.has(pair)) continue
+    seen.add(pair)
+    out.push([l, pair])
+  }
+  return out
 }
 
-function esc(value: string): string {
-  return String(value ?? '')
-    .replace(/&/g, '&').replace(/</g, '<')
-    .replace(/>/g, '>').replace(/"/g, '"')
-    .replace(/'/g, '&apos;')
-}
+function buildGraph(nodes: GraphNode[], links: GraphLink[]): Graph {
+  const g = new Graph()
 
-function escAttr(value: string): string {
-  return String(value ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")
-}
+  nodes.forEach(n => {
+    g.addNode(String(n.id), nodeAttributes(n))
+  })
 
-function tooltipHtml(d: Node, conflictsByFrame: Record<number, Conflict[]>): string {
-  const conf = Math.round((d.confidence || 0.5) * 100)
-  const pri = Math.round((d.priority || 0.5) * 100)
+  uniquePairs(links).forEach(([l]) => {
+    if (g.hasNode(String(l.source)) && g.hasNode(String(l.target))) {
+      g.addEdge(String(l.source), String(l.target), edgeAttributes(l))
+    }
+  })
 
-  const slotsHtml = (d.slots || []).slice(0, 5).map(s => {
-    const sConf = s.confidence != null ? Math.round(s.confidence * 100) : null
-    return `
-    <div class="tooltip-slot">
-      <span class="tooltip-slot-key">${esc(s.key)}:</span>
-      <span class="tooltip-slot-val">${esc(s.value)}</span>
-      ${sConf != null ? `<span class="tooltip-slot-conf" title="slot confidence">${sConf}%</span>` : ''}
-    </div>
-  `}).join('')
-
-  const frameConflicts = (conflictsByFrame[d.id] as Conflict[]) || []
-  const conflictsHtml = frameConflicts.map(c => `
-    <div class="tooltip-conflict">
-      <div class="tooltip-conflict-line">
-        <span class="tooltip-conflict-key">${esc(c.slot_key)}</span>:
-        <span class="tooltip-conflict-old">${esc(c.existing_value ?? '∅')}</span>
-        →
-        <span class="tooltip-conflict-new">${esc(c.new_value ?? '∅')}</span>
-      </div>
-      <div class="tooltip-conflict-actions">
-        <button onclick="resolveConflict(${c.id}, '${escAttr(c.existing_value ?? '')}')">Keep ${esc(c.existing_value ?? 'old')}</button>
-        <button class="use-new" onclick="resolveConflict(${c.id}, '${escAttr(c.new_value ?? '')}')">Use ${esc(c.new_value ?? 'new')}</button>
-      </div>
-    </div>
-  `).join('')
-
-  return `
-    <div class="tooltip-name" style="color:${TYPE_COLORS[d.type] || TYPE_COLORS.entity}">${esc(d.name)}</div>
-    <div class="tooltip-type">${d.type}</div>
-    <div class="tooltip-meta">
-      confidence: ${conf}% &nbsp;|&nbsp; priority: ${pri}%
-      ${d.essential ? '&nbsp;|&nbsp; <span style="color:var(--warning)">essential</span>' : ''}
-      ${d.hasConflict ? '&nbsp;|&nbsp; <span style="color:var(--error)">conflict</span>' : ''}
-    </div>
-    ${d.slots?.length ? `<div class="tooltip-slots">${slotsHtml}${d.slots.length > 5 ? `<div style="color:var(--text-dim)">+${d.slots.length - 5} more</div>` : ''}</div>` : ''}
-    ${frameConflicts.length ? `<div class="tooltip-conflicts"><div class="tooltip-conflicts-title">Pending conflicts</div>${conflictsHtml}</div>` : ''}
-  `
+  return g
 }
 
 export default function BrainGraphSigma(props: BrainGraphSigmaProps) {
   let containerEl: HTMLDivElement | null = null
   const [sigmaInstance, setSigmaInstance] = createSignal<Sigma | null>(null)
   const [graph, setGraph] = createSignal<Graph | null>(null)
-  const [neighborsMap] = createSignal<Map<number, Set<number>>>(new Map())
-  const [highlightedFrameIds] = createSignal<Set<number>>(new Set())
+  const [neighborsMap, setNeighborsMap] = createSignal<Map<number, Set<number>>>(new Map())
+  const [highlightedFrameIds, setHighlightedFrameIds] = createSignal<Set<number>>(new Set())
   const [isInitialized, setIsInitialized] = createSignal(false)
 
   function setContainerRef(el: HTMLDivElement | null) {
     containerEl = el
   }
 
-  function buildGraph(nodes: Node[], links: Link[]): Graph {
-    const g = new Graph()
-    
-    nodes.forEach(n => {
-      g.addNode(n.id, {
-        ...n,
-        x: n.x ?? Math.random() * 800 - 400,
-        y: n.y ?? Math.random() * 600 - 300,
-        size: nodeRadius(n),
-        color: TYPE_COLORS[n.type] || TYPE_COLORS.entity,
-        label: n.name,
-      })
-    })
-    
-    links.forEach(l => {
-      if (g.hasNode(l.source) && g.hasNode(l.target)) {
-        g.addEdge(l.source, l.target, {
-          relationType: l.relationType,
-          confidence: l.confidence,
-          color: relationColor(l.relationType),
-          size: Math.max(0.5, 2 * (l.confidence || 0.5)),
-        })
-      }
-    })
-    
-    return g
-  }
-
-  function updateNeighborsMap(g: Graph, links: Link[]) {
+  function updateNeighborsMap(links: GraphLink[]) {
     const newNeighborsMap = new Map<number, Set<number>>()
     links.forEach(l => {
-      if (!newNeighborsMap.has(l.source)) newNeighborsMap.set(l.source, new Set())
-      if (!newNeighborsMap.has(l.target)) newNeighborsMap.set(l.target, new Set())
+      if (!newNeighborsMap.has(l.source)) newNeighborsMap.set(l.source, new Set<number>())
+      if (!newNeighborsMap.has(l.target)) newNeighborsMap.set(l.target, new Set<number>())
       newNeighborsMap.get(l.source)!.add(l.target)
       newNeighborsMap.get(l.target)!.add(l.source)
     })
     setNeighborsMap(newNeighborsMap)
   }
 
+  /** Hover (highlightedFrameIds) merged with the persistent click selection. */
   function computeHighlightedNodes(): Set<number> {
     const lit = new Set<number>()
-    const ids = highlightedFrameIds()
-    if (ids.size === 0) return lit
-    for (const id of ids) {
+    const seed = new Set<number>([...highlightedFrameIds(), ...props.highlightedNodeIds()])
+    for (const id of seed) {
       lit.add(id)
       const nbrs = neighborsMap().get(id)
       if (nbrs) nbrs.forEach(n => lit.add(n))
@@ -208,12 +127,11 @@ export default function BrainGraphSigma(props: BrainGraphSigmaProps) {
 
   function applyHighlight(sigma: Sigma) {
     const highlighted = computeHighlightedNodes()
-    
+
     if (highlighted.size === 0) {
       sigma.setSetting('nodeReducer', (node, data) => ({
         ...data,
-        color: TYPE_COLORS[data.type] || TYPE_COLORS.entity,
-        label: data.name,
+        color: typeColor(data.frameType as string),
       }))
       sigma.setSetting('edgeReducer', (edge, data) => ({
         ...data,
@@ -224,26 +142,43 @@ export default function BrainGraphSigma(props: BrainGraphSigmaProps) {
     }
 
     sigma.setSetting('nodeReducer', (node, data) => {
-      const isLit = highlighted.has(node)
-      const baseColor = TYPE_COLORS[data.type] || TYPE_COLORS.entity
+      const isLit = highlighted.has(Number(node))
+      const baseColor = typeColor(data.frameType as string)
       return {
         ...data,
         color: isLit ? baseColor : hexToRgba(baseColor, 0.18),
-        label: data.name,
       }
     })
-    
+
     sigma.setSetting('edgeReducer', (edge, data) => {
-      const source = edge.source
-      const target = edge.target
-      const isLit = highlighted.has(source) || highlighted.has(target)
+      const [source, target] = graph()?.extremities(edge) ?? []
+      const isLit = highlighted.has(Number(source)) || highlighted.has(Number(target))
       return {
         ...data,
-        color: isLit ? data.color : hexToRgba(data.color, 0.12),
+        color: isLit ? data.color : hexToRgba(data.color as string, 0.12),
       }
     })
-    
+
     sigma.refresh()
+  }
+
+  async function showTooltip(event: MouseEvent, d: GraphNode) {
+    let slots = d.slots
+    if (!slots) {
+      try {
+        const res = await fetch(`/memory/frames/${d.id}/slots`)
+        slots = await res.json() as GraphNode['slots']
+        d.slots = slots
+      } catch {
+        slots = []
+      }
+    }
+    const rect = document.getElementById('brain-graph-container')?.getBoundingClientRect()
+    if (!rect) return
+    let tx = event.clientX - rect.left + 15
+    const ty = event.clientY - rect.top - 10
+    if (tx + 280 > rect.width) tx = event.clientX - rect.left - 295
+    props.onTooltip?.(tooltipHtml({ ...d, slots }, props.conflictsByFrame()), tx, ty)
   }
 
   async function initSigma() {
@@ -254,59 +189,51 @@ export default function BrainGraphSigma(props: BrainGraphSigmaProps) {
     try {
       const g = buildGraph(props.nodes(), props.links())
       setGraph(g)
-      updateNeighborsMap(g, props.links())
+      updateNeighborsMap(props.links())
 
-      // Run ForceAtlas2 layout
+      // Run ForceAtlas2 layout so every node has a valid (x, y) before Sigma
+      // consumes it (Sigma throws on nodes without positions).
       ForceAtlas2.assign(g, {
         iterations: 100,
         settings: {
           gravity: 1,
           scalingRatio: 10,
           slowDown: 1,
-        }
+        },
       })
 
       const sigma = new Sigma(g, containerEl, {
         renderLabels: true,
         labelFont: 'Inter, system-ui, sans-serif',
         labelSize: 12,
-        labelColor: 'node',
-        labelBackground: 'node',
-        labelBackgroundColor: 'rgba(0,0,0,0.7)',
-        labelGrid: false,
+        labelColor: { attribute: 'color' },
         hideEdgesOnMove: true,
-        minEdgeSize: 0.5,
-        maxEdgeSize: 4,
-        minNodeSize: 1,
-        maxNodeSize: 20,
         nodeReducer: (node, data) => ({
           ...data,
-          size: data.size || nodeRadius(data),
-          color: data.color,
-          label: data.name,
+          size: (data.size as number) || nodeRadius({ confidence: data.confidence as number }),
+          color: typeColor(data.frameType as string),
         }),
         edgeReducer: (edge, data) => ({
           ...data,
           color: data.color,
-          size: data.size || Math.max(0.5, 2 * data.confidence),
+          size: (data.size as number) || Math.max(0.5, 2 * ((data.confidence as number) || 0.5)),
         }),
       })
 
       setSigmaInstance(sigma)
       setIsInitialized(true)
 
-      // Interaction handlers
       // eslint-disable-next-line solid/reactivity
-      sigma.on('clickNode', (e: { node: string; event: MouseEvent }) => {
-        const nodeData = g.getNodeAttributes(e.node) as unknown as Node
-        showTooltip(e.event, nodeData)
+      sigma.on('clickNode', (payload) => {
+        const nodeData = g.getNodeAttributes(payload.node) as unknown as GraphNode
+        showTooltip(payload.event.original, nodeData)
         props.onNodeClick?.(nodeData)
       })
 
       // eslint-disable-next-line solid/reactivity
-      sigma.on('enterNode', (e: { node: string }) => {
-        const nodeId = parseInt(e.node, 10)
-        const highlighted = new Set(highlightedFrameIds())
+      sigma.on('enterNode', (payload) => {
+        const nodeId = Number(payload.node)
+        const highlighted = new Set<number>(highlightedFrameIds())
         highlighted.add(nodeId)
         const nbrs = neighborsMap().get(nodeId)
         if (nbrs) nbrs.forEach(n => highlighted.add(n))
@@ -316,18 +243,16 @@ export default function BrainGraphSigma(props: BrainGraphSigmaProps) {
 
       // eslint-disable-next-line solid/reactivity
       sigma.on('leaveNode', () => {
-        setHighlightedFrameIds(new Set())
+        setHighlightedFrameIds(new Set<number>())
         applyHighlight(sigma)
       })
 
       sigma.on('clickStage', () => {
-        const tooltip = document.getElementById('tooltip')
-        if (tooltip) tooltip.classList.remove('visible')
+        props.onHideTooltip?.()
       })
 
-      // Handle resize
       const handleResize = () => {
-        if (containerEl) {
+        if (containerEl && sigmaInstance()) {
           sigma.resize()
         }
       }
@@ -345,102 +270,39 @@ export default function BrainGraphSigma(props: BrainGraphSigmaProps) {
     }
   }
 
-  function showTooltip(event: MouseEvent, d: Node) {
-    const tooltip = document.getElementById('tooltip')
-    if (!tooltip) return
-    if (!d.slots) {
-      fetch(`/memory/frames/${d.id}/slots`)
-        .then(r => r.json())
-        .then(slots => { d.slots = slots })
-        .catch(() => { d.slots = [] })
-        // eslint-disable-next-line solid/reactivity
-        .finally(() => {
-tooltip.textContent = tooltipHtml(d, props.conflictsByFrame())
-          const rect = document.getElementById('brain-graph-container')?.getBoundingClientRect()
-          if (!rect) return
-          let tx = event.clientX - rect.left + 15
-          const ty = event.clientY - rect.top - 10
-          if (tx + 280 > rect.width) tx = event.clientX - rect.left - 295
-          tooltip.style.left = tx + 'px'
-          tooltip.style.top = ty + 'px'
-          tooltip.classList.add('visible')
-        })
-    } else {
-      tooltip.textContent = tooltipHtml(d, props.conflictsByFrame())
-      const rect = document.getElementById('brain-graph-container')?.getBoundingClientRect()
-      if (!rect) return
-      let tx = event.clientX - rect.left + 15
-      const ty = event.clientY - rect.top - 10
-      if (tx + 280 > rect.width) tx = event.clientX - rect.left - 295
-      tooltip.style.left = tx + 'px'
-      tooltip.style.top = ty + 'px'
-      tooltip.classList.add('visible')
-    }
-  }
-
   function refreshGraph() {
     const sigma = sigmaInstance()
     const g = graph()
     if (!sigma || !g) return
 
-    const currentNodes = new Set(g.nodes().map(n => Number(n)))
     const newNodes = props.nodes()
     const newLinks = props.links()
 
-    // Add new nodes
+    // Add / update nodes. Existing nodes keep their layout positions.
     newNodes.forEach(n => {
-      if (!currentNodes.has(n.id)) {
-        g.addNode(n.id, {
-          ...n,
-          x: n.x ?? Math.random() * 800 - 400,
-          y: n.y ?? Math.random() * 600 - 300,
-          size: nodeRadius(n),
-          color: TYPE_COLORS[n.type] || TYPE_COLORS.entity,
-          label: n.name,
-        })
+      const key = String(n.id)
+      if (!g.hasNode(key)) {
+        g.addNode(key, nodeAttributes(n))
+      } else {
+        // Keep existing layout position: merge attrs without x/y.
+        g.mergeNodeAttributes(key, nodeAttributes(n, false))
       }
     })
 
-    // Update existing nodes
-    newNodes.forEach(n => {
-      if (g.hasNode(n.id)) {
-        g.mergeNodeAttributes(n.id, {
-          name: n.name,
-          type: n.type,
-          confidence: n.confidence,
-          priority: n.priority,
-          essential: n.essential,
-          hasConflict: n.hasConflict,
-          size: nodeRadius(n),
-          color: TYPE_COLORS[n.type] || TYPE_COLORS.entity,
-          label: n.name,
-        })
+    // Add / update edges (deduped by unordered pair).
+    uniquePairs(newLinks).forEach(([l]) => {
+      const source = String(l.source)
+      const target = String(l.target)
+      if (!g.hasNode(source) || !g.hasNode(target)) return
+      if (g.hasEdge(source, target)) {
+        const edge = g.edge(source, target)
+        if (edge !== undefined) g.mergeEdgeAttributes(edge, edgeAttributes(l))
+      } else {
+        g.addEdge(source, target, edgeAttributes(l))
       }
     })
 
-    // Update edges
-    const currentEdges = new Set(g.edges().map(e => `${e.source}-${e.target}`))
-    newLinks.forEach(l => {
-      const edgeKey = `${l.source}-${l.target}`
-      if (!currentEdges.has(edgeKey) && g.hasNode(l.source) && g.hasNode(l.target)) {
-        g.addEdge(l.source, l.target, {
-          relationType: l.relationType,
-          confidence: l.confidence,
-          color: relationColor(l.relationType),
-          size: Math.max(0.5, 2 * (l.confidence || 0.5)),
-        })
-      } else if (g.hasEdge(l.source, l.target)) {
-        const edgeId = g.edge(l.source, l.target)
-        g.mergeEdgeAttributes(edgeId, {
-          relationType: l.relationType,
-          confidence: l.confidence,
-          color: relationColor(l.relationType),
-          size: Math.max(0.5, 2 * (l.confidence || 0.5)),
-        })
-      }
-    })
-
-    updateNeighborsMap(g, newLinks)
+    updateNeighborsMap(newLinks)
     sigma.refresh()
     applyHighlight(sigma)
   }
@@ -473,12 +335,32 @@ tooltip.textContent = tooltipHtml(d, props.conflictsByFrame())
   })
 
   createEffect(() => {
+    props.highlightedNodeIds()
     if (sigmaInstance()) {
       applyHighlight(sigmaInstance()!)
     }
   })
 
+  // Auto-orbit camera tour while touring() is on.
+  createEffect(() => {
+    if (!props.touring()) return
+    const sigma = sigmaInstance()
+    if (!sigma) return
+    let raf = 0
+    let last = performance.now()
+    const step = (now: number) => {
+      const s = sigmaInstance()
+      if (!s || !props.touring()) return
+      const state = s.getCamera().getState()
+      s.getCamera().setState({ ...state, angle: state.angle + (now - last) * 0.0004 })
+      last = now
+      raf = requestAnimationFrame(step)
+    }
+    raf = requestAnimationFrame(step)
+    onCleanup(() => cancelAnimationFrame(raf))
+  })
+
   return (
-    <div ref={setContainerRef} id="brain-canvas-sigma" style={{ width: '100%', height: '100%', position: 'absolute', inset: 0 }} />
+    <div ref={setContainerRef} id="brain-canvas-sigma" style={{ 'width': '100%', 'height': '100%', 'position': 'absolute', 'inset': '0' }} />
   )
 }

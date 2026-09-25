@@ -1,187 +1,128 @@
-import { createSignal, createEffect, onCleanup, createMemo, Show, lazy, Suspense } from 'solid-js'
+import { createSignal, createEffect, createMemo, Show, For, lazy, Suspense, onCleanup, onMount, untrack } from 'solid-js'
 import DOMPurify from 'dompurify'
-import { For } from 'solid-js'
 import * as d3 from 'd3'
+import type { BrainConflict, GraphLink, GraphNode } from '../../types'
+import { relationColor, nodeRadius, tooltipHtml, typeColor, RELATION_GROUPS } from './brainLib'
 
-interface Conflict {
-  frame_id: number
-  frame_name: string
-  slot_key: string
-  slot_value: string
-  confidence: number
-  new_value: string
-  new_confidence: number
-  created_at: string
-}
-
-interface Node {
-  id: number
-  name: string
-  type: string
-  confidence: number
-  priority: number
-  essential: boolean
-  x: number
-  y: number
-  vx: number
-  vy: number
-  fx: number | null
-  fy: number | null
-  hasConflict: boolean
-  slots?: Array<{ key: string; value: string; confidence?: number }>
-}
-
-interface Link {
-  source: number
-  target: number
+/**
+ * d3 forceLink mutates link.source/target from numeric ids into the actual
+ * node datum objects, so we type that post-mutation shape explicitly.
+ */
+interface SimLink extends d3.SimulationLinkDatum<GraphNode> {
+  source: GraphNode
+  target: GraphNode
   relationType: string
   confidence: number
 }
 
+interface GraphSelections {
+  link: d3.Selection<SVGPathElement, SimLink, SVGGElement, unknown>
+  node: d3.Selection<SVGGElement, GraphNode, SVGGElement, unknown>
+  edgeLabel: d3.Selection<SVGTextElement, SimLink, SVGGElement, unknown>
+}
+
 interface BrainGraphProps {
-  nodes: () => Node[]
-  links: () => Link[]
+  nodes: () => GraphNode[]
+  links: () => GraphLink[]
   width: () => number
   height: () => number
-  onNodeClick?: (node: Node) => void
+  onNodeClick?: (node: GraphNode) => void
+  onConflictResolve?: (conflictId: number, value: string) => void
   highlightedNodeIds: () => Set<number>
-  conflictsByFrame: () => Record<number, Conflict[]>
+  conflictsByFrame: () => Record<number, BrainConflict[]>
   mode: () => '2d' | '3d'
   onModeChange: (mode: '2d' | '3d') => void
   touring: () => boolean
   setTouring: (touring: boolean) => void
 }
 
-const TYPE_COLORS: Record<string, string> = {
-  person: '#f78166',
-  concept: '#d2a8ff',
-  event: '#79c0ff',
-  household: '#7ee787',
-  entity: '#ffa657',
-}
+// Lazy-loaded 3D component (Sigma.js WebGL)
+const BrainGraph3D = lazy(() => import('./BrainGraphSigma').then(m => ({ default: m.default })))
 
-const RELATION_GROUPS = [
-  { re: /^(is_a|instance_of|type_of|part_of|has|subclass_of)$/, color: '#79c0ff', label: 'taxonomy / structure' },
-  { re: /(located_in|based_in|place|city|country)/, color: '#7ee787', label: 'spatial' },
-  { re: /(founded|follows|inquir|member|works_for|created|produced|wrote|compared|participation)/, color: '#f78166', label: 'social / agency' },
-  { re: /(source|citation|reference|forecast|compare|lists)/, color: '#d2a8ff', label: 'informational' },
-  { re: /^related_to$|^associated/, color: '#4a5470', label: 'related (generic)' },
-]
-const FALLBACK_EDGE_COLOR = '#8b9bb8'
-
-function relationColor(relationType: string): string {
-  for (const g of RELATION_GROUPS) {
-    if (g.re.test(relationType)) return g.color
-  }
-  return FALLBACK_EDGE_COLOR
-}
-
-function nodeRadius(d: Node): number {
-  const base = 4
-  const conf = d.confidence || 0.5
-  return base + conf * 8
-}
-
-function edgePath(d: d3.SimulationLinkDatum<Link>): string {
-  const sx = d.source.x, sy = d.source.y, tx = d.target.x, ty = d.target.y
-  const dx = tx - sx, dy = ty - sy
-  const dist = Math.sqrt(dx * dx + dy * dy) || 1
-  const cx = sx + dx / 2 - (dy / dist) * dist * 0.08
-  const cy = sy + dy / 2 + (dx / dist) * dist * 0.08
+function edgePath(d: SimLink): string {
+  const sx = d.source.x ?? 0
+  const sy = d.source.y ?? 0
+  const tx = d.target.x ?? 0
+  const ty = d.target.y ?? 0
+  const dx = tx - sx
+  const dy = ty - sy
+  const cx = sx + dx / 2 - dy * 0.08
+  const cy = sy + dy / 2 + dx * 0.08
   return `M${sx},${sy}Q${cx},${cy}${tx},${ty}`
 }
 
-function edgeMidpoint(d: d3.SimulationLinkDatum<Link>): { x: number; y: number } {
-  const sx = d.source.x, sy = d.source.y, tx = d.target.x, ty = d.target.y
-  const dx = tx - sx, dy = ty - sy
-  const dist = Math.sqrt(dx * dx + dy * dy) || 1
-  const cx = sx + dx / 2 - (dy / dist) * dist * 0.08
-  const cy = sy + dy / 2 + (dx / dist) * dist * 0.08
+function edgeMidpoint(d: SimLink): { x: number; y: number } {
+  const sx = d.source.x ?? 0
+  const sy = d.source.y ?? 0
+  const tx = d.target.x ?? 0
+  const ty = d.target.y ?? 0
+  const dx = tx - sx
+  const dy = ty - sy
+  const cx = sx + dx / 2 - dy * 0.08
+  const cy = sy + dy / 2 + dx * 0.08
   return {
     x: (sx + 2 * cx + tx) / 4,
     y: (sy + 2 * cy + ty) / 4 + 3,
   }
 }
 
-function esc(value: string): string {
-  return String(value ?? '')
-    .replace(/&/g, '&').replace(/</g, '<')
-    .replace(/>/g, '>').replace(/"/g, '"')
-    .replace(/'/g, '&apos;')
-}
-
-function escAttr(value: string): string {
-  return String(value ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")
-}
-
-function tooltipHtml(d: Node, conflictsByFrame: Record<number, Conflict[]>): string {
-  const conf = Math.round((d.confidence || 0.5) * 100)
-  const pri = Math.round((d.priority || 0.5) * 100)
-
-  const slotsHtml = (d.slots || []).slice(0, 5).map(s => {
-    const sConf = s.confidence != null ? Math.round(s.confidence * 100) : null
-    return `
-    <div class="tooltip-slot">
-      <span class="tooltip-slot-key">${esc(s.key)}:</span>
-      <span class="tooltip-slot-val">${esc(s.value)}</span>
-      ${sConf != null ? `<span class="tooltip-slot-conf" title="slot confidence">${sConf}%</span>` : ''}
-    </div>
-  `}).join('')
-
-  const frameConflicts = conflictsByFrame[d.id] || []
-  const conflictsHtml = frameConflicts.map(c => `
-    <div class="tooltip-conflict">
-      <div class="tooltip-conflict-line">
-        <span class="tooltip-conflict-key">${esc(c.slot_key)}</span>:
-        <span class="tooltip-conflict-old">${esc(c.existing_value ?? '∅')}</span>
-        →
-        <span class="tooltip-conflict-new">${esc(c.new_value ?? '∅')}</span>
-      </div>
-      <div class="tooltip-conflict-actions">
-        <button onclick="resolveConflict(${c.id}, '${escAttr(c.existing_value)}')">Keep ${esc(c.existing_value ?? 'old')}</button>
-        <button class="use-new" onclick="resolveConflict(${c.id}, '${escAttr(c.new_value)}')">Use ${esc(c.new_value ?? 'new')}</button>
-      </div>
-    </div>
-  `).join('')
-
-  return `
-    <div class="tooltip-name" style="color:${TYPE_COLORS[d.type] || TYPE_COLORS.entity}">${esc(d.name)}</div>
-    <div class="tooltip-type">${d.type}</div>
-    <div class="tooltip-meta">
-      confidence: ${conf}% &nbsp;|&nbsp; priority: ${pri}%
-      ${d.essential ? '&nbsp;|&nbsp; <span style="color:var(--warning)">essential</span>' : ''}
-      ${d.hasConflict ? '&nbsp;|&nbsp; <span style="color:var(--error)">conflict</span>' : ''}
-    </div>
-    ${d.slots?.length ? `<div class="tooltip-slots">${slotsHtml}${d.slots.length > 5 ? `<div style="color:var(--text-dim)">+${d.slots.length - 5} more</div>` : ''}</div>` : ''}
-    ${frameConflicts.length ? `<div class="tooltip-conflicts"><div class="tooltip-conflicts-title">Pending conflicts</div>${conflictsHtml}</div>` : ''}
-  `
-}
-
-
-// Lazy-loaded 3D component (Sigma.js WebGL)
-const BrainGraph3D = lazy(() => import('./BrainGraphSigma').then(m => ({ default: m.default })))
-
 export default function BrainGraph(props: BrainGraphProps) {
   const [svgRef, setSvgRef] = createSignal<SVGSVGElement | null>(null)
-  const [svgReady, setSvgReady] = createSignal(false)
-  const [simulation, setSimulation] = createSignal<d3.Simulation<Node, Link> | null>(null)
+  const [simulation, setSimulation] = createSignal<d3.Simulation<GraphNode, SimLink> | null>(null)
   const [gSelection, setGSelection] = createSignal<d3.Selection<SVGGElement, unknown, null, undefined> | null>(null)
   const [defsSelection, setDefsSelection] = createSignal<d3.Selection<SVGDefsElement, unknown, null, undefined> | null>(null)
+  const [neighborsMap, setNeighborsMap] = createSignal<Map<number, Set<number>>>(new Map())
+  const [selections, setSelections] = createSignal<GraphSelections | null>(null)
   const [tooltipVisible, setTooltipVisible] = createSignal(false)
   const [tooltipContent, setTooltipContent] = createSignal('')
   const [tooltipPosition, setTooltipPosition] = createSignal({ x: 0, y: 0 })
 
-  const nodesWithPos = createMemo(() =>
-    props.nodes().map((n) => ({
+  const nodesWithPos = createMemo<GraphNode[]>(() =>
+    props.nodes().map(n => ({
       ...n,
       x: n.x ?? props.width() / 2 + (Math.random() - 0.5) * 200,
       y: n.y ?? props.height() / 2 + (Math.random() - 0.5) * 200,
-      vx: 0,
-      vy: 0,
       fx: n.fx ?? null,
       fy: n.fy ?? null,
     }))
   )
+
+  function neighborsOf(id: number): Set<number> {
+    return neighborsMap().get(id) || new Set<number>()
+  }
+
+  function computeHighlightSet(): Set<number> {
+    const lit = new Set<number>()
+    for (const id of props.highlightedNodeIds()) {
+      lit.add(id)
+      neighborsOf(id).forEach(n => lit.add(n))
+    }
+    return lit
+  }
+
+  function clearHighlight() {
+    const sel = selections()
+    if (!sel) return
+    sel.link.classed('dimmed', false).classed('lit', false)
+    sel.node.classed('dimmed', false).classed('lit', false)
+    sel.edgeLabel.classed('visible', false)
+  }
+
+  function applyHighlight(litIds: Set<number>) {
+    const sel = selections()
+    if (!sel) return
+    if (litIds.size === 0) {
+      clearHighlight()
+      return
+    }
+    sel.link
+      .classed('dimmed', l => !litIds.has(l.source.id) && !litIds.has(l.target.id))
+      .classed('lit', l => litIds.has(l.source.id) || litIds.has(l.target.id))
+    sel.edgeLabel.classed('visible', l => litIds.has(l.source.id) || litIds.has(l.target.id))
+    sel.node
+      .classed('dimmed', n => !litIds.has(n.id))
+      .classed('lit', n => litIds.has(n.id))
+  }
 
   function buildEdgeLegend(defs: d3.Selection<SVGDefsElement, unknown, null, undefined>) {
     const edgeColors = [...new Set(props.links().map(l => relationColor(l.relationType)))]
@@ -203,20 +144,55 @@ export default function BrainGraph(props: BrainGraphProps) {
     }
   }
 
+  async function fetchSlots(d: GraphNode): Promise<GraphNode> {
+    if (!d.slots) {
+      try {
+        const res = await fetch(`/memory/frames/${d.id}/slots`)
+        d.slots = await res.json() as GraphNode['slots']
+      } catch {
+        d.slots = []
+      }
+    }
+    return d
+  }
+
+  function showTooltip(event: MouseEvent, d: GraphNode) {
+    fetchSlots(d).then(dWithSlots => {
+      const svg = svgRef()
+      if (!svg) return
+      setTooltipContent(tooltipHtml(dWithSlots, props.conflictsByFrame()))
+      setTooltipVisible(true)
+      const rect = svg.getBoundingClientRect()
+      let tx = event.clientX - rect.left + 15
+      const ty = event.clientY - rect.top - 10
+      if (tx + 280 > rect.width) tx = event.clientX - rect.left - 295
+      setTooltipPosition({ x: tx, y: ty })
+    })
+  }
+
+  function hideTooltip() {
+    setTooltipVisible(false)
+  }
+
+  function showTooltipFrom3D(html: string, x: number, y: number) {
+    setTooltipContent(html)
+    setTooltipPosition({ x, y })
+    setTooltipVisible(true)
+  }
+
   function render2D() {
     const svg = svgRef()
-    if (!svg) return
+    if (!svg || !svg.isConnected) return
 
     const container = d3.select(svg)
     const w = props.width()
     const h = props.height()
-
     container.attr('width', w).attr('height', h)
 
     let g = gSelection()
     let defs = defsSelection()
 
-    if (!g) {
+    if (!g || !g.node()?.isConnected) {
       g = container.append('g').attr('class', 'graph')
       setGSelection(g)
 
@@ -235,32 +211,39 @@ export default function BrainGraph(props: BrainGraphProps) {
       feMerge2.append('feMergeNode').attr('in', 'coloredBlur')
       feMerge2.append('feMergeNode').attr('in', 'SourceGraphic')
 
+      const root = g
       const zoom = d3.zoom<SVGSVGElement, unknown>()
         .scaleExtent([0.1, 4])
         .on('zoom', (event) => {
-          g.attr('transform', event.transform)
+          root.attr('transform', event.transform)
         })
       container.call(zoom)
     }
 
+    // Drop stale per-render state; selections are refreshed below. The old
+    // simulation is stopped untracked: render2D runs inside a createEffect
+    // that also writes `simulation`, and tracking it here would re-trigger
+    // the effect forever (read+write of the same signal in one effect).
     g.selectAll('*').remove()
+    setSelections(null)
+    untrack(() => simulation()?.stop())
 
-    if (simulation()) simulation()!.stop()
+    // forceLink mutates these link objects in place: source/target become nodes.
+    const linkData = props.links() as unknown as SimLink[]
 
-    const sim = d3.forceSimulation<Node, Link>(nodesWithPos())
-      .force('link', d3.forceLink<Link, Node>(props.links()).id((d: Node) => d.id).distance(100).strength(0.3))
+    const sim = d3.forceSimulation<GraphNode, SimLink>(nodesWithPos())
+      .force('link', d3.forceLink<GraphNode, GraphLink>(props.links()).id((d: GraphNode) => d.id).distance(100).strength(0.3))
       .force('charge', d3.forceManyBody().strength(-200))
       .force('center', d3.forceCenter(w / 2, h / 2))
-      .force('collision', d3.forceCollide<Node>().radius((d: Node) => nodeRadius(d) + 8))
+      .force('collision', d3.forceCollide<GraphNode>().radius((d: GraphNode) => nodeRadius(d) + 8))
 
     setSimulation(sim)
-
     buildEdgeLegend(defs!)
 
     const newNeighborsMap = new Map<number, Set<number>>()
     props.links().forEach(l => {
-      if (!newNeighborsMap.has(l.source)) newNeighborsMap.set(l.source, new Set())
-      if (!newNeighborsMap.has(l.target)) newNeighborsMap.set(l.target, new Set())
+      if (!newNeighborsMap.has(l.source)) newNeighborsMap.set(l.source, new Set<number>())
+      if (!newNeighborsMap.has(l.target)) newNeighborsMap.set(l.target, new Set<number>())
       newNeighborsMap.get(l.source)!.add(l.target)
       newNeighborsMap.get(l.target)!.add(l.source)
     })
@@ -268,133 +251,70 @@ export default function BrainGraph(props: BrainGraphProps) {
 
     const link = g.append('g')
       .attr('class', 'links')
-      .selectAll('path')
-      .data(props.links())
+      .selectAll<SVGPathElement, SimLink>('path')
+      .data(linkData)
       .join('path')
       .attr('class', 'link')
-      .attr('stroke', (d: Link) => relationColor(d.relationType))
-      .attr('stroke-width', (d: Link) => {
+      .attr('stroke', (d: SimLink) => relationColor(d.relationType))
+      .attr('stroke-width', (d: SimLink) => {
         const conf = d.confidence || 0.5
         return conf === 0.5 ? 1.25 : Math.max(0.75, 2.25 * conf)
       })
-      .attr('marker-end', (d: Link) => `url(#arrow-${relationColor(d.relationType).slice(1)})`)
+      .attr('marker-end', (d: SimLink) => `url(#arrow-${relationColor(d.relationType).slice(1)})`)
 
     link.append('title')
-      .text((d: Link) => `${d.relationType} (${Math.round((d.confidence || 0.5) * 100)}%)`)
+      .text((d: SimLink) => `${d.relationType} (${Math.round((d.confidence || 0.5) * 100)}%)`)
 
     const edgeLabel = g.append('g')
       .attr('class', 'edge-labels')
-      .selectAll('text')
-      .data(props.links())
+      .selectAll<SVGTextElement, SimLink>('text')
+      .data(linkData)
       .join('text')
       .attr('class', 'edge-label')
       .attr('text-anchor', 'middle')
-      .text((d: Link) => d.relationType)
+      .text((d: SimLink) => d.relationType)
 
     const node = g.append('g')
       .attr('class', 'nodes')
-      .selectAll('g')
+      .selectAll<SVGGElement, GraphNode>('g')
       .data(nodesWithPos())
       .join('g')
-      .attr('class', (d: Node) => d.hasConflict ? 'node has-conflict' : 'node')
-      .call(d3.drag<SVGGElement, Node>()
-        .on('start', (event: d3.D3DragEvent<SVGGElement, Node, Node>, d: Node) => {
+      .attr('class', (d: GraphNode) => d.hasConflict ? 'node has-conflict' : 'node')
+      .call(d3.drag<SVGGElement, GraphNode>()
+        .on('start', (event: d3.D3DragEvent<SVGGElement, GraphNode, GraphNode>, d: GraphNode) => {
           if (!event.active) sim.alphaTarget(0.3).restart()
-          d.fx = d.x
-          d.fy = d.y
+          d.fx = d.x ?? 0
+          d.fy = d.y ?? 0
         })
-        .on('drag', (event: d3.D3DragEvent<SVGGElement, Node, Node>, d: Node) => {
+        .on('drag', (event: d3.D3DragEvent<SVGGElement, GraphNode, GraphNode>, d: GraphNode) => {
           d.fx = event.x
           d.fy = event.y
         })
-        .on('end', (event: d3.D3DragEvent<SVGGElement, Node, Node>, d: Node) => {
+        .on('end', (event: d3.D3DragEvent<SVGGElement, GraphNode, GraphNode>, d: GraphNode) => {
           if (!event.active) sim.alphaTarget(0)
           d.fx = null
           d.fy = null
         }))
 
     node.append('circle')
-      .attr('r', (d: Node) => nodeRadius(d))
-      .attr('fill', (d: Node) => TYPE_COLORS[d.type] || TYPE_COLORS.entity)
-      .attr('filter', (d: Node) => d.hasConflict ? 'url(#strongGlow)' : 'url(#glow)')
-      .attr('class', (d: Node) => d.hasConflict ? 'conflict-pulse' : '')
+      .attr('r', (d: GraphNode) => nodeRadius(d))
+      .attr('fill', (d: GraphNode) => typeColor(d.type))
+      .attr('filter', (d: GraphNode) => d.hasConflict ? 'url(#strongGlow)' : 'url(#glow)')
+      .attr('class', (d: GraphNode) => d.hasConflict ? 'conflict-pulse' : '')
+
+    setSelections({ link, node, edgeLabel })
 
     sim.on('tick', () => {
       link.attr('d', edgePath)
       edgeLabel
-        .attr('x', (d: d3.SimulationLinkDatum<Link>) => edgeMidpoint(d).x)
-        .attr('y', (d: d3.SimulationLinkDatum<Link>) => edgeMidpoint(d).y)
-      node.attr('transform', (d: Node) => `translate(${d.x},${d.y})`)
+        .attr('x', (d: SimLink) => edgeMidpoint(d).x)
+        .attr('y', (d: SimLink) => edgeMidpoint(d).y)
+      node.attr('transform', (d: GraphNode) => `translate(${d.x},${d.y})`)
     })
 
-    function highlightNeighbors(activeId: number) {
-      const nbrs = newNeighborsMap.get(activeId) || new Set()
-      link.classed('dimmed', (l: d3.SimulationLinkDatum<Link>) => l.source.id !== activeId && l.target.id !== activeId)
-        .classed('lit', (l: d3.SimulationLinkDatum<Link>) => l.source.id === activeId || l.target.id === activeId)
-      edgeLabel.classed('visible', (l: d3.SimulationLinkDatum<Link>) => l.source.id === activeId || l.target.id === activeId)
-      node.classed('dimmed', (n: Node) => n.id !== activeId && !nbrs.has(n.id))
-        .classed('lit', (n: Node) => nbrs.has(n.id))
-    }
-
-    function computeHighlightSet(): Set<number> {
-      const lit = new Set<number>()
-      if (props.highlightedNodeIds().size === 0) return lit
-      for (const id of props.highlightedNodeIds()) {
-        lit.add(id)
-        const nbrs = newNeighborsMap.get(id)
-        if (nbrs) nbrs.forEach(n => lit.add(n))
-      }
-      return lit
-    }
-
-    function applyHighlight(litIds: Set<number>) {
-      if (litIds.size === 0) {
-        clearHighlight()
-        return
-      }
-      link.classed('dimmed', (l: d3.SimulationLinkDatum<Link>) => !litIds.has(l.source.id) && !litIds.has(l.target.id))
-        .classed('lit', (l: d3.SimulationLinkDatum<Link>) => litIds.has(l.source.id) || litIds.has(l.target.id))
-      edgeLabel.classed('visible', (l: d3.SimulationLinkDatum<Link>) => litIds.has(l.source.id) || litIds.has(l.target.id))
-      node.classed('dimmed', (n: Node) => !litIds.has(n.id))
-        .classed('lit', (n: Node) => litIds.has(n.id))
-    }
-
-    function clearHighlight() {
-      link.classed('dimmed', false).classed('lit', false)
-      node.classed('dimmed', false).classed('lit', false)
-      edgeLabel.classed('visible', false)
-    }
-
-    async function fetchSlots(d: Node): Promise<Node> {
-      if (!d.slots) {
-        try {
-          const res = await fetch(`/memory/frames/${d.id}/slots`)
-          d.slots = await res.json()
-        } catch {
-          d.slots = []
-        }
-      }
-      return d
-    }
-
-    function showTooltip(event: MouseEvent, d: Node) {
-      fetchSlots(d).then(dWithSlots => {
-        setTooltipContent(tooltipHtml(dWithSlots, props.conflictsByFrame()))
-        setTooltipVisible(true)
-        const rect = svg.getBoundingClientRect()
-        let tx = event.clientX - rect.left + 15
-        const ty = event.clientY - rect.top - 10
-        if (tx + 280 > rect.width) tx = event.clientX - rect.left - 295
-        setTooltipPosition({ x: tx, y: ty })
-      })
-    }
-
-    function hideTooltip() {
-      setTooltipVisible(false)
-    }
-
-    node.on('mouseover', (event: MouseEvent, d: Node) => {
-      highlightNeighbors(d.id)
+    node.on('mouseover', (event: MouseEvent, d: GraphNode) => {
+      const lit = new Set<number>([d.id, ...neighborsOf(d.id)])
+      applyHighlight(lit)
       showTooltip(event, d)
     })
       .on('mouseout', () => {
@@ -402,70 +322,68 @@ export default function BrainGraph(props: BrainGraphProps) {
         applyHighlight(computeHighlightSet())
         hideTooltip()
       })
-      .on('click', (event: MouseEvent, d: Node) => {
+      .on('click', (event: MouseEvent, d: GraphNode) => {
         showTooltip(event, d)
         props.onNodeClick?.(d)
       })
 
     applyHighlight(computeHighlightSet())
-
-    onCleanup(() => {
-      sim.stop()
-      node.on('mouseover', null).on('mouseout', null).on('click', null)
-    })
   }
 
-  // Resize handling for 2D
-  createEffect(() => {
-    props.width()
-    props.height()
-    if (props.mode() === '2d' && svgRef() && simulation()) {
-      const sim = simulation()!
-      sim.force('center', d3.forceCenter(props.width() / 2, props.height() / 2))
-      sim.alpha(0.3).restart()
-    }
-  })
-
-  // Initialize/cleanup 2D when mode changes
+  // Render the 2D graph whenever we are in 2D mode and its inputs change.
   createEffect(() => {
     const mode = props.mode()
-    if (mode === '2d') {
-      // Will initialize when svgReady becomes true
-    } else {
-      if (simulation()) simulation()!.stop()
-    }
+    props.width()
+    props.height()
+    props.nodes()
+    props.links()
+    if (mode !== '2d') return
+    if (!svgRef()?.isConnected) return
+    render2D()
   })
 
-  // Initialize 2D when SVG ref is ready
+  // Keep dimmed/lit states in sync with the selected frame (2D).
   createEffect(() => {
-    if (props.mode() === '2d' && svgRef()) {
-      const svg = svgRef()
-      if (svg && svg.isConnected && svg.clientWidth > 0) {
-        setSvgReady(true)
-        render2D()
-      }
-    } else {
-      setSvgReady(false)
-    }
-  })
-
-  // Highlight updates for 2D
-  createEffect(() => {
-    if (props.mode() === '2d' && svgReady()) {
+    props.highlightedNodeIds()
+    selections()
+    if (props.mode() === '2d') {
       applyHighlight(computeHighlightSet())
     }
   })
 
-  onCleanup(() => {
-    const sim = simulation()
-    if (sim) sim.stop()
+  // Stop the force simulation while in 3D (avoids burning CPU on a hidden view).
+  createEffect(() => {
+    if (props.mode() === '3d') simulation()?.stop()
   })
+
+  // When 2D unmounts, discard the d3 state so the next 2D session re-initializes.
+  createEffect(() => {
+    if (props.mode() === '3d') {
+      setGSelection(null)
+      setDefsSelection(null)
+      setSelections(null)
+      setNeighborsMap(new Map())
+    }
+  })
+
+  // Delegated click handler for tooltip conflict-resolution buttons. The
+  // tooltip HTML is rendered via innerHTML, so it cannot use Solid handlers.
+  function handleTooltipAction(event: MouseEvent) {
+    const found = (event.target as HTMLElement)?.closest?.('[data-conflict-resolve]') as HTMLElement | null
+    if (!found) return
+    const conflictId = Number(found.getAttribute('data-conflict-id'))
+    const value = found.getAttribute('data-conflict-value') ?? ''
+    if (!Number.isFinite(conflictId)) return
+    props.onConflictResolve?.(conflictId, value)
+  }
+  onMount(() => document.addEventListener('click', handleTooltipAction))
+  onCleanup(() => document.removeEventListener('click', handleTooltipAction))
 
   const is2d = props.mode() === '2d'
   const is3d = props.mode() === '3d'
 
   return (
-    <div class="brain-graph-wrapper" style={{ position: 'relative', width: '100%', height: '100%', flex: '1' }}>
+    <div class="brain-graph-wrapper" style={{ 'position': 'relative', 'width': '100%', 'height': '100%', 'flex': '1' }}>
       <Show when={is2d}>
         <svg ref={setSvgRef} width={props.width()} height={props.height()} class="brain-canvas">
           <rect width="100%" height="100%" fill="var(--bg)" />
@@ -482,7 +400,6 @@ export default function BrainGraph(props: BrainGraphProps) {
               )}
             </For>
           </g>
-          <g class="graph" />
         </svg>
       </Show>
 
@@ -499,33 +416,32 @@ export default function BrainGraph(props: BrainGraphProps) {
             touring={props.touring}
             setTouring={props.setTouring}
             onModeChange={props.onModeChange}
+            onTooltip={showTooltipFrom3D}
+            onHideTooltip={hideTooltip}
           />
         </Suspense>
       </Show>
 
-      <div class="edge-legend" style={{ position: 'absolute', left: '1rem', bottom: '3.2rem', zIndex: 10 }}>
+      <div class="edge-legend" style={{ 'position': 'absolute', 'left': '1rem', 'bottom': '3.2rem', 'z-index': 10 }}>
         <For each={RELATION_GROUPS}>
           {(g) => (
-            <div class="legend-item" style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.72rem', color: 'var(--text-dim)' }}>
-              <div class="legend-line" style={{ width: '18px', height: '0', borderTop: `2px solid ${g.color}`, borderRadius: '2px' }} />
+            <div class="legend-item" style={{ 'display': 'flex', 'align-items': 'center', 'gap': '0.45rem', 'font-size': '0.72rem', 'color': 'var(--text-dim)' }}>
+              <div class="legend-line" style={{ 'width': '18px', 'height': '0', 'border-top': `2px solid ${g.color}`, 'border-radius': '2px' }} />
               {g.label}
             </div>
           )}
         </For>
       </div>
 
-      <Show when={tooltipVisible()}>
-        <div
-          class="tooltip visible"
-          style={{
-            left: `${tooltipPosition().x}px`,
-            top: `${tooltipPosition().y}px`,
-          }}
-        >
-          {/* eslint-disable-next-line solid/no-innerhtml -- content sanitized by tooltipHtml() */}
-          <div innerHTML={DOMPurify.sanitize(tooltipContent())} />
-        </div>
-      </Show>
+      <div
+        class="tooltip"
+        id="tooltip"
+        classList={{ visible: tooltipVisible() }}
+        style={{ 'left': `${tooltipPosition().x}px`, 'top': `${tooltipPosition().y}px` }}
+      >
+        {/* eslint-disable-next-line solid/no-innerhtml -- content sanitized by tooltipHtml() then DOMPurify */}
+        <div innerHTML={DOMPurify.sanitize(tooltipContent())} />
+      </div>
     </div>
   )
 }

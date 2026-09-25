@@ -569,6 +569,9 @@
 .tooltip-conflict-actions {
   display: flex;
   gap: 0.3rem;
+  /* .tooltip sets pointer-events: none; re-enable so the resolve
+     buttons are actually clickable. */
+  pointer-events: auto;
 }
 
 .tooltip-conflict-actions button {
