@@ -4,7 +4,7 @@ import InputBar from './InputBar'
 import StatusIndicator from './StatusIndicator'
 import { Modal } from '../ui/Modal'
 import { messages, sessionId, setSessionId, isTurnActive, useConversationTurnId, addMessageToConversation, queue, isStreaming } from '../../state/chat'
-import { getQueue, getQueueLength, dequeue, enqueue, isProcessing, setActiveConversation } from '../../state/messageQueue'
+import { getQueue, getQueueLength, dequeue, enqueue, isProcessing, setActiveConversation, clearQueue } from '../../state/messageQueue'
 import { Session } from '../../state/session'
 import { useTurnStatus } from '../../services/status'
 import { useVoiceRecording } from '../../hooks/useVoiceRecording'
@@ -296,23 +296,66 @@ export default function ChatPage(props: {
           
           <StatusWrapper turnId={currentConvTurnId} />
           
+          {/* Enhanced Queue Panel */}
           <Show when={getQueueLength() > 0}>
-            <For each={getQueue()}>
-              {(queuedMsg) => (
-                <div class="msg msg-user msg-queued" id={queuedMsg.id}>
-                  <div class="content">{queuedMsg.content}</div>
+            <div class="queue-panel" id="queue-panel">
+              <div class="queue-panel-header">
+                <span class="queue-panel-title">
+                  Queued Messages <span class="queue-count">({getQueueLength()})</span>
+                </span>
+                <div class="queue-panel-actions">
+                  {isProcessing() && (
+                    <span class="queue-processing-indicator">
+                      <span class="spinner"></span>
+                      Processing...
+                    </span>
+                  )}
                   <button 
-                    class="queued-remove"
-                    onClick={() => handleRemoveQueued(queuedMsg.id)}
-                    title="Remove queued message"
+                    class="queue-clear-btn"
+                    onClick={() => { clearQueue(); setActiveConversation(null); }}
+                    title="Clear all queued messages"
                   >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
-                      <path d="M18 6 6 18M6 6l12 12"/>
-                    </svg>
+                    Clear Queue
                   </button>
                 </div>
-              )}
-            </For>
+              </div>
+              <div class="queue-panel-content">
+                <For each={getQueue()}>
+                  {(queuedMsg) => (
+                    <div class="msg msg-user msg-queued" id={queuedMsg.id}>
+                      <div class="queued-content">
+                        <span class="queued-source" title={queuedMsg.source === 'voice' ? 'Voice transcription' : 'Typed message'}>
+                          {queuedMsg.source === 'voice' ? (
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                              <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                              <line x1="12" y1="19" x2="12" y2="23"/>
+                              <line x1="8" y1="23" x2="16" y2="23"/>
+                            </svg>
+                          ) : (
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                              <polyline points="4 7 4 4 20 4 20 7"/>
+                              <line x1="9" y1="20" x2="15" y2="20"/>
+                              <line x1="12" y1="4" x2="12" y2="20"/>
+                            </svg>
+                          )}
+                        </span>
+                        <span class="queued-text">{queuedMsg.content}</span>
+                      </div>
+                      <button 
+                        class="queued-remove"
+                        onClick={() => handleRemoveQueued(queuedMsg.id)}
+                        title="Remove queued message"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+                          <path d="M18 6 6 18M6 6l12 12"/>
+                        </svg>
+                      </button>
+                    </div>
+                  )}
+                </For>
+              </div>
+            </div>
           </Show>
 
           <Show when={messages().length === 0 && queue().length === 0}>
