@@ -3,7 +3,8 @@ import MessageList from './MessageList'
 import InputBar from './InputBar'
 import StatusIndicator from './StatusIndicator'
 import { Modal } from '../ui/Modal'
-import { messages, sessionId, setSessionId, isTurnActive, useConversationTurnId, addMessageToConversation, enqueueMessage, removeQueuedMessage, queue, isStreaming } from '../../state/chat'
+import { messages, sessionId, setSessionId, isTurnActive, useConversationTurnId, addMessageToConversation, enqueueMessage, queue, isStreaming } from '../../state/chat'
+import { getQueue, getQueueLength, dequeue } from '../../state/messageQueue'
 import { Session } from '../../state/session'
 import { useTurnStatus } from '../../services/status'
 import { useVoiceRecording } from '../../hooks/useVoiceRecording'
@@ -266,7 +267,7 @@ export default function ChatPage(props: {
   })
 
   const handleRemoveQueued = (id: string) => {
-    removeQueuedMessage(id, sessionId())
+    dequeue(id)
   }
 
   const handleDictationStart = () => {
@@ -287,11 +288,11 @@ export default function ChatPage(props: {
           
           <StatusWrapper turnId={currentConvTurnId} />
           
-          <Show when={queue().length > 0}>
-            <For each={queue()}>
+          <Show when={getQueueLength() > 0}>
+            <For each={getQueue()}>
               {(queuedMsg) => (
                 <div class="msg msg-user msg-queued" id={queuedMsg.id}>
-                  <div class="content">{queuedMsg.message}</div>
+                  <div class="content">{queuedMsg.content}</div>
                   <button 
                     class="queued-remove"
                     onClick={() => handleRemoveQueued(queuedMsg.id)}
