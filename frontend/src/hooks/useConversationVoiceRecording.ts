@@ -1,6 +1,8 @@
-import { createSignal, createEffect, onCleanup } from 'solid-js';
-import { enqueue, isProcessing, setProcessing } from '../state/messageQueue';
+import { createSignal, createEffect, onCleanup, batch } from 'solid-js';
+import { enqueue, isProcessing } from '../state/messageQueue';
+import { triggerDrain } from '../services/queueDrainer';
 import { settings } from '../state/settings';
+import { exitVoiceMode } from '../state/voice';
 
 const SILENCE_DURATION = 2000;
 const MIN_RECORDING_MS = 500;
@@ -83,6 +85,11 @@ export function useConversationVoiceRecording({
   // State machine state
   const [convState, setConvState] = createSignal<ConvVoiceState>('idle');
 
+  // True while a /transcribe request is outstanding. The state machine must
+  // not resume recording until this clears, otherwise it reopens the mic the
+  // moment we set 'transcribing' (turnActive is still false at that point).
+  const [transcriptionInFlight, setTranscriptionInFlight] = createSignal(false);
+
   // Track timers for cleanup
   const [pendingTimeouts, setPendingTimeouts] = createSignal<Set<number>>(new Set());
 
@@ -95,8 +102,9 @@ export function useConversationVoiceRecording({
     const voiceMode = isVoiceMode();
     const turnActive = isTurnActive();
     const state = convState();
+    const inFlight = transcriptionInFlight();
 
-    console.log('[convVoice] state machine tick', { state, voiceMode, turnActive });
+    console.log('[convVoice] state machine tick', { state, voiceMode, turnActive, inFlight });
 
     switch (state) {
       case 'idle':
@@ -120,6 +128,9 @@ export function useConversationVoiceRecording({
         if (!voiceMode) {
           console.log('[convVoice] transcribing -> idle (voice mode lost)');
           setConvState('idle');
+        } else if (inFlight) {
+          // Request still outstanding, hold the mic closed
+          console.log('[convVoice] transcribing -> waiting on /transcribe');
         } else if (!turnActive) {
           // Transcription done, ready to resume listening
           console.log('[convVoice] transcribing -> recording (turn complete, resuming)');
@@ -359,7 +370,13 @@ export function useConversationVoiceRecording({
   async function sendForTranscription(blob: Blob) {
     if (!isVoiceMode()) return;
 
-    setConvState('transcribing');
+    // These two writes must be atomic. Solid flushes effects after each
+    // individual signal write, so without batch() the state machine would
+    // observe 'transcribing' with inFlight still false and reopen the mic.
+    batch(() => {
+      setTranscriptionInFlight(true);
+      setConvState('transcribing');
+    });
     playEarcon('stop');
 
     try {
@@ -388,9 +405,10 @@ export function useConversationVoiceRecording({
 
       // Check for exit commands
       if (isExitCommand(text)) {
-        // User said "stop listening" - exit voice mode
-        // This will be handled by the UI (ChatPage) via the voice state
+        // User said "stop listening" - exit voice mode so the state machine
+        // stops reopening the mic.
         console.log('[convVoice] Exit command detected:', text);
+        exitVoiceMode();
         return;
       }
 
@@ -401,11 +419,11 @@ export function useConversationVoiceRecording({
         timestamp: Date.now(),
       });
 
-      // If not currently processing, trigger drain
+      // Trigger the drain. The drainer owns the `processing` flag itself, so we
+      // must NOT set it here: drainQueueIfReady() bails out early when
+      // isProcessing() is true, which would strand the message in the queue.
       if (!isProcessing()) {
-        setProcessing(true);
-        // Queue drainer will pick this up
-        triggerDrain();
+        void triggerDrain();
       }
 
     } catch (err) {
@@ -413,6 +431,9 @@ export function useConversationVoiceRecording({
       if (isVoiceMode()) {
         handleDiscard('Transcription failed');
       }
+    } finally {
+      // Release the mic gate; the state machine may now resume recording.
+      setTranscriptionInFlight(false);
     }
   }
 

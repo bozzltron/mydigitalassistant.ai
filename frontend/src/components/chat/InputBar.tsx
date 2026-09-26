@@ -28,8 +28,10 @@ export default function InputBar(props: InputBarProps) {
 
   const handleSubmit = (e: Event) => {
     e.preventDefault()
-    const isProcessing = props.isSending || props.isStreaming
-    if (message().trim() && !isProcessing) {
+    // Always hand the message off. handleSendMessage enqueues it and the drain
+    // effect sends it once the agent is ready, so submitting while busy stacks
+    // the message instead of blocking the user.
+    if (message().trim()) {
       props.onSend(message(), attachedFiles())
       setMessage('')
       setAttachedFiles([])
@@ -171,10 +173,10 @@ export default function InputBar(props: InputBarProps) {
          type="button"
          class="btn-primary"
          id="send-btn"
-         disabled={!message().trim() || props.isSending || props.isStreaming}
+         disabled={!message().trim()}
          onClick={handleSubmit}
        >
-         {props.isStreaming ? 'Streaming...' : props.isSending ? 'Sending...' : 'Send'}
+         {props.isStreaming || props.isSending ? 'Queue' : 'Send'}
        </button>
      </>
   )

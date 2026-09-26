@@ -11,12 +11,27 @@ export interface QueuedMessage {
   source: 'voice' | 'text';
   timestamp: number;
   attachedFiles?: AttachedFile[];
+  /** Carried through to the drainer so a consent retry keeps its flag. */
+  searchConsent?: boolean;
+  /** Snapshot of the user's toggle at enqueue time. */
+  maxIntelligence?: boolean;
+  /**
+   * A consent retry re-sends a message that is already in history, so the
+   * drainer must not append it to the conversation a second time.
+   */
+  skipHistory?: boolean;
 }
 
 interface QueueState {
   queue: QueuedMessage[];
   processing: boolean;
   activeConversationId: string | null;
+  /**
+   * Set when a drain attempt failed. The auto-drain effect must not retry a
+   * failing queue in a hot loop; it is cleared when the user enqueues something
+   * new (new intent) or explicitly nudges the drainer.
+   */
+  drainBlocked: boolean;
 }
 
 const STORAGE_KEY = 'messageQueue';
@@ -35,6 +50,7 @@ function getStore(): [QueueState, (patch: Partial<QueueState> | ((prev: QueueSta
       queue: [],
       processing: false,
       activeConversationId: null,
+      drainBlocked: false,
     });
     // eslint-disable-next-line solid/reactivity -- state assigned to module-level ref
     _queueState = state;
@@ -117,15 +133,16 @@ export function enqueue(message: Omit<QueuedMessage, 'id'>): string {
     const next = [...prev.queue, newMessage];
     // Enforce max size (FIFO eviction)
     if (next.length > MAX_QUEUE_SIZE) {
-      return { queue: next.slice(-MAX_QUEUE_SIZE) };
+      return { queue: next.slice(-MAX_QUEUE_SIZE), drainBlocked: false };
     }
-    return { queue: next };
+    // A new message is fresh user intent, so unblock a previously failed drain.
+    return { queue: next, drainBlocked: false };
   });
 
-  // Persist after state update
-  const currentQueue = queueState().queue;
-  const nextQueue = [...currentQueue, newMessage].slice(-MAX_QUEUE_SIZE);
-  saveToStorage(nextQueue);
+  // Persist the post-update queue. Do NOT append newMessage again here:
+  // setQueueState above already applied synchronously, so re-appending
+  // persisted every message twice and duplicated it on reload.
+  saveToStorage(queueState().queue);
 
   return id;
 }
@@ -151,6 +168,15 @@ export function drainQueue(): QueuedMessage[] {
 
 export function isProcessing(): boolean {
   return queueState().processing;
+}
+
+/** True when a drain failed and auto-drain should stand down until new input. */
+export function isDrainBlocked(): boolean {
+  return queueState().drainBlocked;
+}
+
+export function setDrainBlocked(value: boolean): void {
+  setQueueState({ drainBlocked: value });
 }
 
 export function setProcessing(value: boolean): void {

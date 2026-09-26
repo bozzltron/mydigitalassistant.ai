@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { messages, queue, isTurnActive, sessionId, setSessionId, currentTurnId, setCurrentTurnId, postChatMessage, postChatMessageStream, loadConversationMessages, initChat, drainQueue, enqueueMessage, addMessageToConversation } from '../state/chat'
 import * as api from '../services/api'
 import * as status from '../services/status'
@@ -23,6 +23,13 @@ describe('chat state', () => {
     messageQueue.setProcessing(false)
     messageQueue.setActiveConversation(null)
     initChat()
+  })
+
+  // Without this, a vi.spyOn from one test (e.g. the drainQueue test) stays
+  // installed for every later test and silently no-ops the real module
+  // function, hiding genuine behavior.
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 
   describe('messages', () => {
@@ -202,6 +209,33 @@ describe('chat state', () => {
 
       expect(messageQueue.setActiveConversation).toHaveBeenCalledWith('session-queue-1')
       expect(messageQueue.drainQueue).toHaveBeenCalled()
+    })
+  })
+
+  describe('queue durability across a turn', () => {
+    it('does not destroy messages enqueued while a turn is streaming (regression: finally block called drainQueue, silently dropping them)', async () => {
+      setSessionId('session-durability')
+      vi.mocked(api.postChatStream).mockResolvedValue({
+        response: 'done',
+        session_id: 'session-durability',
+      } as never)
+
+      // Turn starts and streams.
+      const turn = postChatMessageStream('first question', 'session-durability')
+
+      // The user speaks/types while the agent is busy: the message is queued.
+      messageQueue.enqueue({
+        content: 'queued while busy',
+        source: 'voice',
+        timestamp: Date.now(),
+      })
+      expect(messageQueue.getQueueLength()).toBe(1)
+
+      // Turn completes. The queued message must survive for the drainer.
+      await turn
+
+      expect(messageQueue.getQueueLength()).toBe(1)
+      expect(messageQueue.getQueue()[0].content).toBe('queued while busy')
     })
   })
 

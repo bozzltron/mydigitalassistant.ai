@@ -60,17 +60,37 @@ describe('InputBar', () => {
     expect(sendBtn).toBeDisabled()
   })
 
-  it('disables send button when isSending', () => {
+  it('keeps the send button enabled while isSending so messages can be stacked', () => {
     render(() => <InputBar onSend={defaultProps.onSend} isSending={true} onDictationStart={defaultProps.onDictationStart} onDictationStop={defaultProps.onDictationStop} isDictating={defaultProps.isDictating} />)
-    
-    const sendBtn = screen.getByRole('button', { name: /sending/i })
-    expect(sendBtn).toBeDisabled()
+
+    const textarea = screen.getByPlaceholderText('Type a message...')
+    fireEvent.input(textarea, { target: { value: 'Queued while busy' } })
+
+    const sendBtn = screen.getByRole('button', { name: /queue/i })
+    expect(sendBtn).not.toBeDisabled()
   })
 
-  it('shows "Sending..." text when isSending', () => {
+  it('submits a message while isSending (it gets queued, not blocked)', () => {
     render(() => <InputBar onSend={defaultProps.onSend} isSending={true} onDictationStart={defaultProps.onDictationStart} onDictationStop={defaultProps.onDictationStop} isDictating={defaultProps.isDictating} />)
-    
-    expect(screen.getByRole('button', { name: /sending/i })).toHaveTextContent('Sending...')
+
+    const textarea = screen.getByPlaceholderText('Type a message...')
+    fireEvent.input(textarea, { target: { value: 'Stack this' } })
+    fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: false })
+
+    expect(defaultProps.onSend).toHaveBeenCalledWith('Stack this', [])
+    expect(textarea).toHaveValue('')
+  })
+
+  it('shows "Queue" text when isSending', () => {
+    render(() => <InputBar onSend={defaultProps.onSend} isSending={true} onDictationStart={defaultProps.onDictationStart} onDictationStop={defaultProps.onDictationStop} isDictating={defaultProps.isDictating} />)
+
+    expect(screen.getByRole('button', { name: /queue/i })).toHaveTextContent('Queue')
+  })
+
+  it('shows "Queue" text when isStreaming', () => {
+    render(() => <InputBar onSend={defaultProps.onSend} isStreaming={true} onDictationStart={defaultProps.onDictationStart} onDictationStop={defaultProps.onDictationStop} isDictating={defaultProps.isDictating} />)
+
+    expect(screen.getByRole('button', { name: /queue/i })).toHaveTextContent('Queue')
   })
 
   it('opens file dialog when attach button clicked', () => {

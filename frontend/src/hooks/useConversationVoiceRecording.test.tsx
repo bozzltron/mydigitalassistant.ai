@@ -1,0 +1,311 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { createRoot, createSignal } from 'solid-js';
+
+// Spy on the drainer. Mocking it (rather than stubbing the import away) keeps
+// the real messageQueue processing flag observable, so we can assert the hook
+// does not pre-empt the drainer by setting `processing` itself.
+const triggerDrain = vi.fn(async () => {});
+vi.mock('../services/queueDrainer', () => ({
+  triggerDrain: (...args: unknown[]) => triggerDrain(...(args as [])),
+}));
+
+import { useConversationVoiceRecording } from './useConversationVoiceRecording';
+import { getQueue, clearQueue, isProcessing, setProcessing, setActiveConversation } from '../state/messageQueue';
+import { setVoice } from '../state/voice';
+
+// ---------------------------------------------------------------------------
+// Media API mocks
+// ---------------------------------------------------------------------------
+interface MockRecorder {
+  start: ReturnType<typeof vi.fn>;
+  stop: ReturnType<typeof vi.fn>;
+  ondataavailable: ((e: { data: Blob }) => void) | null;
+  onstop: (() => void) | null;
+  onerror: ((e: Error) => void) | null;
+  state: string;
+}
+
+const recorderInstances: MockRecorder[] = [];
+
+function makeRecorder(): MockRecorder {
+  const mr: MockRecorder = {
+    start: vi.fn(),
+    stop: vi.fn(() => {
+      mr.state = 'inactive';
+      // Emit a chunk then fire onstop, like a real recorder teardown.
+      mr.ondataavailable?.({ data: new Blob([new Uint8Array(2048)], { type: 'audio/webm' }) });
+      mr.onstop?.();
+    }),
+    ondataavailable: null,
+    onstop: null,
+    onerror: null,
+    state: 'inactive',
+  };
+  recorderInstances.push(mr);
+  return mr;
+}
+
+const mockAnalyser = {
+  fftSize: 256,
+  frequencyBinCount: 128,
+  getByteFrequencyData: vi.fn(),
+  connect: vi.fn(),
+};
+
+const mockAudioContext = {
+  createAnalyser: vi.fn(() => mockAnalyser),
+  createMediaStreamSource: vi.fn(() => ({ connect: vi.fn() })),
+  close: vi.fn().mockResolvedValue(undefined),
+  currentTime: 0,
+  resume: vi.fn(),
+};
+
+Object.defineProperty(global, 'AudioContext', { value: vi.fn(() => mockAudioContext), writable: true });
+Object.defineProperty(global, 'webkitAudioContext', { value: vi.fn(() => mockAudioContext), writable: true });
+Object.defineProperty(global, 'MediaRecorder', { value: vi.fn(() => makeRecorder()), writable: true });
+Object.defineProperty(MediaRecorder, 'isTypeSupported', { value: vi.fn(() => true), writable: true });
+Object.defineProperty(navigator, 'mediaDevices', {
+  value: { getUserMedia: vi.fn().mockResolvedValue({ getTracks: () => [{ stop: vi.fn() }] }) },
+  writable: true,
+});
+
+/** Reactive voice-mode flag; the hook's effect only re-runs on signal writes. */
+function voiceModeSignal(initial: boolean) {
+  const [get, set] = createSignal(initial);
+  const sig = { get, set, is: () => get() };
+  voiceModeSignals.push(sig);
+  return sig;
+}
+
+// Every voice-mode signal is tracked so afterEach can switch it off first.
+// Otherwise a previous test's hook survives disposal via its 500ms discard
+// retry timer, grabs the mic again, and pollutes the next test's recorders.
+const voiceModeSignals: Array<{ set: (v: boolean) => void }> = [];
+const disposals: Array<() => void> = [];
+
+/** Drive the hook inside a root, capturing its return value. */
+function mountHook(opts: { isVoiceMode: () => boolean; isTurnActive: () => boolean }) {
+  let hook!: ReturnType<typeof useConversationVoiceRecording>;
+  const dispose = createRoot((d) => {
+    hook = useConversationVoiceRecording(opts);
+    return d;
+  });
+  disposals.push(dispose);
+  return { hook, dispose };
+}
+
+async function flush(ms = 0) {
+  await new Promise((r) => setTimeout(r, ms));
+}
+
+/** Feed loud frames into the analyser. */
+function speak() {
+  mockAnalyser.getByteFrequencyData.mockImplementation((arr: Uint8Array) => arr.fill(200));
+}
+
+/** Feed a silent (noise-floor) signal into the analyser. */
+function goQuiet() {
+  mockAnalyser.getByteFrequencyData.mockImplementation((arr: Uint8Array) => arr.fill(0));
+}
+
+/**
+ * Reproduce the real user flow: speak, then fall silent long enough for the
+ * hook's own silence detector to call stopRecording() and kick off
+ * transcription. Returns once the recorder has been torn down.
+ */
+async function speakThenPause() {
+  speak();
+  await flush(600); // clear MIN_RECORDING_MS, bank MIN_AUDIO_FRAMES
+  goQuiet();
+  await flush(2100); // outlast SILENCE_DURATION so the hook stops itself
+  await flush(20);
+}
+
+describe('useConversationVoiceRecording', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    voiceModeSignals.length = 0;
+    disposals.length = 0;
+    recorderInstances.length = 0;
+    clearQueue();
+    setProcessing(false);
+    setActiveConversation('conv-1');
+    setVoice({ status: 'idle', transcript: undefined, isDictating: false, isTtsSpeaking: false });
+    mockAudioContext.close.mockClear();
+    navigator.mediaDevices.getUserMedia.mockClear();
+  });
+
+  afterEach(async () => {
+    // Silence every hook before disposal so no 500ms discard-retry timer
+    // reopens the mic after this test has finished.
+    voiceModeSignals.forEach((s) => s.set(false));
+    disposals.forEach((d) => d());
+    await flush(20);
+    clearQueue();
+    setProcessing(false);
+    setActiveConversation(null);
+  });
+
+  it('starts recording when voice mode is switched on', async () => {
+    const voiceMode = voiceModeSignal(false);
+    const { hook, dispose } = mountHook({ isVoiceMode: voiceMode.is, isTurnActive: () => false });
+
+    await flush();
+    expect(hook.isRecording()).toBe(false);
+
+    voiceMode.set(true);
+    await flush();
+
+    expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalled();
+    expect(hook.state()).toBe('recording');
+    expect(hook.isRecording()).toBe(true);
+    dispose();
+  });
+
+  it('enqueues the transcription and triggers a drain (regression: undefined triggerDrain stranded the queue)', async () => {
+    const voiceMode = voiceModeSignal(true);
+    const { hook, dispose } = mountHook({ isVoiceMode: voiceMode.is, isTurnActive: () => false });
+
+    await flush();
+    expect(hook.isRecording()).toBe(true);
+
+    global.fetch = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ text: 'what is the weather today' }),
+    })) as unknown as typeof fetch;
+
+    hook.state(); // touch accessor
+    // Simulate the recorder finishing: push a loud frame then stop.
+    const mr = recorderInstances[recorderInstances.length - 1];
+    mockAnalyser.getByteFrequencyData.mockImplementation((arr: Uint8Array) => arr.fill(200));
+    await flush(600); // exceed MIN_RECORDING_MS, accumulate MIN_AUDIO_FRAMES
+    mr.stop();
+
+    await flush(50);
+
+    expect(getQueue()).toHaveLength(1);
+    expect(getQueue()[0].content).toBe('what is the weather today');
+    expect(getQueue()[0].source).toBe('voice');
+    expect(triggerDrain).toHaveBeenCalledTimes(1);
+    dispose();
+  });
+
+  it('does not mark the queue processing before the drainer runs (regression: drainQueueIfReady bails when isProcessing() is true)', async () => {
+    const voiceMode = voiceModeSignal(true);
+    let processingAtDrainTime: boolean | null = null;
+    triggerDrain.mockImplementation(async () => {
+      processingAtDrainTime = isProcessing();
+    });
+
+    const { dispose } = mountHook({ isVoiceMode: voiceMode.is, isTurnActive: () => false });
+    await flush();
+
+    global.fetch = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ text: 'hello assistant' }),
+    })) as unknown as typeof fetch;
+
+    const mr = recorderInstances[recorderInstances.length - 1];
+    mockAnalyser.getByteFrequencyData.mockImplementation((arr: Uint8Array) => arr.fill(200));
+    await flush(600);
+    mr.stop();
+    await flush(50);
+
+    expect(triggerDrain).toHaveBeenCalled();
+    expect(processingAtDrainTime).toBe(false);
+    dispose();
+  });
+
+  it('holds the mic closed while /transcribe is in flight (regression: reopened mid-request)', async () => {
+    const voiceMode = voiceModeSignal(true);
+    let resolveFetch: ((v: unknown) => void) | null = null;
+    const fetchPromise = new Promise((r) => {
+      resolveFetch = r;
+    });
+
+    const { hook, dispose } = mountHook({ isVoiceMode: voiceMode.is, isTurnActive: () => false });
+    await flush();
+
+    global.fetch = vi.fn(async () => {
+      await fetchPromise;
+      return { ok: true, status: 200, json: async () => ({ text: 'slow response' }) };
+    }) as unknown as typeof fetch;
+
+    const mr = recorderInstances[recorderInstances.length - 1];
+    expect(mr).toBeDefined();
+    await speakThenPause();
+
+    // Request outstanding: must be transcribing, NOT recording.
+    expect(hook.state()).toBe('transcribing');
+    expect(hook.isRecording()).toBe(false);
+
+    const countWhilePending = recorderInstances.length;
+
+    resolveFetch!({});
+    await flush(50);
+
+    // Only now may the mic reopen.
+    expect(hook.state()).toBe('recording');
+    expect(recorderInstances.length).toBeGreaterThan(countWhilePending);
+    dispose();
+  });
+
+  it('leaves the processing flag clear so later utterances can still drain', async () => {
+    const voiceMode = voiceModeSignal(true);
+    const { dispose } = mountHook({ isVoiceMode: voiceMode.is, isTurnActive: () => false });
+    await flush();
+
+    global.fetch = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ text: 'queue me' }),
+    })) as unknown as typeof fetch;
+
+    const mr = recorderInstances[recorderInstances.length - 1];
+    mockAnalyser.getByteFrequencyData.mockImplementation((arr: Uint8Array) => arr.fill(200));
+    await flush(600);
+    mr.stop();
+    await flush(50);
+
+    expect(isProcessing()).toBe(false);
+    dispose();
+  });
+
+  it('releases the mic gate when transcription fails', async () => {
+    const voiceMode = voiceModeSignal(true);
+    const { hook, dispose } = mountHook({ isVoiceMode: voiceMode.is, isTurnActive: () => false });
+    await flush();
+
+    global.fetch = vi.fn(async () => ({
+      ok: false,
+      status: 500,
+      json: async () => ({ detail: 'boom' }),
+    })) as unknown as typeof fetch;
+
+    const mr = recorderInstances[recorderInstances.length - 1];
+    mockAnalyser.getByteFrequencyData.mockImplementation((arr: Uint8Array) => arr.fill(200));
+    await flush(600);
+    mr.stop();
+    await flush(600); // handleDiscard retries after 500ms
+
+    expect(getQueue()).toHaveLength(0);
+    expect(hook.state()).not.toBe('transcribing');
+    dispose();
+  });
+
+  it('stops recording when voice mode is switched off', async () => {
+    const voiceMode = voiceModeSignal(true);
+    const { hook, dispose } = mountHook({ isVoiceMode: voiceMode.is, isTurnActive: () => false });
+    await flush();
+    expect(hook.isRecording()).toBe(true);
+
+    voiceMode.set(false);
+    await flush();
+
+    expect(hook.isRecording()).toBe(false);
+    expect(hook.state()).toBe('idle');
+    dispose();
+  });
+});

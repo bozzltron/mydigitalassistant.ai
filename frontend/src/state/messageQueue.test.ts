@@ -74,6 +74,25 @@ describe('messageQueue', () => {
       expect(mockLocalStorage.setItem).toHaveBeenCalledWith('messageQueue', expect.any(String));
     });
 
+    it('persists each message exactly once (regression: re-appended after the store update, duplicating on reload)', () => {
+      enqueue({ content: 'Only once', source: 'voice', timestamp: 1000 });
+
+      const raw = mockLocalStorage.store['messageQueue'];
+      const parsed = JSON.parse(raw) as Array<{ id: string; content: string }>;
+      expect(parsed).toHaveLength(1);
+      expect(parsed[0].content).toBe('Only once');
+      expect(parsed[0].id).toBe(getQueue()[0].id);
+    });
+
+    it('keeps persisted entries in sync with in-memory state across several enqueues', () => {
+      enqueue({ content: 'one', source: 'voice', timestamp: 1 });
+      enqueue({ content: 'two', source: 'voice', timestamp: 2 });
+      enqueue({ content: 'three', source: 'voice', timestamp: 3 });
+
+      const parsed = JSON.parse(mockLocalStorage.store['messageQueue']) as Array<{ content: string }>;
+      expect(parsed.map((m) => m.content)).toEqual(['one', 'two', 'three']);
+    });
+
     it('enforces MAX_QUEUE_SIZE (10)', () => {
       for (let i = 0; i < 15; i++) {
         enqueue({ content: `Msg ${i}`, source: 'text', timestamp: Date.now() + i });

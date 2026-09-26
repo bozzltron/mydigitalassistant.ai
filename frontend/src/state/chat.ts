@@ -197,10 +197,11 @@ export async function postChatMessage(
       })
     }
 
-    // Use messageQueue drain
+    // Keep the active conversation current so the queue drainer knows where to
+    // send. Do NOT drain here: draining clears the queue, which silently
+    // destroyed messages the user queued while this turn was streaming.
     if (session_id) {
       setActiveConversation(session_id)
-      mqDrainQueue()
     }
   }
 }
@@ -344,10 +345,11 @@ export async function postChatMessageStream(
       })
     }
 
-    // Use messageQueue drain
+    // Keep the active conversation current so the queue drainer knows where to
+    // send. Do NOT drain here: draining clears the queue, which silently
+    // destroyed messages the user queued while this turn was streaming.
     if (session_id) {
       setActiveConversation(session_id)
-      mqDrainQueue()
     }
   }
 }
