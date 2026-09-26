@@ -3,12 +3,20 @@ import { createStore } from 'solid-js/store'
 import { postChat, postChatStream, createTurnId } from '../services/api'
 import { startStatusPolling, stopStatusPolling, setStreamStage } from '../services/status'
 import { getSessionMessages } from '../services/api'
+import { 
+  getQueue, 
+  getQueueLength, 
+  enqueue as mqEnqueue, 
+  dequeue as mqDequeue,
+  drainQueue as mqDrainQueue,
+  clearQueue as mqClearQueue,
+  setActiveConversation 
+} from './messageQueue'
 import type {
   ChatMessage,
   ExtractionSummary,
   SearchInfo,
   OgData,
-  QueuedMessage,
   SessionMessage,
   AttachedFile,
 } from '../../types'
@@ -17,14 +25,13 @@ interface ChatState {
   conversationMessages: Map<string, ChatMessage[]>
   conversationTurnIds: Map<string, string>
   conversationTurnActive: Map<string, boolean>
-  conversationQueues: Map<string, QueuedMessage[]>
+  // conversationQueues removed - now using messageQueue
 }
 
 const [chatState, setChatState] = createStore<ChatState>({
   conversationMessages: new Map(),
   conversationTurnIds: new Map(),
   conversationTurnActive: new Map(),
-  conversationQueues: new Map(),
 })
 
 export const [sessionId, setSessionId] = createSignal<string | null>(null)
@@ -34,11 +41,12 @@ export const isTurnActive = createMemo(() => {
   if (!sid) return false
   return chatState.conversationTurnActive.get(sid) === true
 })
-// Per-conversation queue
+// Per-conversation queue - now uses messageQueue
 export const queue = createMemo(() => {
-  const sid = sessionId()
-  if (!sid) return []
-  return chatState.conversationQueues.get(sid) || []
+  return getQueue()
+})
+export const queueLength = createMemo(() => {
+  return getQueueLength()
 })
 export const [currentTurnId, setCurrentTurnId] = createSignal<string | null>(null)
 export const [isStreaming, setIsStreaming] = createSignal(false)
@@ -54,7 +62,7 @@ export const messages = createMemo(() => {
     }
     const queuedMessages: ChatMessage[] = currentQueue.map(q => ({
       role: 'user' as const,
-      content: q.message,
+      content: q.content,
       id: q.id,
       meta: { isQueued: true }
     }))
@@ -189,7 +197,11 @@ export async function postChatMessage(
       })
     }
 
-    drainQueue(session_id)
+    // Use messageQueue drain
+    if (session_id) {
+      setActiveConversation(session_id)
+      mqDrainQueue()
+    }
   }
 }
 
@@ -332,7 +344,11 @@ export async function postChatMessageStream(
       })
     }
 
-    drainQueue(session_id)
+    // Use messageQueue drain
+    if (session_id) {
+      setActiveConversation(session_id)
+      mqDrainQueue()
+    }
   }
 }
 
@@ -395,49 +411,29 @@ export function useConversationTurnId(sessionIdParam: () => string | null | unde
 export function enqueueMessage(message: string, sessionIdParam?: string): void {
   const targetSessionId = sessionIdParam || sessionId()
   if (!targetSessionId) return
-  
-  const queuedMessage: QueuedMessage = {
-    id: `queued-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    message,
-    timestamp: Date.now()
-  }
-  setChatState('conversationQueues', (prev: Map<string, QueuedMessage[]>) => {
-    const next = new Map(prev)
-    const existing = next.get(targetSessionId) || []
-    next.set(targetSessionId, [...existing, queuedMessage])
-    return next
+
+  mqEnqueue({
+    content: message,
+    source: 'text',
+    timestamp: Date.now(),
   })
 }
 
-export function removeQueuedMessage(id: string, sessionIdParam?: string): void {
-  const targetSessionId = sessionIdParam || sessionId()
-  if (!targetSessionId) return
-  
-  setChatState('conversationQueues', (prev: Map<string, QueuedMessage[]>) => {
-    const next = new Map(prev)
-    const existing = next.get(targetSessionId) || []
-    next.set(targetSessionId, existing.filter(q => q.id !== id))
-    return next
-  })
+export function removeQueuedMessage(id: string, _sessionIdParam?: string): void {
+  // _sessionIdParam is ignored - messageQueue is single-conversation
+  mqDequeue(id)
 }
 
 export function drainQueue(sessionIdParam?: string): void {
   const targetSessionId = sessionIdParam || sessionId()
   if (!targetSessionId) return
-  
-  setChatState('conversationQueues', (prev: Map<string, QueuedMessage[]>) => {
-    const next = new Map(prev)
-    const currentQueue = next.get(targetSessionId) || []
-    const [nextMsg, ...rest] = currentQueue
-    if (nextMsg) {
-      next.set(targetSessionId, rest)
-      // Route queued messages through the streaming path so the assistant
-      // reply lands in the conversation store and renders (the non-streaming
-      // postChatMessage never adds the response to the UI).
-      postChatMessageStream(nextMsg.message, targetSessionId)
-    }
-    return next
-  })
+
+  setActiveConversation(targetSessionId)
+  mqDrainQueue()
+}
+
+export function clearQueue(): void {
+  mqClearQueue()
 }
 
 interface SessionMessage {

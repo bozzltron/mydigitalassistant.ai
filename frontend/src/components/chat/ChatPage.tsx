@@ -3,8 +3,8 @@ import MessageList from './MessageList'
 import InputBar from './InputBar'
 import StatusIndicator from './StatusIndicator'
 import { Modal } from '../ui/Modal'
-import { messages, sessionId, setSessionId, isTurnActive, useConversationTurnId, addMessageToConversation, enqueueMessage, queue, isStreaming } from '../../state/chat'
-import { getQueue, getQueueLength, dequeue } from '../../state/messageQueue'
+import { messages, sessionId, setSessionId, isTurnActive, useConversationTurnId, addMessageToConversation, queue, isStreaming } from '../../state/chat'
+import { getQueue, getQueueLength, dequeue, enqueue, isProcessing, setActiveConversation } from '../../state/messageQueue'
 import { Session } from '../../state/session'
 import { useTurnStatus } from '../../services/status'
 import { useVoiceRecording } from '../../hooks/useVoiceRecording'
@@ -102,9 +102,17 @@ export default function ChatPage(props: {
     const currentSessionId = sessionId()
     if (!currentSessionId) return
 
-    // If a turn is active for THIS conversation, queue the message instead of sending immediately
-    if (isSending()) {
-      enqueueMessage(message.trim(), currentSessionId)
+    // Ensure message queue knows the active conversation
+    setActiveConversation(currentSessionId)
+
+    // If a turn is active (queue is processing), queue the message instead of sending immediately
+    if (isProcessing()) {
+      enqueue({
+        content: message.trim(),
+        source: 'text',
+        timestamp: Date.now(),
+        attachedFiles: attachedFiles ? await Promise.all(attachedFiles.map(readFileAsAttachedFile)) : undefined,
+      })
       return
     }
 

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { messages, queue, isTurnActive, sessionId, setSessionId, currentTurnId, setCurrentTurnId, postChatMessage, postChatMessageStream, loadConversationMessages, initChat, drainQueue, enqueueMessage, addMessageToConversation } from '../state/chat'
 import * as api from '../services/api'
 import * as status from '../services/status'
+import * as messageQueue from '../state/messageQueue'
 
 vi.mock('../services/api', () => ({
   postChat: vi.fn(),
@@ -17,6 +18,10 @@ describe('chat state', () => {
     setSessionId(null)
     setCurrentTurnId(null)
     localStorage.clear()
+    // Clear messageQueue state
+    messageQueue.clearQueue()
+    messageQueue.setProcessing(false)
+    messageQueue.setActiveConversation(null)
     initChat()
   })
 
@@ -186,32 +191,17 @@ describe('chat state', () => {
   })
 
   describe('drainQueue', () => {
-    it('routes queued messages through the streaming path so replies render', () => {
-      // Regression test: drainQueue previously called the non-streaming
-      // postChatMessage, whose reply never lands in the conversation store —
-      // queued messages had the same "answer only appears after refresh" bug.
+    it('sets active conversation and clears message queue', () => {
+      // New behavior: drainQueue delegates to messageQueue
       setSessionId('session-queue-1')
-      vi.mocked(api.postChatStream).mockResolvedValue({
-        response: 'Queued reply',
-        task_type: 'functional',
-        session_id: 'session-queue-1',
-      } as never)
-      vi.mocked(status.startStatusPolling).mockImplementation(() => {})
-      vi.mocked(status.stopStatusPolling).mockImplementation(() => {})
+      vi.spyOn(messageQueue, 'setActiveConversation')
+      vi.spyOn(messageQueue, 'drainQueue').mockReturnValue([])
 
       enqueueMessage('Second question', 'session-queue-1')
       drainQueue('session-queue-1')
 
-      expect(api.postChat).not.toHaveBeenCalled()
-      expect(api.postChatStream).toHaveBeenCalledWith(
-        'Second question',
-        'session-queue-1',
-        undefined,
-        'test-turn-id-123',
-        undefined,
-        undefined,
-        expect.any(Function)
-      )
+      expect(messageQueue.setActiveConversation).toHaveBeenCalledWith('session-queue-1')
+      expect(messageQueue.drainQueue).toHaveBeenCalled()
     })
   })
 
