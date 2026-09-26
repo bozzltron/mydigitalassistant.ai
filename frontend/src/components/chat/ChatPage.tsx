@@ -3,7 +3,7 @@ import MessageList from './MessageList'
 import InputBar from './InputBar'
 import StatusIndicator from './StatusIndicator'
 import { Modal } from '../ui/Modal'
-import { messages, sessionId, isTurnActive, useConversationTurnId, addMessageToConversation, queue, isStreaming } from '../../state/chat'
+import { messages, sessionId, isTurnActive, useConversationTurnId, addMessageToConversation, isStreaming } from '../../state/chat'
 import { getQueue, getQueueLength, dequeue, enqueue, isProcessing, setActiveConversation, isDrainBlocked } from '../../state/messageQueue'
 import { triggerDrain, drainQueueIfReady, onSearchConsentRequired } from '../../services/queueDrainer'
 import { Session } from '../../state/session'
@@ -45,8 +45,11 @@ export default function ChatPage(props: {
   // Auto-scroll to bottom when messages change
   let scrollTimeout: number | null = null
   createEffect(() => {
+    // Subscribe to the transcript only. This used to also read `queue()` so the
+    // list would scroll when a message was queued, back when queued items were
+    // appended to the transcript. They now render in the queue panel instead, so
+    // that subscription only caused spurious scrolls.
     messages()
-    queue()
     if (scrollTimeout) {
       clearTimeout(scrollTimeout)
     }
@@ -232,13 +235,23 @@ export default function ChatPage(props: {
   // conversation voice) only enqueues; this effect sends whatever is waiting as
   // soon as the agent is free. Watching the reactive signals means the queue is
   // also drained after a turn started by any other code path. isDrainBlocked
-  // keeps a failing queue from retrying in a hot loop.
+  // stops a message that arrived while the backend was refusing work from being
+  // sent in a hot loop.
   createEffect(() => {
+    const conversationId = sessionId();
+
+    // Keep the queue's notion of the active conversation in sync with the one
+    // on screen. The conversation-voice hook enqueues directly and never called
+    // setActiveConversation, so on a fresh session activeConversationId stayed
+    // null and the drainer skipped every send with "No active conversation".
+    if (conversationId) {
+      setActiveConversation(conversationId);
+    }
+
     const waiting = getQueueLength();
     const turnActive = isTurnActive();
     const processing = isProcessing();
     const blocked = isDrainBlocked();
-    const conversationId = sessionId();
 
     if (waiting > 0 && !turnActive && !processing && !blocked && conversationId) {
       void drainQueueIfReady();
@@ -298,35 +311,11 @@ export default function ChatPage(props: {
           {/* Queue Panel - shows queued messages during processing */}
           <Show when={getQueueLength() > 0}>
             <div class="queue-panel" id="queue-panel">
-              <div class="queue-panel-header">
-                {isProcessing() && (
-                  <span class="queue-processing-indicator">
-                    <span class="spinner"></span>
-                    Processing...
-                  </span>
-                )}
-              </div>
               <div class="queue-panel-content">
                 <For each={getQueue()}>
                   {(queuedMsg) => (
                     <div class="msg msg-user msg-queued" id={queuedMsg.id}>
                       <div class="queued-content">
-                        <span class="queued-source" title={queuedMsg.source === 'voice' ? 'Voice transcription' : 'Typed message'}>
-                          {queuedMsg.source === 'voice' ? (
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-                              <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-                              <line x1="12" y1="19" x2="12" y2="23"/>
-                              <line x1="8" y1="23" x2="16" y2="23"/>
-                            </svg>
-                          ) : (
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                              <polyline points="4 7 4 4 20 4 20 7"/>
-                              <line x1="9" y1="20" x2="15" y2="20"/>
-                              <line x1="12" y1="4" x2="12" y2="20"/>
-                            </svg>
-                          )}
-                        </span>
                         <span class="queued-text">{queuedMsg.content}</span>
                       </div>
                       <button 
@@ -345,7 +334,7 @@ export default function ChatPage(props: {
             </div>
           </Show>
 
-          <Show when={messages().length === 0 && queue().length === 0}>
+          <Show when={messages().length === 0 && getQueueLength() === 0}>
             <div class="welcome-message" id="welcome">
               <div class="welcome-icon"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
               <h2>{props.conversation?.title ? `Conversation: ${props.conversation.title}` : 'Ready to chat'}</h2>

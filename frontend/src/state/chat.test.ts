@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { messages, queue, isTurnActive, sessionId, setSessionId, currentTurnId, setCurrentTurnId, postChatMessage, postChatMessageStream, loadConversationMessages, initChat, drainQueue, enqueueMessage, addMessageToConversation } from '../state/chat'
+import { messages, isTurnActive, sessionId, setSessionId, currentTurnId, setCurrentTurnId, postChatMessage, postChatMessageStream, loadConversationMessages, initChat, drainQueue, enqueueMessage, addMessageToConversation } from '../state/chat'
 import * as api from '../services/api'
 import * as status from '../services/status'
 import * as messageQueue from '../state/messageQueue'
@@ -41,12 +41,54 @@ describe('chat state', () => {
       setSessionId('session-123')
       expect(messages()).toEqual([])
     })
-  })
 
-  describe('queue', () => {
-    it('initializes empty', () => {
-      setSessionId('session-123')
-      expect(queue()).toEqual([])
+    it('does not render pending queue items in the transcript (regression: they rendered twice, and the transcript copy looked already-sent)', () => {
+      // Distinct session id: conversationMessages is never cleared between
+      // tests, so reusing an id used elsewhere leaks these messages forward.
+      setSessionId('session-transcript-pending')
+      addMessageToConversation('session-transcript-pending', { role: 'user', content: 'already sent', id: 'm1' })
+
+      messageQueue.enqueue({ content: 'still waiting', source: 'voice', timestamp: 1 })
+
+      const rendered = messages()
+      expect(rendered.map((m) => m.content)).toEqual(['already sent'])
+      // The queue panel is the single surface for pending messages.
+      expect(messageQueue.getQueueLength()).toBe(1)
+    })
+
+    it('shows a drained message in the transcript exactly once, not also as queued', () => {
+      setSessionId('session-transcript-drained')
+      const id = messageQueue.enqueue({ content: 'processed', source: 'voice', timestamp: 1 })
+
+      // What the drainer does after a successful send.
+      addMessageToConversation('session-transcript-drained', { role: 'user', content: 'processed', id })
+      messageQueue.dequeue(id)
+
+      const rendered = messages()
+      expect(rendered).toHaveLength(1)
+      expect(rendered[0].content).toBe('processed')
+    })
+
+    it('ignores a re-commit of the same message id (regression: retry grew a duplicate turn)', () => {
+      // The drainer commits a turn before the request goes out, so a failed send
+      // can be retried with the same queued id. Without this guard the retry
+      // appended a second copy of the user's own message.
+      setSessionId('session-transcript-recommit')
+      addMessageToConversation('session-transcript-recommit', { role: 'user', content: 'asked once', id: 'dup-1' })
+      addMessageToConversation('session-transcript-recommit', { role: 'user', content: 'asked once', id: 'dup-1' })
+
+      const rendered = messages()
+      expect(rendered).toHaveLength(1)
+      expect(rendered[0].content).toBe('asked once')
+    })
+
+    it('still appends distinct messages in order', () => {
+      setSessionId('session-transcript-distinct')
+      addMessageToConversation('session-transcript-distinct', { role: 'user', content: 'first', id: 'd-1' })
+      addMessageToConversation('session-transcript-distinct', { role: 'assistant', content: 'reply', id: 'd-2' })
+      addMessageToConversation('session-transcript-distinct', { role: 'user', content: 'second', id: 'd-3' })
+
+      expect(messages().map((m) => m.content)).toEqual(['first', 'reply', 'second'])
     })
   })
 

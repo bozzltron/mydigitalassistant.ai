@@ -7,10 +7,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 const postChatMessageStream = vi.fn(async () => ({ response: 'ok' }));
 const addMessageToConversation = vi.fn();
 const setSessionId = vi.fn();
+let sessionIdValue: string | null = null;
 vi.mock('../state/chat', () => ({
   postChatMessageStream: (...args: unknown[]) => postChatMessageStream(...(args as [])),
   addMessageToConversation: (...args: unknown[]) => addMessageToConversation(...(args as [])),
   setSessionId: (...args: unknown[]) => setSessionId(...(args as [])),
+  sessionId: () => sessionIdValue,
 }));
 
 import {
@@ -32,6 +34,7 @@ describe('queueDrainer', () => {
     postChatMessageStream.mockResolvedValue({ response: 'ok' });
     addMessageToConversation.mockClear();
     setSessionId.mockClear();
+    sessionIdValue = null;
     clearQueue();
     setProcessing(false);
     setActiveConversation(null);
@@ -86,7 +89,7 @@ describe('queueDrainer', () => {
     expect(prompt).toContain('second');
   });
 
-  it('skips draining when there is no active conversation', async () => {
+  it('skips draining only when there is no active conversation AND no session', async () => {
     enqueue({ content: 'orphaned', source: 'voice', timestamp: Date.now() });
 
     await drainQueueIfReady();
@@ -95,6 +98,28 @@ describe('queueDrainer', () => {
     expect(isProcessing()).toBe(false);
     // message is kept for a later conversation rather than dropped
     expect(getQueue()).toHaveLength(1);
+  });
+
+  it('drains using the on-screen session when the queue has no active conversation (regression: voice enqueued without setActiveConversation, so nothing was ever sent)', async () => {
+    // Reproduces the reported failure: the conversation-voice hook enqueues and
+    // calls triggerDrain without ever setting activeConversationId.
+    sessionIdValue = 'session-from-screen';
+    enqueue({ content: 'catch me up on classic literature', source: 'voice', timestamp: 1 });
+
+    await triggerDrain();
+
+    expect(postChatMessageStream).toHaveBeenCalledTimes(1);
+    expect(postChatMessageStream.mock.calls[0][1]).toBe('session-from-screen');
+  });
+
+  it('prefers the queue active conversation over the on-screen session', async () => {
+    sessionIdValue = 'session-from-screen';
+    setActiveConversation('session-from-queue');
+    enqueue({ content: 'hello', source: 'text', timestamp: 1 });
+
+    await triggerDrain();
+
+    expect(postChatMessageStream.mock.calls[0][1]).toBe('session-from-queue');
   });
 
   it('forceDrain sends a single queued message', async () => {
@@ -143,16 +168,60 @@ describe('queueDrainer', () => {
       expect(addMessageToConversation).not.toHaveBeenCalled();
     });
 
-    it('does not commit history when the send fails', async () => {
+    it('commits the user turn BEFORE the stream starts, so the reply cannot render above it (regression)', async () => {
+      // postChatMessageStream appends the assistant reply to the transcript as it
+      // arrives, so committing the user's own turn afterwards ordered the
+      // transcript [.., reply, prompt] and stacked the reply on top of the
+      // message it was answering. A refresh hid it because the server returns
+      // the pair in the right order.
+      const order: string[] = [];
+      addMessageToConversation.mockImplementation(() => {
+        order.push('commit-user');
+      });
+      postChatMessageStream.mockImplementation(async () => {
+        order.push('stream-reply');
+        return { response: 'ok' };
+      });
+      setActiveConversation('conv-order');
+      enqueue({ content: 'ordered please', source: 'text', timestamp: 1 });
+
+      await triggerDrain();
+
+      expect(order).toEqual(['commit-user', 'stream-reply']);
+    });
+
+    it('moves the message out of the queue as the request goes out (regression: rendered in both the panel and the transcript)', async () => {
+      const order: string[] = [];
+      setActiveConversation('conv-handoff');
+      const id = enqueue({ content: 'only once', source: 'text', timestamp: 1 });
+      postChatMessageStream.mockImplementation(async () => {
+        // Mid-flight is exactly when the message used to be on screen twice.
+        order.push(`queue-during-send:${getQueue().length}`);
+        return { response: 'ok' };
+      });
+
+      await drainQueueIfReady();
+
+      expect(order).toEqual(['queue-during-send:0']);
+      expect(getQueue()).toHaveLength(0);
+      // and the transcript carries it instead
+      expect(addMessageToConversation).toHaveBeenCalledWith(
+        'conv-handoff',
+        expect.objectContaining({ id, content: 'only once' })
+      );
+    });
+
+    it('leaves nothing to retry when the send fails, since the turn is already in the transcript', async () => {
       postChatMessageStream.mockRejectedValueOnce(new Error('boom'));
       setActiveConversation('conv-h4');
       enqueue({ content: 'will fail', source: 'text', timestamp: 1 });
 
       await drainQueueIfReady();
 
-      expect(addMessageToConversation).not.toHaveBeenCalled();
-      // and the message is still queued for retry
-      expect(getQueue()).toHaveLength(1);
+      // The user keeps what they said, and the queue does not hold a copy that
+      // would resend on the next utterance.
+      expect(addMessageToConversation).toHaveBeenCalledTimes(1);
+      expect(getQueue()).toHaveLength(0);
     });
 
     it('stands the auto-drain down after a failure so it cannot hot-loop (regression)', async () => {
@@ -170,17 +239,24 @@ describe('queueDrainer', () => {
       expect(postChatMessageStream).toHaveBeenCalledTimes(1);
     });
 
-    it('an explicit triggerDrain clears the block and retries', async () => {
+    it('an explicit triggerDrain clears the block and sends the next thing enqueued', async () => {
+      // The failed message left the queue when the request went out, so clearing
+      // the block does not resurrect it -- it just resumes sending from the next
+      // message. Resending on an explicit trigger would put the user's own turn
+      // in the transcript twice.
       postChatMessageStream.mockRejectedValueOnce(new Error('transient'));
       setActiveConversation('conv-retry');
-      enqueue({ content: 'retry me', source: 'text', timestamp: 1 });
+      enqueue({ content: 'lost to failure', source: 'text', timestamp: 1 });
 
       await drainQueueIfReady();
       expect(isDrainBlocked()).toBe(true);
 
+      enqueue({ content: 'next thing', source: 'text', timestamp: 2 });
       await triggerDrain();
-      expect(postChatMessageStream).toHaveBeenCalledTimes(2);
+
       expect(isDrainBlocked()).toBe(false);
+      expect(postChatMessageStream).toHaveBeenCalledTimes(2);
+      expect(postChatMessageStream.mock.calls[1][0]).toBe('next thing');
     });
 
     it('enqueueing a new message clears the block', async () => {

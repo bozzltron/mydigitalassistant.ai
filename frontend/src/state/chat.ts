@@ -3,14 +3,12 @@ import { createStore } from 'solid-js/store'
 import { postChat, postChatStream, createTurnId } from '../services/api'
 import { startStatusPolling, stopStatusPolling, setStreamStage } from '../services/status'
 import { getSessionMessages } from '../services/api'
-import { 
-  getQueue, 
-  getQueueLength, 
-  enqueue as mqEnqueue, 
+import {
+  enqueue as mqEnqueue,
   dequeue as mqDequeue,
   drainQueue as mqDrainQueue,
   clearQueue as mqClearQueue,
-  setActiveConversation 
+  setActiveConversation
 } from './messageQueue'
 import type {
   ChatMessage,
@@ -41,13 +39,10 @@ export const isTurnActive = createMemo(() => {
   if (!sid) return false
   return chatState.conversationTurnActive.get(sid) === true
 })
-// Per-conversation queue - now uses messageQueue
-export const queue = createMemo(() => {
-  return getQueue()
-})
-export const queueLength = createMemo(() => {
-  return getQueueLength()
-})
+// The message queue is owned by state/messageQueue. It used to be re-exported
+// here as `queue` / `queueLength` memos, but the transcript no longer reads it
+// (pending items render in the ChatPage queue panel instead), so these were
+// duplicate accessors with no callers. Use getQueue()/getQueueLength() directly.
 export const [currentTurnId, setCurrentTurnId] = createSignal<string | null>(null)
 export const [isStreaming, setIsStreaming] = createSignal(false)
 export const [streamingMessageId, setStreamingMessageId] = createSignal<string | null>(null)
@@ -55,18 +50,13 @@ export const [streamingMessageId, setStreamingMessageId] = createSignal<string |
 export const messages = createMemo(() => {
   const sid = sessionId()
   if (sid) {
-    const conversationMessages = chatState.conversationMessages.get(sid) || []
-    const currentQueue = queue()
-    if (currentQueue.length === 0) {
-      return conversationMessages
-    }
-    const queuedMessages: ChatMessage[] = currentQueue.map(q => ({
-      role: 'user' as const,
-      content: q.content,
-      id: q.id,
-      meta: { isQueued: true }
-    }))
-    return [...conversationMessages, ...queuedMessages]
+    // Queued messages are deliberately NOT appended to the transcript. The
+    // queue panel in ChatPage renders them, with the pending styling, the
+    // source icon and a remove control. Appending them here made every queued
+    // message render twice: once in the transcript and once in the panel.
+    // MessageList ignores meta.isQueued, so the transcript copy looked like an
+    // already-sent message -- it read as "sent and queued" at the same time.
+    return chatState.conversationMessages.get(sid) || []
   }
   return []
 })
@@ -393,6 +383,9 @@ export function addMessageToConversation(sessionIdParam: string, message: ChatMe
   setChatState('conversationMessages', (prev: Map<string, ChatMessage[]>) => {
     const next = new Map(prev)
     const existing = next.get(sessionIdParam) || []
+    // Re-committing an id happens when a send is retried, and the transcript
+    // must not grow a second copy of the same turn.
+    if (existing.some((m) => m.id === message.id)) return prev
     next.set(sessionIdParam, [...existing, message])
     return next
   })

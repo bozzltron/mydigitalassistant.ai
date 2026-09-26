@@ -8,7 +8,7 @@ import {
   getActiveConversationId,
   combineQueuedMessages,
 } from '../state/messageQueue';
-import { postChatMessageStream, addMessageToConversation, setSessionId } from '../state/chat';
+import { postChatMessageStream, addMessageToConversation, setSessionId, sessionId } from '../state/chat';
 import type { ChatMessage, SearchInfo } from '../types';
 
 /**
@@ -38,11 +38,15 @@ export async function drainQueueIfReady(): Promise<void> {
   // Already processing? Let the current drain handle it
   if (isProcessing()) return;
 
-  // A previous attempt failed; stand down until new input arrives or an
-  // explicit triggerDrain() clears the block.
+  // A previous attempt failed against this backend; stand down until the user
+  // does something new, which reads as intent to try again.
   if (isDrainBlocked()) return;
 
-  const conversationId = getActiveConversationId();
+  // Prefer the queue's active conversation, but fall back to the session that
+  // is actually on screen. activeConversationId is hand-maintained state that
+  // only the text path and the postChat* finally blocks used to update, so
+  // treating it as the sole gate stranded anything enqueued by voice.
+  const conversationId = getActiveConversationId() ?? sessionId();
   if (!conversationId) {
     console.warn('[queueDrainer] No active conversation, skipping drain');
     return;
@@ -69,17 +73,19 @@ async function processQueue(conversationId: string, messages: ReturnType<typeof 
     const searchConsent = messages.some((m) => m.searchConsent === true);
     const maxIntelligence = messages.some((m) => m.maxIntelligence === true);
 
-    const result = await postChatMessageStream(
-      combinedPrompt,
-      conversationId,
-      attachedFiles,
-      searchConsent,
-      maxIntelligence
-    );
-
-    // The send succeeded, so commit the messages to conversation history and
-    // drop them from the queue. History uses the individual utterances (not the
-    // combined prompt) so the transcript matches what the user actually said.
+    // A message is either queued or in the transcript, never both, so hand these
+    // over to the transcript as the request goes out. Two things fall out of that.
+    //
+    // The commit has to happen before the stream starts, because
+    // postChatMessageStream appends the reply as it arrives -- committing
+    // afterwards ordered the transcript [.., reply, prompt] and put the reply
+    // above the message it was answering.
+    //
+    // And dequeuing at the same moment is what keeps the queue panel showing
+    // only what is genuinely still on deck. Dequeuing after the reply arrived
+    // left every message rendered twice for the whole duration of the request.
+    // History holds the individual utterances, not the combined prompt, so the
+    // transcript matches what the user actually said.
     messages.forEach((m) => {
       if (!m.skipHistory) {
         addMessageToConversation(conversationId, {
@@ -91,6 +97,14 @@ async function processQueue(conversationId: string, messages: ReturnType<typeof 
       }
       dequeue(m.id);
     });
+
+    const result = await postChatMessageStream(
+      combinedPrompt,
+      conversationId,
+      attachedFiles,
+      searchConsent,
+      maxIntelligence
+    );
 
     // Only adopt the backend's session_id when it matches what we sent. A raw
     // UUID the backend minted for a request that lacked a session_id would
@@ -122,9 +136,10 @@ async function processQueue(conversationId: string, messages: ReturnType<typeof 
 
   } catch (error) {
     console.error('[queueDrainer] Error processing queue:', error);
-    // On error, keep messages in queue for retry, but stand the auto-drain
-    // effect down. Otherwise it observes the still-populated queue, sees the
-    // agent go idle, and retries in a hot loop against the backend.
+    // The messages have already moved to the transcript, so there is nothing
+    // left to retry and the queue is empty. Stand the auto-drain effect down
+    // anyway: without it, any message enqueued while the failed request was in
+    // flight would be retried in a hot loop against the backend.
     setDrainBlocked(true);
   } finally {
     setProcessing(false);

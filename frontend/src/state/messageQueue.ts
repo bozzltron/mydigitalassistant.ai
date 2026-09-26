@@ -27,9 +27,11 @@ interface QueueState {
   processing: boolean;
   activeConversationId: string | null;
   /**
-   * Set when a drain attempt failed. The auto-drain effect must not retry a
-   * failing queue in a hot loop; it is cleared when the user enqueues something
-   * new (new intent) or explicitly nudges the drainer.
+   * Set when a drain attempt failed, so a message enqueued while the failing
+   * request was in flight is not sent in a hot loop against a backend that is
+   * refusing the work. Cleared when the user enqueues something new (new intent)
+   * or explicitly nudges the drainer. The failed message itself is not retried:
+   * it left the queue when the request went out and is in the transcript.
    */
   drainBlocked: boolean;
 }
