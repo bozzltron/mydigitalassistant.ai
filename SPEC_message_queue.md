@@ -1,5 +1,26 @@
 # Message Queue System — Design Spec (MVP: Single Conversation)
 
+> ## ⚠️ STATUS: HISTORICAL — the code has moved on
+>
+> This is the original design spec, kept for the reasoning behind the queue. **It is
+> not a description of the current code.** Where the two disagree, the code wins.
+>
+> Known drift, as of 2026-09-25:
+>
+> | This spec says | Reality |
+> |---|---|
+> | `TranscriptionPipeline` in `src/services/transcriptionPipeline.ts` (Phase 1, §B) | **Deleted.** 0 callers. The hook enqueues directly. |
+> | `drainQueue()` dequeues **after** the send (§C, `messages.forEach(m => dequeue(m.id))`) | **Reversed.** Dequeue happens *with* the history commit, as the request goes out. Dequeuing after left every message rendered twice for the whole request. |
+> | `combineQueuedMessages()` wraps N messages in one prompt | Still true, and now a known problem: the backend logs the user episode as `request.message` (`orchestrator.py`), so the *wrapper* is what gets stored as episodic memory. See the note below. |
+> | `QueueState` has 3 fields | 4. `drainBlocked` was added (a debounce, not loop protection). |
+> | `export const [queueState, setQueueState] = createStore(...)` | A lazy module-level singleton with an `eslint-disable solid/reactivity`. |
+> | "Max queue size: limit to 50?" (Open Question 2) | 10, with **silent** FIFO eviction — no warning to the user. |
+> | All Phase 1–5 checkboxes unchecked | The work is done. |
+>
+> **The current flow is documented in `docs/CONVERSATION_MODE_FLOW.md`** and enforced
+> by `queueDrainer.test.ts`. Update this file or delete it — do not leave unchecked
+> boxes next to shipped code.
+
 ## Overview
 
 Redesign the conversation flow to support a robust message queue for the **active conversation** that handles simultaneous voice transcription and chat processing.
