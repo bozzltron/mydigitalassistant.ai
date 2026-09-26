@@ -48,6 +48,11 @@ function makeRecorder(): MockRecorder {
 const mockAnalyser = {
   fftSize: 256,
   frequencyBinCount: 128,
+  // Both analysers are mocked so a test can replay a frame exactly as the real
+  // mic produced it. The detector reads time-domain data now; the byte data is
+  // kept only for the regression test that replays the frame the old byte-mean
+  // threshold wrongly called loud.
+  getFloatTimeDomainData: vi.fn(),
   getByteFrequencyData: vi.fn(),
   connect: vi.fn(),
 };
@@ -98,14 +103,38 @@ async function flush(ms = 0) {
   await new Promise((r) => setTimeout(r, ms));
 }
 
+/**
+ * Drive the analyser with a constant-amplitude signal of the given RMS. The
+ * samples alternate around zero, so the RMS is exactly `rms` with no DC offset.
+ */
+function setLevel(rms: number) {
+  mockAnalyser.getFloatTimeDomainData.mockImplementation((arr: Float32Array) => {
+    for (let i = 0; i < arr.length; i++) arr[i] = i % 2 ? -rms : rms;
+  });
+}
+
+/**
+ * Replay a frame from the measured capture that the old detector called loud.
+ * Its byte-spectrum mean was 0.0199 -- above the hardcoded 0.015 threshold --
+ * while its time-domain RMS was 0.0006, which is the room's noise floor. 73.5%
+ * of the silent frames in that capture were shaped like this, which is why the
+ * silence timer never armed and a quiet room recorded to the 180s cap.
+ */
+function measuredNoiseFloorFrame() {
+  mockAnalyser.getByteFrequencyData.mockImplementation((arr: Uint8Array) =>
+    arr.fill(Math.round(0.0199 * 255)),
+  );
+  setLevel(0.0006);
+}
+
 /** Feed loud frames into the analyser. */
 function speak() {
-  mockAnalyser.getByteFrequencyData.mockImplementation((arr: Uint8Array) => arr.fill(200));
+  setLevel(0.05);
 }
 
 /** Feed a silent (noise-floor) signal into the analyser. */
 function goQuiet() {
-  mockAnalyser.getByteFrequencyData.mockImplementation((arr: Uint8Array) => arr.fill(0));
+  setLevel(0.0004);
 }
 
 /**
@@ -118,6 +147,15 @@ async function speakThenPause() {
   await flush(600); // clear MIN_RECORDING_MS, bank MIN_AUDIO_FRAMES
   goQuiet();
   await flush(2100); // outlast SILENCE_DURATION so the hook stops itself
+  await flush(20);
+}
+
+/** As speakThenPause, but the silence is a real frame from the capture. */
+async function speakThenMeasuredPause() {
+  speak();
+  await flush(600);
+  measuredNoiseFloorFrame();
+  await flush(2100);
   await flush(20);
 }
 
@@ -162,6 +200,30 @@ describe('useConversationVoiceRecording', () => {
     dispose();
   });
 
+  it('stops itself on a real measured silence frame (regression: 73.5% of silent frames read loud on the old byte-mean threshold, so the silence timer never armed and recording ran to the 180s cap)', async () => {
+    const voiceMode = voiceModeSignal(true);
+    const { dispose } = mountHook({ isVoiceMode: voiceMode.is, isTurnActive: () => false });
+    await flush();
+
+    global.fetch = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ text: 'the weather is fine' }),
+    })) as unknown as typeof fetch;
+
+    // Captured before the pause: once transcription finishes the hook reopens the
+    // mic, so the last instance by then is a fresh recorder this test never stops.
+    const mr = recorderInstances[recorderInstances.length - 1];
+
+    await speakThenMeasuredPause();
+
+    // It has to be the silence detector that stopped this, not the 180s cap, and
+    // it has to be transcribing as a result.
+    expect(mr.stop).toHaveBeenCalled();
+    expect(getQueue()).toHaveLength(1);
+    dispose();
+  });
+
   it('enqueues the transcription and triggers a drain (regression: undefined triggerDrain stranded the queue)', async () => {
     const voiceMode = voiceModeSignal(true);
     const { hook, dispose } = mountHook({ isVoiceMode: voiceMode.is, isTurnActive: () => false });
@@ -178,7 +240,7 @@ describe('useConversationVoiceRecording', () => {
     hook.state(); // touch accessor
     // Simulate the recorder finishing: push a loud frame then stop.
     const mr = recorderInstances[recorderInstances.length - 1];
-    mockAnalyser.getByteFrequencyData.mockImplementation((arr: Uint8Array) => arr.fill(200));
+    speak();
     await flush(600); // exceed MIN_RECORDING_MS, accumulate MIN_AUDIO_FRAMES
     mr.stop();
 
@@ -208,7 +270,7 @@ describe('useConversationVoiceRecording', () => {
     })) as unknown as typeof fetch;
 
     const mr = recorderInstances[recorderInstances.length - 1];
-    mockAnalyser.getByteFrequencyData.mockImplementation((arr: Uint8Array) => arr.fill(200));
+    speak();
     await flush(600);
     mr.stop();
     await flush(50);
@@ -264,7 +326,7 @@ describe('useConversationVoiceRecording', () => {
     })) as unknown as typeof fetch;
 
     const mr = recorderInstances[recorderInstances.length - 1];
-    mockAnalyser.getByteFrequencyData.mockImplementation((arr: Uint8Array) => arr.fill(200));
+    speak();
     await flush(600);
     mr.stop();
     await flush(50);
@@ -285,7 +347,7 @@ describe('useConversationVoiceRecording', () => {
     })) as unknown as typeof fetch;
 
     const mr = recorderInstances[recorderInstances.length - 1];
-    mockAnalyser.getByteFrequencyData.mockImplementation((arr: Uint8Array) => arr.fill(200));
+    speak();
     await flush(600);
     mr.stop();
     await flush(600); // handleDiscard retries after 500ms

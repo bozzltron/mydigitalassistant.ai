@@ -9,6 +9,7 @@ import {
   isTtsSpeaking
 } from '../state/voice'
 import { settings } from '../state/settings'
+import { VoiceActivityDetector } from '../services/voiceActivity'
 
 interface UseVoiceRecordingOptions {
   isVoiceMode: () => boolean
@@ -25,7 +26,6 @@ interface UseVoiceRecordingReturn {
 
 const SILENCE_DURATION = 2000
 const MIN_RECORDING_MS = 500
-const MIN_AUDIO_LEVEL = 0.015
 const MIN_AUDIO_FRAMES = 3
 const MAX_RECORDING_MS = 180000
 const MONITOR_INTERVAL_MS = 80
@@ -101,6 +101,10 @@ export function useVoiceRecording({
   const [silenceAfterLoud, setSilenceAfterLoud] = createSignal(false)
   const [monitorIntervalId, setMonitorIntervalId] = createSignal<number | null>(null)
   
+  // Owns the silence decision and the adaptive noise floor. Reset at the start
+  // of every recording so one turn's calibration never leaks into the next.
+  const vad = new VoiceActivityDetector()
+
   // State machine state
   const [modeState, setModeState] = createSignal<VoiceModeState>('idle')
   const [userInitiatedStop, setUserInitiatedStop] = createSignal(false)
@@ -111,17 +115,7 @@ export function useVoiceRecording({
   function addTimeout(id: number) {
     setPendingTimeouts(prev => new Set(prev).add(id))
   }
-  
-  function clearTimeoutSafe(id: number | null) {
-    if (id !== null) {
-      clearTimeout(id)
-      setPendingTimeouts(prev => {
-        const next = new Set(prev)
-        next.delete(id)
-        return next
-      })
-    }
-  }
+
 
   // Register stopRecording callback for external access (e.g., TopBar buttons)
   onCleanup(() => {
@@ -221,19 +215,14 @@ export function useVoiceRecording({
   })
 
   function checkAudioLevels() {
-    const a = analyser()
-    if (!a) return
-    const dataArray = new Uint8Array(a.frequencyBinCount)
-    a.getByteFrequencyData(dataArray)
-    let sum = 0
-    for (let i = 0; i < dataArray.length; i++) {
-      sum += dataArray[i]
-    }
-    const average = sum / dataArray.length / 255
+    const reading = vad.read(analyser())
+    if (!reading) return
     const elapsed = Date.now() - recordingStartTime()
     const metMinDuration = elapsed >= MIN_RECORDING_MS
-    const hasLoudAudio = average >= MIN_AUDIO_LEVEL
-    if (hasLoudAudio) {
+    if (reading.speech) {
+      if (loudFrameCount() === 0) {
+        console.log('[voice] speech detected', { rms: reading.rms, threshold: reading.threshold })
+      }
       setLoudFrameCount(loudFrameCount() + 1)
       setSilenceAfterLoud(false)
       const st = silenceTimeout()
@@ -241,14 +230,13 @@ export function useVoiceRecording({
         clearTimeout(st)
         setSilenceTimeout(null)
       }
-      console.log('[voice] loud audio', { average, loudFrames: loudFrameCount(), elapsed, metMinDuration })
     } else {
       if (!silenceAfterLoud() && loudFrameCount() > 0) {
         setSilenceAfterLoud(true)
-        console.log('[voice] silence detected after loud audio, will timeout in', SILENCE_DURATION, 'ms')
+        console.log('[voice] silence detected after speech, will timeout in', SILENCE_DURATION, 'ms')
       }
       if (!silenceTimeout() && metMinDuration && loudFrameCount() >= MIN_AUDIO_FRAMES) {
-        console.log('[voice] setting silence timeout:', SILENCE_DURATION, 'ms, loudFrames:', loudFrameCount())
+        console.log('[voice] setting silence timeout:', SILENCE_DURATION, 'ms')
         const st = window.setTimeout(() => {
           if (isRecording()) {
             console.log('[voice] silence timeout fired — stopping')
@@ -257,13 +245,6 @@ export function useVoiceRecording({
         }, SILENCE_DURATION)
         setSilenceTimeout(st)
         addTimeout(st)
-      } else if (loudFrameCount() > 0) {
-        console.log('[voice] waiting for silence timeout conditions', { 
-          metMinDuration, 
-          loudFrames: loudFrameCount(), 
-          minFrames: MIN_AUDIO_FRAMES,
-          hasTimeout: !!silenceTimeout() 
-        })
       }
     }
   }
@@ -383,6 +364,7 @@ export function useVoiceRecording({
       setRecordingStartTime(Date.now())
       setLoudFrameCount(0)
       setSilenceAfterLoud(false)
+      vad.reset()
 
       startAudioMonitor()
 
@@ -446,9 +428,7 @@ export function useVoiceRecording({
     }
   }
 
-  function scheduleListenRetry(message: string, delayMs = 1200) {
-    // Capture voice mode state before startProcessing changes it
-    const wasVoiceMode = getIsVoiceMode()
+  function scheduleListenRetry(_message: string, delayMs = 1200) {
     startProcessing()
     // State machine will handle transition to 'processing' and back to 'starting'
     const timeoutId = window.setTimeout(() => {

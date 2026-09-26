@@ -1,12 +1,12 @@
 import { createSignal, createEffect, onCleanup, batch } from 'solid-js';
 import { enqueue, isProcessing } from '../state/messageQueue';
 import { triggerDrain } from '../services/queueDrainer';
+import { VoiceActivityDetector } from '../services/voiceActivity';
 import { settings } from '../state/settings';
 import { exitVoiceMode } from '../state/voice';
 
 const SILENCE_DURATION = 2000;
 const MIN_RECORDING_MS = 500;
-const MIN_AUDIO_LEVEL = 0.015;
 const MIN_AUDIO_FRAMES = 3;
 const MAX_RECORDING_MS = 180000;
 const MONITOR_INTERVAL_MS = 80;
@@ -82,6 +82,10 @@ export function useConversationVoiceRecording({
   const [silenceAfterLoud, setSilenceAfterLoud] = createSignal(false);
   const [monitorIntervalId, setMonitorIntervalId] = createSignal<number | null>(null);
 
+  // Owns the silence decision and the adaptive noise floor. Reset at the start
+  // of every recording so one turn's calibration never leaks into the next.
+  const vad = new VoiceActivityDetector();
+
   // State machine state
   const [convState, setConvState] = createSignal<ConvVoiceState>('idle');
 
@@ -142,21 +146,13 @@ export function useConversationVoiceRecording({
   });
 
   function checkAudioLevels() {
-    const a = analyser();
-    if (!a) return;
-    const dataArray = new Uint8Array(a.frequencyBinCount);
-    a.getByteFrequencyData(dataArray);
-    let sum = 0;
-    for (let i = 0; i < dataArray.length; i++) {
-      sum += dataArray[i];
-    }
-    const average = sum / dataArray.length / 255;
+    const reading = vad.read(analyser());
+    if (!reading) return;
 
     const elapsed = Date.now() - recordingStartTime();
     const metMinDuration = elapsed >= MIN_RECORDING_MS;
-    const hasLoudAudio = average >= MIN_AUDIO_LEVEL;
 
-    if (hasLoudAudio) {
+    if (reading.speech) {
       setLoudFrameCount(loudFrameCount() + 1);
       setSilenceAfterLoud(false);
       const st = silenceTimeout();
@@ -274,6 +270,7 @@ export function useConversationVoiceRecording({
       setRecordingStartTime(Date.now());
       setLoudFrameCount(0);
       setSilenceAfterLoud(false);
+      vad.reset();
 
       startAudioMonitor();
 
