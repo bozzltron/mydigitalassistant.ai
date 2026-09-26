@@ -20,7 +20,7 @@ interface QueueState {
 }
 
 const STORAGE_KEY = 'messageQueue';
-const MAX_QUEUE_SIZE = 50;
+const MAX_QUEUE_SIZE = 10;
 
 // ============================================================================
 // Lazy Store Initialization

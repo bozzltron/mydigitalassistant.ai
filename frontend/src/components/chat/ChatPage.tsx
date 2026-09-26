@@ -4,7 +4,7 @@ import InputBar from './InputBar'
 import StatusIndicator from './StatusIndicator'
 import { Modal } from '../ui/Modal'
 import { messages, sessionId, setSessionId, isTurnActive, useConversationTurnId, addMessageToConversation, queue, isStreaming } from '../../state/chat'
-import { getQueue, getQueueLength, dequeue, enqueue, isProcessing, setActiveConversation, clearQueue } from '../../state/messageQueue'
+import { getQueue, getQueueLength, dequeue, enqueue, isProcessing, setActiveConversation } from '../../state/messageQueue'
 import { Session } from '../../state/session'
 import { useTurnStatus } from '../../services/status'
 import { useVoiceRecording } from '../../hooks/useVoiceRecording'
@@ -296,28 +296,17 @@ export default function ChatPage(props: {
           
           <StatusWrapper turnId={currentConvTurnId} />
           
-          {/* Enhanced Queue Panel */}
+          {/* Queue Panel - shows queued messages during processing */}
           <Show when={getQueueLength() > 0}>
             <div class="queue-panel" id="queue-panel">
               <div class="queue-panel-header">
-                <span class="queue-panel-title">
-                  Queued Messages <span class="queue-count">({getQueueLength()})</span>
-                </span>
-                <div class="queue-panel-actions">
-                  {isProcessing() && (
-                    <span class="queue-processing-indicator">
-                      <span class="spinner"></span>
-                      Processing...
-                    </span>
-                  )}
-                  <button 
-                    class="queue-clear-btn"
-                    onClick={() => { clearQueue(); setActiveConversation(null); }}
-                    title="Clear all queued messages"
-                  >
-                    Clear Queue
-                  </button>
-                </div>
+                <span class="queue-panel-title">Queued Messages</span>
+                {isProcessing() && (
+                  <span class="queue-processing-indicator">
+                    <span class="spinner"></span>
+                    Processing...
+                  </span>
+                )}
               </div>
               <div class="queue-panel-content">
                 <For each={getQueue()}>

@@ -74,14 +74,14 @@ describe('messageQueue', () => {
       expect(mockLocalStorage.setItem).toHaveBeenCalledWith('messageQueue', expect.any(String));
     });
 
-    it('enforces MAX_QUEUE_SIZE (50)', () => {
-      for (let i = 0; i < 55; i++) {
+    it('enforces MAX_QUEUE_SIZE (10)', () => {
+      for (let i = 0; i < 15; i++) {
         enqueue({ content: `Msg ${i}`, source: 'text', timestamp: Date.now() + i });
       }
-      expect(getQueueLength()).toBe(50);
-      // Should keep the last 50
+      expect(getQueueLength()).toBe(10);
+      // Should keep the last 10
       expect(getQueue()[0].content).toBe('Msg 5');
-      expect(getQueue()[49].content).toBe('Msg 54');
+      expect(getQueue()[9].content).toBe('Msg 14');
     });
   });
 
