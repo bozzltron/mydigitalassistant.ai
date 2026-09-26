@@ -3,7 +3,7 @@ import { enqueue, isProcessing } from '../state/messageQueue';
 import { triggerDrain } from '../services/queueDrainer';
 import { VoiceActivityDetector } from '../services/voiceActivity';
 import { settings } from '../state/settings';
-import { exitVoiceMode } from '../state/voice';
+import { exitVoiceMode, isTtsSpeaking } from '../state/voice';
 
 const SILENCE_DURATION = 2000;
 const MIN_RECORDING_MS = 500;
@@ -11,7 +11,7 @@ const MIN_AUDIO_FRAMES = 3;
 const MAX_RECORDING_MS = 180000;
 const MONITOR_INTERVAL_MS = 80;
 
-type ConvVoiceState = 'idle' | 'recording' | 'transcribing';
+type ConvVoiceState = 'idle' | 'recording' | 'transcribing' | 'paused_tts';
 
 interface UseConversationVoiceRecordingOptions {
   isVoiceMode: () => boolean;
@@ -89,6 +89,15 @@ export function useConversationVoiceRecording({
   // State machine state
   const [convState, setConvState] = createSignal<ConvVoiceState>('idle');
 
+  // Set when a recording is being thrown away rather than transcribed. A plain
+  // variable, not a signal: it is read once by the MediaRecorder onstop callback
+  // and drives no rendering, so it has no business being reactive.
+  let discardNextCapture = false;
+
+  // Latch for the "submit each capture exactly once" rule. Also a plain
+  // variable: read once per capture, drives no rendering.
+  let submittedCapture = false;
+
   // True while a /transcribe request is outstanding. The state machine must
   // not resume recording until this clears, otherwise it reopens the mic the
   // moment we set 'transcribing' (turnActive is still false at that point).
@@ -101,21 +110,29 @@ export function useConversationVoiceRecording({
     setPendingTimeouts(prev => new Set(prev).add(id));
   }
 
-  // State machine - simplified: idle -> recording -> transcribing -> idle
+  // State machine - idle -> recording -> transcribing -> idle, with a
+  // paused_tts detour. TTS is read here, alongside voiceMode/turnActive,
+  // because the browser speaking is a third thing that must close the mic.
   createEffect(() => {
     const voiceMode = isVoiceMode();
     const turnActive = isTurnActive();
+    const tts = isTtsSpeaking();
     const state = convState();
     const inFlight = transcriptionInFlight();
 
-    console.log('[convVoice] state machine tick', { state, voiceMode, turnActive, inFlight });
+    console.log('[convVoice] state machine tick', { state, voiceMode, turnActive, tts, inFlight });
 
     switch (state) {
       case 'idle':
         if (voiceMode && !turnActive) {
-          console.log('[convVoice] idle -> starting recording');
-          setConvState('recording');
-          startRecording();
+          if (tts) {
+            console.log('[convVoice] idle -> paused_tts (TTS playing)');
+            setConvState('paused_tts');
+          } else {
+            console.log('[convVoice] idle -> starting recording');
+            setConvState('recording');
+            startRecording();
+          }
         }
         break;
 
@@ -124,6 +141,23 @@ export function useConversationVoiceRecording({
           console.log('[convVoice] recording -> idle (condition lost)');
           setConvState('idle');
           stopRecording();
+        } else if (tts) {
+          // The agent started talking over a recording in progress. Close the mic
+          // and drop what was captured -- it is mostly the agent's own voice.
+          console.log('[convVoice] recording -> paused_tts (TTS started mid-recording)');
+          setConvState('paused_tts');
+          discardRecording();
+        }
+        break;
+
+      case 'paused_tts':
+        if (!voiceMode || turnActive) {
+          console.log('[convVoice] paused_tts -> idle (condition lost)');
+          setConvState('idle');
+        } else if (!tts) {
+          console.log('[convVoice] paused_tts -> recording (TTS ended)');
+          setConvState('recording');
+          startRecording();
         }
         break;
 
@@ -135,7 +169,15 @@ export function useConversationVoiceRecording({
         } else if (inFlight) {
           // Request still outstanding, hold the mic closed
           console.log('[convVoice] transcribing -> waiting on /transcribe');
-        } else if (!turnActive) {
+        } else if (turnActive) {
+          // The drainer sent this turn the moment it was enqueued, so the
+          // response is already streaming. Wait for it rather than reopening
+          // the mic underneath the agent.
+          console.log('[convVoice] transcribing -> waiting for turn to finish');
+        } else if (tts) {
+          console.log('[convVoice] transcribing -> paused_tts (TTS playing)');
+          setConvState('paused_tts');
+        } else {
           // Transcription done, ready to resume listening
           console.log('[convVoice] transcribing -> recording (turn complete, resuming)');
           setConvState('recording');
@@ -257,10 +299,7 @@ export function useConversationVoiceRecording({
           cleanup();
           // Restart after error
           setTimeout(() => {
-            if (isVoiceMode() && !isTurnActive()) {
-              setConvState('recording');
-              startRecording();
-            }
+            restartRecording();
           }, 1000);
         }
       };
@@ -271,6 +310,8 @@ export function useConversationVoiceRecording({
       setLoudFrameCount(0);
       setSilenceAfterLoud(false);
       vad.reset();
+      // New capture, new submission allowance.
+      submittedCapture = false;
 
       startAudioMonitor();
 
@@ -321,7 +362,24 @@ export function useConversationVoiceRecording({
     }
   }
 
+  // Close the mic without transcribing what it captured. Used when TTS starts
+  // mid-recording: the tail of that recording is the agent's own voice, and
+  // sending it to /transcribe would enqueue the agent's speech as a user turn.
+  // The state machine reopens the mic when TTS ends.
+  function discardRecording() {
+    if (!isRecording()) return;
+    discardNextCapture = true;
+    stopRecording();
+  }
+
   async function handleRecordingStop() {
+    if (discardNextCapture) {
+      // Cleared here rather than in discardRecording so it cannot leak into a
+      // later, legitimate capture.
+      discardNextCapture = false;
+      setAudioChunks([]);
+      return;
+    }
     const elapsed = Date.now() - recordingStartTime();
     const currentLoudFrames = loudFrameCount();
 
@@ -341,6 +399,15 @@ export function useConversationVoiceRecording({
 
       const blob = new Blob(audioChunks(), { type: currentMimeType() || 'audio/webm' });
       setAudioChunks([]);
+
+      // A capture may be submitted to /transcribe at most once. The backend log
+      // showed a single blob POSTed twice one millisecond apart -- byte-identical
+      // size, identical duration, identical transcript -- so whatever re-entered
+      // this path, the second submission was pure loss: two copies of the same
+      // sentence queued, and the agent answering it twice.
+      if (submittedCapture) return;
+      submittedCapture = true;
+
       console.log('[convVoice] sending blob size:', blob.size, 'mime:', currentMimeType());
 
       await sendForTranscription(blob);
@@ -351,15 +418,26 @@ export function useConversationVoiceRecording({
     }
   }
 
+  // Shared by the error-restart and discard-restart paths. Both used to reopen
+  // the mic directly, bypassing the state machine and with no TTS check -- which
+  // is how a capture could start while the agent was speaking. Going through
+  // paused_tts hands the resume back to the machine.
+  function restartRecording() {
+    if (!isVoiceMode() || isTurnActive()) return;
+    if (isTtsSpeaking()) {
+      setConvState('paused_tts');
+      return;
+    }
+    setConvState('recording');
+    startRecording();
+  }
+
   function handleDiscard(reason: string) {
     console.log('[convVoice] Discarded:', reason);
     if (isVoiceMode() && !isTurnActive()) {
       // Restart listening after a brief pause
       setTimeout(() => {
-        if (isVoiceMode() && !isTurnActive()) {
-          setConvState('recording');
-          startRecording();
-        }
+        restartRecording();
       }, 500);
     }
   }

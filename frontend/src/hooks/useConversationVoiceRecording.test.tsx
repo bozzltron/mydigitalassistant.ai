@@ -11,7 +11,7 @@ vi.mock('../services/queueDrainer', () => ({
 
 import { useConversationVoiceRecording } from './useConversationVoiceRecording';
 import { getQueue, clearQueue, isProcessing, setProcessing, setActiveConversation } from '../state/messageQueue';
-import { setVoice } from '../state/voice';
+import { setVoice, setTtsSpeaking } from '../state/voice';
 
 // ---------------------------------------------------------------------------
 // Media API mocks
@@ -195,6 +195,73 @@ describe('useConversationVoiceRecording', () => {
     await flush();
 
     expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalled();
+    expect(hook.state()).toBe('recording');
+    expect(hook.isRecording()).toBe(true);
+    dispose();
+  });
+
+  // -------------------------------------------------------------------------
+  // TTS / self-capture
+  //
+  // TTS is browser speechSynthesis, so while the agent answers out loud the mic
+  // hears the agent. With the capture open, the VAD correctly hears speech, the
+  // blob is transcribed, and the agent's own words are enqueued as a user turn
+  // and sent straight back. The queue closes that loop automatically, with no
+  // user action, which is how this reached the transcript.
+  // -------------------------------------------------------------------------
+
+  it('never opens the mic while the agent is speaking (regression: the agent transcribed its own TTS playback and answered itself)', async () => {
+    const voiceMode = voiceModeSignal(true);
+    setTtsSpeaking(true);
+    const { hook, dispose } = mountHook({ isVoiceMode: voiceMode.is, isTurnActive: () => false });
+
+    await flush(600);
+    speak(); // the agent's own voice, loud and continuous
+
+    expect(navigator.mediaDevices.getUserMedia).not.toHaveBeenCalled();
+    expect(hook.isRecording()).toBe(false);
+    expect(hook.state()).toBe('paused_tts');
+    dispose();
+  });
+
+  it('closes the mic and drops the audio when TTS starts mid-recording (regression: the partial blob was the agent speaking, and got enqueued as a user turn)', async () => {
+    const voiceMode = voiceModeSignal(true);
+    const { hook, dispose } = mountHook({ isVoiceMode: voiceMode.is, isTurnActive: () => false });
+    await flush();
+
+    global.fetch = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ text: 'this should never be sent' }),
+    })) as unknown as typeof fetch;
+
+    // The user is mid-sentence when the agent starts talking over them.
+    speak();
+    await flush(600);
+    expect(hook.isRecording()).toBe(true);
+
+    setTtsSpeaking(true);
+    await flush(50);
+
+    // Mic closed, and the captured audio discarded rather than transcribed.
+    expect(hook.isRecording()).toBe(false);
+    expect(hook.state()).toBe('paused_tts');
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(getQueue()).toHaveLength(0);
+    dispose();
+  });
+
+  it('reopens the mic when TTS ends, and only then', async () => {
+    const voiceMode = voiceModeSignal(true);
+    setTtsSpeaking(true);
+    const { hook, dispose } = mountHook({ isVoiceMode: voiceMode.is, isTurnActive: () => false });
+
+    await flush();
+    expect(hook.isRecording()).toBe(false);
+
+    setTtsSpeaking(false);
+    await flush();
+
     expect(hook.state()).toBe('recording');
     expect(hook.isRecording()).toBe(true);
     dispose();
