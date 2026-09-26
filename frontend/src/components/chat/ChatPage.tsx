@@ -300,7 +300,6 @@ export default function ChatPage(props: {
           <Show when={getQueueLength() > 0}>
             <div class="queue-panel" id="queue-panel">
               <div class="queue-panel-header">
-                <span class="queue-panel-title">Queued Messages</span>
                 {isProcessing() && (
                   <span class="queue-processing-indicator">
                     <span class="spinner"></span>
