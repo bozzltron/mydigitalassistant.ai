@@ -188,11 +188,11 @@ async def test_retrieve_finds_relevant_frame(store):
     """A query should find a frame with similar embedding."""
     f1 = await store.create_frame("guitar", "entity")
     await store.upsert_slot(f1.id, "strings", "6")
-    await store.store_frame_embedding(f1.id, [1.0, 0.0, 0.0])
+    await store.store_frame_embedding(f1.id, [1.0, 0.0, 0.0], "nomic-embed-text")
 
     f2 = await store.create_frame("pasta", "entity")
     await store.upsert_slot(f2.id, "type", "spaghetti")
-    await store.store_frame_embedding(f2.id, [0.0, 1.0, 0.0])
+    await store.store_frame_embedding(f2.id, [0.0, 1.0, 0.0], "nomic-embed-text")
 
     mock_llm = AsyncMock()
     mock_llm.embed.return_value = MagicMock(embedding=[0.9, 0.1, 0.0])
@@ -208,13 +208,13 @@ async def test_retrieve_finds_relevant_frame(store):
 async def test_retrieve_graph_walk_finds_neighbors(store):
     """Graph walk should find associated frames via 1-2 hop traversal."""
     f1 = await store.create_frame("guitar", "entity")
-    await store.store_frame_embedding(f1.id, [1.0, 0.0, 0.0])
+    await store.store_frame_embedding(f1.id, [1.0, 0.0, 0.0], "nomic-embed-text")
 
     f2 = await store.create_frame("music", "concept")
-    await store.store_frame_embedding(f2.id, [0.7, 0.7, 0.0])
+    await store.store_frame_embedding(f2.id, [0.7, 0.7, 0.0], "nomic-embed-text")
 
     f3 = await store.create_frame("art", "concept")
-    await store.store_frame_embedding(f3.id, [0.5, 0.8, 0.0])
+    await store.store_frame_embedding(f3.id, [0.5, 0.8, 0.0], "nomic-embed-text")
 
     await store.create_association(f1.id, f2.id, "related_to", confidence=0.9)
     await store.create_association(f2.id, f3.id, "related_to", confidence=0.9)
@@ -239,7 +239,7 @@ async def test_retrieve_includes_recent_episodes(store):
     await store.create_episode(user.id, session, "assistant", "Tell me about it", frame_ids=[])
 
     f1 = await store.create_frame("guitar", "entity")
-    await store.store_frame_embedding(f1.id, [1.0, 0.0, 0.0])
+    await store.store_frame_embedding(f1.id, [1.0, 0.0, 0.0], "nomic-embed-text")
 
     mock_llm = AsyncMock()
     mock_llm.embed.return_value = MagicMock(embedding=[1.0, 0.0, 0.0])
@@ -296,7 +296,7 @@ async def test_graph_walk_stops_at_max_hops(store):
 
 async def test_min_relevance_boundary(store):
     f1 = await store.create_frame("guitar", "entity")
-    await store.store_frame_embedding(f1.id, [1.0, 0.0, 0.0])
+    await store.store_frame_embedding(f1.id, [1.0, 0.0, 0.0], "nomic-embed-text")
 
     mock_llm = AsyncMock()
     mock_llm.embed.return_value = MagicMock(embedding=[0.5, 0.5, 0.0])
@@ -318,7 +318,7 @@ async def test_embed_frame(store):
     retriever = Retriever(store, mock_llm)
     embedding = await retriever.embed_frame(frame, await store.get_slots_for_frame(frame.id))
     assert embedding == [0.9, 0.1, 0.0]
-    stored = await store.get_frame_embedding(frame.id)
+    stored = await store.get_frame_embedding(frame.id, "nomic-embed-text")
     assert stored == [0.9, 0.1, 0.0]
 
 
@@ -360,10 +360,12 @@ async def test_retrieve_identity_query_boosts_identity_frame(store):
     """Identity queries must ensure identity_name frame is retrieved at relevance 1.0."""
     identity_frame = await store.create_frame("identity_name", "entity")
     await store.upsert_slot(identity_frame.id, "full_name", "Elysia")
-    await store.store_frame_embedding(identity_frame.id, [0.5] + [0.5] + [0.0] * 766)
+    await store.store_frame_embedding(
+        identity_frame.id, [0.5] + [0.5] + [0.0] * 766, "nomic-embed-text"
+    )
 
     unrelated = await store.create_frame("guitar", "entity")
-    await store.store_frame_embedding(unrelated.id, [1.0] + [0.0] * 767)
+    await store.store_frame_embedding(unrelated.id, [1.0] + [0.0] * 767, "nomic-embed-text")
 
     mock_llm = AsyncMock()
     mock_llm.embed.return_value = EmbeddingResponse(
@@ -388,7 +390,7 @@ async def test_retrieve_identity_query_does_not_duplicate_if_already_retrieved(s
     """If identity_name is already in top results, boost its relevance to 1.0."""
     identity_frame = await store.create_frame("identity_name", "entity")
     await store.upsert_slot(identity_frame.id, "full_name", "Elysia")
-    await store.store_frame_embedding(identity_frame.id, [0.9] + [0.1] * 767)
+    await store.store_frame_embedding(identity_frame.id, [0.9] + [0.1] * 767, "nomic-embed-text")
 
     mock_llm = AsyncMock()
     mock_llm.embed.return_value = EmbeddingResponse(

@@ -238,17 +238,17 @@ async def test_frame_embedding_crud(store: MemoryStore):
     frame = await store.create_frame("Guitar", "entity")
     embedding = [1.0, 0.0, 0.0]
 
-    await store.store_frame_embedding(frame.id, embedding)
-    got = await store.get_frame_embedding(frame.id)
+    await store.store_frame_embedding(frame.id, embedding, "nomic-embed-text")
+    got = await store.get_frame_embedding(frame.id, "nomic-embed-text")
     assert got == embedding
 
-    all_embeddings = await store.get_all_frame_embeddings()
+    all_embeddings = await store.get_all_frame_embeddings("nomic-embed-text")
     assert len(all_embeddings) == 1
     assert all_embeddings[0][0] == frame.id
     assert all_embeddings[0][1] == embedding
 
-    await store.clear_frame_embedding(frame.id)
-    assert await store.get_frame_embedding(frame.id) is None
+    await store.clear_frame_embedding(frame.id, "nomic-embed-text")
+    assert await store.get_frame_embedding(frame.id, "nomic-embed-text") is None
 
 
 async def test_get_conflicts_and_get_conflicts_for_frame(store: MemoryStore):
@@ -383,10 +383,10 @@ async def test_list_frames_filters_by_owner(store: MemoryStore):
 async def test_get_all_frame_embeddings_returns_all(store: MemoryStore):
     f1 = await store.create_frame("guitar", "entity")
     f2 = await store.create_frame("music", "concept")
-    await store.store_frame_embedding(f1.id, [1.0] + [0.0] * 767)
-    await store.store_frame_embedding(f2.id, [0.5] * 768)
+    await store.store_frame_embedding(f1.id, [1.0] + [0.0] * 767, "nomic-embed-text")
+    await store.store_frame_embedding(f2.id, [0.5] * 768, "nomic-embed-text")
 
-    all_embs = await store.get_all_frame_embeddings()
+    all_embs = await store.get_all_frame_embeddings("nomic-embed-text")
     assert len(all_embs) == 2
     frame_ids = {emb[0] for emb in all_embs}
     assert f1.id in frame_ids
@@ -400,9 +400,9 @@ async def test_embed_frames_skips_missing_frames(store: MemoryStore, stub_llm):
         resp = await stub_llm.embed(text)
         return resp.embedding
 
-    await store.embed_frames([valid.id, 9999, 8888], embed_fn)
+    await store.embed_frames([valid.id, 9999, 8888], embed_fn, "nomic-embed-text")
 
-    emb = await store.get_frame_embedding(valid.id)
+    emb = await store.get_frame_embedding(valid.id, "nomic-embed-text")
     assert emb is not None
 
 
@@ -464,6 +464,93 @@ async def test_search_similar_frames_interleaved_model_rows(store: MemoryStore):
     assert {fr.name for fr, _, _ in results} == {
         "frame_0", "frame_2", "frame_4",
     }
+
+
+# ---------------------------------------------------------------------------
+# Embedding-model split-brain
+#
+# The store used to default `embedding_model` to "nomic-embed-text" on every
+# write and read. Four call sites omitted it, so qwen3 vectors were written under
+# the nomic label. Searches filter on the label, so 1024-dim vectors sitting
+# under a 768-dim label were not wrong, just unfindable: 1894 of 1895 live frames
+# had no vector the retriever could reach, and nothing warned because the metadata
+# key -- the only thing the startup check looked at -- held the configured model.
+#
+# The parameter is now required, so a mislabel is a TypeError at the call site.
+# ---------------------------------------------------------------------------
+
+async def _flat_embedding(text: str) -> list[float]:
+    return [0.1] * 768
+
+
+# Every write path that takes an embedding_model. Each one used to default it to
+# "nomic-embed-text", which is what let four call sites mislabel silently.
+EMBEDDING_WRITES = {
+    "store_frame_embedding": (1, [0.1] * 768),
+    "embed_frames": ([1], _flat_embedding),
+    "embed_frames_batch": ([1], [[0.1] * 768]),
+    "store_episode_embedding": (1, [0.1] * 768),
+    "embed_missing_episodes": (_flat_embedding,),
+    "search_similar_frames": ([0.1] * 768,),
+    "search_similar_episodes": ([0.1] * 768,),
+    "get_frame_embedding": (1,),
+    "get_all_frame_embeddings": (),
+}
+
+
+@pytest.mark.parametrize("method", list(EMBEDDING_WRITES))
+async def test_embedding_access_requires_an_explicit_model(store: MemoryStore, method):
+    """Omitting the model must fail loudly, not silently pick a stale default.
+
+    A default is the whole bug: it was correct when written, wrong after the
+    model changed, and indistinguishable from an explicit correct value at every
+    call site.
+    """
+    with pytest.raises(TypeError):
+        await getattr(store, method)(*EMBEDDING_WRITES[method])
+
+
+@pytest.mark.parametrize(
+    "method", ["store_frame_embedding", "embed_frames", "embed_frames_batch"]
+)
+async def test_frame_embedding_writes_honour_an_explicit_model(store: MemoryStore, method):
+    """The explicit model is the label the vector lands under."""
+    frame = await store.create_frame("why_not", "entity")
+    args = EMBEDDING_WRITES[method]
+    if method == "embed_frames":
+        args = ([frame.id], _flat_embedding)
+    elif method == "embed_frames_batch":
+        args = ([frame.id], [[0.1] * 768])
+    else:
+        args = (frame.id, [0.1] * 768)
+    await getattr(store, method)(*args, "qwen3-embedding:0.6b")
+
+    assert await store.get_frame_embedding(frame.id, "qwen3-embedding:0.6b") == [0.1] * 768
+    assert await store.get_frame_embedding(frame.id, "nomic-embed-text") is None
+
+
+async def test_mislabelled_vectors_are_unreachable_not_merely_wrong(store: MemoryStore):
+    """The failure mode, stated directly: the row is there, the search cannot see it.
+
+    This is what the agent experienced. Nothing raises, nothing looks corrupt --
+    the frame simply never comes back.
+    """
+    frame = await store.create_frame("why_not", "entity")
+    await store.upsert_slot(frame.id, "label", "Friend Music Records")
+    # 1024-dim qwen3 vector, written under the nomic label -- exactly what the
+    # four omitting call sites produced.
+    await store.store_frame_embedding(frame.id, [1.0] + [0.0] * 1023, "nomic-embed-text")
+
+    # The label the retriever asks for does not match the label in the row, so the
+    # frame is unretrievable no matter how similar the vectors are.
+    assert await store.search_similar_frames(
+        [1.0] + [0.0] * 1023, user_id=None, embedding_model="qwen3-embedding:0.6b", limit=10
+    ) == []
+
+    # The row is real and intact -- just filed under the wrong name.
+    rows = await store.get_all_frame_embeddings("nomic-embed-text")
+    assert len(rows) == 1
+    assert len(rows[0][1]) == 1024
 
 
 async def test_prune_frames_by_source_type_cascades(store: MemoryStore):

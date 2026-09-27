@@ -274,7 +274,7 @@ async def test_no_search_triggered_when_memory_sufficient(store, stub_llm):
 
     guitar = await store.create_frame("guitar", "entity")
     await store.upsert_slot(guitar.id, "strings", "6")
-    await store.store_frame_embedding(guitar.id, [1.0] * 768)
+    await store.store_frame_embedding(guitar.id, [1.0] * 768, "nomic-embed-text")
     await store.create_episode(
         user.id, "session-1", "user", "I have a guitar with 6 strings", [guitar.id]
     )
@@ -344,7 +344,7 @@ async def test_orchestrator_handles_correction(store, stub_llm):
 
     guitar = await store.create_frame("guitar", "entity")
     await store.upsert_slot(guitar.id, "strings", "6")
-    await store.store_frame_embedding(guitar.id, [1.0] * 768)
+    await store.store_frame_embedding(guitar.id, [1.0] * 768, "nomic-embed-text")
 
     retriever = Retriever(store=store, llm_client=stub_llm)
     stub_search = WebSearchTool(enabled=False)
@@ -528,7 +528,7 @@ async def test_orchestrator_correction_contradicted_flagged_not_applied(store):
 
     guitar = await store.create_frame("guitar", "entity")
     await store.upsert_slot(guitar.id, "strings", "6")
-    await store.store_frame_embedding(guitar.id, [1.0] * 768)
+    await store.store_frame_embedding(guitar.id, [1.0] * 768, "nomic-embed-text")
 
     user = await store.create_user("alice")
     retriever = Retriever(store=store, llm_client=mock_llm)

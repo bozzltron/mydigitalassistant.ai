@@ -348,14 +348,29 @@ async def reembed_db(target_model: str | None = None):
         batch_size = 100
         embedded = 0
 
+        # embed_fn must be (text) -> list[float]. Passing llm_client.embed straight
+        # through hands back an EmbeddingResponse, which json.dumps rejects -- every
+        # frame then failed inside embed_frames and the count came back zero, so
+        # this command reported success having re-embedded nothing.
+        async def embed_text(text: str) -> list[float]:
+            resp = await llm_client.embed(text)
+            return resp.embedding
+
         for i in range(0, total, batch_size):
             batch = frame_ids[i:i + batch_size]
             try:
-                await store.embed_frames(batch, llm_client.embed, model)
-                embedded += len(batch)
+                embedded += await store.embed_frames(batch, embed_text, model)
                 console.print(f"  [{embedded}/{total}] Embedded batch {i // batch_size + 1}")
             except Exception as e:
                 console.print(f"[red]Error embedding batch {i // batch_size + 1}: {e}[/red]")
+
+        if embedded < total:
+            console.print(
+                f"[red]Only {embedded}/{total} frames were embedded. The metadata key is "
+                f"NOT being advanced -- leave it on the old model so the audit still "
+                f"reports the gap.[/red]"
+            )
+            return False
 
         await set_metadata(db_path, METADATA_KEY_EMBEDDING_MODEL, model)
         msg = f"Re-embedded {embedded}/{total} frames. Metadata updated: embedding_model = {model}"

@@ -923,6 +923,7 @@ class Orchestrator:
                             self.store.embed_frames(
                                 search_extraction_summary["frame_ids"],
                                 get_embedding,
+                                self.llm_client.embedding_model,
                             ),
                             timeout=settings.search_timeout,
                         )
@@ -1903,6 +1904,7 @@ class Orchestrator:
                     await self.store.embed_frames(
                         search_extraction_summary["frame_ids"],
                         get_embedding,
+                        self.llm_client.embedding_model,
                     )
 
                 if search_extraction_summary.get("slots_applied", 0) > 0:

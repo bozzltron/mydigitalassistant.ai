@@ -181,12 +181,13 @@ webhook_url: https://example.com/webhook
         # 6. Test: Embed the frame and search for it
         print("=== Test 4: Embed frame and search ===")
         embed_fn = orchestrator.embed_fn()
-        await store.embed_frames([frame.id], embed_fn)
+        await store.embed_frames([frame.id], embed_fn, settings.embedding_model)
         
         embed_response = await llm_client.embed("test_config project configuration")
         memory_results = await store.search_similar_frames(
             embedding=embed_response.embedding,
             user_id=user_id,
+            embedding_model=settings.embedding_model,
             limit=5,
             min_distance=0.7,
         )

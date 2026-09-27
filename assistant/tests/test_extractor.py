@@ -646,9 +646,13 @@ async def test_extract_and_apply_embeds_frames(store, stub_llm):
     assert "frame_ids" in result
     assert len(result["frame_ids"]) == 1
     frame_id = result["frame_ids"][0]
-    emb = await store.get_frame_embedding(frame_id)
+    # Under the model that produced it, not a hardcoded label. This assertion used
+    # to read "nomic-embed-text" and passed while the row was mislabelled -- it
+    # was checking the bug, not the behaviour.
+    emb = await store.get_frame_embedding(frame_id, stub_llm.embedding_model)
     assert emb is not None
     assert len(emb) == 768
+    assert await store.get_frame_embedding(frame_id, "some-other-model") is None
 
 
 async def test_extract_and_apply_returns_frame_ids_even_when_empty(store, stub_llm):
@@ -675,10 +679,10 @@ async def test_store_embed_frames_generates_and_stores(store, stub_llm):
         resp = await stub_llm.embed(text)
         return resp.embedding
 
-    await store.embed_frames([f1.id, f2.id], get_embedding)
+    await store.embed_frames([f1.id, f2.id], get_embedding, "nomic-embed-text")
 
-    emb1 = await store.get_frame_embedding(f1.id)
-    emb2 = await store.get_frame_embedding(f2.id)
+    emb1 = await store.get_frame_embedding(f1.id, "nomic-embed-text")
+    emb2 = await store.get_frame_embedding(f2.id, "nomic-embed-text")
     assert emb1 is not None
     assert emb2 is not None
     assert len(emb1) == 768

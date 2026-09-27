@@ -76,6 +76,7 @@ def test_roundtrip_returns_best_first(seeded_store):
             user_id=alice,
             limit=5,
             min_distance=0.7,
+        embedding_model="nomic-embed-text",
         )
     )
     assert [e.id for e, _sim in hits] == [ep_a]
@@ -90,6 +91,7 @@ def test_owner_isolation(seeded_store):
             user_id=bob,
             limit=10,
             min_distance=0.0,
+        embedding_model="nomic-embed-text",
         )
     )
     ids = [e.id for e, _sim in hits]
@@ -105,6 +107,7 @@ def test_min_distance_filters_unrelated(seeded_store):
             user_id=alice,
             limit=5,
             min_distance=0.3,
+        embedding_model="nomic-embed-text",
         )
     )
     assert hits == []
@@ -129,6 +132,7 @@ def test_excludes_current_session(seeded_store):
             limit=10,
             min_distance=0.7,
             exclude_session_ids=["s-now"],
+        embedding_model="nomic-embed-text",
         )
     )
     assert fresh.id not in [e.id for e, _sim in hits]
@@ -153,12 +157,16 @@ def test_backfill_and_cap(tmp_path):
             return _embed(text)
 
         # Cap respected.
-        done = await s.embed_missing_episodes(embed, cap=2)
+        done = await s.embed_missing_episodes(
+            embed, cap=2, embedding_model="nomic-embed-text"
+        )
         assert done == 2
-        remaining = await s.embed_missing_episodes(embed, cap=None)
+        remaining = await s.embed_missing_episodes(
+            embed, cap=None, embedding_model="nomic-embed-text"
+        )
         assert remaining == 2
         # Idempotent once complete.
-        assert await s.embed_missing_episodes(embed) == 0
+        assert await s.embed_missing_episodes(embed, embedding_model="nomic-embed-text") == 0
         return s, uid
 
     asyncio.run(scenario())

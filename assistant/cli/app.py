@@ -698,7 +698,9 @@ def cmd_db_backfill_embeddings(args: argparse.Namespace, client: BackendClient) 
                     resp = await llm_client.embed(text)
                     return resp.embedding
 
-                await store.embed_frames(frame_ids, get_embedding)
+                await store.embed_frames(
+                    frame_ids, get_embedding, settings.embedding_model
+                )
                 console.print(f"[green]✓ Embedded {len(frame_ids)} frames[/green]")
             finally:
                 await llm_client.close()
@@ -810,14 +812,26 @@ def cmd_db_reembed(args: argparse.Namespace, client: BackendClient) -> None:
         batch_size = 100
         embedded = 0
 
+        # embed_fn must be (text) -> list[float]; llm_client.embed returns an
+        # EmbeddingResponse, which json.dumps rejects. See cli/db.py reembed_db.
+        async def embed_text(text: str) -> list[float]:
+            resp = await llm_client.embed(text)
+            return resp.embedding
+
         for i in range(0, total, batch_size):
             batch = frame_ids[i:i + batch_size]
             try:
-                asyncio.run(store.embed_frames(batch, llm_client.embed, model))
-                embedded += len(batch)
+                embedded += asyncio.run(store.embed_frames(batch, embed_text, model))
                 console.print(f"  [{embedded}/{total}] Embedded batch {i // batch_size + 1}")
             except Exception as e:
                 console.print(f"[red]Error embedding batch {i // batch_size + 1}: {e}[/red]")
+
+        if embedded < total:
+            console.print(
+                f"[red]Only {embedded}/{total} frames were embedded; metadata left on the "
+                f"previous model so the startup audit keeps reporting the gap.[/red]"
+            )
+            return
 
         asyncio.run(set_metadata(settings.database_path, METADATA_KEY_EMBEDDING_MODEL, model))
         console.print(

@@ -110,7 +110,7 @@ async def test_normalized_name_reuses_existing_frame(store):
 
 async def test_fuzzy_resolution_within_distance_threshold(store):
     existing = await _seed_frame(store, "mountain_wolf_album")
-    await store.embed_frames([existing.id], _flat_embedding)
+    await store.embed_frames([existing.id], _flat_embedding, "nomic-embed-text")
 
     resolved = await resolve_or_create_frame(
         store, "mountain_wolf_lp", "entity", embed_fn=_flat_embedding
@@ -123,7 +123,7 @@ async def test_fuzzy_resolution_within_distance_threshold(store):
 async def test_fuzzy_resolution_respects_owner_isolation(store):
     user = await store.create_user("alice")
     private = await _seed_frame(store, "mountain_wolf_album", owner_user_id=user.id)
-    await store.embed_frames([private.id], _flat_embedding)
+    await store.embed_frames([private.id], _flat_embedding, "nomic-embed-text")
 
     resolved = await resolve_or_create_frame(
         store, "mountain_wolf_lp", "entity", embed_fn=_flat_embedding
@@ -137,7 +137,7 @@ async def test_fuzzy_resolution_respects_owner_isolation(store):
 
 async def test_fuzzy_skipped_for_short_names(store):
     bob = await _seed_frame(store, "bob", ftype="person")
-    await store.embed_frames([bob.id], _flat_embedding)
+    await store.embed_frames([bob.id], _flat_embedding, "nomic-embed-text")
 
     resolved = await resolve_or_create_frame(store, "bo", "person", embed_fn=_flat_embedding)
 
@@ -146,7 +146,7 @@ async def test_fuzzy_skipped_for_short_names(store):
 
 async def test_fuzzy_requires_compatible_types(store):
     album = await _seed_frame(store, "mountain_wolf_album", ftype="album")
-    await store.embed_frames([album.id], _flat_embedding)
+    await store.embed_frames([album.id], _flat_embedding, "nomic-embed-text")
 
     resolved = await resolve_or_create_frame(
         store, "mountain_wolf_record", "event", embed_fn=_flat_embedding

@@ -18,7 +18,7 @@ async def test_learn_fact_then_recall_in_future_session(tmp_path):
     await store.upsert_slot(guitar.id, "model", "Stratocaster")
     await store.upsert_slot(guitar.id, "strings", "6")
     await store.upsert_slot(guitar.id, "neck", "maple")
-    await store.store_frame_embedding(guitar.id, [1.0] + [0.0] * 767)
+    await store.store_frame_embedding(guitar.id, [1.0] + [0.0] * 767, "nomic-embed-text")
 
     await store.create_episode(
         user.id,

@@ -18,9 +18,9 @@ async def test_multi_user_episodic_isolation_and_shared_household_frame(tmp_path
     bob_frame = await store.create_frame("bob-thing", "entity")
     household = await store.create_frame("our-household", "household")
 
-    await store.store_frame_embedding(alice_frame.id, [0.1] * 768)
-    await store.store_frame_embedding(bob_frame.id, [0.2] * 768)
-    await store.store_frame_embedding(household.id, [1.0] + [0.0] * 767)
+    await store.store_frame_embedding(alice_frame.id, [0.1] * 768, "nomic-embed-text")
+    await store.store_frame_embedding(bob_frame.id, [0.2] * 768, "nomic-embed-text")
+    await store.store_frame_embedding(household.id, [1.0] + [0.0] * 767, "nomic-embed-text")
 
     await store.create_episode(
         alice.id, "alice-session", "user", "Alice says hi", [alice_frame.id, household.id]

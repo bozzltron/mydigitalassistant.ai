@@ -1,4 +1,5 @@
 import json
+import logging
 import re
 import shutil
 from contextlib import asynccontextmanager
@@ -28,6 +29,8 @@ from assistant.backend.memory.models import (
     Slot,
     User,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _parse_iso_ts(value: str | None) -> datetime | None:
@@ -496,7 +499,7 @@ class MemoryStore:
         self,
         frame_id: int,
         embedding: list[float],
-        embedding_model: str = "nomic-embed-text",
+        embedding_model: str,
     ) -> None:
         """Store embedding as sqlite-vec vector for a specific embedding model."""
         async with self._connect() as db:
@@ -516,9 +519,21 @@ class MemoryStore:
         self,
         frame_ids: list[int],
         embed_fn,  # async callable: (text) -> list[float]
-        embedding_model: str = "nomic-embed-text",
-    ) -> None:
-        """Generate and store embeddings for a list of frames. Skips frames that fail."""
+        embedding_model: str,
+    ) -> int:
+        """Generate and store embeddings for a list of frames. Returns the count stored.
+
+        Individual frames that fail are skipped rather than aborting the batch, but
+        the failures are counted and logged, and the caller gets the number back.
+        They used to be swallowed by a bare `except: continue`, which made a wholly
+        broken call indistinguishable from a wholly successful one -- and that is
+        how `assistant db reembed` came to report "✓ Re-embedded 2408/2408 frames"
+        having stored nothing at all (it passed `llm_client.embed`, which returns an
+        EmbeddingResponse, where a list[float] was expected; json.dumps then raised
+        for every frame).
+        """
+        embedded = 0
+        failures: list[str] = []
         for frame_id in frame_ids:
             try:
                 frame = await self.get_frame(frame_id)
@@ -528,14 +543,29 @@ class MemoryStore:
                 text = self._frame_to_embed_text(frame, slots)
                 embedding = await embed_fn(text)
                 await self.store_frame_embedding(frame_id, embedding, embedding_model)
-            except Exception:
-                continue
+                embedded += 1
+            except Exception as exc:
+                failures.append(f"{frame_id}: {exc}")
+
+        if failures:
+            preview = "; ".join(failures[:3])
+            more = f" (+{len(failures) - 3} more)" if len(failures) > 3 else ""
+            logger.warning(
+                "embed_frames(%s): stored %d of %d, %d failed -- %s%s",
+                embedding_model,
+                embedded,
+                len(frame_ids),
+                len(failures),
+                preview,
+                more,
+            )
+        return embedded
 
     async def embed_frames_batch(
         self,
         frame_ids: list[int],
         embeddings: list[list[float]],
-        embedding_model: str = "nomic-embed-text",
+        embedding_model: str,
     ) -> None:
         """Store pre-computed embeddings for a list of frames."""
         for frame_id, embedding in zip(frame_ids, embeddings, strict=True):
@@ -557,7 +587,7 @@ class MemoryStore:
         self,
         episode_id: int,
         embedding: list[float],
-        embedding_model: str = "nomic-embed-text",
+        embedding_model: str,
     ) -> None:
         """Store an embedding for an episode's verbatim content."""
         async with self._connect() as db:
@@ -576,7 +606,7 @@ class MemoryStore:
     async def embed_missing_episodes(
         self,
         embed_fn,  # async callable: (text) -> list[float]
-        embedding_model: str = "nomic-embed-text",
+        embedding_model: str,
         cap: int | None = None,
     ) -> int:
         """Embed episodes that lack a vector for this model. Returns count.
@@ -618,7 +648,7 @@ class MemoryStore:
         self,
         embedding: list[float],
         user_id: int | None,
-        embedding_model: str = "nomic-embed-text",
+        embedding_model: str,
         limit: int = 5,
         min_distance: float = 0.7,
         exclude_session_ids: list[str] | None = None,
@@ -686,7 +716,7 @@ class MemoryStore:
             return rows[0] if rows else None
 
     async def get_frame_embedding(
-        self, frame_id: int, embedding_model: str = "nomic-embed-text"
+        self, frame_id: int, embedding_model: str
     ) -> list[float] | None:
         """Retrieve embedding for a frame and embedding model."""
         async with self._connect() as db:
@@ -700,7 +730,7 @@ class MemoryStore:
             return json.loads(row[0][0])
 
     async def get_all_frame_embeddings(
-        self, embedding_model: str = "nomic-embed-text"
+        self, embedding_model: str
     ) -> list[tuple[int, list[float]]]:
         """Get all (frame_id, embedding) pairs for a specific embedding model."""
         async with self._connect() as db:
@@ -715,7 +745,7 @@ class MemoryStore:
         self,
         embedding: list[float],
         user_id: int | None,
-        embedding_model: str = "nomic-embed-text",
+        embedding_model: str,
         limit: int = 10,
         min_distance: float = 0.7,
     ) -> list[tuple[Frame, list[Slot], float]]:
@@ -790,7 +820,7 @@ class MemoryStore:
             return results
 
     async def clear_frame_embedding(
-        self, frame_id: int, embedding_model: str = "nomic-embed-text"
+        self, frame_id: int, embedding_model: str
     ) -> None:
         """Remove embedding for a frame and embedding model."""
         async with self._connect() as db:

@@ -559,7 +559,9 @@ async def _apply_merge(
     # materially, and a stale vector makes brain search miss the merged frame.
     if embed_fn is not None:
         try:
-            await store.embed_frames([merge.survivor_id], embed_fn)
+            await store.embed_frames(
+                [merge.survivor_id], embed_fn, settings.embedding_model
+            )
         except Exception as exc:
             logger.warning(
                 "Embedding refresh failed for survivor %d: %s",

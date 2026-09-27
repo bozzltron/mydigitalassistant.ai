@@ -51,10 +51,18 @@ logger = logging.getLogger(__name__)
 
 
 async def _check_embedding_model_mismatch(db_path: str) -> None:
-    """Check if the configured embedding model matches what's stored in metadata.
+    """Warn when the stored vectors were not produced by the configured model.
 
-    If metadata has no embedding_model entry (first run after migration), seed it.
-    If it differs from settings.embedding_model, log a warning with re-embed instructions.
+    Two independent questions, because either one alone is misleading:
+
+    1. Do the *labels* in frame_embeddings/episode_embeddings match the
+       configured model?  A vector is only useful if it can be found, and every
+       search filters by label.
+    2. Do live frames actually *have* a vector under the configured label?  This
+       is the one that matters and the one that was missed: the metadata key said
+       the right model, so nothing warned, while 1894 of 1895 frames had no
+       vector the retriever could ever find. The metadata key is a claim; this is
+       the measurement.
     """
     stored_model = await get_metadata(db_path, METADATA_KEY_EMBEDDING_MODEL)
     current_model = settings.embedding_model
@@ -69,6 +77,78 @@ async def _check_embedding_model_mismatch(db_path: str) -> None:
             current_model,
             current_model,
         )
+
+    from assistant.backend.db.sqlcipher import aiosqlite_connect
+
+    try:
+        async with aiosqlite_connect(db_path) as db:
+            frame_labels = await db.execute_fetchall(
+                "SELECT embedding_model, COUNT(*) FROM frame_embeddings "
+                "GROUP BY embedding_model ORDER BY 2 DESC"
+            )
+            # execute_fetchall, not execute_fetchone: the SQLCipher wrapper only
+            # forwards part of the aiosqlite Connection surface, and the missing
+            # method raised inside the try below, turning the whole audit into a
+            # debug line. Same reason this returns quietly rather than loudly --
+            # a diagnostic must not be able to stop the assistant from starting.
+            unembedded = await db.execute_fetchall(
+                "SELECT COUNT(*) FROM frames f "
+                "WHERE f.deleted_at IS NULL "
+                "AND NOT EXISTS ("
+                "  SELECT 1 FROM frame_embeddings fe"
+                "  WHERE fe.frame_id = f.id AND fe.embedding_model = ?"
+                ")",
+                (current_model,),
+            )
+    except Exception as exc:
+        logger.warning("Embedding model audit could not run: %s", exc)
+        return
+
+    if not frame_labels:
+        return
+
+    labels = ", ".join(f"{model}={count}" for model, count in frame_labels)
+    missing = unembedded[0][0] if unembedded else 0
+
+    if len(frame_labels) > 1 and missing:
+        # Only a warning when it strands something. `reembed` deliberately keeps
+        # the previous model's vectors, so a completed migration always leaves two
+        # labels behind; warning about that unconditionally would fire on every
+        # boot forever and teach the reader to skip this line. The condition that
+        # actually hurts is a live frame reachable only under a stale label.
+        logger.warning(
+            "frame_embeddings holds vectors from more than one model (%s), and %d "
+            "live frames have none under '%s'. Searches filter on embedding_model, "
+            "so those frames cannot be found at all. Run "
+            "'assistant db reembed --model %s'.",
+            labels,
+            missing,
+            current_model,
+            current_model,
+        )
+    elif len(frame_labels) > 1:
+        # Stale labels, but every live frame is covered by the configured model:
+        # the old vectors are dead weight, not a defect. Worth knowing, not worth
+        # interrupting anyone about.
+        logger.info(
+            "frame_embeddings also holds %d vectors under other labels (%s); every "
+            "live frame is covered by '%s', so retrieval is unaffected. Safe to prune.",
+            sum(count for model, count in frame_labels if model != current_model),
+            labels,
+            current_model,
+        )
+
+    if missing:
+        logger.warning(
+            "%d live frames have no '%s' embedding and are therefore "
+            "unretrievable by similarity. Run 'assistant db reembed --model %s'. "
+            "Stored vectors: %s",
+            missing,
+            current_model,
+            current_model,
+            labels,
+        )
+
 
 
 # Global state for the app (initialized in lifespan)
@@ -316,6 +396,7 @@ async def search_frames(
     results = await store.search_similar_frames(
         embedding=query_response.embedding,
         user_id=0,   # not user-specific in this endpoint
+        embedding_model=settings.embedding_model,
         limit=limit,
         min_distance=1.0 - min_similarity,
      )

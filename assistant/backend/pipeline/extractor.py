@@ -974,7 +974,13 @@ async def extract_and_apply(
             embedding_model=llm_client.embedding_model,
         )
         if result.get("frame_ids"):
-            await store.embed_frames(result["frame_ids"], get_embedding)
+            # Must be the model that produced the vectors. Omitting it wrote
+            # qwen3 vectors under the nomic-embed-text label, which made every
+            # search for this frame miss -- see the embedding_model split-brain
+            # in docs/EMBEDDING_MODEL_NOTES.md.
+            await store.embed_frames(
+                result["frame_ids"], get_embedding, llm_client.embedding_model
+            )
         return result
     except Exception as e:
         logger.error("extract_and_apply failed: %s", e)
