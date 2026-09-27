@@ -103,6 +103,17 @@ def test_format_memory_context_preserves_long_episodes():
 
 
 def test_format_memory_context_truncates_many_frames():
+    """The frame cap must bind, and must keep the most relevant frames.
+
+    Asserted against settings.max_frames_in_prompt rather than a literal, so this
+    tests that the cap works instead of pinning whatever number is configured.
+    The cap was 5 while retrieval returned only 3 frames, which is why it never
+    bound; it is now the measured recall peak from
+    assistant/experiments/frame_budget.
+    """
+    from assistant.backend.config import settings
+
+    n = settings.max_frames_in_prompt + 5
     frames = [
         RetrievedFrame(
             frame=Frame(id=i, name=f"frame{i}", type="entity", confidence=0.5),
@@ -111,12 +122,15 @@ def test_format_memory_context_truncates_many_frames():
             relevance=1.0 - i * 0.05,
             source="direct_match",
         )
-        for i in range(10)
+        for i in range(n)
     ]
     ctx = MemoryContext(query="test", retrieved_frames=frames, recent_episodes=[], formatted="")
     formatted = format_memory_context(ctx)
-    count = sum(1 for i in range(10) if f"### frame{i}" in formatted)
-    assert count == 5
+    count = sum(1 for i in range(n) if f"### frame{i}" in formatted)
+    assert count == settings.max_frames_in_prompt
+    # Relevance descends with i, so the survivors are the strongest frames.
+    assert f"### frame{settings.max_frames_in_prompt - 1}" in formatted
+    assert f"### frame{n - 1}" not in formatted
 
 
 def test_format_memory_context_file_frame_points_to_read_file():

@@ -67,9 +67,61 @@ def frame_to_text(frame: Frame, slots: list[Slot]) -> str:
 EPISODE_DIGEST_CHARS = 160
 
 
-def format_memory_context(context: "MemoryContext") -> str:
-    """Format a MemoryContext as structured text for LLM injection."""
+def _fits(
+    lines: list[str],
+    block: list[str],
+    max_memory_chars: int | None,
+    emitted: int,
+) -> bool:
+    """Whether appending `block` keeps the memory section within budget.
+
+    Always true when no budget was supplied, so the default path is unchanged.
+    Frames are offered in relevance order, so refusing the first frame that does
+    not fit drops the weakest remaining evidence rather than the strongest.
+
+    The first frame is always admitted even if it alone overruns: dropping it
+    would return an empty memory section, and one oversized frame is worth more
+    to the model than none. The caller's flat character cut remains the backstop
+    for that case.
+    """
+    if max_memory_chars is None or emitted == 0:
+        return True
+    used = sum(len(line) + 1 for line in lines) + sum(len(b) + 1 for b in block)
+    return used <= max_memory_chars
+
+
+def format_memory_context(
+    context: "MemoryContext", max_memory_chars: int | None = None
+) -> str:
+    """Format a MemoryContext as structured text for LLM injection.
+
+    `max_memory_chars` makes the fit frame-aware: whole frames are dropped
+    least-relevant-first until the section fits, rather than letting the
+    caller's flat character cut slice through a frame's slots.
+
+    That matters for more than tidiness. A frame cut mid-way still renders its
+    "### name" header, so it reads as present to the model while the facts in its
+    tail are simply gone. The measured 0.91 "recall when shown" is a property of
+    *complete* frames; a half-frame spends its slot in the prompt budget and
+    returns nothing for it. Dropping whole frames keeps every frame the model
+    sees usable.
+
+    The episode sections are a floor, not a participant: past-conversation
+    matches and recent-session digests are rendered regardless of budget (each
+    digest is itself capped at settings.max_episode_digest_chars, so the tail
+    tops out around 2.6k chars). A budget below that floor is not honoured --
+    there would be no memory left to spend it on. The caller's flat character
+    cut remains the backstop.
+    """
     lines: list[str] = []
+    # The episode sections are appended after the frames but are still part of
+    # the memory section, so their cost has to come out of the frame allowance.
+    # Otherwise the fit overshoots by whatever the digests weigh (~1.1k chars
+    # in the live corpus) and the caller's flat cut lands mid-frame again.
+    tail = _render_episode_sections(context)
+    if max_memory_chars is not None:
+        tail_cost = sum(len(line) + 1 for line in tail)
+        max_memory_chars = max(0, max_memory_chars - tail_cost)
     if context.retrieved_frames:
         lines.append("## Relevant memory")
         # Separate conversation summaries from other frames
@@ -81,10 +133,11 @@ def format_memory_context(context: "MemoryContext") -> str:
             rf for rf in context.retrieved_frames if rf.frame.type != summary_type
         ]
 
+        emitted = 0
         if summary_frames:
             lines.append("\n## Conversation summaries")
             for rf in summary_frames[: settings.max_frames_in_prompt]:
-                lines.append(f"\n### {rf.frame.name} [relevance: {rf.relevance:.2f}]")
+                block = [f"\n### {rf.frame.name} [relevance: {rf.relevance:.2f}]"]
                 for slot in rf.slots:
                     source_note = ""
                     if slot.source_url:
@@ -95,16 +148,18 @@ def format_memory_context(context: "MemoryContext") -> str:
                         source_note = f", src: {slot.source_type or 'unknown'} ({domain})"
                         if slot.source_reliability:
                             source_note += f", reliability: {slot.source_reliability:.2f}"
-                    slot_line = (
+                    block.append(
                         f"  - {slot.key} = {slot.value} "
                         f"(conf: {slot.confidence:.2f}{source_note})"
                     )
-                    lines.append(slot_line)
+                if _fits(lines, block, max_memory_chars, emitted):
+                    lines.extend(block)
+                    emitted += 1
 
         for rf in other_frames[: settings.max_frames_in_prompt]:
-            lines.append(
+            block = [
                 f"\n### {rf.frame.name} ({rf.frame.type}) [relevance: {rf.relevance:.2f}]"
-            )
+            ]
             is_file_frame = rf.frame.source_type in FILE_FRAME_SOURCE_TYPES
             file_safe_name = ""
             for slot in rf.slots:
@@ -130,22 +185,32 @@ def format_memory_context(context: "MemoryContext") -> str:
                     f"  - {slot.key} = {slot.value} "
                     f"(conf: {slot.confidence:.2f}{source_note})"
                 )
-                lines.append(slot_line)
+                block.append(slot_line)
             if is_file_frame:
                 if not file_safe_name and rf.frame.name.startswith("file_"):
                     file_safe_name = rf.frame.name[len("file_"):]
                 pointer = f'  read full contents: read_file(frame_name="{rf.frame.name}")'
                 if file_safe_name:
                     pointer += f' or read_file(path="{file_safe_name}")'
-                lines.append(pointer)
+                block.append(pointer)
             if rf.associations:
                 assoc_str = ", ".join(
                     f"{a.relation_type}\u2192frame:{a.to_frame_id}" for a in rf.associations[:3]
                 )
-                lines.append(f"  relations: {assoc_str}")
+                block.append(f"  relations: {assoc_str}")
+            if _fits(lines, block, max_memory_chars, emitted):
+                lines.extend(block)
+                emitted += 1
 
+    lines.extend(tail)
+    return "\n".join(lines) if lines else "(no relevant memory found)"
+
+
+def _render_episode_sections(context: "MemoryContext") -> list[str]:
+    """Past-conversation matches and recent-session digests, in prompt order."""
+    out: list[str] = []
     if context.past_conversations:
-        lines.append("\n## Related past conversations")
+        out.append("\n## Related past conversations")
         for ep, sim in context.past_conversations:
             content = " ".join(ep.content.split())
             if len(content) > settings.max_episode_digest_chars:
@@ -153,11 +218,11 @@ def format_memory_context(context: "MemoryContext") -> str:
                     content[: settings.max_episode_digest_chars].rsplit(" ", 1)[0] + "…"
                 )
             when = (ep.timestamp or "")[:10]
-            lines.append(
+            out.append(
                 f"   [{when} · {ep.role} · {round(sim * 100)}% match] {content}"
             )
     if context.recent_episodes:
-        lines.append("\n## Recent conversation (this session)")
+        out.append("\n## Recent conversation (this session)")
         for ep in context.recent_episodes[-settings.max_episodes_in_prompt :]:
             # Digests, not verbatim text. The orchestrator passes the most
             # recent turns as proper history messages, so full content here
@@ -169,8 +234,8 @@ def format_memory_context(context: "MemoryContext") -> str:
                 content = (
                     content[: settings.max_episode_digest_chars].rsplit(" ", 1)[0] + "…"
                 )
-            lines.append(f"   [{ep.role}] {content}")
-    return "\n".join(lines) if lines else "(no relevant memory found)"
+            out.append(f"   [{ep.role}] {content}")
+    return out
 
 
 class Retriever:

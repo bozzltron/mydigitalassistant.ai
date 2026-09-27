@@ -631,6 +631,22 @@ except: pass
         return results  # type: ignore
 
 
+def system_prompt_overhead(
+    task_type: str,
+    plan_instructions: str = "",
+    self_context: str = "",
+) -> int:
+    """Chars build_system_prompt spends on everything except memory context.
+
+    Callers use this to hand format_memory_context a real allowance rather than
+    guessing a reserve for the persona and task-guidance prefix, which grows
+    with the plan and with self_context. Measuring beats a magic number: a
+    guessed reserve either truncates memory that would have fit, or lets memory
+    overrun and get cut by the caller's flat character limit.
+    """
+    return len(build_system_prompt("", task_type, plan_instructions, self_context))
+
+
 def build_system_prompt(
     memory_context: str,
     task_type: str,    # "functional" | "introspective"

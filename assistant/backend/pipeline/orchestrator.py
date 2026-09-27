@@ -16,9 +16,14 @@ import httpx
 from pydantic import BaseModel
 
 from assistant.backend.config import settings
-from assistant.backend.memory.retrieval import Retriever
+from assistant.backend.memory.retrieval import Retriever, format_memory_context
 from assistant.backend.memory.store import MemoryStore
-from assistant.backend.pipeline.llm_client import ChatMessage, OllamaClient, build_system_prompt
+from assistant.backend.pipeline.llm_client import (
+    ChatMessage,
+    OllamaClient,
+    build_system_prompt,
+    system_prompt_overhead,
+)
 from assistant.backend.pipeline.reasoner import (
     Action,
     Plan,
@@ -402,6 +407,28 @@ class Orchestrator:
         ]
         return "\n".join(lines)
 
+    @staticmethod
+    def _memory_char_budget(
+        task_type: str, plan_instructions: str, self_context: str
+    ) -> int:
+        """Chars the memory section may occupy in the system prompt.
+
+        The flat `system_prompt[:max_system_prompt_chars]` cut further down is a
+        backstop only. Memory is appended last, so that cut lands mid-frame: the
+        frame keeps its "### name" header and so reads as present while the facts
+        in its tail are gone. Fitting memory to the space left after the persona
+        and plan prefix drops whole frames, least relevant first, instead.
+
+        system_prompt_overhead measures that prefix rather than reserving a
+        guessed number of chars, because the prefix grows with the plan and with
+        the agent's self context.
+        """
+        return max(
+            0,
+            settings.max_system_prompt_chars
+            - system_prompt_overhead(task_type, plan_instructions, self_context),
+        )
+
     async def chat(
         self,
         request: ChatRequest,
@@ -664,11 +691,15 @@ class Orchestrator:
 
         # 7. Build system prompt with memory context + reasoner guidance
         plan_instructions = format_plan_for_prompt(plan)
+        self_context = await self._get_self_context()
         system_prompt = build_system_prompt(
-            memory_context=memory_context.formatted,
+            memory_context=format_memory_context(
+                memory_context,
+                self._memory_char_budget(task_type.value, plan_instructions, self_context),
+            ),
             task_type=task_type.value,
             planinstructions=plan_instructions,
-            self_context=await self._get_self_context(),
+            self_context=self_context,
         )
 
         # DEBUG: Log system prompt for file tools visibility
@@ -1441,11 +1472,15 @@ class Orchestrator:
         plan.search_needed = True
 
         plan_instructions = format_plan_for_prompt(plan)
+        self_context = await self._get_self_context()
         system_prompt = build_system_prompt(
-            memory_context=memory_context.formatted,
+            memory_context=format_memory_context(
+                memory_context,
+                self._memory_char_budget("functional", plan_instructions, self_context),
+            ),
             task_type="functional",
             planinstructions=plan_instructions,
-            self_context=await self._get_self_context(),
+            self_context=self_context,
         )
 
         search_results: list[SearchResult] = []
@@ -1699,11 +1734,15 @@ class Orchestrator:
 
         # 7. Build system prompt with memory context + reasoner guidance
         plan_instructions = format_plan_for_prompt(plan)
+        self_context = await self._get_self_context()
         system_prompt = build_system_prompt(
-            memory_context=memory_context.formatted,
+            memory_context=format_memory_context(
+                memory_context,
+                self._memory_char_budget(task_type.value, plan_instructions, self_context),
+            ),
             task_type=task_type.value,
             planinstructions=plan_instructions,
-            self_context=await self._get_self_context(),
+            self_context=self_context,
         )
 
         if stored_slots:

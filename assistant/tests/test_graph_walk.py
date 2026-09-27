@@ -258,6 +258,151 @@ async def test_walk_is_empty_when_graph_hops_is_zero(store, hops):
     assert found == [] if hops == 0 else len(found) > 0
 
 
+class TestFrameAwareFitting:
+    """A frame cut mid-way still renders its ### header, so it reads as present
+    while its tail facts are gone. The fit must drop whole frames instead."""
+
+    def _ctx(self, n_frames, slots_per_frame=6, value_len=60):
+        from assistant.backend.memory.models import Frame, Slot
+        from assistant.backend.memory.retrieval import MemoryContext, RetrievedFrame
+
+        frames = []
+        for i in range(n_frames):
+            f = Frame(id=i + 1, name=f"f{i}", type="entity", confidence=0.8)
+            slots = [
+                Slot(
+                    id=i * 100 + j,
+                    frame_id=i + 1,
+                    key=f"k{j}",
+                    value="v" * value_len,
+                    confidence=0.8,
+                )
+                for j in range(slots_per_frame)
+            ]
+            frames.append(
+                RetrievedFrame(
+                    frame=f,
+                    slots=slots,
+                    associations=[],
+                    relevance=1.0 - i / 100.0,  # descending: f0 most relevant
+                    source="direct_match",
+                )
+            )
+        return MemoryContext(
+            query="q", retrieved_frames=frames, recent_episodes=[], formatted=""
+        )
+
+    def test_no_budget_is_unconstrained(self):
+        from assistant.backend.memory.retrieval import format_memory_context
+
+        ctx = self._ctx(8)
+        assert format_memory_context(ctx).count("\n### ") == 8
+
+    def test_budget_drops_whole_frames_from_the_weakest_end(self):
+        from assistant.backend.memory.retrieval import format_memory_context
+
+        ctx = self._ctx(8)
+        full = format_memory_context(ctx)
+
+        fitted = format_memory_context(ctx, max_memory_chars=len(full) // 2)
+
+        assert fitted.count("\n### ") < 8
+        assert len(fitted) <= len(full) // 2 + 64
+        # The strongest frames survive; the weakest are the ones dropped.
+        assert "### f0 " in fitted
+        assert "### f7 " not in fitted
+
+    def test_budget_never_splits_a_frame(self):
+        from assistant.backend.memory.retrieval import format_memory_context
+
+        ctx = self._ctx(6, slots_per_frame=5)
+        for cap in range(200, 4000, 137):
+            fitted = format_memory_context(ctx, max_memory_chars=cap)
+            # Every '###' header is followed by all of its own slot lines and
+            # the next header; a mid-frame cut would leave a partial block.
+            blocks = [b for b in fitted.split("\n### ") if b.startswith("f")]
+            for b in blocks:
+                assert b.count("  - k") == 5, f"frame split at cap={cap}: {b[:80]}"
+
+    def test_a_single_oversized_frame_is_still_emitted(self):
+        """Dropping it would return nothing at all."""
+        from assistant.backend.memory.retrieval import format_memory_context
+
+        ctx = self._ctx(1, slots_per_frame=20, value_len=200)
+        fitted = format_memory_context(ctx, max_memory_chars=10)
+
+        assert "### f0 " in fitted
+
+    def test_no_retrieved_frames_is_unaffected(self):
+        from assistant.backend.memory.retrieval import (
+            MemoryContext,
+            format_memory_context,
+        )
+
+        ctx = MemoryContext(
+            query="q", retrieved_frames=[], recent_episodes=[], formatted=""
+        )
+        assert "no relevant memory" in format_memory_context(ctx, max_memory_chars=50).lower()
+
+    def test_episode_digests_are_charged_to_the_budget(self):
+        """Episodes render after the frames, so their weight must come out of
+        the frame allowance.
+
+        Counting only the frames overshot by exactly the digest size and left
+        the caller's flat cut to slice through a frame again -- which is the bug
+        this test pins.
+        """
+        from assistant.backend.memory.models import Episode
+        from assistant.backend.memory.retrieval import (
+            format_memory_context,
+        )
+
+        frames = self._ctx(8)
+        frames.recent_episodes = [
+            Episode(
+                id=i,
+                user_id=1,
+                session_id="s",
+                role="user",
+                content="x" * 400,
+                timestamp=None,
+            )
+            for i in range(10)
+        ]
+        cap = 4000
+        fitted = format_memory_context(frames, max_memory_chars=cap)
+
+        assert len(fitted) <= cap
+        # The digests are still present; they were budgeted, not discarded.
+        assert "## Recent conversation (this session)" in fitted
+
+    def test_budget_holds_with_both_sections_present(self):
+        from assistant.backend.memory.models import Episode
+        from assistant.backend.memory.retrieval import format_memory_context
+
+        ctx = self._ctx(10, slots_per_frame=8, value_len=120)
+        ctx.recent_episodes = [
+            Episode(
+                id=i,
+                user_id=1,
+                session_id="s",
+                role="assistant",
+                content="y" * 500,
+                timestamp=None,
+            )
+            for i in range(10)
+        ]
+        # The episode digests are a floor, not a budget participant, so the
+        # contract only holds for caps above the tail's own size.
+        from assistant.backend.memory.retrieval import _render_episode_sections
+
+        floor = sum(len(line) + 1 for line in _render_episode_sections(ctx)) + 500
+        for cap in (3000, 6000, 9000, 20000):
+            if cap < floor:
+                continue
+            assert len(format_memory_context(ctx, max_memory_chars=cap)) <= cap
+
+
 class TestBatchHelpers:
     """Batched lookups back the graph walk; per-call _connect() costs ~60ms
     on an encrypted DB, so batching is what keeps the walk affordable."""

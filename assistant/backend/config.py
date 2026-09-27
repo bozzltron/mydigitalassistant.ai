@@ -130,7 +130,13 @@ class Settings(BaseSettings):
     # Limits total prompt chars before LLM call; truncates least-relevant first
     max_system_prompt_chars: int = 12000
     max_search_results_in_prompt: int = 3
-    max_frames_in_prompt: int = 5
+    # Peak measured in assistant/experiments/frame_budget: recall rises to 0.697
+    # at 10 frames and falls to 0.636 at 20 and 40, and max_system_prompt_chars
+    # starts truncating memory at ~8-10 frames (73% of generations at 40). This
+    # was 5 while retrieval returned only top_k_direct=3 frames, so it never
+    # bound; now that the graph walk supplies candidates it caps both halves of
+    # the context independently, so 5 would discard half the walk.
+    max_frames_in_prompt: int = 10
     max_episodes_in_prompt: int = 10
     max_episode_digest_chars: int = 240
 
