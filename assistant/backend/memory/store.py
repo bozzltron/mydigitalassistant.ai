@@ -38,6 +38,11 @@ logger = logging.getLogger(__name__)
 # engages on the 167 that could actually be diluted.
 CHUNK_MIN_SLOTS = 6
 
+# Max ids per batched IN (...) lookup. SQLite's default bound-parameter ceiling
+# is 999, so stay well under it; get_all_associations_for_frames binds each id
+# twice (from_ and to_), which is why this is not simply 999.
+_BATCH_CHUNK = 400
+
 
 def _parse_iso_ts(value: str | None) -> datetime | None:
     """Parse an ISO timestamp, tolerating Z suffix and missing offset.
@@ -209,6 +214,33 @@ class MemoryStore:
             if not row:
                 return None
             return Frame(**self._frame_dict(row[0]))
+
+    async def get_frames_by_ids(self, frame_ids: list[int]) -> dict[int, Frame]:
+        """Fetch many frames in one query, keyed by id.
+
+        Every ``_connect()`` re-derives the SQLCipher key and reloads the
+        sqlite-vec extension, so per-row lookups are ruinously expensive on an
+        encrypted DB. Graph traversal needs hundreds of frames; fetch them in
+        batches instead. Ids are chunked to stay clear of SQLite's bound-parameter
+        limit. Missing ids are simply absent from the returned mapping.
+        """
+        result: dict[int, Frame] = {}
+        ids = [i for i in dict.fromkeys(frame_ids) if i is not None]
+        for start in range(0, len(ids), _BATCH_CHUNK):
+            chunk = ids[start : start + _BATCH_CHUNK]
+            placeholders = ",".join("?" * len(chunk))
+            async with self._connect() as db:
+                rows = await db.execute_fetchall(
+                    "SELECT id, name, type, confidence, essential, priority, "
+                    "owner_user_id, source_type, source_url, source_reliability, "
+                    "embedding_model, created_at, updated_at, deleted_at "
+                    f"FROM frames WHERE id IN ({placeholders})",
+                    chunk,
+                )
+            for row in rows:
+                frame = Frame(**self._frame_dict(row))
+                result[frame.id] = frame
+        return result
 
     async def get_frame_by_name(self, name: str) -> Frame | None:
         """Exact-name lookup, excluding soft-deleted (tombstoned) frames."""
@@ -1197,6 +1229,30 @@ class MemoryStore:
             )
             return [Slot(**self._slot_dict(row)) for row in rows]
 
+    async def get_slots_for_frames(self, frame_ids: list[int]) -> dict[int, list[Slot]]:
+        """Fetch slots for many frames in one query, keyed by frame id.
+
+        See get_frames_by_ids for why per-frame lookups are not viable here.
+        Frames with no slots are absent from the mapping.
+        """
+        out: dict[int, list[Slot]] = {}
+        ids = list(dict.fromkeys(frame_ids))
+        for start in range(0, len(ids), _BATCH_CHUNK):
+            chunk = ids[start : start + _BATCH_CHUNK]
+            placeholders = ",".join("?" * len(chunk))
+            async with self._connect() as db:
+                rows = await db.execute_fetchall(
+                    "SELECT id, frame_id, key, value, confidence, essential, priority, "
+                    "source_type, source_url, source_reliability, source_episode_id, "
+                    f"updated_at, last_strengthened_at FROM slots "
+                    f"WHERE frame_id IN ({placeholders}) ORDER BY id",
+                    chunk,
+                )
+            for row in rows:
+                slot = Slot(**self._slot_dict(row))
+                out.setdefault(slot.frame_id, []).append(slot)
+        return out
+
     async def get_slot_history(self, slot_id: int) -> list[dict]:
         async with self._connect() as db:
             rows = await db.execute_fetchall(
@@ -1304,6 +1360,41 @@ class MemoryStore:
                 (frame_id, frame_id),
             )
             return [Association(**self._association_dict(row)) for row in rows]
+
+    async def get_all_associations_for_frames(
+        self, frame_ids: list[int]
+    ) -> dict[int, list[Association]]:
+        """All edges touching any of ``frame_ids``, keyed by the queried id.
+
+        The graph walk expands a whole frontier per hop, so it needs every edge
+        leaving the frontier in one round trip rather than one per frame. An
+        edge between two queried frames appears under both keys.
+        """
+        out: dict[int, list[Association]] = {i: [] for i in frame_ids}
+        ids = list(dict.fromkeys(frame_ids))
+        for start in range(0, len(ids), _BATCH_CHUNK):
+            chunk = ids[start : start + _BATCH_CHUNK]
+            placeholders = ",".join("?" * len(chunk))
+            async with self._connect() as db:
+                rows = await db.execute_fetchall(
+                    f"""
+                    SELECT id, from_frame_id, to_frame_id, relation_type, confidence,
+                           essential, priority, source_type, source_url,
+                           source_reliability, embedding_model, created_at
+                    FROM associations
+                    WHERE from_frame_id IN ({placeholders})
+                       OR to_frame_id IN ({placeholders})
+                    ORDER BY id
+                    """,
+                    chunk + chunk,
+                )
+            for row in rows:
+                assoc = Association(**self._association_dict(row))
+                if assoc.from_frame_id in out:
+                    out[assoc.from_frame_id].append(assoc)
+                if assoc.to_frame_id in out:
+                    out[assoc.to_frame_id].append(assoc)
+        return out
 
     async def get_all_associations(self) -> list[Association]:
         async with self._connect() as db:

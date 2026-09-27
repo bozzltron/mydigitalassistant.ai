@@ -19,6 +19,19 @@ FILE_FRAME_SOURCE_TYPES = ("file_upload", "file_create")
 # Content slots on file frames are truncated hints, not the file itself.
 FILE_CONTENT_HINT_SLOTS = ("file_content", "file_content_preview")
 
+# Minimum association confidence for the graph walk to *follow* an edge.
+#
+# This is a trust floor on the edge, not a relevance threshold: association
+# structure is topological, and "is this edge real" is a different question from
+# "is this neighbour semantically similar to the query". Those must not be
+# multiplied into one score — see Retriever._graph_walk.
+#
+# It is currently non-binding. create_association defaults confidence to 0.5 and
+# no write path in the backend produces a lower value, so every edge in the
+# database sits at or above this floor. It stays as a guard for edges that
+# arrive weaker later (e.g. the correction path revising an existing edge).
+ASSOC_MIN_CONFIDENCE = 0.5
+
 
 @dataclass
 class RetrievedFrame:
@@ -180,6 +193,7 @@ class Retriever:
         graph_hops: int = 2,
         graph_decay: float = 0.5,  # relevance decay per hop
         min_relevance: float = 0.3,
+        max_graph_frames: int = 7,
         working_memory: "WorkingMemory | None" = None,
     ):
         self.store = store
@@ -189,6 +203,12 @@ class Retriever:
         self.graph_hops = graph_hops
         self.graph_decay = graph_decay
         self.min_relevance = min_relevance
+        # Bounds the associative expansion so the walk competes for prompt room
+        # rather than crowding out the direct semantic matches. Default 7 puts
+        # top_k_direct=3 + 7 graph frames = 10 frames, which is where recall
+        # peaks in assistant/experiments/frame_budget (10 → 0.697, 20 → 0.636,
+        # 40 → 0.636 while the 12000-char cap starts truncating memory).
+        self.max_graph_frames = max_graph_frames
         self.working_memory = working_memory
 
     async def embed_frame(self, frame: Frame, slots: list[Slot]) -> list[float]:
@@ -290,19 +310,33 @@ class Retriever:
                     seen_frame_ids.add(neighbor_id)
                     graph_neighbors.append((neighbor_id, neighbor_sim, source))
 
+        # Rank across all seeds together, not per-seed: a strong neighbour of the
+        # 3rd-ranked direct match should beat a weak neighbour of the 1st. Then
+        # cap, so the walk competes for prompt room rather than flooding it.
+        graph_neighbors.sort(key=lambda x: x[1], reverse=True)
+        graph_neighbors = graph_neighbors[: self.max_graph_frames]
+
          # 5. Assemble RetrievedFrame objects
+        # Batched: three queries total rather than three per frame, which on an
+        # encrypted DB means three SQLCipher key derivations instead of thirty.
+        selected = top_direct + graph_neighbors
+        frames_by_id = await self.store.get_frames_by_ids([fid for fid, _, _ in selected])
+        slots_by_frame = await self.store.get_slots_for_frames(
+            [fid for fid, _, _ in selected]
+        )
+        assocs_by_frame = await self.store.get_all_associations_for_frames(
+            [fid for fid, _, _ in selected]
+        )
         retrieved_frames: list[RetrievedFrame] = []
-        for frame_id, relevance, source in top_direct + graph_neighbors:
-            frame = await self.store.get_frame(frame_id)
+        for frame_id, relevance, source in selected:
+            frame = frames_by_id.get(frame_id)
             if frame is None:
                 continue
-            slots = await self.store.get_slots_for_frame(frame_id)
-            assocs = await self.store.get_all_associations_for_frame(frame_id)
             retrieved_frames.append(
                 RetrievedFrame(
                     frame=frame,
-                    slots=slots,
-                    associations=assocs,
+                    slots=slots_by_frame.get(frame_id, []),
+                    associations=assocs_by_frame.get(frame_id, []),
                     relevance=relevance,
                     source=source,
                  )
@@ -411,52 +445,101 @@ class Retriever:
         max_hops: int,
         decay: float,
         user_id: int,
+        limit: int | None = None,
     ) -> list[tuple[int, float, str]]:
         """Walk the association graph from start_frame_id, up to max_hops.
 
-        Returns (frame_id, relevance, source) tuples.
+        Returns (frame_id, score, source) tuples, best-scoring first.
         Filters to frames owned by user_id or shared (owner_user_id IS NULL).
-        Applies frame.confidence × frame.priority to relevance score.
+
+        Inclusion and ranking are deliberately separate questions:
+
+        - *Inclusion* is topological: is the neighbour live, in scope, and
+          reachable over an edge we trust (ASSOC_MIN_CONFIDENCE)? Association
+          structure is not a similarity score and is never gated by
+          min_relevance.
+        - *Ranking* among followed edges uses the full quality product
+          (relevance x decay x assoc.conf x assoc.prio x neighbour.conf x
+          neighbour.prio), which is a good ordering signal but a bad gate.
+
+        The previous version gated on that product directly. Because every factor
+        is <= 1 and decay is 0.5, the best attainable hop-1 score is 0.5, so the
+        four confidence factors would each have to average ~0.88 to clear
+        min_relevance=0.3. The measured median was 0.038, and across 12 probe
+        queries 0 of 877 reachable in-scope edges were admitted — the graph walk
+        contributed no frames at all in production.
+
+        The frontier carries *depth* (relevance x decay), not the full product.
+        Propagating the product instead would compound the same collapse one hop
+        further out and starve the walk at hop 2.
+
+        `limit` caps how many neighbours are returned, keeping the best by score.
+        Without it the walk is bounded only by the graph itself (809 frames at
+        2 hops on the probe corpus), which overflows the system prompt cap and
+        costs more than it can earn.
         """
         results: list[tuple[int, float, str]] = []
         visited: set[int] = {start_frame_id}
         frontier: list[tuple[int, float]] = [(start_frame_id, 1.0)]
 
         for hop in range(max_hops):
-            next_frontier: list[tuple[int, float]] = []
-            for frame_id, relevance in frontier:
-                assocs = await self.store.get_all_associations_for_frame(frame_id)
-                for assoc in assocs:
+            # Two queries per hop, regardless of frontier width. Fetching edges
+            # and neighbours one frame at a time cost ~800 SQLCipher connection
+            # opens on a 2-hop walk, which measured at 7.4s per retrieval.
+            frontier_ids = [fid for fid, _ in frontier]
+            depth_of = dict(frontier)
+            edges_by_frame = await self.store.get_all_associations_for_frames(frontier_ids)
+
+            # (neighbour, the frontier frame it hangs off, the edge joining them)
+            candidates: list[tuple[int, int, Association]] = []
+            for fid in frontier_ids:
+                for assoc in edges_by_frame.get(fid, []):
                     neighbor_id = (
                         assoc.to_frame_id
-                        if assoc.from_frame_id == frame_id
+                        if assoc.from_frame_id == fid
                         else assoc.from_frame_id
                     )
                     if neighbor_id in visited:
                         continue
                     visited.add(neighbor_id)
-                    neighbor = await self.store.get_frame(neighbor_id)
-                    if neighbor is None:
-                        continue
-                    # GC-tombstoned frames keep their edges but must never
-                    # re-enter context via the graph walk.
-                    if neighbor.deleted_at is not None:
-                        continue
-                    if neighbor.owner_user_id not in (None, user_id):
-                        continue
-                    score = (
-                        relevance
-                        * decay
-                        * assoc.confidence
-                        * assoc.priority
-                        * neighbor.confidence
-                        * neighbor.priority
-                    )
-                    if score >= self.min_relevance:
-                        results.append((neighbor_id, score, f"graph_hop_{hop + 1}"))
-                        next_frontier.append((neighbor_id, score))
+                    candidates.append((neighbor_id, fid, assoc))
+
+            if not candidates:
+                break
+
+            neighbors_by_id = await self.store.get_frames_by_ids(
+                [nid for nid, _, _ in candidates]
+            )
+
+            next_frontier: list[tuple[int, float]] = []
+            for neighbor_id, parent_id, assoc in candidates:
+                neighbor = neighbors_by_id.get(neighbor_id)
+                if neighbor is None:
+                    continue
+                # GC-tombstoned frames keep their edges but must never
+                # re-enter context via the graph walk.
+                if neighbor.deleted_at is not None:
+                    continue
+                if neighbor.owner_user_id not in (None, user_id):
+                    continue
+                # Inclusion: trust the edge, nothing else.
+                if assoc.confidence < ASSOC_MIN_CONFIDENCE:
+                    continue
+                child_depth = depth_of[parent_id] * decay
+                score = (
+                    child_depth
+                    * assoc.confidence
+                    * assoc.priority
+                    * neighbor.confidence
+                    * neighbor.priority
+                )
+                results.append((neighbor_id, score, f"graph_hop_{hop + 1}"))
+                next_frontier.append((neighbor_id, child_depth))
             frontier = next_frontier
             if not frontier:
                 break
 
+        results.sort(key=lambda r: r[1], reverse=True)
+        if limit is not None:
+            results = results[:limit]
         return results
