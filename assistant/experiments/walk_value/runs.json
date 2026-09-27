@@ -1,0 +1,1388 @@
+[
+  {
+    "arm": 0,
+    "rep": 0,
+    "qid": "cbs_hq",
+    "answer": "CBS News is headquartered at 524 w 57th St., New York City, NY 10019.",
+    "recall": {
+      "street": true
+    },
+    "shown": {
+      "street": true
+    },
+    "abstained": false,
+    "memory_chars": 4381,
+    "frames": 3,
+    "walk_frames": 0,
+    "target_present": true,
+    "target_source": "direct_match",
+    "generation_ms": 5487.3
+  },
+  {
+    "arm": 0,
+    "rep": 0,
+    "qid": "perseverance",
+    "answer": "On January 31, 2026, NASA's Perseverance rover completed its first drive on Mars that was entirely planned by artificial intelligence.",
+    "recall": {
+      "achievement": false,
+      "when": true
+    },
+    "shown": {
+      "achievement": true,
+      "when": true
+    },
+    "abstained": false,
+    "memory_chars": 3339,
+    "frames": 3,
+    "walk_frames": 0,
+    "target_present": false,
+    "target_source": null,
+    "generation_ms": 4714.2
+  },
+  {
+    "arm": 0,
+    "rep": 0,
+    "qid": "penn_state",
+    "answer": "Penn State researchers are developing a shape-shifting smart hydrogel inspired by octopus skin. This material can change its shape and properties dynamically, mimicking the capabilities of biological systems like an octopus's adaptive camouflage or movement. The goal is to create advanced materials for robotics, soft actuators, and biomedical applications that can adapt to their environment in real time.",
+    "recall": {
+      "material": true,
+      "inspiration": true,
+      "property": true
+    },
+    "shown": {
+      "material": true,
+      "inspiration": true,
+      "property": true
+    },
+    "abstained": false,
+    "memory_chars": 3457,
+    "frames": 3,
+    "walk_frames": 0,
+    "target_present": true,
+    "target_source": "direct_match",
+    "generation_ms": 5625.5
+  },
+  {
+    "arm": 0,
+    "rep": 0,
+    "qid": "mtw_members",
+    "answer": "The members of The Mountain & The Wolf are Michael Bosworth, Mark Heaps, Jack Schultz, and Mike Hall.",
+    "recall": {
+      "heaps": true,
+      "schultz": true,
+      "hall": true
+    },
+    "shown": {
+      "heaps": true,
+      "schultz": true,
+      "hall": true
+    },
+    "abstained": false,
+    "memory_chars": 3820,
+    "frames": 3,
+    "walk_frames": 0,
+    "target_present": true,
+    "target_source": "direct_match",
+    "generation_ms": 3729.3
+  },
+  {
+    "arm": 0,
+    "rep": 0,
+    "qid": "mtw_genre",
+    "answer": "Based on my memory state, *The Mountain & The Wolf* (also noted as *The Out of the Mountain and the Wolf*) is associated with tracks like \"push\" and features a song called \"Why Not.\" My records indicate this album releases \"after the new year\" (relative to when those notes were made in August 2026).\n\nHowever, I don't have specific details about its exact release date or its musical genre stored in my structured memory. To give you accurate information on those two points, I would need to search for current data or check external sources.",
+    "recall": {
+      "genre": false,
+      "release": false
+    },
+    "shown": {
+      "genre": false,
+      "release": false
+    },
+    "abstained": true,
+    "memory_chars": 3126,
+    "frames": 3,
+    "walk_frames": 0,
+    "target_present": false,
+    "target_source": null,
+    "generation_ms": 5670.8
+  },
+  {
+    "arm": 0,
+    "rep": 0,
+    "qid": "groover",
+    "answer": "Groover is a music playlist service that connects artists with curators and radio stations to promote their tracks. Based on the profiles available, it offers various campaign options like \"Solo Classic\" for targeted reach, including submissions to specific outlets such as Radio NEO and BIRP.fm. Its size in terms of reach and influence can vary depending on the chosen campaign package and the engagement from selected curators. For more detailed metrics or current size indicators, you might want to check Groover's official blog or their service pages online.",
+    "recall": {
+      "curators": false,
+      "professionals": false,
+      "countries": false
+    },
+    "shown": {
+      "curators": false,
+      "professionals": false,
+      "countries": false
+    },
+    "abstained": false,
+    "memory_chars": 3426,
+    "frames": 3,
+    "walk_frames": 0,
+    "target_present": false,
+    "target_source": null,
+    "generation_ms": 5377.0
+  },
+  {
+    "arm": 0,
+    "rep": 0,
+    "qid": "walking_cow",
+    "answer": "\"Walking the Cow\" is a song by Daniel Johnston, released on January 22, 2025. It has reached the top spot on Apple Music and currently has over 600 streams with an average of 3 daily listeners. The track is part of your broader project involving \"The Mountain & The Wolf.\"",
+    "recall": {
+      "artist": true,
+      "date": true
+    },
+    "shown": {
+      "artist": true,
+      "date": true
+    },
+    "abstained": false,
+    "memory_chars": 3693,
+    "frames": 3,
+    "walk_frames": 0,
+    "target_present": true,
+    "target_source": "direct_match",
+    "generation_ms": 4716.8
+  },
+  {
+    "arm": 0,
+    "rep": 0,
+    "qid": "jason_lee",
+    "answer": "Jason Lee skated **Goofy** and retired in **1995**.",
+    "recall": {
+      "stance": true,
+      "retired": true
+    },
+    "shown": {
+      "stance": true,
+      "retired": true
+    },
+    "abstained": false,
+    "memory_chars": 4221,
+    "frames": 3,
+    "walk_frames": 0,
+    "target_present": true,
+    "target_source": "direct_match",
+    "generation_ms": 5534.7
+  },
+  {
+    "arm": 0,
+    "rep": 0,
+    "qid": "festivaltopia",
+    "answer": "Festivaltopia is described as \"Your Go-To Resource for Music Festivals.\" Its website is https://festivaltopia.com/.",
+    "recall": {
+      "tagline": true,
+      "url": true
+    },
+    "shown": {
+      "tagline": true,
+      "url": true
+    },
+    "abstained": false,
+    "memory_chars": 3122,
+    "frames": 3,
+    "walk_frames": 0,
+    "target_present": true,
+    "target_source": "direct_match",
+    "generation_ms": 4753.9
+  },
+  {
+    "arm": 0,
+    "rep": 0,
+    "qid": "why_not_label",
+    "answer": "Why Not is on the **Friend** label. The lead single titled \"Why Not\" was released on **September 24**.",
+    "recall": {
+      "label": false
+    },
+    "shown": {
+      "label": false
+    },
+    "abstained": false,
+    "memory_chars": 3444,
+    "frames": 3,
+    "walk_frames": 0,
+    "target_present": false,
+    "target_source": null,
+    "generation_ms": 4504.7
+  },
+  {
+    "arm": 0,
+    "rep": 0,
+    "qid": "studio",
+    "answer": "Your home studio is located in Austin.",
+    "recall": {
+      "city": true
+    },
+    "shown": {
+      "city": true
+    },
+    "abstained": false,
+    "memory_chars": 2953,
+    "frames": 3,
+    "walk_frames": 0,
+    "target_present": false,
+    "target_source": null,
+    "generation_ms": 3284.6
+  },
+  {
+    "arm": 0,
+    "rep": 1,
+    "qid": "cbs_hq",
+    "answer": "CBS News is headquartered at 524 West 57th Street in New York City, New York, with the postal code 10019.",
+    "recall": {
+      "street": true
+    },
+    "shown": {
+      "street": true
+    },
+    "abstained": false,
+    "memory_chars": 4381,
+    "frames": 3,
+    "walk_frames": 0,
+    "target_present": true,
+    "target_source": "direct_match",
+    "generation_ms": 1634.0
+  },
+  {
+    "arm": 0,
+    "rep": 1,
+    "qid": "perseverance",
+    "answer": "The Perseverance rover completed its first AI-planned drive on Mars on January 31, 2026. This milestone demonstrated NASA's use of artificial intelligence to autonomously navigate the Martian surface.",
+    "recall": {
+      "achievement": true,
+      "when": true
+    },
+    "shown": {
+      "achievement": true,
+      "when": true
+    },
+    "abstained": false,
+    "memory_chars": 3339,
+    "frames": 3,
+    "walk_frames": 0,
+    "target_present": false,
+    "target_source": null,
+    "generation_ms": 1675.1
+  },
+  {
+    "arm": 0,
+    "rep": 1,
+    "qid": "penn_state",
+    "answer": "Penn State researchers are developing a **shape-shifting smart hydrogel** inspired by octopus skin. This material can mimic the stretchy, adaptable properties of biological tissues.",
+    "recall": {
+      "material": true,
+      "inspiration": true,
+      "property": true
+    },
+    "shown": {
+      "material": true,
+      "inspiration": true,
+      "property": true
+    },
+    "abstained": false,
+    "memory_chars": 3457,
+    "frames": 3,
+    "walk_frames": 0,
+    "target_present": true,
+    "target_source": "direct_match",
+    "generation_ms": 22021.2
+  },
+  {
+    "arm": 0,
+    "rep": 1,
+    "qid": "mtw_members",
+    "answer": "The members of The Mountain & The Wolf are Michael Bosworth, Mark Heaps, Jack Schultz, and Mike Hall.",
+    "recall": {
+      "heaps": true,
+      "schultz": true,
+      "hall": true
+    },
+    "shown": {
+      "heaps": true,
+      "schultz": true,
+      "hall": true
+    },
+    "abstained": false,
+    "memory_chars": 3820,
+    "frames": 3,
+    "walk_frames": 0,
+    "target_present": true,
+    "target_source": "direct_match",
+    "generation_ms": 40444.7
+  },
+  {
+    "arm": 0,
+    "rep": 1,
+    "qid": "mtw_genre",
+    "answer": "Based on the available information, *The Mountain & The Wolf* appears to be an **Alternative rock** or **Indie rock** album (genres associated with the Groover options linked to it). Regarding its release date, memory indicates it is scheduled to release **after the new year** (relative to August 2026), which would place it in early 2027.",
+    "recall": {
+      "genre": false,
+      "release": false
+    },
+    "shown": {
+      "genre": false,
+      "release": false
+    },
+    "abstained": false,
+    "memory_chars": 3126,
+    "frames": 3,
+    "walk_frames": 0,
+    "target_present": false,
+    "target_source": null,
+    "generation_ms": 2475.4
+  },
+  {
+    "arm": 0,
+    "rep": 1,
+    "qid": "groover",
+    "answer": "Groover is a music playlist service, specifically an online platform that connects artists and labels with curators (bloggers, radio stations, playlisters) to promote their music. In 2026, it has grown into a significant player in the digital promotion landscape, offering various campaign types like \"Solo Classic\" for targeted genre placement. While exact user numbers or total playlist counts aren't specified here, its presence alongside services like Hype Machine and Pitchfork suggests it's a notable industry tool for reaching listeners across genres like indie rock and pop.",
+    "recall": {
+      "curators": false,
+      "professionals": false,
+      "countries": false
+    },
+    "shown": {
+      "curators": false,
+      "professionals": false,
+      "countries": false
+    },
+    "abstained": false,
+    "memory_chars": 3426,
+    "frames": 3,
+    "walk_frames": 0,
+    "target_present": false,
+    "target_source": null,
+    "generation_ms": 3095.6
+  },
+  {
+    "arm": 0,
+    "rep": 1,
+    "qid": "walking_cow",
+    "answer": "*Walking the Cow* is a song by Daniel Johnston, released on January 22, 2025, and marked as \"done\" in album status. It has accumulated 622 streams with an average of 3 daily listeners. The track is currently listed as the top song on Apple Music and serves as both a distraction from and cover of another project.",
+    "recall": {
+      "artist": true,
+      "date": true
+    },
+    "shown": {
+      "artist": true,
+      "date": true
+    },
+    "abstained": false,
+    "memory_chars": 3693,
+    "frames": 3,
+    "walk_frames": 0,
+    "target_present": true,
+    "target_source": "direct_match",
+    "generation_ms": 2263.6
+  },
+  {
+    "arm": 0,
+    "rep": 1,
+    "qid": "jason_lee",
+    "answer": "Based on the memory retrieved, Jason Lee's skateboarding stance was **goofy**, and he retired in **1995**.",
+    "recall": {
+      "stance": true,
+      "retired": true
+    },
+    "shown": {
+      "stance": true,
+      "retired": true
+    },
+    "abstained": false,
+    "memory_chars": 4221,
+    "frames": 3,
+    "walk_frames": 0,
+    "target_present": true,
+    "target_source": "direct_match",
+    "generation_ms": 1091.3
+  },
+  {
+    "arm": 0,
+    "rep": 1,
+    "qid": "festivaltopia",
+    "answer": "Festivaltopia is described as \"Your Go-To Resource for Music Festivals.\" It functions as a directory or information hub for music festival-related content. Its official website is located at https://festivaltopia.com/.",
+    "recall": {
+      "tagline": true,
+      "url": true
+    },
+    "shown": {
+      "tagline": true,
+      "url": true
+    },
+    "abstained": false,
+    "memory_chars": 3122,
+    "frames": 3,
+    "walk_frames": 0,
+    "target_present": true,
+    "target_source": "direct_match",
+    "generation_ms": 1396.3
+  },
+  {
+    "arm": 0,
+    "rep": 1,
+    "qid": "why_not_label",
+    "answer": "The album **\"Why Not\"** is on a label referred to as **\"Friend\u2026\"** (likely short for \"Friends\" or a specific indie label), though the full name isn't fully specified in my memory. The lead single, also titled **\"Why Not\"**, was released on **September 24**.",
+    "recall": {
+      "label": false
+    },
+    "shown": {
+      "label": false
+    },
+    "abstained": false,
+    "memory_chars": 3444,
+    "frames": 3,
+    "walk_frames": 0,
+    "target_present": false,
+    "target_source": null,
+    "generation_ms": 1804.0
+  },
+  {
+    "arm": 0,
+    "rep": 1,
+    "qid": "studio",
+    "answer": "Your home studio is located in your home. The system notes the entity \"logic_x\" is at your \"home studio.\"",
+    "recall": {
+      "city": false
+    },
+    "shown": {
+      "city": true
+    },
+    "abstained": false,
+    "memory_chars": 2953,
+    "frames": 3,
+    "walk_frames": 0,
+    "target_present": false,
+    "target_source": null,
+    "generation_ms": 847.6
+  },
+  {
+    "arm": 0,
+    "rep": 2,
+    "qid": "cbs_hq",
+    "answer": "CBS News is headquartered at 524 W 57th St. in New York City, NY 10019.",
+    "recall": {
+      "street": true
+    },
+    "shown": {
+      "street": true
+    },
+    "abstained": false,
+    "memory_chars": 4381,
+    "frames": 3,
+    "walk_frames": 0,
+    "target_present": true,
+    "target_source": "direct_match",
+    "generation_ms": 918.1
+  },
+  {
+    "arm": 0,
+    "rep": 2,
+    "qid": "perseverance",
+    "answer": "On January 31, 2026, NASA's Perseverance rover completed its first drive on Mars that was planned using artificial intelligence.",
+    "recall": {
+      "achievement": false,
+      "when": true
+    },
+    "shown": {
+      "achievement": true,
+      "when": true
+    },
+    "abstained": false,
+    "memory_chars": 3339,
+    "frames": 3,
+    "walk_frames": 0,
+    "target_present": false,
+    "target_source": null,
+    "generation_ms": 970.4
+  },
+  {
+    "arm": 0,
+    "rep": 2,
+    "qid": "penn_state",
+    "answer": "Penn State researchers are developing a shape-shifting smart hydrogel inspired by octopus skin.",
+    "recall": {
+      "material": true,
+      "inspiration": true,
+      "property": true
+    },
+    "shown": {
+      "material": true,
+      "inspiration": true,
+      "property": true
+    },
+    "abstained": false,
+    "memory_chars": 3457,
+    "frames": 3,
+    "walk_frames": 0,
+    "target_present": true,
+    "target_source": "direct_match",
+    "generation_ms": 613.5
+  },
+  {
+    "arm": 0,
+    "rep": 2,
+    "qid": "mtw_members",
+    "answer": "The members of **The Mountain & The Wolf** are:\n\n1. Michael Bosworth  \n2. Mark Heaps  \n3. Jack Schultz  \n4. Mike Hall  \n\nThey are an indie alternative rock band formed in Austin, Texas in late 2024.",
+    "recall": {
+      "heaps": true,
+      "schultz": true,
+      "hall": true
+    },
+    "shown": {
+      "heaps": true,
+      "schultz": true,
+      "hall": true
+    },
+    "abstained": false,
+    "memory_chars": 3820,
+    "frames": 3,
+    "walk_frames": 0,
+    "target_present": true,
+    "target_source": "direct_match",
+    "generation_ms": 1553.8
+  },
+  {
+    "arm": 0,
+    "rep": 2,
+    "qid": "mtw_genre",
+    "answer": "Based on the memory provided, I can identify *The Mountain & The Wolf* as an album by **Sandpiper**. Regarding the release date, my current information indicates it is releasing \"after the new year\" relative to a previous context (likely 2026 or 2027 given recent conversation dates), but the specific exact date isn't explicitly stored in the retrieved state.\n\nRegarding the genre, the provided memory mentions the title and album name but does not list the specific genre classification. However, the recent conversation history references **Radio NEO** covering genres like \"Alternative rock,\" \"Indie rock,\" \"Dream pop,\" and \"Electropop\" in relation to this project, suggesting these are likely relevant genres for *The Mountain & The Wolf*.",
+    "recall": {
+      "genre": false,
+      "release": false
+    },
+    "shown": {
+      "genre": false,
+      "release": false
+    },
+    "abstained": false,
+    "memory_chars": 3126,
+    "frames": 3,
+    "walk_frames": 0,
+    "target_present": false,
+    "target_source": null,
+    "generation_ms": 4573.5
+  },
+  {
+    "arm": 0,
+    "rep": 2,
+    "qid": "groover",
+    "answer": "Groover is a music playlist service that helps artists and labels promote their tracks to curators, radio stations, and media outlets. It operates as a campaign platform where users can launch targeted promotion efforts (like the \"Solo Classic\" or \"Why Not\" campaigns you've worked on).\n\nAs for its size: Groover has grown significantly since its founding in London and now serves thousands of music professionals worldwide. While exact user numbers aren't publicly disclosed, it's considered a major player in the indie and mid-tier music promotion space by 2026 standards \u2014 especially given its curated network of journalists, curators, and radio outlets.",
+    "recall": {
+      "curators": false,
+      "professionals": false,
+      "countries": false
+    },
+    "shown": {
+      "curators": false,
+      "professionals": false,
+      "countries": false
+    },
+    "abstained": false,
+    "memory_chars": 3426,
+    "frames": 3,
+    "walk_frames": 0,
+    "target_present": false,
+    "target_source": null,
+    "generation_ms": 3731.3
+  },
+  {
+    "arm": 0,
+    "rep": 2,
+    "qid": "walking_cow",
+    "answer": "\"Walking the Cow\" is a song by Daniel Johnston, released on January 22, 2025. It was included in the album \"The Out of the Mountain and the Wolf.\" The track has accumulated 622 streams with an average of 3 daily listeners and is currently marked as completed.",
+    "recall": {
+      "artist": true,
+      "date": true
+    },
+    "shown": {
+      "artist": true,
+      "date": true
+    },
+    "abstained": false,
+    "memory_chars": 3693,
+    "frames": 3,
+    "walk_frames": 0,
+    "target_present": true,
+    "target_source": "direct_match",
+    "generation_ms": 1979.7
+  },
+  {
+    "arm": 0,
+    "rep": 2,
+    "qid": "jason_lee",
+    "answer": "Jason Lee was a goofy-footed skater. He retired in 1995.",
+    "recall": {
+      "stance": true,
+      "retired": true
+    },
+    "shown": {
+      "stance": true,
+      "retired": true
+    },
+    "abstained": false,
+    "memory_chars": 4221,
+    "frames": 3,
+    "walk_frames": 0,
+    "target_present": true,
+    "target_source": "direct_match",
+    "generation_ms": 684.1
+  },
+  {
+    "arm": 0,
+    "rep": 2,
+    "qid": "festivaltopia",
+    "answer": "Festivaltopia is described as your \"Go-To Resource for Music Festivals\" and is available at https://festivaltopia.com/.",
+    "recall": {
+      "tagline": true,
+      "url": true
+    },
+    "shown": {
+      "tagline": true,
+      "url": true
+    },
+    "abstained": false,
+    "memory_chars": 3122,
+    "frames": 3,
+    "walk_frames": 0,
+    "target_present": true,
+    "target_source": "direct_match",
+    "generation_ms": 955.1
+  },
+  {
+    "arm": 0,
+    "rep": 2,
+    "qid": "why_not_label",
+    "answer": "The album *Why Not* is on the **Friend** label. The lead single, also titled *\"Why Not\"*, was released on **September 24**, which is a month before the full album's planned November 2024 release. There\u2019s also another song called *\u201cPush\u201d* associated with the project, expected to drop one month after the first single (around October/early November).",
+    "recall": {
+      "label": false
+    },
+    "shown": {
+      "label": false
+    },
+    "abstained": false,
+    "memory_chars": 3444,
+    "frames": 3,
+    "walk_frames": 0,
+    "target_present": false,
+    "target_source": null,
+    "generation_ms": 2400.6
+  },
+  {
+    "arm": 0,
+    "rep": 2,
+    "qid": "studio",
+    "answer": "Your home studio is located at **logic_x**.",
+    "recall": {
+      "city": false
+    },
+    "shown": {
+      "city": true
+    },
+    "abstained": false,
+    "memory_chars": 2953,
+    "frames": 3,
+    "walk_frames": 0,
+    "target_present": false,
+    "target_source": null,
+    "generation_ms": 392.8
+  },
+  {
+    "arm": 7,
+    "rep": 0,
+    "qid": "cbs_hq",
+    "answer": "CBS News is headquartered at 524 West 57th Street in New York City, New York.",
+    "recall": {
+      "street": true
+    },
+    "shown": {
+      "street": true
+    },
+    "abstained": false,
+    "memory_chars": 5126,
+    "frames": 10,
+    "walk_frames": 7,
+    "target_present": true,
+    "target_source": "direct_match",
+    "generation_ms": 4614.1
+  },
+  {
+    "arm": 7,
+    "rep": 0,
+    "qid": "perseverance",
+    "answer": "On January 31, 2026, NASA's Perseverance rover completed its first drive on Mars that was planned autonomously by artificial intelligence. This achievement marks a significant advancement in using AI for navigation tasks in real-time conditions on the Martian surface.",
+    "recall": {
+      "achievement": false,
+      "when": true
+    },
+    "shown": {
+      "achievement": true,
+      "when": true
+    },
+    "abstained": false,
+    "memory_chars": 5632,
+    "frames": 10,
+    "walk_frames": 7,
+    "target_present": false,
+    "target_source": null,
+    "generation_ms": 6677.4
+  },
+  {
+    "arm": 7,
+    "rep": 0,
+    "qid": "penn_state",
+    "answer": "Penn State researchers are developing a shape-shifting smart hydrogel inspired by octopus skin, capable of changing appearance, texture, and shape on command.",
+    "recall": {
+      "material": true,
+      "inspiration": true,
+      "property": true
+    },
+    "shown": {
+      "material": true,
+      "inspiration": true,
+      "property": true
+    },
+    "abstained": false,
+    "memory_chars": 6090,
+    "frames": 10,
+    "walk_frames": 7,
+    "target_present": true,
+    "target_source": "direct_match",
+    "generation_ms": 6366.5
+  },
+  {
+    "arm": 7,
+    "rep": 0,
+    "qid": "mtw_members",
+    "answer": "The members of The Mountain & The Wolf are Michael Bosworth, Mark Heaps, Jack Schultz, and Mike Hall.",
+    "recall": {
+      "heaps": true,
+      "schultz": true,
+      "hall": true
+    },
+    "shown": {
+      "heaps": true,
+      "schultz": true,
+      "hall": true
+    },
+    "abstained": false,
+    "memory_chars": 9534,
+    "frames": 10,
+    "walk_frames": 7,
+    "target_present": true,
+    "target_source": "direct_match",
+    "generation_ms": 8288.1
+  },
+  {
+    "arm": 7,
+    "rep": 0,
+    "qid": "mtw_genre",
+    "answer": "Based on the information available, the project **The Mountain & The Wolf** is an indie alternative rock band that was formed in Austin, Texas, in late 2024. Their album is expected to be released in **January 2027**.",
+    "recall": {
+      "genre": true,
+      "release": true
+    },
+    "shown": {
+      "genre": true,
+      "release": true
+    },
+    "abstained": false,
+    "memory_chars": 6014,
+    "frames": 10,
+    "walk_frames": 7,
+    "target_present": true,
+    "target_source": "graph_hop_2",
+    "generation_ms": 7091.5
+  },
+  {
+    "arm": 7,
+    "rep": 0,
+    "qid": "groover",
+    "answer": "Groover is a music playlist service and promotion platform designed to help artists get their music placed on Spotify playlists, radio stations, and blogs. It connects musicians with curators who manage these platforms. As of 2026, Groover has grown into a significant player in the digital music marketing space, boasting thousands of monthly active users (both artists and curators) and partnerships with major media outlets. While exact subscriber numbers aren't publicly disclosed, it's widely regarded as one of the leading services for organic playlist pitching alongside alternatives like SubmitHub or PlaylistPush.",
+    "recall": {
+      "curators": false,
+      "professionals": false,
+      "countries": false
+    },
+    "shown": {
+      "curators": false,
+      "professionals": false,
+      "countries": false
+    },
+    "abstained": false,
+    "memory_chars": 4290,
+    "frames": 7,
+    "walk_frames": 4,
+    "target_present": false,
+    "target_source": null,
+    "generation_ms": 6698.3
+  },
+  {
+    "arm": 7,
+    "rep": 0,
+    "qid": "walking_cow",
+    "answer": "\"Walking the Cow\" is a song by Daniel Johnston, released on January 22, 2025. It's currently the top song on Apple Music with 622 streams and an average of 3 daily listeners. The track was inspired by Daniel Johnston and is part of an album that has been marked as \"done.\"",
+    "recall": {
+      "artist": true,
+      "date": true
+    },
+    "shown": {
+      "artist": true,
+      "date": true
+    },
+    "abstained": false,
+    "memory_chars": 9733,
+    "frames": 10,
+    "walk_frames": 7,
+    "target_present": true,
+    "target_source": "direct_match",
+    "generation_ms": 10103.7
+  },
+  {
+    "arm": 7,
+    "rep": 0,
+    "qid": "jason_lee",
+    "answer": "Jason Lee skated **Goofy**. He retired from professional skateboarding in **1995**.",
+    "recall": {
+      "stance": true,
+      "retired": true
+    },
+    "shown": {
+      "stance": true,
+      "retired": true
+    },
+    "abstained": false,
+    "memory_chars": 5435,
+    "frames": 10,
+    "walk_frames": 7,
+    "target_present": true,
+    "target_source": "direct_match",
+    "generation_ms": 4721.3
+  },
+  {
+    "arm": 7,
+    "rep": 0,
+    "qid": "festivaltopia",
+    "answer": "Festivaltopia is described as \"Your Go-To Resource for Music Festivals.\" It operates at the URL https://festivaltopia.com/ and serves as a resource for information about music festivals.",
+    "recall": {
+      "tagline": true,
+      "url": true
+    },
+    "shown": {
+      "tagline": true,
+      "url": true
+    },
+    "abstained": false,
+    "memory_chars": 9796,
+    "frames": 10,
+    "walk_frames": 7,
+    "target_present": true,
+    "target_source": "direct_match",
+    "generation_ms": 10325.3
+  },
+  {
+    "arm": 7,
+    "rep": 0,
+    "qid": "why_not_label",
+    "answer": "Based on my memory, the album *Why Not* is released under the label **Friend Music Records**. The lead single, also titled \"Why Not\", was released on **September 24, 2026** (which is in the past relative to today's date of September 27, 2026).",
+    "recall": {
+      "label": true
+    },
+    "shown": {
+      "label": true
+    },
+    "abstained": false,
+    "memory_chars": 6249,
+    "frames": 10,
+    "walk_frames": 7,
+    "target_present": true,
+    "target_source": "graph_hop_1",
+    "generation_ms": 7438.8
+  },
+  {
+    "arm": 7,
+    "rep": 0,
+    "qid": "studio",
+    "answer": "Your home studio is located at Logic X. According to your memory, it's in Austin, Texas.",
+    "recall": {
+      "city": true
+    },
+    "shown": {
+      "city": true
+    },
+    "abstained": false,
+    "memory_chars": 9350,
+    "frames": 10,
+    "walk_frames": 7,
+    "target_present": false,
+    "target_source": null,
+    "generation_ms": 9595.0
+  },
+  {
+    "arm": 7,
+    "rep": 1,
+    "qid": "cbs_hq",
+    "answer": "CBS News is headquartered at 524 West 57th Street in New York City, New York, 10019.",
+    "recall": {
+      "street": true
+    },
+    "shown": {
+      "street": true
+    },
+    "abstained": false,
+    "memory_chars": 5126,
+    "frames": 10,
+    "walk_frames": 7,
+    "target_present": true,
+    "target_source": "direct_match",
+    "generation_ms": 1018.2
+  },
+  {
+    "arm": 7,
+    "rep": 1,
+    "qid": "perseverance",
+    "answer": "On January 31, 2026, NASA's Perseverance rover completed its first AI-planned drive on Mars.",
+    "recall": {
+      "achievement": true,
+      "when": true
+    },
+    "shown": {
+      "achievement": true,
+      "when": true
+    },
+    "abstained": false,
+    "memory_chars": 5632,
+    "frames": 10,
+    "walk_frames": 7,
+    "target_present": false,
+    "target_source": null,
+    "generation_ms": 950.7
+  },
+  {
+    "arm": 7,
+    "rep": 1,
+    "qid": "penn_state",
+    "answer": "Penn State researchers are developing a shape-shifting smart hydrogel inspired by octopus skin, capable of changing its appearance, texture, and shape on command.",
+    "recall": {
+      "material": true,
+      "inspiration": true,
+      "property": true
+    },
+    "shown": {
+      "material": true,
+      "inspiration": true,
+      "property": true
+    },
+    "abstained": false,
+    "memory_chars": 6090,
+    "frames": 10,
+    "walk_frames": 7,
+    "target_present": true,
+    "target_source": "direct_match",
+    "generation_ms": 934.1
+  },
+  {
+    "arm": 7,
+    "rep": 1,
+    "qid": "mtw_members",
+    "answer": "The members of **The Mountain & The Wolf** are:\n\n- Michael Bosworth  \n- Mark Heaps  \n- Jack Schultz  \n- Mike Hall  \n\nThey are based in Austin, Texas, and play indie alternative rock. The band was formed in late 2024 and is set to release their album *Why Not* (titled *The Mountain & The Wolf*) in early 2027.",
+    "recall": {
+      "heaps": true,
+      "schultz": true,
+      "hall": true
+    },
+    "shown": {
+      "heaps": true,
+      "schultz": true,
+      "hall": true
+    },
+    "abstained": false,
+    "memory_chars": 9534,
+    "frames": 10,
+    "walk_frames": 7,
+    "target_present": true,
+    "target_source": "direct_match",
+    "generation_ms": 2434.3
+  },
+  {
+    "arm": 7,
+    "rep": 1,
+    "qid": "mtw_genre",
+    "answer": "\"The Mountain & The Wolf\" is an indie alternative rock album. It is scheduled for a joint release in January 2027.",
+    "recall": {
+      "genre": true,
+      "release": true
+    },
+    "shown": {
+      "genre": true,
+      "release": true
+    },
+    "abstained": false,
+    "memory_chars": 6014,
+    "frames": 10,
+    "walk_frames": 7,
+    "target_present": true,
+    "target_source": "graph_hop_2",
+    "generation_ms": 938.9
+  },
+  {
+    "arm": 7,
+    "rep": 1,
+    "qid": "groover",
+    "answer": "Groover is a music playlist promotion service that connects artists with curators on platforms like Spotify. Based on the available information, it operates as a platform where users can submit their music to curated playlists through various campaign options (e.g., \"Solo Classic\"). While exact user counts or total playlist numbers aren't specified in my current memory, Groover is actively used by musicians seeking organic playlist placement and media coverage, suggesting it has a meaningful presence in the indie and alternative music promotion space.",
+    "recall": {
+      "curators": false,
+      "professionals": false,
+      "countries": false
+    },
+    "shown": {
+      "curators": false,
+      "professionals": false,
+      "countries": false
+    },
+    "abstained": false,
+    "memory_chars": 4290,
+    "frames": 7,
+    "walk_frames": 4,
+    "target_present": false,
+    "target_source": null,
+    "generation_ms": 2666.9
+  },
+  {
+    "arm": 7,
+    "rep": 1,
+    "qid": "walking_cow",
+    "answer": "\"Walking the Cow\" is a song by Daniel Johnston, released on January 22, 2025. It\u2019s listed as the top song on Apple Music and has an album status marked as \"done.\" The track has accumulated 622 streams with an average of 3 daily listeners. It appears to be associated with an album titled *Walking the Cow and Story of an Arist*. Let me know if you\u2019d like more details or help promoting it! \ud83d\udc2e\ud83c\udfb6",
+    "recall": {
+      "artist": true,
+      "date": true
+    },
+    "shown": {
+      "artist": true,
+      "date": true
+    },
+    "abstained": false,
+    "memory_chars": 9733,
+    "frames": 10,
+    "walk_frames": 7,
+    "target_present": true,
+    "target_source": "direct_match",
+    "generation_ms": 2832.4
+  },
+  {
+    "arm": 7,
+    "rep": 1,
+    "qid": "jason_lee",
+    "answer": "Jason Lee skated goofy and retired from professional skating in 1995.",
+    "recall": {
+      "stance": true,
+      "retired": true
+    },
+    "shown": {
+      "stance": true,
+      "retired": true
+    },
+    "abstained": false,
+    "memory_chars": 5435,
+    "frames": 10,
+    "walk_frames": 7,
+    "target_present": true,
+    "target_source": "direct_match",
+    "generation_ms": 647.2
+  },
+  {
+    "arm": 7,
+    "rep": 1,
+    "qid": "festivaltopia",
+    "answer": "Festivaltopia is a go-to resource for music festivals. Its website is https://festivaltopia.com/.",
+    "recall": {
+      "tagline": true,
+      "url": true
+    },
+    "shown": {
+      "tagline": true,
+      "url": true
+    },
+    "abstained": false,
+    "memory_chars": 9796,
+    "frames": 10,
+    "walk_frames": 7,
+    "target_present": true,
+    "target_source": "direct_match",
+    "generation_ms": 786.8
+  },
+  {
+    "arm": 7,
+    "rep": 1,
+    "qid": "why_not_label",
+    "answer": "Based on my memory, the album **Why Not** is released via **Friend Music Records**. The lead single, also titled **\"Why Not\"**, was released on **September 24, 2026**. The full album is scheduled for release in **November 2024** (though note that this date appears to be from an earlier timeline in the data, as we are currently in September 2026; there may be a discrepancy or future planning involved). The single \"Push\" is also mentioned with a release timing around early November.",
+    "recall": {
+      "label": true
+    },
+    "shown": {
+      "label": true
+    },
+    "abstained": false,
+    "memory_chars": 6249,
+    "frames": 10,
+    "walk_frames": 7,
+    "target_present": true,
+    "target_source": "graph_hop_1",
+    "generation_ms": 3159.1
+  },
+  {
+    "arm": 7,
+    "rep": 1,
+    "qid": "studio",
+    "answer": "Your home studio is located in Austin. This is based on the memory entry for \"5th Street Studio,\" which is associated with your music projects and explicitly lists Austin as its location. If \"logic_x\" (mentioned in your recent conversations) refers to a different specific setup, it might also be in Austin or another location like Logan, Iowa (your origin city), but Austin is the primary location tied to your current studio work. Let me know if you'd like more details about gear or projects there!",
+    "recall": {
+      "city": true
+    },
+    "shown": {
+      "city": true
+    },
+    "abstained": false,
+    "memory_chars": 9350,
+    "frames": 10,
+    "walk_frames": 7,
+    "target_present": false,
+    "target_source": null,
+    "generation_ms": 2828.9
+  },
+  {
+    "arm": 7,
+    "rep": 2,
+    "qid": "cbs_hq",
+    "answer": "CBS News is headquartered at 524 w 57th St, New York City, NY 10019.",
+    "recall": {
+      "street": true
+    },
+    "shown": {
+      "street": true
+    },
+    "abstained": false,
+    "memory_chars": 5126,
+    "frames": 10,
+    "walk_frames": 7,
+    "target_present": true,
+    "target_source": "direct_match",
+    "generation_ms": 898.8
+  },
+  {
+    "arm": 7,
+    "rep": 2,
+    "qid": "perseverance",
+    "answer": "On January 31, 2026, NASA's Perseverance rover completed the first drive on Mars that was planned entirely by artificial intelligence. This achievement demonstrated AI's ability to navigate the Martian surface autonomously.",
+    "recall": {
+      "achievement": false,
+      "when": true
+    },
+    "shown": {
+      "achievement": true,
+      "when": true
+    },
+    "abstained": false,
+    "memory_chars": 5632,
+    "frames": 10,
+    "walk_frames": 7,
+    "target_present": false,
+    "target_source": null,
+    "generation_ms": 1361.1
+  },
+  {
+    "arm": 7,
+    "rep": 2,
+    "qid": "penn_state",
+    "answer": "Penn State researchers are developing a shape-shifting smart hydrogel inspired by octopus skin. This material can change its appearance, texture, and shape on command.",
+    "recall": {
+      "material": true,
+      "inspiration": true,
+      "property": true
+    },
+    "shown": {
+      "material": true,
+      "inspiration": true,
+      "property": true
+    },
+    "abstained": false,
+    "memory_chars": 6090,
+    "frames": 10,
+    "walk_frames": 7,
+    "target_present": true,
+    "target_source": "direct_match",
+    "generation_ms": 957.8
+  },
+  {
+    "arm": 7,
+    "rep": 2,
+    "qid": "mtw_members",
+    "answer": "The members of **The Mountain & The Wolf** are Michael Bosworth, Mark Heaps, Jack Schultz, and Mike Hall. They formed the indie alternative rock band in Austin, Texas in late 2024.",
+    "recall": {
+      "heaps": true,
+      "schultz": true,
+      "hall": true
+    },
+    "shown": {
+      "heaps": true,
+      "schultz": true,
+      "hall": true
+    },
+    "abstained": false,
+    "memory_chars": 9534,
+    "frames": 10,
+    "walk_frames": 7,
+    "target_present": true,
+    "target_source": "direct_match",
+    "generation_ms": 1315.8
+  },
+  {
+    "arm": 7,
+    "rep": 2,
+    "qid": "mtw_genre",
+    "answer": "The Mountain & The Wolf is an indie alternative rock band. Their album is expected to be released in January 2027.",
+    "recall": {
+      "genre": true,
+      "release": true
+    },
+    "shown": {
+      "genre": true,
+      "release": true
+    },
+    "abstained": false,
+    "memory_chars": 6014,
+    "frames": 10,
+    "walk_frames": 7,
+    "target_present": true,
+    "target_source": "graph_hop_2",
+    "generation_ms": 829.7
+  },
+  {
+    "arm": 7,
+    "rep": 2,
+    "qid": "groover",
+    "answer": "Groover is a music playlist service designed to help artists promote their music to curators, blogs, radio stations, and playlists. It connects musicians with curators who can feature their tracks on platforms like Spotify, Apple Music, and other digital services.\n\nAs of 2026, Groover has grown into one of the leading independent music promotion platforms globally, serving thousands of artists and connecting them with hundreds of curated playlists and media outlets. While exact user numbers aren't always publicized, its reach spans multiple genres and regions, making it a significant player in the modern music industry for independent artists looking to gain visibility without relying solely on major label infrastructure.\n\nLet me know if you'd like more specific stats or examples! \ud83c\udfb5",
+    "recall": {
+      "curators": false,
+      "professionals": false,
+      "countries": false
+    },
+    "shown": {
+      "curators": false,
+      "professionals": false,
+      "countries": false
+    },
+    "abstained": false,
+    "memory_chars": 4290,
+    "frames": 7,
+    "walk_frames": 4,
+    "target_present": false,
+    "target_source": null,
+    "generation_ms": 4001.0
+  },
+  {
+    "arm": 7,
+    "rep": 2,
+    "qid": "walking_cow",
+    "answer": "\"Walking the Cow\" is a song by Daniel Johnston, released on January 22, 2025. It has become his top song on Apple Music with 622 streams and an average of 3 daily listeners as of late September 2026. The track is part of his discography but is noted as a distraction from his upcoming album project.",
+    "recall": {
+      "artist": true,
+      "date": true
+    },
+    "shown": {
+      "artist": true,
+      "date": true
+    },
+    "abstained": false,
+    "memory_chars": 9733,
+    "frames": 10,
+    "walk_frames": 7,
+    "target_present": true,
+    "target_source": "direct_match",
+    "generation_ms": 2203.4
+  },
+  {
+    "arm": 7,
+    "rep": 2,
+    "qid": "jason_lee",
+    "answer": "Jason Lee skated **Goofy**. He retired from professional skating in **1995**.",
+    "recall": {
+      "stance": true,
+      "retired": true
+    },
+    "shown": {
+      "stance": true,
+      "retired": true
+    },
+    "abstained": false,
+    "memory_chars": 5435,
+    "frames": 10,
+    "walk_frames": 7,
+    "target_present": true,
+    "target_source": "direct_match",
+    "generation_ms": 665.1
+  },
+  {
+    "arm": 7,
+    "rep": 2,
+    "qid": "festivaltopia",
+    "answer": "Festivaltopia is a resource website dedicated to music festivals. Its official URL is https://festivaltopia.com/. It serves as a go-to platform for information about these events.",
+    "recall": {
+      "tagline": false,
+      "url": true
+    },
+    "shown": {
+      "tagline": true,
+      "url": true
+    },
+    "abstained": false,
+    "memory_chars": 9796,
+    "frames": 10,
+    "walk_frames": 7,
+    "target_present": true,
+    "target_source": "direct_match",
+    "generation_ms": 1116.3
+  },
+  {
+    "arm": 7,
+    "rep": 2,
+    "qid": "why_not_label",
+    "answer": "The album *Why Not* is released on **Friend Music Records**. The lead single, titled \"Why Not,\" was released on **September 24, 2026** (as a single release pitch), with the full album coming out in November 2024 according to memory. However, given the current date is September 27, 2026, it seems there might be some confusion in the timeline within the memory or the single was indeed released earlier as planned. The single \"Why Not\" is set for release in September 2026, aligning with the current date context provided.",
+    "recall": {
+      "label": true
+    },
+    "shown": {
+      "label": true
+    },
+    "abstained": false,
+    "memory_chars": 6249,
+    "frames": 10,
+    "walk_frames": 7,
+    "target_present": true,
+    "target_source": "graph_hop_1",
+    "generation_ms": 3493.4
+  },
+  {
+    "arm": 7,
+    "rep": 2,
+    "qid": "studio",
+    "answer": "Your home studio is located at **logic_x**. (The specific street address isn't currently in memory, just that it's your home studio.)",
+    "recall": {
+      "city": false
+    },
+    "shown": {
+      "city": true
+    },
+    "abstained": false,
+    "memory_chars": 9350,
+    "frames": 10,
+    "walk_frames": 7,
+    "target_present": false,
+    "target_source": null,
+    "generation_ms": 886.9
+  }
+]

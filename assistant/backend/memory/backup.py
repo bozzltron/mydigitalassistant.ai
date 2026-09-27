@@ -16,7 +16,6 @@ a destructive import.
 import hashlib
 import json
 import secrets
-import shutil
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -32,6 +31,41 @@ from assistant.backend.db.sqlcipher import (
 def _derive_key(key: str) -> bytes:
     """Derive a 32-byte AES key from DB_KEY using HKDF-SHA256."""
     return hashlib.sha256(key.encode()).digest()
+
+
+def _drop_write_ahead_log(db_path: str | Path) -> None:
+    """Delete the write-ahead log sitting next to a database file.
+
+    SQLite replays ``<db>-wal`` over the database file it belongs to. Once that
+    file has been moved aside or overwritten, the log describes contents that no
+    longer exist, and replaying it silently undoes the restore. The log has to go
+    with the file it belonged to.
+    """
+    for suffix in ("-wal", "-shm"):
+        Path(f"{db_path}{suffix}").unlink(missing_ok=True)
+
+
+def _snapshot_db_bytes(db_path: str | Path) -> bytes:
+    """Read a consistent, self-contained copy of a database as bytes.
+
+    A raw read of the file is not a snapshot: recent writes live in the
+    write-ahead log, and connections are kept warm, so that log is usually not
+    empty. Going through SQLite's backup API gives the merged, checkpointed
+    contents, and lets SQLite handle the encryption context.
+    """
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        snapshot = Path(tmp) / "snapshot.db"
+        src = connect(str(db_path))
+        dst = connect(str(snapshot))
+        try:
+            with dst:
+                src.backup(dst)
+        finally:
+            src.close()
+            dst.close()
+        return snapshot.read_bytes()
 
 
 def _key_id(key: str) -> str:
@@ -185,6 +219,9 @@ async def restore_encrypted_backup(src_path: str | Path, *, db_path: str | None 
     db_path = db_path or settings.database_path
     backup_db_path = db_path + ".pre-restore"
     Path(db_path).rename(backup_db_path)
+    # The log left behind belongs to the file that just moved aside; it must not
+    # be replayed over the fresh database init_db is about to create here.
+    _drop_write_ahead_log(db_path)
 
     try:
         from assistant.backend.db.schema import init_db
@@ -194,6 +231,9 @@ async def restore_encrypted_backup(src_path: str | Path, *, db_path: str | None 
         Path(backup_db_path).unlink()
     except Exception:
         if Path(backup_db_path).exists():
+            # Same hazard on the way back: the half-built database left its own
+            # log here, and that log is not ours to replay over the old file.
+            _drop_write_ahead_log(db_path)
             Path(backup_db_path).rename(db_path)
         raise
 
@@ -420,8 +460,9 @@ async def export_portable_brain(dest_path: str | Path, *, db_path: str | None = 
             "Set DB_KEY in .env first."
         )
 
-    # Read the raw SQLCipher file as binary
-    raw_bytes = Path(db_path_str).read_bytes()
+    # A merged snapshot, not a raw read of the file: writes still in the
+    # write-ahead log are part of the brain, and would otherwise be left behind.
+    raw_bytes = _snapshot_db_bytes(db_path_str)
 
     envelope = _encrypt_sqlcipher_dump(raw_bytes, settings.db_key)
 
@@ -513,18 +554,24 @@ async def restore_portable_brain(
     live_db = Path(db_path_str)
 
     # Atomic swap: write to temp, rename on top of live DB.
-    # Use copy for the pre-restore backup so live_db is preserved independently.
+    # Snapshot for the pre-restore backup so live_db is preserved independently —
+    # and completely: a raw copy of the file would leave the log behind.
     tmp_path = live_db.with_suffix(live_db.suffix + ".tmp")
     pre_restore_backup_path = Path(db_path_str + ".pre-portable-restore")
     try:
         if live_db.exists():
-            shutil.copy2(live_db, pre_restore_backup_path)
+            pre_restore_backup_path.write_bytes(_snapshot_db_bytes(db_path_str))
         tmp_path.write_bytes(raw_bytes)
         tmp_path.rename(live_db)
     except Exception:
         if tmp_path.exists():
             tmp_path.unlink()
         raise
+
+    # The replaced database's write-ahead log describes the *old* contents, and
+    # SQLite replays it over the file that just took its place. It has to go with
+    # the file it belonged to.
+    _drop_write_ahead_log(db_path_str)
 
     return {
         "restored_from": str(src),

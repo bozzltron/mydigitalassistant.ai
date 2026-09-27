@@ -1,0 +1,243 @@
+{
+  "experiment": "walk_value",
+  "db_path": "/work/assistant.db",
+  "user_id": 1,
+  "arms": [
+    0,
+    7
+  ],
+  "replicates": 3,
+  "seed": "20260927",
+  "temperature": 0.7,
+  "think": false,
+  "n_queries": 11,
+  "memory_char_budget": 9935,
+  "retrieval": {
+    "0": {
+      "cbs_hq": {
+        "retrieval_ms": 1760.4,
+        "target_present": true,
+        "target_source": "direct_match",
+        "frames": 3,
+        "walk_frames": 0
+      },
+      "perseverance": {
+        "retrieval_ms": 672.6,
+        "target_present": false,
+        "target_source": null,
+        "frames": 3,
+        "walk_frames": 0
+      },
+      "penn_state": {
+        "retrieval_ms": 618.5,
+        "target_present": true,
+        "target_source": "direct_match",
+        "frames": 3,
+        "walk_frames": 0
+      },
+      "mtw_members": {
+        "retrieval_ms": 727.8,
+        "target_present": true,
+        "target_source": "direct_match",
+        "frames": 3,
+        "walk_frames": 0
+      },
+      "mtw_genre": {
+        "retrieval_ms": 597.9,
+        "target_present": false,
+        "target_source": null,
+        "frames": 3,
+        "walk_frames": 0
+      },
+      "groover": {
+        "retrieval_ms": 674.2,
+        "target_present": false,
+        "target_source": null,
+        "frames": 3,
+        "walk_frames": 0
+      },
+      "walking_cow": {
+        "retrieval_ms": 676.4,
+        "target_present": true,
+        "target_source": "direct_match",
+        "frames": 3,
+        "walk_frames": 0
+      },
+      "jason_lee": {
+        "retrieval_ms": 438.2,
+        "target_present": true,
+        "target_source": "direct_match",
+        "frames": 3,
+        "walk_frames": 0
+      },
+      "festivaltopia": {
+        "retrieval_ms": 658.9,
+        "target_present": true,
+        "target_source": "direct_match",
+        "frames": 3,
+        "walk_frames": 0
+      },
+      "why_not_label": {
+        "retrieval_ms": 685.2,
+        "target_present": false,
+        "target_source": null,
+        "frames": 3,
+        "walk_frames": 0
+      },
+      "studio": {
+        "retrieval_ms": 606.3,
+        "target_present": false,
+        "target_source": null,
+        "frames": 3,
+        "walk_frames": 0
+      }
+    },
+    "7": {
+      "cbs_hq": {
+        "retrieval_ms": 435.5,
+        "target_present": true,
+        "target_source": "direct_match",
+        "frames": 10,
+        "walk_frames": 7
+      },
+      "perseverance": {
+        "retrieval_ms": 535.5,
+        "target_present": false,
+        "target_source": null,
+        "frames": 10,
+        "walk_frames": 7
+      },
+      "penn_state": {
+        "retrieval_ms": 511.0,
+        "target_present": true,
+        "target_source": "direct_match",
+        "frames": 10,
+        "walk_frames": 7
+      },
+      "mtw_members": {
+        "retrieval_ms": 619.6,
+        "target_present": true,
+        "target_source": "direct_match",
+        "frames": 10,
+        "walk_frames": 7
+      },
+      "mtw_genre": {
+        "retrieval_ms": 502.0,
+        "target_present": true,
+        "target_source": "graph_hop_2",
+        "frames": 10,
+        "walk_frames": 7
+      },
+      "groover": {
+        "retrieval_ms": 578.2,
+        "target_present": false,
+        "target_source": null,
+        "frames": 7,
+        "walk_frames": 4
+      },
+      "walking_cow": {
+        "retrieval_ms": 714.0,
+        "target_present": true,
+        "target_source": "direct_match",
+        "frames": 10,
+        "walk_frames": 7
+      },
+      "jason_lee": {
+        "retrieval_ms": 407.9,
+        "target_present": true,
+        "target_source": "direct_match",
+        "frames": 10,
+        "walk_frames": 7
+      },
+      "festivaltopia": {
+        "retrieval_ms": 667.4,
+        "target_present": true,
+        "target_source": "direct_match",
+        "frames": 10,
+        "walk_frames": 7
+      },
+      "why_not_label": {
+        "retrieval_ms": 683.5,
+        "target_present": true,
+        "target_source": "graph_hop_1",
+        "frames": 10,
+        "walk_frames": 7
+      },
+      "studio": {
+        "retrieval_ms": 591.9,
+        "target_present": false,
+        "target_source": null,
+        "frames": 10,
+        "walk_frames": 7
+      }
+    }
+  },
+  "summary": {
+    "0": {
+      "recall": 0.6667,
+      "recall_per_replicate": [
+        0.682,
+        0.682,
+        0.636
+      ],
+      "n_fact_observations": 66,
+      "recall_given_shown": 0.9167,
+      "n_shown": 48,
+      "recall_given_hidden": 0.0,
+      "n_hidden": 18,
+      "abstention": 0.0303,
+      "mean_frames": 3.0,
+      "mean_walk_frames": 0.0,
+      "target_present_rate": 0.5455,
+      "target_via_walk_rate": 0.0,
+      "generation_ms_p50": 2475.4,
+      "target_via_walk_queries": [],
+      "target_via_walk_hops": {}
+    },
+    "7": {
+      "recall": 0.803,
+      "recall_per_replicate": [
+        0.818,
+        0.864,
+        0.727
+      ],
+      "n_fact_observations": 66,
+      "recall_given_shown": 0.9298,
+      "n_shown": 57,
+      "recall_given_hidden": 0.0,
+      "n_hidden": 9,
+      "abstention": 0.0,
+      "mean_frames": 9.73,
+      "mean_walk_frames": 6.73,
+      "target_present_rate": 0.7273,
+      "target_via_walk_rate": 0.1818,
+      "generation_ms_p50": 2666.9,
+      "target_via_walk_queries": [
+        "mtw_genre",
+        "why_not_label"
+      ],
+      "target_via_walk_hops": {
+        "graph_hop_2": 1,
+        "graph_hop_1": 1
+      }
+    }
+  },
+  "db_digest_before": {
+    "frames": 2058,
+    "slots": 2891,
+    "associations": 1873,
+    "episodes": 2307,
+    "slot_history": 8819,
+    "conflicts": 3775
+  },
+  "db_digest_after": {
+    "frames": 2058,
+    "slots": 2891,
+    "associations": 1873,
+    "episodes": 2307,
+    "slot_history": 8819,
+    "conflicts": 3775
+  },
+  "db_mutated": {},
+  "summary_recomputed_note": "target_present_rate and target_via_walk_rate recomputed from the stored per-query retrieval data after a metrics bug was found: the first pass counted only graph_hop_1 and missed a graph_hop_2 discovery, undercounting walk-supplied targets as 1/11 instead of 2/11. Both fields are a pure function of result.json[\"retrieval\"]; no generation was re-run, so recall, abstention and latency are the original run's values."
+}

@@ -1,7 +1,10 @@
+import asyncio
 import json
 import logging
 import re
 import shutil
+import threading
+import weakref
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -43,6 +46,67 @@ CHUNK_MIN_SLOTS = 6
 # twice (from_ and to_), which is why this is not simply 999.
 _BATCH_CHUNK = 400
 
+# How many warm connections a store keeps. A connection is not the expensive
+# part — SQLCipher derives the key lazily, on the first *read* of a fresh
+# connection: measured at 57ms for a frame lookup on a fresh connection against
+# 0.07ms on a warm one, while open-and-close with no read costs 0.6ms. A turn
+# issues a dozen-plus store calls, so paying that per call dominated retrieval
+# and it did not get better as the brain grew. Keep a few instead.
+#
+# More than one so a long housekeeping write (consolidation, GC) does not make
+# live chat reads queue behind a single connection's worker thread. This is a
+# cache, not a queue: a checkout that finds the pool empty opens a private
+# connection rather than waiting, so a nested or deeply-reentrant store call
+# degrades to the old open-per-call cost instead of deadlocking.
+_POOL_SIZE = 3
+
+# Every connection this module has opened and not yet closed, so nothing can
+# wedge process exit. aiosqlite runs each connection on a non-daemon thread, and
+# CPython joins non-daemon threads from inside threading._shutdown — after the
+# atexit handlers but *before* the join completes, a live connection hangs the
+# process rather than merely leaking. This registry is what makes the shutdown
+# hook total: it is keyed on the connection rather than on the store that
+# borrowed it, so a pool whose owner has been collected and a connection still
+# checked out are both covered, whereas tracking stores left both to a finalizer
+# that could already have run. Weak, so a connection is still collectable — and
+# aiosqlite's own __del__ stops the thread when one is dropped without being
+# closed.
+_live_conns: "weakref.WeakSet[aiosqlite.Connection]" = weakref.WeakSet()
+
+
+def _force_close(db: aiosqlite.Connection) -> None:
+    """Close a connection without awaiting it.
+
+    `stop()` closes the sqlite handle on the worker thread and ends it, which is
+    what is left when there is no loop to await on — a finished test, a CLI run,
+    interpreter shutdown — and it also clears aiosqlite's "deleted before being
+    closed" ResourceWarning, which fires only if the handle is still open.
+    """
+    try:
+        db.stop()
+    except Exception as exc:
+        logger.debug("Abandoning a DB connection failed: %s", exc)
+
+
+def _abandon(conns: list[aiosqlite.Connection]) -> None:
+    """Abandon every connection in a pool list and empty it.
+
+    Module-level and list-taking so a store can register it as its own
+    finalizer: a finalizer must not hold a reference to the object it watches,
+    or the object could never be collected.
+    """
+    while conns:
+        _force_close(conns.pop())
+
+
+def _close_pools_at_exit() -> None:
+    while _live_conns:
+        _force_close(_live_conns.pop())
+
+
+if hasattr(threading, "_register_atexit"):
+    threading._register_atexit(_close_pools_at_exit)
+
 
 def _parse_iso_ts(value: str | None) -> datetime | None:
     """Parse an ISO timestamp, tolerating Z suffix and missing offset.
@@ -64,20 +128,113 @@ def _parse_iso_ts(value: str | None) -> datetime | None:
 class MemoryStore:
     def __init__(self, db_path: str):
         self.db_path = db_path
+        # Idle warm connections, and the event loop they belong to. A connection
+        # is only usable by the loop that opened it. The list object is never
+        # rebound, so the finalizer below always watches the live one.
+        self._pool: list[aiosqlite.Connection] = []
+        self._pool_loop: asyncio.AbstractEventLoop | None = None
+        # A store that is collected while it still holds connections would
+        # otherwise strand their worker threads, and interpreter shutdown joins
+        # those before finalizers that are already too late to matter. Runs
+        # whichever comes first: this, or the exit hook above.
+        self._finalizer = weakref.finalize(self, _abandon, self._pool)
 
-    @asynccontextmanager
-    async def _connect(self):
-        """Open a DB connection with sqlite-vec extension loaded."""
+    async def _open(self) -> aiosqlite.Connection:
+        """Open a connection with the pragmas and extension every caller needs."""
         db = await aiosqlite_connect(self.db_path)
+        _live_conns.add(db)
         await db.execute("PRAGMA foreign_keys = ON")
         # Housekeeping (consolidation/GC) shares this file with live chat;
         # wait for the write lock instead of failing after the 5s default.
         await db.execute("PRAGMA busy_timeout = 15000")
         await _load_sqlite_vec(db)
+        return db
+
+    async def _acquire(self) -> aiosqlite.Connection:
+        """Check out a connection, warm if one is free.
+
+        A checkout that finds the pool empty opens a private connection rather
+        than waiting, so a nested or deeply-reentrant store call costs what it
+        used to instead of deadlocking. `_release` decides what to keep.
+        """
+        loop = asyncio.get_running_loop()
+        if self._pool_loop is not loop:
+            # A worker thread from a finished loop would never answer another
+            # await, so connections left over from one are dropped, not reused.
+            self._abandon_pool()
+            self._pool_loop = loop
+        if self._pool:
+            return self._pool.pop()
+        return await self._open()
+
+    def _release(self, db: aiosqlite.Connection) -> None:
+        """Return a settled connection to the pool, or drop it if there is no room."""
+        if self._pool_loop is asyncio.get_running_loop() and len(self._pool) < _POOL_SIZE:
+            self._pool.append(db)
+            return
+        _force_close(db)
+
+    async def _settle(self, db: aiosqlite.Connection) -> bool:
+        """Roll back anything uncommitted; report whether the connection is reusable.
+
+        A connection that has been closed has always discarded uncommitted work,
+        so a pooled one has to do it explicitly — otherwise a write that raised
+        would hold the write lock and leak its rows into the next borrower.
+        """
+        try:
+            if db.in_transaction:
+                await db.rollback()
+            return True
+        except Exception as exc:
+            logger.warning("Dropping a pooled connection that would not settle: %s", exc)
+            return False
+
+    @staticmethod
+    async def _close_one(db: aiosqlite.Connection) -> None:
+        try:
+            await db.close()
+        except Exception as exc:
+            # A connection with an unfinalized statement refuses to close; stop()
+            # ends its worker thread anyway, which is what we need from here.
+            logger.debug("Closing a DB connection failed (%s); abandoning it", exc)
+            _force_close(db)
+        _live_conns.discard(db)
+
+    def _abandon_pool(self) -> None:
+        """Drop every pooled connection without awaiting, and forget the loop."""
+        _abandon(self._pool)
+        self._pool_loop = None
+
+    async def close(self) -> None:
+        """Close every pooled connection, draining each one. Idempotent.
+
+        Call this when the store is finished with, and *before* replacing the
+        database file underneath it. Two reasons, both about what SQLite does when
+        a connection closes: it checkpoints the write-ahead log into the main
+        file and deletes it, so a connection left open keeps serving the pages it
+        has already read, and replays the pre-replace log over whatever file
+        replaced the database.
+        """
+        pool, self._pool_loop = self._pool, None
+        self._pool.clear()
+        for db in pool:
+            await self._close_one(db)
+
+    @asynccontextmanager
+    async def _connect(self):
+        """Yield a DB connection, reusing a warm one when the pool has one free.
+
+        The contract for callers is unchanged: a connection with foreign keys on,
+        a busy timeout, and sqlite-vec loaded.
+        """
+        db = await self._acquire()
         try:
             yield db
         finally:
-            await db.close()
+            if await self._settle(db):
+                self._release(db)
+            else:
+                await self._close_one(db)
 
     # Users
     async def create_user(self, name: str) -> User:

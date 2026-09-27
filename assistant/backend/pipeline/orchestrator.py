@@ -16,7 +16,11 @@ import httpx
 from pydantic import BaseModel
 
 from assistant.backend.config import settings
-from assistant.backend.memory.retrieval import Retriever, format_memory_context
+from assistant.backend.memory.retrieval import (
+    MemoryContext,
+    Retriever,
+    format_memory_context,
+)
 from assistant.backend.memory.store import MemoryStore
 from assistant.backend.pipeline.llm_client import (
     ChatMessage,
@@ -429,6 +433,71 @@ class Orchestrator:
             - system_prompt_overhead(task_type, plan_instructions, self_context),
         )
 
+    def _fit_prompt_to_cap(
+        self,
+        prompt_with_memory: str,
+        final_prompt: str,
+        memory_context: MemoryContext,
+        task_type: str,
+        plan_instructions: str,
+        self_context: str,
+    ) -> tuple[str, bool]:
+        """Re-render memory so the *finished* prompt fits, not just the prefix.
+
+        `_memory_char_budget` can only see `build_system_prompt`'s own overhead.
+        Everything appended after the memory section -- stored facts, a computed
+        result, search results -- lands outside that budget, so the prompt
+        overran the cap and the flat character cut fired. Because memory is
+        rendered near the end, that cut sliced through a frame: the frame kept its
+        "### name" header and so read as present to the model while the facts in
+        its tail were gone. The user saw an answer stop mid-sentence.
+
+        The suffix is the exact set of chars the appends added, so memory gives up
+        precisely that much and whole frames are dropped instead. No guessed
+        reserve, and it stays correct as the persona, plan and self context grow.
+
+        `prompt_with_memory` is the prompt as `build_system_prompt` returned it and
+        `final_prompt` is that plus the appends, so the suffix is the difference.
+        """
+        cap = settings.max_system_prompt_chars
+        if len(final_prompt) <= cap:
+            return final_prompt, False
+
+        suffix = final_prompt[len(prompt_with_memory) :]
+        budget = max(
+            0,
+            cap
+            - system_prompt_overhead(task_type, plan_instructions, self_context)
+            - len(suffix),
+        )
+        rebuilt = (
+            build_system_prompt(
+                memory_context=format_memory_context(memory_context, budget),
+                task_type=task_type,
+                planinstructions=plan_instructions,
+                self_context=self_context,
+            )
+            + suffix
+        )
+        if len(rebuilt) > cap:
+            # Only reachable when the appends alone exceed the cap. Genuinely a
+            # last resort, and the cut lands in the appended tail rather than in
+            # a frame.
+            logger.warning(
+                "System prompt truncated from %d to %d chars: post-memory content "
+                "alone exceeds the cap",
+                len(rebuilt),
+                cap,
+            )
+            return rebuilt[:cap] + "\n\n[... truncated ...]", True
+        logger.info(
+            "Refitted memory section by %d chars to fit the prompt cap "
+            "(appended %d chars after memory)",
+            len(final_prompt) - len(rebuilt),
+            len(suffix),
+        )
+        return rebuilt, False
+
     async def chat(
         self,
         request: ChatRequest,
@@ -701,6 +770,9 @@ class Orchestrator:
             planinstructions=plan_instructions,
             self_context=self_context,
         )
+        # Everything appended below lands outside _memory_char_budget's view, so
+        # keep the pre-append prompt to measure the suffix against.
+        prompt_with_memory = system_prompt
 
         # DEBUG: Log system prompt for file tools visibility
         logger.info("DEBUG system_prompt contains file tools guidance: %s", 
@@ -1019,15 +1091,14 @@ class Orchestrator:
                 history_messages.append(ChatMessage(role=ep.role, content=ep.content))
 
         # Hard limit on system prompt to prevent OOM/timeout
-        max_system_prompt_chars = settings.max_system_prompt_chars
-        truncated = False
-        if len(system_prompt) > max_system_prompt_chars:
-            logger.warning(
-                "System prompt truncated from %d to %d chars",
-                len(system_prompt), max_system_prompt_chars
-            )
-            system_prompt = system_prompt[:max_system_prompt_chars] + "\n\n[... truncated ...]"
-            truncated = True
+        system_prompt, truncated = self._fit_prompt_to_cap(
+            prompt_with_memory,
+            system_prompt,
+            memory_context,
+            task_type.value,
+            plan_instructions,
+            self_context,
+        )
 
         # Structured logging for context transparency
         logger.info(
@@ -1482,6 +1553,7 @@ class Orchestrator:
             planinstructions=plan_instructions,
             self_context=self_context,
         )
+        prompt_with_memory = system_prompt
 
         search_results: list[SearchResult] = []
         if plan.search_needed:
@@ -1528,15 +1600,14 @@ class Orchestrator:
                 except Exception as e:
                     logger.error("Search extraction failed: %s", e)
 
-        max_system_prompt_chars = settings.max_system_prompt_chars
-        truncated = False
-        if len(system_prompt) > max_system_prompt_chars:
-            logger.warning(
-                "System prompt truncated from %d to %d chars",
-                len(system_prompt), max_system_prompt_chars
-            )
-            system_prompt = system_prompt[:max_system_prompt_chars] + "\n\n[... truncated ...]"
-            truncated = True
+        system_prompt, truncated = self._fit_prompt_to_cap(
+            prompt_with_memory,
+            system_prompt,
+            memory_context,
+            "functional",
+            plan_instructions,
+            self_context,
+        )
 
         logger.info(
             "context_stats: prompt_chars=%d frames=%d episodes=%d search_results=%d truncated=%s",
@@ -1744,6 +1815,7 @@ class Orchestrator:
             planinstructions=plan_instructions,
             self_context=self_context,
         )
+        prompt_with_memory = system_prompt
 
         if stored_slots:
             lines = [f"- {s['frame_name']}.{s['key']} = {s['value']}" for s in stored_slots]
@@ -1991,15 +2063,14 @@ class Orchestrator:
                 history_messages.append(ChatMessage(role=ep.role, content=ep.content))
 
         # Hard limit on system prompt
-        max_system_prompt_chars = settings.max_system_prompt_chars
-        truncated = False
-        if len(system_prompt) > max_system_prompt_chars:
-            logger.warning(
-                "System prompt truncated from %d to %d chars",
-                len(system_prompt), max_system_prompt_chars
-            )
-            system_prompt = system_prompt[:max_system_prompt_chars] + "\n\n[... truncated ...]"
-            truncated = True
+        system_prompt, truncated = self._fit_prompt_to_cap(
+            prompt_with_memory,
+            system_prompt,
+            memory_context,
+            task_type.value,
+            plan_instructions,
+            self_context,
+        )
 
         # Structured logging
         logger.info(

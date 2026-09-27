@@ -1,7 +1,6 @@
 import asyncio
 import json
 import logging
-import shutil
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -276,6 +275,9 @@ async def lifespan(app: FastAPI):
 
     await llm_client.close()
     await search_tool.close()
+    # Before the loop that owns them goes away, or the pooled connections'
+    # worker threads would hold up interpreter shutdown.
+    await store.close()
     _state.clear()
 
 
@@ -1201,7 +1203,23 @@ async def db_restore(backup_filename: str, store: MemoryStore = _Depends(get_sto
     if not backup_path.exists():
         raise HTTPException(status_code=404, detail=f"Backup not found: {backup_filename}")
 
-    shutil.copy2(backup_path, db_path)
+    # Copy through SQLite's backup API rather than overwriting the file. Replacing
+    # the file leaves the write-ahead log of the replaced database behind, and
+    # SQLite replays that log over the file that took its place — so the restore
+    # silently undoes itself and the restored database will not even open. Going
+    # through SQLite also gets the locking and the encryption context right, and
+    # leaves open connections seeing the restored contents immediately.
+    src = connect(str(backup_path))
+    dst = connect(str(db_path))
+    try:
+        with dst:
+            src.backup(dst)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Restore failed: {exc}") from exc
+    finally:
+        src.close()
+        dst.close()
+
     return {
         "status": "ok",
         "restored_from": backup_filename,
@@ -2219,18 +2237,18 @@ async def search_files(
     file_type: str | None = None,
     user_id: int = 1,
     store: MemoryStore = _Depends(get_store),
+    orch: Orchestrator = _Depends(get_orchestrator),
 ):
-    """Search file content by query and optional type filter."""
-    # Search similar frames using embeddings
-    # First, we need to get the query embedding
-    from assistant.backend.config import settings
-    from assistant.backend.pipeline.llm_client import OllamaClient
+    """Search uploaded files by query, optionally filtered to one file type."""
+    query = query.strip()
+    if not query:
+        raise HTTPException(status_code=400, detail="Query cannot be empty")
 
-    client = OllamaClient(
-        url=settings.ollama_url,
-        model=settings.embedding_model,
-    )
-    embedding = await client.embed_query(query)
+    # The app-wide client, not a fresh one per request: it carries the embedding
+    # cache and a warm HTTP pool. (This endpoint used to build its own client
+    # with keyword arguments OllamaClient does not take, and call a method that
+    # does not exist — every request was a 500.)
+    embedding = await orch.llm_client.embed_one(query)
 
     results = await store.search_similar_frames(
         embedding=embedding,
@@ -2240,21 +2258,27 @@ async def search_files(
         min_distance=0.3,
     )
 
+    # Accept "txt" and ".txt" alike; uploads store the extension undotted.
+    wanted_ext = file_type.lstrip(".").lower() if file_type else None
+
     frames = []
     for frame, slots, _similarity in results:
-        # Filter by file type if specified
-        if file_type:
-            # Check if frame has file_ext slot
-            file_ext_slot = next(
-                (s for s in slots if s.key == "file_ext"), None
-            )
-            if file_ext_slot and file_ext_slot.value != file_type:
-                continue
+        # search_similar_frames searches every frame. A "search my files" result
+        # that can return a person frame is wrong, and a frame with no file_ext
+        # used to slip through the type filter — so membership is decided by the
+        # slot, not assumed.
+        by_key = {s.key: s.value for s in slots}
+        ext = by_key.get("file_ext")
+        if not ext:
+            continue
+        if wanted_ext and ext.lower() != wanted_ext:
+            continue
 
         frames.append(
             FileFrameResponse(
                 id=frame.id,
                 name=frame.name,
+                file_name=by_key.get("file_name"),
                 type=frame.type,
                 confidence=frame.confidence,
                 essential=frame.essential,

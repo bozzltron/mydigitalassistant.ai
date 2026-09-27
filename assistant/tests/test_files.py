@@ -470,6 +470,105 @@ class TestFileViewerBackend:
             assert assoc_count == 0, "part_of associations should be removed"
 
 
+class TestFileSearchEndpoint:
+    """`GET /files/search` — semantic search over uploaded files.
+
+    Regression: the endpoint constructed its own `OllamaClient(url=..., model=...)`
+    and then called a nonexistent `embed_query`, so *every* request raised
+    TypeError → 500. Nothing in the UI calls this endpoint, so the failure was
+    invisible. It also returned non-file frames and left `file_name` null.
+    """
+
+    async def _embed(self, store, stub_llm, frame_id):
+        """Give a frame a vector under the model the endpoint searches with.
+
+        Uploads do not embed inline (consolidation tops up misses), so without
+        this every query matches nothing and the test would pass vacuously.
+        """
+        stored = await store.embed_frames(
+            [frame_id], stub_llm.embed_one, settings.embedding_model
+        )
+        assert stored == 1, "test setup: frame should have one stored vector"
+
+    @pytest.mark.asyncio
+    async def test_search_finds_uploaded_file(self, client, store, stub_llm, tmp_path):
+        test_file = tmp_path / "guitar_lesson.txt"
+        test_file.write_text("My guitar practice log: alternate picking drills.")
+
+        with open(test_file, "rb") as f:
+            resp = client.post(
+                "/files/upload",
+                files={"file": ("guitar_lesson.txt", f.read(), "text/plain")},
+            )
+        assert resp.status_code == 200
+        frame_id = resp.json()["frame_id"]
+        await self._embed(store, stub_llm, frame_id)
+
+        found = client.get("/files/search", params={"query": "guitar"})
+
+        assert found.status_code == 200, found.text
+        body = found.json()
+        assert body["query"] == "guitar"
+        assert [f["id"] for f in body["frames"]] == [frame_id]
+        # The user's own filename, not the internal frame handle.
+        assert body["frames"][0]["file_name"] == "guitar_lesson.txt"
+
+    @pytest.mark.asyncio
+    async def test_search_returns_only_files(self, client, store, stub_llm, tmp_path):
+        """A memory frame that matches the query is not a file.
+
+        It shares the embedding cluster on purpose, so only a file-only filter
+        keeps it out of a "search my files" result.
+        """
+        test_file = tmp_path / "guitar_amp_notes.txt"
+        test_file.write_text("Notes about my guitar amp settings.")
+
+        with open(test_file, "rb") as f:
+            resp = client.post(
+                "/files/upload",
+                files={"file": ("guitar_amp_notes.txt", f.read(), "text/plain")},
+            )
+        file_frame_id = resp.json()["frame_id"]
+        await self._embed(store, stub_llm, file_frame_id)
+
+        memory_frame = await store.create_frame(
+            "guitar_amp", "entity", owner_user_id=1, source_type="conversation"
+        )
+        await store.upsert_slot(
+            frame_id=memory_frame.id, key="model", value="fender amp"
+        )
+        await self._embed(store, stub_llm, memory_frame.id)
+
+        found = client.get("/files/search", params={"query": "guitar"})
+
+        assert found.status_code == 200, found.text
+        assert [f["id"] for f in found.json()["frames"]] == [file_frame_id]
+
+    @pytest.mark.asyncio
+    async def test_search_filters_by_file_type(self, client, store, stub_llm, tmp_path):
+        text_file = tmp_path / "guitar_lesson.txt"
+        text_file.write_text("My guitar practice log.")
+        csv_file = tmp_path / "guitar_tabs.csv"
+        csv_file.write_text("bar,note\n1,E\n2,B\n")
+
+        frame_ids = {}
+        for path, ctype in ((text_file, "text/plain"), (csv_file, "text/csv")):
+            with open(path, "rb") as f:
+                resp = client.post(
+                    "/files/upload", files={"file": (path.name, f.read(), ctype)}
+                )
+            assert resp.status_code == 200
+            frame_ids[resp.json()["file_ext"]] = resp.json()["frame_id"]
+            await self._embed(store, stub_llm, resp.json()["frame_id"])
+
+        found = client.get(
+            "/files/search", params={"query": "guitar", "file_type": "csv"}
+        )
+
+        assert found.status_code == 200, found.text
+        assert [f["id"] for f in found.json()["frames"]] == [frame_ids["csv"]]
+
+
 class TestFileSandboxTools:
     """Regression tests for agent file sandbox tools (write, read, edit, delete, glob, recall)."""
 
