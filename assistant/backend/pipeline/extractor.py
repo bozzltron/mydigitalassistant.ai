@@ -1184,11 +1184,20 @@ async def apply_correction(
     correction: CorrectionResult,
     store: "MemoryStore",
     source_episode_id: int | None = None,
+    embed_fn=None,
+    embedding_model: str | None = None,
 ) -> dict:
     """Apply a user correction to the store.
 
     The corrected slot is given high source_reliability (0.9) since it comes from the user.
     A conflict may be created if the existing value differs.
+
+    `embed_fn` and `embedding_model` re-index the corrected frame. A correction
+    changes a value without changing how many slots the frame has, so the
+    count-based staleness check cannot see it -- only the write path can. Without
+    this the frame keeps a vector for the value the user just rejected, and
+    search keeps surfacing it by that rejected value. Both are required together:
+    a vector written under an unverified model label is worse than none.
     """
     if not correction.frame_name or not correction.slot_key or not correction.new_value:
         return {"slots_corrected": 0}
@@ -1210,6 +1219,12 @@ async def apply_correction(
         source_type="user_correction",
         source_reliability=0.9,
     )
+
+    if embed_fn is not None and embedding_model is not None:
+        try:
+            await store.embed_frames([frame.id], embed_fn, embedding_model)
+        except Exception as e:
+            logger.warning("Embedding refresh after correction failed: %s", e)
 
     return {
         "slots_corrected": 1,

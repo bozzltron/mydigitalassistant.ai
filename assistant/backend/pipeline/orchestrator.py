@@ -580,7 +580,11 @@ class Orchestrator:
                     )
                 else:
                     correction_summary = await apply_correction(
-                        correction, self.store, source_episode_id=user_episode.id
+                        correction,
+                        self.store,
+                        source_episode_id=user_episode.id,
+                        embed_fn=self.llm_client.embed_one,
+                        embedding_model=self.llm_client.embedding_model,
                     )
                     logger.info(
                         "Correction applied: frame=%s slot=%s value=%s "

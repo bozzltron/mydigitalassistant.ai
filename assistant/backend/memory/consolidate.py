@@ -325,7 +325,12 @@ async def run_consolidation(
     if embed_fn is not None:
         threshold = settings.consolidation_name_distance
         embeddings = dict(
-            await store.get_all_frame_embeddings(settings.embedding_model)
+            # primary_only: this pass compares frames to each other to find
+            # duplicates, so it wants each frame's identity vector (chunk 0).
+            # Taking the raw list would collapse duplicates with dict() and
+            # silently keep whichever chunk came last -- an arbitrary slot
+            # standing in for the frame.
+            await store.get_all_frame_embeddings(settings.embedding_model, primary_only=True)
         )
         # Fill in any missing vectors from the live frames themselves so
         # recently created or re-named frames still participate.

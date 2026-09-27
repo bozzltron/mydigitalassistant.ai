@@ -1358,7 +1358,13 @@ async def submit_correction(
                     validation_summary=validation_summary,
                 )
 
-        result = await apply_correction(correction, store, source_episode_id)
+        result = await apply_correction(
+            correction,
+            store,
+            source_episode_id,
+            embed_fn=llm_client.embed_one,
+            embedding_model=llm_client.embedding_model,
+        )
         slots_corrected = result.get("slots_corrected", 0)
         conflict = result.get("conflict", False)
 

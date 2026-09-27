@@ -169,9 +169,15 @@ CREATE INDEX IF NOT EXISTS idx_feedback_message ON feedback(message_id);
 CREATE TABLE IF NOT EXISTS frame_embeddings (
     frame_id INTEGER NOT NULL,
     embedding_model TEXT NOT NULL,
+    -- A frame can carry several vectors: chunk 0 is the frame's own name, and
+    -- slot-rich frames get one vector per slot. A single vector per frame
+    -- averages every slot into one point in space, which measurably buries the
+    -- frame -- the live `why_not` frame (24 slots) ranked 453rd of 500 against
+    -- its own name, while a 1-slot frame named why_not_page ranked 1st.
+    chunk_index INTEGER NOT NULL DEFAULT 0,
     embedding vec_f32 NOT NULL,
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-    PRIMARY KEY (frame_id, embedding_model),
+    PRIMARY KEY (frame_id, embedding_model, chunk_index),
     FOREIGN KEY (frame_id) REFERENCES frames(id) ON DELETE CASCADE
 );
 
@@ -303,6 +309,60 @@ async def _migrate_add_embedding_model_and_metadata(db) -> None:
         logger.debug("Migration: metadata table created")
 
     await db.commit()
+
+
+async def _migrate_frame_embedding_chunks(db) -> None:
+    """Let a frame hold more than one vector.
+
+    `frame_embeddings` was keyed on (frame_id, embedding_model), so a frame had
+    exactly one vector no matter how many slots it had, and that vector was the
+    average of all of them. Splitting it needs the key to change, and SQLite
+    cannot alter a primary key in place -- the table is rebuilt and the existing
+    vectors are carried across as chunk 0, so this is a no-op for the data.
+    """
+    info = await db.execute_fetchall("PRAGMA table_info(frame_embeddings)")
+    if any(r[1] == "chunk_index" for r in info):
+        return
+    pk = {(r[1], r[5]) for r in info if r[5]}  # (column, position-in-pk)
+    if pk and len(pk) > 2:
+        return  # already keyed by more than the two original columns
+
+    logger.info(
+        "Migration: rebuilding frame_embeddings to allow multiple vectors per frame"
+    )
+    await db.execute("PRAGMA foreign_keys=OFF")
+    await db.execute(
+        """
+        CREATE TABLE frame_embeddings_chunked (
+            frame_id INTEGER NOT NULL,
+            embedding_model TEXT NOT NULL,
+            chunk_index INTEGER NOT NULL DEFAULT 0,
+            embedding vec_f32 NOT NULL,
+            updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY (frame_id, embedding_model, chunk_index),
+            FOREIGN KEY (frame_id) REFERENCES frames(id) ON DELETE CASCADE
+        )
+        """
+    )
+    await db.execute(
+        """
+        INSERT INTO frame_embeddings_chunked
+            (frame_id, embedding_model, chunk_index, embedding, updated_at)
+        SELECT frame_id, embedding_model, 0, embedding, updated_at
+        FROM frame_embeddings
+        """
+    )
+    await db.execute("DROP TABLE frame_embeddings")
+    await db.execute(
+        "ALTER TABLE frame_embeddings_chunked RENAME TO frame_embeddings"
+    )
+    await db.execute(
+        "CREATE INDEX IF NOT EXISTS idx_frame_embeddings_embedding "
+        "ON frame_embeddings(embedding)"
+    )
+    await db.execute("PRAGMA foreign_keys=ON")
+    await db.commit()
+    logger.info("Migration: frame_embeddings now keyed by (frame_id, model, chunk)")
 
 
 async def _migrate_add_feedback(db) -> None:
@@ -476,6 +536,7 @@ async def init_db(db_path: str) -> None:
 
         await _migrate_add_last_strengthened_at(db)
         await _migrate_add_embedding_model_and_metadata(db)
+        await _migrate_frame_embedding_chunks(db)
         await _migrate_add_feedback(db)
         await _migrate_add_deleted_at_and_last_accessed(db)
         await _migrate_add_sessions_table(db)

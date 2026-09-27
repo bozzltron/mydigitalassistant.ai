@@ -32,6 +32,12 @@ from assistant.backend.memory.models import (
 
 logger = logging.getLogger(__name__)
 
+# A frame with at least this many slots is several ideas rather than one, and
+# gets one vector per slot instead of a single averaged vector. Sized from the
+# live distribution: 1811 of 1978 frames have fewer than 6 slots, so this only
+# engages on the 167 that could actually be diluted.
+CHUNK_MIN_SLOTS = 6
+
 
 def _parse_iso_ts(value: str | None) -> datetime | None:
     """Parse an ISO timestamp, tolerating Z suffix and missing offset.
@@ -500,20 +506,73 @@ class MemoryStore:
         frame_id: int,
         embedding: list[float],
         embedding_model: str,
+        chunk_index: int = 0,
     ) -> None:
-        """Store embedding as sqlite-vec vector for a specific embedding model."""
+        """Store one embedding for a frame as a sqlite-vec vector.
+
+        `chunk_index` distinguishes a frame's several vectors (see
+        `_frame_to_embed_chunks`). Chunk 0 is the frame's own identity; the rest
+        are its individual slots. Writes are upserts, so re-embedding a frame
+        overwrites its chunks rather than accumulating them.
+        """
         async with self._connect() as db:
             await db.execute(
                 """
-                INSERT INTO frame_embeddings (frame_id, embedding_model, embedding, updated_at)
-                VALUES (?, ?, vec_f32(?), datetime('now'))
-                ON CONFLICT(frame_id, embedding_model) DO UPDATE SET
+                INSERT INTO frame_embeddings
+                    (frame_id, embedding_model, chunk_index, embedding, updated_at)
+                VALUES (?, ?, ?, vec_f32(?), datetime('now'))
+                ON CONFLICT(frame_id, embedding_model, chunk_index) DO UPDATE SET
                     embedding = vec_f32(excluded.embedding),
                     updated_at = excluded.updated_at
                 """,
-                (frame_id, embedding_model, json.dumps(embedding)),
+                (frame_id, embedding_model, chunk_index, json.dumps(embedding)),
             )
             await db.commit()
+
+    async def store_frame_embeddings(
+        self,
+        frame_id: int,
+        embeddings: list[list[float]],
+        embedding_model: str,
+    ) -> None:
+        """Replace every vector a frame holds for one model, atomically.
+
+        A whole-set write rather than a per-chunk upsert, because slots change:
+        if a slot is deleted or renamed, its chunk has to go, or the frame keeps
+        answering questions about something it no longer says. Chunks outside the
+        new set are removed in the same transaction that adds the new ones, so a
+        frame is never briefly half-indexed.
+        """
+        async with self._connect() as db:
+            await db.execute(
+                "DELETE FROM frame_embeddings "
+                "WHERE frame_id = ? AND embedding_model = ?",
+                (frame_id, embedding_model),
+            )
+            await db.executemany(
+                """
+                INSERT INTO frame_embeddings
+                    (frame_id, embedding_model, chunk_index, embedding, updated_at)
+                VALUES (?, ?, ?, vec_f32(?), datetime('now'))
+                """,
+                [
+                    (frame_id, embedding_model, i, json.dumps(vec))
+                    for i, vec in enumerate(embeddings)
+                ],
+            )
+            await db.commit()
+
+    async def count_frame_embedding_chunks(
+        self, frame_id: int, embedding_model: str
+    ) -> int:
+        """How many vectors a frame holds for one model."""
+        async with self._connect() as db:
+            rows = await db.execute_fetchall(
+                "SELECT COUNT(*) FROM frame_embeddings "
+                "WHERE frame_id = ? AND embedding_model = ?",
+                (frame_id, embedding_model),
+            )
+        return rows[0][0] if rows else 0
 
     async def embed_frames(
         self,
@@ -540,9 +599,9 @@ class MemoryStore:
                 if not frame:
                     continue
                 slots = await self.get_slots_for_frame(frame_id)
-                text = self._frame_to_embed_text(frame, slots)
-                embedding = await embed_fn(text)
-                await self.store_frame_embedding(frame_id, embedding, embedding_model)
+                chunks = self._frame_to_embed_chunks(frame, slots)
+                vectors = [await embed_fn(text) for text in chunks]
+                await self.store_frame_embeddings(frame_id, vectors, embedding_model)
                 embedded += 1
             except Exception as exc:
                 failures.append(f"{frame_id}: {exc}")
@@ -581,6 +640,33 @@ class MemoryStore:
         for slot in slots:
             parts.append(f"  {slot.key} = {slot.value}")
         return "\n".join(parts)
+
+    @staticmethod
+    def _frame_to_embed_chunks(frame: Frame, slots: list[Slot]) -> list[str]:
+        """Split a frame into the texts that get embedded, one vector each.
+
+        A frame with few slots is already a single clean idea, so it keeps
+        exactly one vector and its embedding is unchanged -- 1902 of the 1978
+        live frames are in this group, and none of them need re-embedding.
+
+        A frame with many slots is not one idea, it is a pile of them. One
+        averaged vector lands in the middle of the pile and matches nothing in
+        particular: measured against the live index, the 24-slot `why_not` frame
+        ranked 453rd of 500 for its own name, and 1541st for a question about
+        one of its slots. Measured on the same vectors, a name-only chunk ranked
+        1st and a per-slot chunk ranked 4th.
+
+        So slot-rich frames get the frame's name as one vector and each slot as
+        its own, and search collapses them back to the best hit per frame.
+        """
+        if len(slots) < CHUNK_MIN_SLOTS:
+            return [MemoryStore._frame_to_embed_text(frame, slots)]
+
+        name_chunk = f"{frame.type}: {frame.name}"
+        chunks = [name_chunk]
+        for slot in slots:
+            chunks.append(f"{name_chunk}\n  {slot.key} = {slot.value}")
+        return chunks
 
     # Episode embeddings (semantic recall over raw conversation turns)
     async def store_episode_embedding(
@@ -643,6 +729,57 @@ class MemoryStore:
             except Exception:
                 continue
         return done
+
+    async def embed_stale_frames(
+        self,
+        embed_fn,  # async callable: (text) -> list[float]
+        embedding_model: str,
+        cap: int | None = 100,
+    ) -> int:
+        """Re-embed frames whose stored vectors disagree with their slots.
+
+        Write-time embedding covers new frames and any frame an extraction
+        touched, but the backend has 28 `upsert_slot` call sites and not all of
+        them re-embed. The correction pipeline is one that doesn't: correcting a
+        slot leaves the old value still answering for itself until something
+        notices. Rather than audit call sites -- and rely on every future one
+        remembering -- this checks the invariant directly: a frame's stored
+        vector count must equal what its slots imply (1 below the threshold,
+        1 + slot count at or above it).
+
+        The check is two grouped counts, so it stays cheap on a full pass.
+        Returns how many frames were re-embedded.
+        """
+        async with self._connect() as db:
+            rows = await db.execute_fetchall(
+                """
+                SELECT f.id
+                FROM frames f
+                LEFT JOIN (
+                    SELECT frame_id, COUNT(*) AS n
+                    FROM slots GROUP BY frame_id
+                ) s ON s.frame_id = f.id
+                LEFT JOIN (
+                    SELECT frame_id, COUNT(*) AS n
+                    FROM frame_embeddings
+                    WHERE embedding_model = ?
+                    GROUP BY frame_id
+                ) e ON e.frame_id = f.id
+                WHERE f.deleted_at IS NULL
+                  AND f.priority > 0
+                  AND COALESCE(e.n, 0) != CASE
+                        WHEN COALESCE(s.n, 0) < ? THEN 1
+                        ELSE COALESCE(s.n, 0) + 1
+                      END
+                ORDER BY f.updated_at DESC
+                LIMIT ?
+                """,
+                (embedding_model, CHUNK_MIN_SLOTS, cap if cap is not None else -1),
+            )
+        ids = [r[0] for r in rows]
+        if not ids:
+            return 0
+        return await self.embed_frames(ids, embed_fn, embedding_model)
 
     async def search_similar_episodes(
         self,
@@ -718,11 +855,12 @@ class MemoryStore:
     async def get_frame_embedding(
         self, frame_id: int, embedding_model: str
     ) -> list[float] | None:
-        """Retrieve embedding for a frame and embedding model."""
+        """Retrieve a frame's primary embedding (chunk 0) for a model."""
         async with self._connect() as db:
             row = await db.execute_fetchall(
                 "SELECT vec_to_json(embedding) FROM frame_embeddings "
-                "WHERE frame_id = ? AND embedding_model = ?",
+                "WHERE frame_id = ? AND embedding_model = ? "
+                "ORDER BY chunk_index LIMIT 1",
                 (frame_id, embedding_model),
             )
             if not row:
@@ -730,15 +868,24 @@ class MemoryStore:
             return json.loads(row[0][0])
 
     async def get_all_frame_embeddings(
-        self, embedding_model: str
+        self, embedding_model: str, primary_only: bool = False
     ) -> list[tuple[int, list[float]]]:
-        """Get all (frame_id, embedding) pairs for a specific embedding model."""
+        """Get every (frame_id, embedding) pair for a model, one per chunk.
+
+        A slot-rich frame appears more than once unless `primary_only`, which
+        returns just chunk 0 -- the frame's own identity. Callers comparing
+        frames to each other (duplicate detection) want that one; callers doing
+        recall want all of them.
+        """
+        sql = (
+            "SELECT frame_id, vec_to_json(embedding) FROM frame_embeddings "
+            "WHERE embedding_model = ?"
+        )
+        if primary_only:
+            sql += " AND chunk_index = 0"
+        sql += " ORDER BY frame_id, chunk_index"
         async with self._connect() as db:
-            rows = await db.execute_fetchall(
-                "SELECT frame_id, vec_to_json(embedding) FROM frame_embeddings "
-                "WHERE embedding_model = ? ORDER BY frame_id",
-                (embedding_model,),
-            )
+            rows = await db.execute_fetchall(sql, (embedding_model,))
             return [(frame_id, json.loads(embedding)) for frame_id, embedding in rows]
 
     async def search_similar_frames(
@@ -757,6 +904,12 @@ class MemoryStore:
         frame); user_id=None skips ownership filtering entirely (observatory /
         admin views).
         Uses the specified embedding_model for the search.
+
+        A frame may hold several vectors (see `_frame_to_embed_chunks`). The
+        reduction to one row per frame happens in SQL, not in Python: MIN()
+        distance grouped by frame, with the threshold in HAVING. Doing it after
+        the LIMIT instead would let a 24-slot frame occupy 24 of the 10 result
+        slots and push every other memory out of the answer.
         """
         # None-safe ownership filter keeps the MATERIALIZED query shape intact.
         owner_filter = (
@@ -777,22 +930,27 @@ class MemoryStore:
                 SELECT f.id, f.name, f.type, f.confidence, f.essential, f.priority,
                        f.owner_user_id, f.source_type, f.source_url, f.source_reliability,
                        f.created_at, f.updated_at, f.embedding_model,
-                       vec_distance_cosine(candidate.embedding, ?) as distance
+                       MIN(vec_distance_cosine(candidate.embedding, ?)) AS distance
                 FROM candidate
                 JOIN frames f ON candidate.frame_id = f.id
-                WHERE vec_distance_cosine(candidate.embedding, ?) <= ?
-                  AND f.deleted_at IS NULL
+                WHERE f.deleted_at IS NULL
                   AND f.priority > 0
                   {owner_filter}
+                GROUP BY f.id
+                HAVING distance <= ?
                 ORDER BY distance ASC
                 LIMIT ?
                 """,
+                # Params follow the statement's textual placeholder order:
+                # model, select-distance, [owner], threshold, limit. The owner
+                # filter sits in WHERE, ahead of the HAVING threshold -- binding
+                # these the other way round silently searches with the distance
+                # as a user id and the user id as a distance.
                 (
                     embedding_model,
                     json.dumps(embedding),
-                    json.dumps(embedding),
-                    min_distance,
                     *([user_id] if user_id is not None else []),
+                    min_distance,
                     limit,
                 ),
             )
@@ -822,7 +980,7 @@ class MemoryStore:
     async def clear_frame_embedding(
         self, frame_id: int, embedding_model: str
     ) -> None:
-        """Remove embedding for a frame and embedding model."""
+        """Remove every embedding a frame holds for a model, chunks included."""
         async with self._connect() as db:
             await db.execute(
                 "DELETE FROM frame_embeddings WHERE frame_id = ? AND embedding_model = ?",

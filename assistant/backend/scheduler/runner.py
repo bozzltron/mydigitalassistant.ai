@@ -378,6 +378,21 @@ async def _run_consolidation(
     except Exception as exc:
         logger.warning("Episode embedding top-up failed: %s", exc)
 
+    # Frame top-up for the same reason: a slot-rich frame is only findable by
+    # one of its chunks, so a frame whose slots changed without a re-embed goes
+    # quiet. Independent of frame merging, so it runs even when the breaker
+    # trips below.
+    try:
+        done = await store.embed_stale_frames(
+            orchestrator.embed_fn(),
+            embedding_model=settings.embedding_model,
+            cap=100,
+        )
+        if done:
+            logger.info("Stale frame embedding top-up: %d frames re-indexed", done)
+    except Exception as exc:
+        logger.warning("Stale frame embedding top-up failed: %s", exc)
+
     try:
         # Plan first: embeddings may be filled during clustering either way.
         plan = await run_consolidation(

@@ -532,6 +532,17 @@ except: pass
                 if chunk.done:
                     break
 
+    async def embed_one(self, text: str) -> list[float]:
+        """Embed a single string, returning the bare vector.
+
+        `embed` returns an `EmbeddingResponse` and a union type, so every caller
+        that wants one vector ends up writing the same three-line closure. The
+        store's `embed_frames` wants exactly this shape.
+        """
+        resp = await self.embed(text)
+        assert not isinstance(resp, list)  # text is a str, never a list
+        return resp.embedding
+
     async def embed(
         self,
         text: str | list[str],
