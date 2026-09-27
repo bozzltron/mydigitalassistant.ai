@@ -1,3 +1,4 @@
+import { createSignal } from 'solid-js'
 import { createStore } from 'solid-js/store'
 
 // Voice state type definition - matching original chat.html
@@ -92,4 +93,128 @@ export const isVoiceModeActive = () =>
 // TTS speaking state setters
 export const setTtsSpeaking = (speaking: boolean) => {
   setVoice('isTtsSpeaking', speaking)
+}
+
+// ---------------------------------------------------------------------------
+// Output gate
+//
+// Strict half-duplex: the mic is open when voice mode is on and the agent is
+// not speaking, and at no other time. Barge-in is deliberately unsupported --
+// the stop button is the escape hatch.
+//
+// Half-duplex is what makes echo a non-problem. We never ask "was that
+// transcript the agent's own voice?", because that question has no useful
+// answer: a transcript of synthetic speech is a paraphrase, not a copy. Scored
+// against the text it came from, real TTS echo landed at 0.07 word-trigram
+// similarity, while a real user turn asking a near-identical question scored
+// 0.52 -- every lexical measure ranked genuine speech above genuine echo. So
+// rather than detect the leak we remove the possibility: never let the capture
+// path and the output path overlap.
+//
+// This module is the single owner of that decision. The two recording hooks
+// previously each implemented their own `paused_tts` state to express the same
+// rule, and the copies had already drifted -- the conversation hook had no TTS
+// awareness at all until it was caught listening to the agent.
+// ---------------------------------------------------------------------------
+
+/**
+ * How long the gate stays shut after speech stops. The room is still ringing;
+ * reopening the mic on the agent's last syllable's reverb is how a tail gets
+ * captured.
+ */
+const TAIL_HOLD_MS = 400
+
+/**
+ * Bumped on every speaker transition. The recording hooks snapshot it before
+ * awaiting getUserMedia() and compare after: a boolean read is stale the instant
+ * the await suspends, whereas a counter detects that the speaker moved at all
+ * while we were away. It doubles as the utterance identity check, so a stale
+ * lifecycle event from a cancelled utterance is recognisable as stale.
+ */
+let generation = 0
+
+// Reactive so the recording hooks' effects re-run when playback starts or ends.
+const [outputHeld, setOutputHeld] = createSignal(false)
+let tailTimer: number | null = null
+
+/**
+ * The platform's own view of whether it is emitting. Consulted imperatively at
+ * decision points, because it is the one reading that is valid at the instant it
+ * is made -- our event handlers are asynchronous and can be overtaken.
+ */
+const platformIsSpeaking = () =>
+  typeof window !== 'undefined' &&
+  'speechSynthesis' in window &&
+  (window.speechSynthesis.speaking || window.speechSynthesis.pending)
+
+export const beginOutput = () => {
+  generation += 1
+  if (tailTimer !== null) {
+    clearTimeout(tailTimer)
+    tailTimer = null
+  }
+  setOutputHeld(true)
+  setVoice('isTtsSpeaking', true)
+}
+
+export const endOutput = () => {
+  generation += 1
+  setVoice('isTtsSpeaking', false)
+  if (tailTimer !== null) clearTimeout(tailTimer)
+  tailTimer = window.setTimeout(() => {
+    tailTimer = null
+    setOutputHeld(false)
+  }, TAIL_HOLD_MS)
+}
+
+/** True whenever the agent may be speaking. Reactive. */
+export const isOutputActive = () => isTtsSpeaking() || outputHeld()
+
+/**
+ * The same question asked imperatively, for use immediately before and after an
+ * await. `isOutputActive` reads signals, and a signal read before a suspension
+ * is stale after it; this also consults the platform directly.
+ */
+export const isOutputActiveNow = () => isOutputActive() || platformIsSpeaking()
+
+/** Snapshot before an await; compare against it once it resolves. */
+export const outputGeneration = () => generation
+
+/** Stop playback now and hold the gate for the reverb tail. */
+export const cancelSpeech = () => {
+  if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+    window.speechSynthesis.cancel()
+  }
+  endOutput()
+}
+
+/**
+ * Speak `text`, replacing anything currently in flight.
+ *
+ * speechSynthesis.speak() queues, so speaking a second message while the first
+ * is still audible leaves both playing and stretches the half-duplex window to
+ * the sum of both. Cancelling first keeps exactly one utterance in flight, which
+ * bounds the window to a single message and makes "the agent is speaking" one
+ * well-defined interval instead of an open-ended queue.
+ *
+ * A cancelled utterance still fires onend/onerror, asynchronously. Those events
+ * belong to a speech that is no longer happening, so they must not open the gate
+ * for whatever is speaking now -- hence the generation tag on every handler.
+ */
+export const speakReplacing = (
+  text: string,
+  configure?: (utterance: SpeechSynthesisUtterance) => void,
+): number => {
+  if (typeof window === 'undefined' || !('speechSynthesis' in window)) return generation
+  window.speechSynthesis.cancel()
+  const tag = (beginOutput(), generation)
+  const utterance = new SpeechSynthesisUtterance(text)
+  configure?.(utterance)
+  const release = () => {
+    if (generation === tag) endOutput()
+  }
+  utterance.onend = release
+  utterance.onerror = release
+  window.speechSynthesis.speak(utterance)
+  return tag
 }

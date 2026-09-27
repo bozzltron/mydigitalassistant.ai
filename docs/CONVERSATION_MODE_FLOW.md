@@ -7,6 +7,11 @@
 
 ## User Experience Flow
 
+> This diagram is the **dictation** hook (`useVoiceRecording`, the mic button). The
+> hands-free "Let's talk" flow is below, in
+> [Hands-Free Conversation Mode](#hands-free-conversation-mode-useconversationvoicerecording) —
+> it differs on exactly the two points marked below.
+
 ```mermaid
 sequenceDiagram
     participant User
@@ -34,13 +39,13 @@ sequenceDiagram
     
     Note over UI,Backend: Turn active (isTurnActive=true)
     VoiceHook->>VoiceHook: Auto-stop recording (turnActive)
-    
+    Note over VoiceHook: hands-free hook does NOT stop here —<br/>it keeps the mic open so speech during<br/>a turn can be queued
     Backend-->>UI: Streaming response...
     UI->>TTS: Speak response (if TTS enabled)
-    TTS-->>VoiceHook: isTtsSpeaking=true
-    VoiceHook->>VoiceHook: Pause recording
+    TTS-->>VoiceHook: isOutputActive()=true
+    VoiceHook->>VoiceHook: Pause recording, discard the partial blob
     
-    TTS-->>VoiceHook: isTtsSpeaking=false (onend)
+    TTS-->>VoiceHook: isOutputActive()=false (onend + 400ms tail)
     VoiceHook->>VoiceHook: Resume recording (if voiceMode && !turnActive)
     VoiceHook-->>User: 🔊 Earcon "start"
     
@@ -194,6 +199,8 @@ into `messageQueue` and never calls `handleSendMessage`.
 - `voice.isDictating` (one-shot dictation mode)
 - `voice.isTtsSpeaking` (browser SpeechSynthesis)
 - `registerStopRecording` / `stopRecording` (callback for TopBar)
+- **the output gate** — `speakReplacing`, `cancelSpeech`, `isOutputActive`,
+  `isOutputActiveNow`, `outputGeneration`
 
 ---
 
@@ -208,21 +215,49 @@ into `messageQueue` and never calls `handleSendMessage`.
 |---|---|---|
 | Mode | One-shot dictation into the input | Hands-free, continuous |
 | Delivery | `onTranscription` → `handleSendMessage` | `enqueue()` → drainer |
-| Own state machine | yes (`VoiceModeState`) | yes (`ConvVoiceState`) |
-| Pauses on TTS | yes (`paused_tts`) | yes (`paused_tts`) |
+| Own state machine | yes (`VoiceModeState`) | no — one policy, see below |
+| Pauses on TTS | yes (`paused_tts`) | yes, via the shared output gate |
+| Stops on an active turn | yes (correct: one-shot) | **no** — that would break queueing |
 
-### `ConvVoiceState`
+### The capture policy
+
+The mic is open when voice mode is on and the agent is not speaking, and at no other
+time. That is the whole rule; every other case follows from it.
 
 ```
-idle ──(voiceMode && !turnActive && !tts)──> recording
-recording ──(!voiceMode || turnActive)────> idle
-recording ──(tts)─────────────────────────> paused_tts   [mic closed, audio discarded]
-paused_tts ──(!tts && voiceMode)─────────> recording
-paused_tts ──(!voiceMode || turnActive)──> idle
-transcribing ──(turnActive)──────────────> (wait for the turn to finish)
-transcribing ──(tts)────────────────────> paused_tts
-transcribing ──(ready && !tts)──────────> recording
+!voiceMode            → shut
+agent speaking        → shut, and drop what was captured
+transcription open    → shut, so the mic does not catch the user's tail
+otherwise             → open
 ```
+
+There is no `ConvVoiceState`. The old four-state machine (`idle` / `recording` /
+`transcribing` / `paused_tts`) existed to remember "voice mode is on but we must not
+record" — which is not a state, it is the conjunction above. Reading the conditions
+directly removes the possibility of the states disagreeing with them, which is how the
+hook ended up transcribing the agent: it had its own copy of the rule, and that copy
+had no TTS branch until it was caught.
+
+`state()` survives only as `idle | recording | transcribing` for display.
+
+> **An active turn does not close the mic.** This is the whole point of the queue:
+> the user talks hands-free, the agent starts working, and whatever was said in the
+> meantime has to survive to be sent when the agent is free. Gating the mic on
+> `!turnActive` made that impossible — the queue could only ever hold *typed*
+> messages. The backend log for a real attempt showed no `/transcribe` request at
+> all, because there was never a capture to transcribe.
+>
+> `isTurnActive()` is still read by the hook, but only for the trace log. The
+> dictation hook (`useVoiceRecording`) *does* stop on a turn, and that is correct
+> there: it is a one-shot push-to-talk, not a continuous listener.
+
+### Speaking while the agent is busy
+
+Transcribed text is enqueued regardless of turn state. The drainer refuses to send
+while `isProcessing()` is true, so the message waits; the drain effect in
+`ChatPage` picks it up when `isTurnActive()` goes false. No message is dropped and
+none is sent out of order — the transcript shows it, the queue holds it, and it goes
+out on the next free turn.
 
 ### Acoustic echo: the agent must never transcribe itself
 
@@ -231,21 +266,83 @@ TTS is browser `speechSynthesis`, so while the agent answers out loud the mic he
 blob is transcribed, the agent's own words are enqueued as a *user* turn, and the
 queue sends them straight back with no user action — a closed loop.
 
-This is why `tts` is read in the state machine on every tick, alongside `voiceMode`
-and `turnActive`:
+Echo was tried as a *detection* problem and abandoned, deliberately. Whisper
+transcribing synthetic speech does not return the source text — it returns a
+topically-adjacent paraphrase. Scored against the text the audio came from, real TTS
+echo measured 0.074 on word-trigram Dice and 0.000 on containment, while a real user
+turn asking a near-identical question measured 0.156 and 1.000. On char-4 Dice the
+ordering inverted outright: echo 0.336 against a real user turn's 0.523. **Every
+lexical measure ranked genuine speech above genuine echo, so no threshold separates
+them.** Detecting the leak is not a harder problem, it is the wrong one.
 
-- TTS playing → never open the mic (`idle`/`transcribing` go to `paused_tts`).
-- TTS starts mid-recording → close the mic **and discard the partial blob**. That
-  audio is mostly the agent's voice; transcribing it is the bug, not a recovery.
-- TTS ends → reopen, if the other conditions hold.
+So the leak is made impossible instead: strict half-duplex. The microphone is open
+when voice mode is on and the agent is not speaking, and at no other time. Barge-in
+(talking over the agent) is **not** implemented — the stop button is the escape
+hatch, which is enough for a hands-free assistant and removes the need for audio
+ducking.
 
-Half-duplex by design. Barge-in (talking over the agent) is **not** implemented and
-would need audio ducking, not just a VAD change.
+### The output gate (`state/voice.ts`)
 
-> **History:** this was broken. The conversation hook had no TTS awareness at all
-> while the dictation hook did, so the invariant above was true for one hook and
-> false for the other — and the agent was observed answering its own playback.
-> When changing either hook, check the other.
+One module owns the half-duplex decision, for both hooks. They previously each
+implemented their own `paused_tts` state to say the same thing, and the copies had
+already drifted.
+
+| Export | Purpose |
+|---|---|
+| `speakReplacing(text, configure?)` | Speak, replacing anything in flight |
+| `cancelSpeech()` | Stop now, hold the gate for the tail |
+| `isOutputActive()` | Reactive; what the capture policy reads |
+| `isOutputActiveNow()` | Imperative; also consults `speechSynthesis` |
+| `outputGeneration()` | Snapshot before an await, compare after |
+
+**One utterance in flight, newest wins.** `speechSynthesis.speak()` *queues*. When a
+second answer finalized while the first was still audible, both played, and the
+half-duplex window became the sum of every pending answer — unbounded, and with
+message queuing on top, compounding across exchanges. `speakReplacing` cancels first,
+so a superseded answer is truncated rather than queued and the window is bounded by
+one message.
+
+**Stale lifecycle events are ignored.** A cancelled utterance still fires
+`onend`/`onerror`, asynchronously, and those events describe speech that is no longer
+happening. Handled by the old code they landed on the same shared boolean and opened
+the microphone mid-sentence. Every handler is now tagged with the output generation
+and no-ops if it is not current.
+
+**The gate closes at request time, not at `onstart`.** There is real latency between
+`speak()` and the first syllable; holding the gate only from `onstart` left that
+latency open.
+
+**The gate outlives the audio.** `TAIL_HOLD_MS` (400ms) of hold after speech stops —
+reopening the mic on the last syllable's reverb is how a tail gets captured. The
+TopBar "Stop" button uses `cancelSpeech()` for the same reason; a bare
+`speechSynthesis.cancel()` left the gate open on the cut-off syllable.
+
+> **History:** the conversation hook had no TTS awareness at all while the dictation
+> hook did, so the invariant above was true for one hook and false for the other —
+> and the agent was observed answering its own playback. When changing either hook,
+> check the other.
+
+### The async gap in `startRecording`
+
+`startRecording()` opens a microphone, which takes long enough — a permission prompt,
+a cold `AudioContext` — for the agent to start answering. Two bugs lived in that gap,
+in both hooks:
+
+- **`isRecording()` is not a re-entrancy guard.** It only becomes true at the *end* of
+  the function, so for the whole of the await the hook looked idle. A second call
+  walked straight past the guard and opened a second microphone, which is how one
+  223,995-byte blob was POSTed to `/transcribe` twice a millisecond apart. Fixed with
+  `startingUp`, set synchronously before any suspension point.
+- **The gate has to survive the await.** The hooks snapshot `outputGeneration()` before
+  `await getUserMedia()` and compare after. A boolean read is stale the moment the
+  await suspends; only a changed counter proves the speaker moved at all. A capture
+  granted into a room where the agent has started talking is torn down and its track
+  released.
+
+A failed `getUserMedia` is **parked** for `CAPTURE_RETRY_MS` rather than retried on
+every policy tick. Without that, a permission denial or a missing input device is an
+unbounded loop that re-prompts forever — verified: an unwired stream exhausted 4GB in
+145 seconds.
 
 ### Delivery
 
@@ -279,9 +376,13 @@ const MIN_RECORDING_MS = 500       // Minimum recording length
 const MIN_AUDIO_FRAMES = 3         // Min loud frames before silence detection works
 const MAX_RECORDING_MS = 180000    // Hard limit (3 minutes)
 const MONITOR_INTERVAL_MS = 80     // Audio level check interval
-const TTS_RESUME_DELAY = 100       // Ms to wait after TTS ends before restart
-const RETRY_DELAY = 1200           // Ms before retry after error/discard
+const CAPTURE_RETRY_MS = 2000      // Ms to wait after the mic fails to open, before one retry
+const TAIL_HOLD_MS = 400           // Ms the output gate stays shut after speech stops
 ```
+
+> **Removed:** `TTS_RESUME_DELAY` and `RETRY_DELAY`. The resume delay existed for a
+> hand-rolled `paused_tts` resume path; the capture policy now reopens the mic from
+> the conditions themselves, and the retry delay is `CAPTURE_RETRY_MS`.
 
 > **Removed:** `MIN_AUDIO_LEVEL = 0.015`. That was a fixed threshold on the mean of
 > `getByteFrequencyData`, which is not an amplitude measurement. Over a 1262-frame
@@ -324,9 +425,10 @@ const RETRY_DELAY = 1200           // Ms before retry after error/discard
 | File | Role |
 |------|------|
 | `frontend/src/hooks/useVoiceRecording.ts` | Dictation: core recording/transcription logic |
-| `frontend/src/hooks/useConversationVoiceRecording.ts` | **Hands-free mode**: recording, TTS gating, enqueue |
+| `frontend/src/hooks/useConversationVoiceRecording.ts` | **Hands-free mode**: capture policy, enqueue |
 | `frontend/src/services/voiceActivity.ts` | Adaptive RMS voice-activity detection + noise floor |
-| `frontend/src/state/voice.ts` | Shared voice state store (`isTtsSpeaking` lives here) |
+| `frontend/src/state/voice.ts` | Shared voice state store **and the output gate** |
+| `frontend/src/state/voiceOutputGate.test.ts` | Output gate regression tests |
 | `frontend/src/components/chat/ChatPage.tsx` | Hook consumer, TTS integration, drain effect |
 | `frontend/src/components/ui/TopBar.tsx` | Voice mode UI controls |
 | `frontend/src/components/chat/VoiceControls.tsx` | Dictation mic button (separate from conversation mode) |

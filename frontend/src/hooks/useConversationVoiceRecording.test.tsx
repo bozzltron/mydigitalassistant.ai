@@ -69,8 +69,14 @@ Object.defineProperty(global, 'AudioContext', { value: vi.fn(() => mockAudioCont
 Object.defineProperty(global, 'webkitAudioContext', { value: vi.fn(() => mockAudioContext), writable: true });
 Object.defineProperty(global, 'MediaRecorder', { value: vi.fn(() => makeRecorder()), writable: true });
 Object.defineProperty(MediaRecorder, 'isTypeSupported', { value: vi.fn(() => true), writable: true });
+/** A MediaStream stand-in whose single track can be watched being released. */
+function makeStream() {
+  const track = { stop: vi.fn() };
+  return { stream: { getTracks: () => [track] }, track };
+}
+
 Object.defineProperty(navigator, 'mediaDevices', {
-  value: { getUserMedia: vi.fn().mockResolvedValue({ getTracks: () => [{ stop: vi.fn() }] }) },
+  value: { getUserMedia: vi.fn().mockResolvedValue(makeStream().stream) },
   writable: true,
 });
 
@@ -87,6 +93,12 @@ function voiceModeSignal(initial: boolean) {
 // retry timer, grabs the mic again, and pollutes the next test's recorders.
 const voiceModeSignals: Array<{ set: (v: boolean) => void }> = [];
 const disposals: Array<() => void> = [];
+
+/** Reactive turn-active flag, for tests that need the turn to start mid-capture. */
+function turnActiveSignal(initial: boolean) {
+  const [get, set] = createSignal(initial);
+  return { get, set, is: () => get() };
+}
 
 /** Drive the hook inside a root, capturing its return value. */
 function mountHook(opts: { isVoiceMode: () => boolean; isTurnActive: () => boolean }) {
@@ -170,7 +182,12 @@ describe('useConversationVoiceRecording', () => {
     setActiveConversation('conv-1');
     setVoice({ status: 'idle', transcript: undefined, isDictating: false, isTtsSpeaking: false });
     mockAudioContext.close.mockClear();
+    // Re-assert the default every test: a test that hands getUserMedia a
+    // deferred implementation would otherwise leak into every later test.
+    // Do NOT mockReset here -- that strips the default, and the hook's
+    // setup-failure path then retries startRecording on every effect tick.
     navigator.mediaDevices.getUserMedia.mockClear();
+    navigator.mediaDevices.getUserMedia.mockResolvedValue(makeStream().stream);
   });
 
   afterEach(async () => {
@@ -220,7 +237,10 @@ describe('useConversationVoiceRecording', () => {
 
     expect(navigator.mediaDevices.getUserMedia).not.toHaveBeenCalled();
     expect(hook.isRecording()).toBe(false);
-    expect(hook.state()).toBe('paused_tts');
+    // No assertion on hook.state(): the old 'paused_tts' value asserted an
+    // internal representation, and the gate being shut is fully described by the
+    // two checks above. The policy no longer has a state for "voice mode on but
+    // we must not record" -- that was the condition, not a state.
     dispose();
   });
 
@@ -245,7 +265,6 @@ describe('useConversationVoiceRecording', () => {
 
     // Mic closed, and the captured audio discarded rather than transcribed.
     expect(hook.isRecording()).toBe(false);
-    expect(hook.state()).toBe('paused_tts');
     expect(global.fetch).not.toHaveBeenCalled();
     expect(getQueue()).toHaveLength(0);
     dispose();
@@ -263,6 +282,140 @@ describe('useConversationVoiceRecording', () => {
     await flush();
 
     expect(hook.state()).toBe('recording');
+    expect(hook.isRecording()).toBe(true);
+    dispose();
+  });
+
+  // -------------------------------------------------------------------------
+  // Speaking while the agent is busy
+  //
+  // This is the reason the queue exists: the user talks hands-free, the agent
+  // starts working, and whatever was said in the meantime has to survive to be
+  // sent once the agent is free. The backend log for a real attempt showed no
+  // /transcribe request at all -- the mic had been shut for the whole turn, so
+  // there was nothing to transcribe and nothing queued.
+  // -------------------------------------------------------------------------
+
+  it('keeps the mic open while the agent is processing (regression: the mic was shut for the entire turn, so speech during a turn was never captured)', async () => {
+    const voiceMode = voiceModeSignal(true);
+    const turnActive = turnActiveSignal(false);
+    const { hook, dispose } = mountHook({ isVoiceMode: voiceMode.is, isTurnActive: turnActive.is });
+
+    await flush();
+    expect(hook.isRecording()).toBe(true);
+
+    // The drainer sends the previous utterance; the agent is now busy.
+    turnActive.set(true);
+    await flush(50);
+
+    expect(hook.isRecording()).toBe(true);
+    expect(hook.state()).toBe('recording');
+    dispose();
+  });
+
+  it('opens the mic when voice mode starts during a turn (regression: only !turnActive could start a capture, so nothing was heard until the agent finished)', async () => {
+    const voiceMode = voiceModeSignal(false);
+    const turnActive = turnActiveSignal(true);
+    const { hook, dispose } = mountHook({ isVoiceMode: voiceMode.is, isTurnActive: turnActive.is });
+
+    await flush(300);
+    expect(hook.isRecording()).toBe(false);
+
+    voiceMode.set(true);
+    await flush();
+
+    expect(hook.isRecording()).toBe(true);
+    dispose();
+  });
+
+  it('transcribes and queues speech given while the agent is processing (regression: the whole point of the queue -- this produced no /transcribe call)', async () => {
+    const voiceMode = voiceModeSignal(true);
+    const turnActive = turnActiveSignal(false);
+    const { hook, dispose } = mountHook({ isVoiceMode: voiceMode.is, isTurnActive: turnActive.is });
+    await flush();
+
+    global.fetch = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ text: 'also, what is the weather tomorrow' }),
+    })) as unknown as typeof fetch;
+
+    // Agent picks up a turn; the user keeps talking over it.
+    turnActive.set(true);
+    await flush(50);
+    expect(hook.isRecording()).toBe(true);
+
+    await speakThenPause();
+
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    // Queued, not sent: the drainer refuses while the agent is busy, so it waits.
+    expect(getQueue().map((m) => m.content)).toEqual(['also, what is the weather tomorrow']);
+    expect(getQueue()[0].source).toBe('voice');
+    dispose();
+  });
+
+  // -------------------------------------------------------------------------
+  // Self-listening
+  //
+  // startRecording() is async: it awaits the old AudioContext closing and then
+  // getUserMedia, which is a permission prompt on a real machine. isRecording
+  // only flips at the very END of that setup. So for the whole of the await
+  // window the hook claimed to be recording while nothing had actually opened,
+  // and both the discard path and the re-entrancy guard read false. A capture
+  // granted the mic after the agent had started talking was then started
+  // anyway, and the agent transcribed itself.
+  // -------------------------------------------------------------------------
+
+  it('drops the capture when the mic is granted after the agent starts speaking (regression: the recorder started while TTS was playing, so it captured the agent)', async () => {
+    const voiceMode = voiceModeSignal(true);
+    const { stream, track } = makeStream();
+    let grant!: () => void;
+    navigator.mediaDevices.getUserMedia.mockImplementation(
+      () => new Promise((r) => { grant = () => r(stream); }),
+    );
+
+    const { hook, dispose } = mountHook({ isVoiceMode: voiceMode.is, isTurnActive: () => false });
+    await flush();
+    // The mic has not been granted yet, so nothing is recording.
+    expect(hook.isRecording()).toBe(false);
+    expect(recorderInstances.length).toBe(0);
+
+    // The agent begins talking while the mic is still being opened.
+    setTtsSpeaking(true);
+    await flush();
+    grant();
+    await flush();
+
+    expect(hook.isRecording()).toBe(false);
+    expect(recorderInstances.length).toBe(0);
+    // And the track we were handed must be handed back, or the mic stays hot.
+    expect(track.stop).toHaveBeenCalled();
+    dispose();
+  });
+
+  it('opens the mic once when a second capture is asked for before the first one is granted (regression: two MediaRecorders on one mic sent the same audio twice)', async () => {
+    const voiceMode = voiceModeSignal(true);
+    const { stream } = makeStream();
+    let grant!: () => void;
+    navigator.mediaDevices.getUserMedia.mockImplementation(
+      () => new Promise((r) => { grant = () => r(stream); }),
+    );
+
+    const { hook, dispose } = mountHook({ isVoiceMode: voiceMode.is, isTurnActive: () => false });
+    await flush();
+    expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledTimes(1);
+
+    // Voice mode is toggled off and back on before the mic is granted. The
+    // recording -> idle -> recording detour asks for a capture a second time.
+    voiceMode.set(false);
+    voiceMode.set(true);
+    await flush();
+
+    expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledTimes(1);
+    grant();
+    await flush();
+
+    expect(recorderInstances.length).toBe(1);
     expect(hook.isRecording()).toBe(true);
     dispose();
   });

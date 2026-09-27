@@ -10,7 +10,7 @@ import { Session } from '../../state/session'
 import { useTurnStatus } from '../../services/status'
 import { useVoiceRecording } from '../../hooks/useVoiceRecording'
 import { useConversationVoiceRecording } from '../../hooks/useConversationVoiceRecording'
-import { setTtsSpeaking, startDictation, endDictation, isVoiceModeActive } from '../../state/voice'
+import { speakReplacing, startDictation, endDictation, isVoiceModeActive } from '../../state/voice'
 import { settings } from '../../state/settings'
 import { initQueue } from '../../state/messageQueue'
 import type {
@@ -213,20 +213,22 @@ export default function ChatPage(props: {
       }
       markAsSpoken(lastMsg.id)
       if (settings.ttsEnabled && 'speechSynthesis' in window) {
-        const utterance = new SpeechSynthesisUtterance(lastMsg.content)
-        const voiceUri = settings.voiceUri
-        if (voiceUri) {
-          const voices = speechSynthesis.getVoices()
-          const selectedVoice = voices.find(v => v.voiceURI === voiceUri)
-          if (selectedVoice) utterance.voice = selectedVoice
-        }
-        utterance.rate = settings.voiceSpeed
-        utterance.pitch = settings.voicePitch
-        utterance.volume = settings.voiceVolume
-        utterance.onstart = () => setTtsSpeaking(true)
-        utterance.onend = () => setTtsSpeaking(false)
-        utterance.onerror = () => setTtsSpeaking(false)
-        speechSynthesis.speak(utterance)
+        // speakReplacing cancels anything still in flight rather than queueing
+        // behind it. speak() queues, so a second answer arriving mid-sentence
+        // left both playing and the speaking window growing with every queued
+        // message -- while the single boolean gate opened in the gap between one
+        // utterance's onend and the next one's onstart.
+        speakReplacing(lastMsg.content, (utterance) => {
+          const voiceUri = settings.voiceUri
+          if (voiceUri) {
+            const voices = speechSynthesis.getVoices()
+            const selectedVoice = voices.find(v => v.voiceURI === voiceUri)
+            if (selectedVoice) utterance.voice = selectedVoice
+          }
+          utterance.rate = settings.voiceSpeed
+          utterance.pitch = settings.voicePitch
+          utterance.volume = settings.voiceVolume
+        })
       }
     }
   })

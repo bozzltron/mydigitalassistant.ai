@@ -6,7 +6,9 @@ import {
   exitVoiceMode,
   registerStopRecording,
   unregisterStopRecording,
-  isTtsSpeaking
+  isTtsSpeaking,
+  isOutputActiveNow,
+  outputGeneration
 } from '../state/voice'
 import { settings } from '../state/settings'
 import { VoiceActivityDetector } from '../services/voiceActivity'
@@ -108,6 +110,13 @@ export function useVoiceRecording({
   // State machine state
   const [modeState, setModeState] = createSignal<VoiceModeState>('idle')
   const [userInitiatedStop, setUserInitiatedStop] = createSignal(false)
+
+  // True from the first line of startRecording until it returns or throws, set
+  // before any await. isRecording() only becomes true at the very end, so
+  // without this a second startRecording() walks past the guard and opens a
+  // second microphone. Plain variable: read once per attempt, drives no
+  // rendering.
+  let startingUp = false
   
   // Track timers for cleanup
   const [pendingTimeouts, setPendingTimeouts] = createSignal<Set<number>>(new Set())
@@ -265,14 +274,29 @@ export function useVoiceRecording({
 
   async function startRecording() {
     console.log('[voice] startRecording called', { isRecording: isRecording(), modeState: modeState() })
-    if (isRecording()) return
+    // isRecording() is not a sufficient guard. It only becomes true at the end of
+    // this function, so for the whole of the awaits below the hook looked idle
+    // while a capture was being opened, and a second call walked straight past
+    // the guard and opened a second microphone. Set before any suspension point.
+    if (isRecording() || startingUp) return
+    startingUp = true
+    // Half-duplex has to survive the awaits below, not merely be intended.
+    // Opening a microphone can take long enough -- a permission prompt, a cold
+    // AudioContext -- for the agent to start answering. A boolean read before the
+    // await is stale after it; a changed generation proves the speaker moved.
+    const spokeFor = outputGeneration()
+    let stream: MediaStream | null = null
+    let started = false
+    // Set when the capture is handed straight back because the gate closed while
+    // the microphone was opening.
+    let dropped = false
     try {
       const ctx = audioContext()
       if (ctx) {
         await ctx.close().catch(() => {})
       }
 
-      const stream = await navigator.mediaDevices.getUserMedia({
+      stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
@@ -280,6 +304,21 @@ export function useVoiceRecording({
         },
       })
       console.log('[voice] got media stream', stream.getTracks())
+
+      // The mic was granted, but the world moved on while we waited. Starting
+      // now would put an open microphone in a room where the agent is talking.
+      // Either mode counts: dictation records with voice mode off by design, so
+      // asking only about voice mode would drop every dictation capture.
+      if (!getIsVoiceMode() && !getIsDictationMode()) {
+        console.log('[voice] dropping capture — voice mode ended while the mic was opening')
+        dropped = true
+        return
+      }
+      if (isOutputActiveNow() || outputGeneration() !== spokeFor) {
+        console.log('[voice] dropping capture — the agent started speaking while the mic was opening')
+        dropped = true
+        return
+      }
 
       setMediaStream(stream)
 
@@ -305,7 +344,6 @@ export function useVoiceRecording({
           startProcessing()
           setTimeout(() => exitVoiceMode(), 100)
         }
-        stream.getTracks().forEach(t => t.stop())
         return
       }
       console.log('[voice] selected mimeType:', mimeType)
@@ -360,6 +398,7 @@ export function useVoiceRecording({
       }
 
       mr.start()
+      started = true
       setIsRecording(true)
       setRecordingStartTime(Date.now())
       setLoudFrameCount(0)
@@ -378,6 +417,21 @@ export function useVoiceRecording({
       if (getIsVoiceMode()) {
         startProcessing()
         setTimeout(() => exitVoiceMode(), 100)
+      }
+    } finally {
+      startingUp = false
+      // A microphone we were granted but did not use must not be left open --
+      // the recording indicator would stay lit with nothing running.
+      if (stream && !started) {
+        stream.getTracks().forEach(t => t.stop())
+        if (dropped) {
+          // Back to 'starting -> idle' is a dead end: the machine only leaves
+          // 'starting' when a condition is lost, and by now the condition that
+          // caused the drop may already be gone -- an answer can start and finish
+          // entirely inside the await. Nudging the state re-enters the 'idle'
+          // branch, which re-checks everything.
+          setModeState('idle')
+        }
       }
     }
   }

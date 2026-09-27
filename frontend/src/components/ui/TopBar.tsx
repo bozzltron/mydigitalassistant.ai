@@ -2,7 +2,7 @@ import { createSignal, createEffect, For, onMount, Show, createMemo } from 'soli
 import { Session } from '../../state/session'
 import { user } from '../../state/user'
 import { settings, updateSetting } from '../../state/settings'
-import { enterVoiceMode, exitVoiceMode, voice, isListening, isProcessing, isSpeaking, isIdle, isTtsSpeaking, stopRecording, setTtsSpeaking, isVoiceModeActive } from '../../state/voice'
+import { enterVoiceMode, exitVoiceMode, voice, isListening, isProcessing, isSpeaking, isIdle, isTtsSpeaking, stopRecording, cancelSpeech } from '../../state/voice'
 import { api, getDeletedSessions, updateConversationTitle, deleteConversation } from '../../services/api'
 import TrashCan from '../chat/TrashCan'
 import { AlertsPanel } from './AlertsPanel'
@@ -376,10 +376,11 @@ export default function TopBar(props: TopBarProps) {
               class="voice-btn" 
               title="Stop speaking" 
               onClick={() => {
-                if ('speechSynthesis' in window) {
-                  speechSynthesis.cancel()
-                }
-                setTtsSpeaking(false)
+                // cancelSpeech, not a bare speechSynthesis.cancel(): the gate has
+                // to stay shut for the reverb tail, and a raw cancel left it open
+                // on the agent's last syllable -- which is how the mic picked the
+                // tail up.
+                cancelSpeech()
               }}
             >
               Stop
