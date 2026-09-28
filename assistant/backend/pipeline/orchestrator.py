@@ -433,6 +433,48 @@ class Orchestrator:
             - system_prompt_overhead(task_type, plan_instructions, self_context),
         )
 
+    @staticmethod
+    def _log_turn_timings(
+        turn_start: float,
+        *,
+        episode_ms: float | None = None,
+        routing_ms: float | None = None,
+        recall_ms: float | None = None,
+        plan_ms: float | None = None,
+        extraction_ms: float | None = None,
+        search_ms: float | None = None,
+        correction_ms: float | None = None,
+        ttft_ms: float | None = None,
+    ) -> None:
+        """Log one greppable line of per-turn phase timings.
+
+        The numbers were always computed but only at DEBUG, which no deployment
+        runs, so latency work had no data to stand on. One structured line per
+        turn makes it possible to ask "what is slow" instead of guessing.
+
+        `ttft_ms` is the one that reflects what a user perceives: on the streaming
+        path the first token lands long before the turn ends, so total turn time
+        is close to irrelevant. Routing, recall, plan and extraction all happen
+        *before* any text appears, so they are what TTFT is made of -- which is
+        why they are worth watching even when total time looks fine.
+        """
+        parts = [
+            f"turn_total_ms={(time.monotonic() - turn_start) * 1000:.0f}",
+        ]
+        for label, value in (
+            ("episode_ms", episode_ms),
+            ("routing_ms", routing_ms),
+            ("recall_ms", recall_ms),
+            ("plan_ms", plan_ms),
+            ("extraction_ms", extraction_ms),
+            ("correction_ms", correction_ms),
+            ("search_ms", search_ms),
+            ("ttft_ms", ttft_ms),
+        ):
+            if value is not None:
+                parts.append(f"{label}={value * 1000:.0f}")
+        logger.info("turn_timings: " + " ".join(parts))
+
     def _fit_prompt_to_cap(
         self,
         prompt_with_memory: str,
@@ -597,6 +639,8 @@ class Orchestrator:
         logger.debug("Reasoner: %.3fs, Extraction: %.3fs (parallel)", plan_time, extraction_time)
 
         # 5a. Storage statements must not trigger external search: the user is
+        # giving information, not requesting a lookup. The router's wants_search
+        # judgment vetoes the reasoner's memory-sufficiency heuristic here.
         # giving information, not requesting a lookup. The router's wants_search
         # judgment vetoes the reasoner's memory-sufficiency heuristic here.
         if (
@@ -841,6 +885,9 @@ class Orchestrator:
         search_extraction_summary: dict = {}
         search_info: SearchInfo | None = None
         search_start = time.monotonic() if plan.search_needed else None
+        # Defined up front so the timing log can report it unconditionally; 0.0
+        # means "no search ran", which is the common case and worth seeing.
+        search_time = 0.0
         if plan.search_needed:
             await self._report(progress, "searching", "searching the web")
             # Prefer the router's keyword query; fall back to a sanitized
@@ -1069,6 +1116,19 @@ class Orchestrator:
                     "and offer to try again later or answer from memory only."
                 )
 
+        # Nothing has been emitted to the user yet, so this span is exactly what
+        # they wait through before the first word. Search is included because it
+        # also happens before generation -- logging before it would understate
+        # the wait on precisely the slowest turns.
+        logger.info(
+            "turn_pregen: pregen_ms=%.0f routing_ms=%.0f recall_ms=%.0f "
+            "plan_ms=%.0f extraction_ms=%.0f search_ms=%.0f",
+            (time.monotonic() - turn_start) * 1000,
+            routing_time * 1000, recall_time * 1000,
+            plan_time * 1000, extraction_time * 1000,
+            search_time * 1000,
+        )
+
         # Collect citations from search results only (not from memory slots).
         # Memory source_urls may not be verifiable - only cite from search.
         citations: list[str] = []
@@ -1273,6 +1333,18 @@ class Orchestrator:
             logger.warning("Failed to create learning alerts: %s", e)
 
         # Return response
+        self._log_turn_timings(
+            turn_start,
+            episode_ms=episode_log_time,
+            routing_ms=routing_time,
+            recall_ms=recall_time,
+            plan_ms=plan_time,
+            extraction_ms=extraction_time,
+            # search_time only exists when the search branch ran; 0.0 otherwise.
+            search_ms=search_time,
+            ttft_ms=None,  # non-streaming: the response arrives whole, so there
+                           # is no first token to measure. pregen_ms governs.
+        )
         return ChatResponse(
             response=response_text,
             session_id=session_id,
@@ -1694,6 +1766,7 @@ class Orchestrator:
 
         # 1. Session
         session_id = request.session_id or str(uuid.uuid4())
+        turn_start = time.monotonic()
 
         # 2. Log user episode
         user_episode = await self._log_episode(
@@ -1777,6 +1850,12 @@ class Orchestrator:
         extraction_time = time.monotonic() - extraction_start
         logger.debug("Reasoner: %.3fs, Extraction: %.3fs (parallel)", plan_time, extraction_time)
 
+        # The streaming path runs search after this point, so pre-generation
+        # latency is only final once search is done. `stream_search_s` and
+        # `ttft_s` are filled in further down.
+        stream_search_s = 0.0
+        ttft_s: float | None = None
+
         # 5a. Storage statements must not trigger external search
         if (
             plan.search_needed
@@ -1851,6 +1930,7 @@ class Orchestrator:
         search_info: SearchInfo | None = None
         if plan.search_needed:
             await self._report(progress, "searching", "searching the web")
+            stream_search_start = time.monotonic()
             from assistant.backend.pipeline.search import (
                 filter_relevant,
                 sanitize_query,
@@ -2050,6 +2130,12 @@ class Orchestrator:
             if result.url:
                 citations.append(result.url)
 
+        # Search sits between the plan and generation, so it is dead time in
+        # front of the first token. It is also the part that varies most turn to
+        # turn, which is why it needs a number of its own.
+        if plan.search_needed:
+            stream_search_s = time.monotonic() - stream_search_start
+
         # Build conversation history
         history_messages: list[ChatMessage] = []
         if session_id:
@@ -2090,6 +2176,20 @@ class Orchestrator:
         # Convert to dict format for streaming
         messages_dict = [m.model_dump() for m in messages]
 
+        # Everything above the generation call is dead time for the user: no text
+        # has been emitted yet, so this span is exactly what they wait through
+        # before the first word. On the streaming path it is the latency that
+        # matters -- total turn time is close to irrelevant once the answer is
+        # arriving word by word.
+        logger.info(
+            "turn_pregen: pregen_ms=%.0f routing_ms=%.0f recall_ms=%.0f "
+            "plan_ms=%.0f extraction_ms=%.0f search_ms=%.0f",
+            (time.monotonic() - turn_start) * 1000,
+            routing_time * 1000, recall_time * 1000,
+            plan_time * 1000, extraction_time * 1000,
+            stream_search_s * 1000,
+        )
+
         # Check if tools enabled
         if settings.tools_enabled:
             tools = builtin_tools(
@@ -2118,7 +2218,7 @@ class Orchestrator:
             final_reasoning = None
             
             async def _stream_and_capture():
-                nonlocal final_answer, final_reasoning
+                nonlocal final_answer, final_reasoning, ttft_s
                 async for event in stream_tool_loop(
                     self.llm_client,
                     messages_dict,
@@ -2133,11 +2233,24 @@ class Orchestrator:
                     try:
                         import json
                         event_data = json.loads(event.replace("data: ", "").strip())
-                        if event_data.get("type") == "text_delta":
+                        etype = event_data.get("type")
+                        if etype == "text_delta":
                             final_answer += event_data.get("delta", "")
-                        elif event_data.get("type") == "finalize":
+                        elif etype == "finalize":
                             final_answer = event_data.get("answer", final_answer)
                             final_reasoning = event_data.get("reasoning_trace")
+                        # TTFT is the first moment the user can see any of the
+                        # answer. `finalize` counts, and on the tool path it is
+                        # currently the ONLY one that arrives: stream_tool_loop
+                        # uses blocking chat() calls and emits a whole-answer
+                        # FinalizeEvent, so `text_delta` never fires there. So
+                        # ttft_ms on tool turns ~= total generation time, which
+                        # is the honest number -- the user really did wait that
+                        # long for any text. Recording only text_delta would
+                        # report a satisfying small number for a wait that never
+                        # ended early.
+                        if etype in ("text_delta", "finalize") and ttft_s is None:
+                            ttft_s = time.monotonic() - turn_start
                     except Exception:
                         pass
                     yield event
@@ -2166,6 +2279,10 @@ class Orchestrator:
                 num_predict=num_predict,
             ):
                 if chunk.content:
+                    # First real token: the wait the user actually feels is over.
+                    # (No-tools path does stream deltas, so this fires early.)
+                    if ttft_s is None:
+                        ttft_s = time.monotonic() - turn_start
                     accumulated_content += chunk.content
                     event = {'type': 'text_delta', 'delta': chunk.content}
                     yield f"data: {json.dumps(event)}\n\n"
@@ -2191,6 +2308,16 @@ class Orchestrator:
                 )
             except Exception as e:
                 logger.warning("Failed to log assistant episode: %s", e)
+
+        self._log_turn_timings(
+            turn_start,
+            routing_ms=routing_time,
+            recall_ms=recall_time,
+            plan_ms=plan_time,
+            extraction_ms=extraction_time,
+            search_ms=stream_search_s,
+            ttft_ms=ttft_s,
+        )
 
         # Final metadata: same transparency the non-streaming ChatResponse carries
         # (session id, task type, extraction/search summaries, search info). The UI

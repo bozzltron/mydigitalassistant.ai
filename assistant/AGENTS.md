@@ -16,29 +16,42 @@ Web search for retrieval-only; learned facts stored locally in memory frames/slo
 - Measure before adding new models, new network calls, or new LLM invocations to the
   synchronous response path.
 
-### Known Issue: Tool Calling Timeout
-**Current behavior:** Tool calling runs on `utility_model` (default qwen2.5:3b / qwen3.5:4b) 
-via `run_tool_loop()`. The tool loop makes multiple sequential LLM calls (up to `MAX_TOOL_ROUNDS=3`),
-each with full system prompt + tools schema + conversation history.
+### Latency: what to measure, and what is already measured
 
-**Symptoms:**
-- First tool call: 5-15s (cold model + large prefill)
-- Subsequent turns: 3-10s each
-- Total turn time can exceed 30-60s, causing HTTP timeouts at reverse proxy (Caddy default 30s)
+**Measure time-to-first-token, not total turn time.** Streaming already exists, so
+the user sees a progress event and then text word by word. Total turn time is
+close to irrelevant to perceived responsiveness; the wait before the first word
+is the whole of it.
 
-**Root causes:**
-1. System prompt + tools schema = ~4000-6000 tokens prefill per call
-2. Sequential calls (no parallelization within tool loop)
-3. 4B model still slow on tool-calling workloads with many tools (17+)
+**The numbers are already logged, at INFO, one greppable line per turn:**
 
-**Mitigations (planned):**
-1. **Streaming responses** — return first token immediately, reduce perceived latency
-2. **Reduce tool count** for tool model — only expose tools it actually needs
-3. **Smaller context** for tool calls — strip memory context from tool loop iterations
-4. **Dedicated fast tools model** — 1.5B model fine-tuned for function calling
-5. **Async tool execution** — parallelize independent tool calls (currently sequential)
+```
+turn_pregen: pregen_ms=... routing_ms=... recall_ms=... plan_ms=... extraction_ms=... search_ms=...
+turn_timings: turn_total_ms=... episode_ms=... ... ttft_ms=...
+```
 
-**Workaround:** Increase Caddy `response_header_timeout` and client timeouts for tool-heavy sessions.
+`turn_pregen` fires just before the generation call and is the total of the dead
+time in front of the first token. On the streaming path only, `ttft_ms` is the
+measured wait until the first delta. Both lines come from
+`Orchestrator._log_turn_timings`; `assistant/tests/test_turn_timings.py` pins them
+so the logging cannot be quietly demoted back to DEBUG.
+
+Read these before changing the hot path. The phases are LLM calls that already run
+concurrently in two groups — routing‖recall, then plan‖extraction — so each group
+costs roughly its slowest member, and the phases are sequential with respect to
+each other. Adding a new sequential LLM call to either group adds its full cost to
+every turn.
+
+**Reverse proxy timeouts are not a constraint.** `Caddyfile` sets
+`response_header_timeout 300s`, `flush_interval -1` and `stream_timeout 0` on the
+API route. An earlier version of this file described a "Caddy default 30s" tool
+calling timeout; that was wrong on two counts, and the phantom was designed around
+before it was measured. `response_header_timeout` bounds the wait for *response
+headers*, and the SSE stream emits a progress event before any LLM work begins, so
+headers arrive in tens of milliseconds regardless of how long generation takes.
+`stream_timeout 0` means no ceiling on the stream at all. Do not treat proxy
+timeouts as a cause of user-visible latency without measuring headers-vs-body
+first.
 
 ## Web Search
 - **Default backend:** local SearXNG instance at `SEARCH_BASE_URL`. No query leaves
