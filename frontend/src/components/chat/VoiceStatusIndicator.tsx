@@ -56,57 +56,26 @@ export default function VoiceStatusIndicator(props: VoiceStatusIndicatorProps) {
   return (
     <Show when={props.isVoiceMode || props.isDictationMode}>
       <Show when={showOverlay()}>
-        <div class="voice-status-overlay" style={{ 
-          position: 'fixed', 
-          bottom: '80px', 
-          left: '50%', 
-          transform: 'translateX(-50%)',
-          zIndex: 100,
-          background: 'var(--surface2)',
-          border: '1px solid var(--border)',
-          borderRadius: '6px',
-          padding: '0.5rem 1rem',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.5rem',
-          fontSize: '0.8rem',
-          color: 'var(--text-dim)',
-          boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-          animation: 'fadeIn 0.2s ease-out'
-        }}>
-          <span class={getDotClass()} style={{ 
-            width: '8px', 
-            height: '8px', 
-            borderRadius: '50%', 
-            background: 'var(--accent)',
-            animation: 'voice-pulse 1.2s ease-in-out infinite',
-            flexShrink: 0
-          }} />
+        {/* Presentation lives in status-indicator.css: .voice-status-overlay,
+            .voice-dot and its state variants, .voice-btn-small. The inline
+            styles this replaced were not merely redundant. The dot's inline
+            `background: var(--accent)` outranked .voice-dot.processing and
+            .voice-dot.speaking, so the state getDotClass() computes had no
+            visible effect. The <style> block this also removed defined a third
+            `@keyframes fadeIn`; injected at runtime it was appended after the
+            linked stylesheets, so it won the cascade and put a
+            translateX(-50%) on every frame of the modal overlay's fadeIn. */}
+        <div class="voice-status-overlay">
+          <span class={getDotClass()} />
           <span>{getStatusText()}</span>
-          <button 
-            class="voice-btn-small danger" 
-            onClick={props.onStopRecording}
-            style={{
-              background: 'var(--surface)',
-              border: '1px solid var(--border)',
-              color: 'var(--error)',
-              borderRadius: '4px',
-              padding: '0.15rem 0.5rem',
-              fontSize: '0.75rem',
-              cursor: 'pointer'
-            }}
+          <button
+            class="voice-btn-small danger"
+            onClick={() => props.onStopRecording()}
           >
             {props.isDictationMode ? 'Stop' : 'Cancel'}
           </button>
         </div>
       </Show>
-
-      <style>{`
-        @keyframes fadeIn {
-          from { opacity: 0; transform: translateX(-50%) translateY(10px); }
-          to { opacity: 1; transform: translateX(-50%) translateY(0); }
-        }
-      `}</style>
     </Show>
   )
 }

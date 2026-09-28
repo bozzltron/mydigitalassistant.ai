@@ -38,6 +38,50 @@
   box-shadow: 0 0 8px var(--warning);
 }
 
+/* The component computes a `speaking` state, but only `listening` and
+   `processing` had rules -- so `getDotClass()` returning 'voice-dot speaking'
+   fell through to the undifferentiated base colour. */
+.voice-dot.speaking {
+  background: var(--accent2);
+  box-shadow: 0 0 8px var(--accent2);
+}
+
+/* Recording / dictation overlay.
+   This class was applied by VoiceStatusIndicator.tsx with no rule anywhere, so
+   it did nothing and the presentation was carried entirely by an inline style
+   object. Centred via a translate rather than left:50% so the horizontal offset
+   lives in one place; the entrance animation repeats the -50% deliberately, or
+   the box would drift sideways while fading in. */
+.voice-status-overlay {
+  position: fixed;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: var(--z-dropdown);
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  color: var(--text-dim);
+  font-size: 0.8rem;
+  animation: voice-status-in var(--transition-base) ease-out;
+}
+
+/* Named for this component rather than reusing `fadeIn`. `fadeIn` is defined in
+   both chat.css and components.css for elements that are not horizontally
+   centred, and VoiceStatusIndicator previously shipped a third copy from inside
+   a JSX <style> block. A runtime-injected stylesheet is appended after the
+   linked ones, so that copy won the cascade and gave .modal-overlay's fadeIn a
+   translateX(-50%) on every frame. */
+@keyframes voice-status-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(10px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
 @keyframes voice-pulse {
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: 0.6; transform: scale(0.9); }

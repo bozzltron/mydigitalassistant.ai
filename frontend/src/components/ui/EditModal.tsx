@@ -9,6 +9,11 @@ export interface EditModalProps {
 }
 
 export const EditModal = (props: EditModalProps) => {
+  // The seed is needed, not stale: createEffect below runs after the first
+  // render, so without it the input would paint empty and only then take the
+  // title. The effect is what keeps it in sync afterwards, so the prop is
+  // already tracked and solid/reactivity has nothing to fix here.
+  // eslint-disable-next-line solid/reactivity
   const [inputValue, setInputValue] = createSignal(props.currentTitle)
   const [isSaving, setIsSaving] = createSignal(false)
 
@@ -49,51 +54,37 @@ export const EditModal = (props: EditModalProps) => {
             </button>
           </div>
           <div class="modal-content">
+            {/* Presentation comes from .modal-content input (components.css),
+                which already set every property the former inline style did and
+                added the :focus and ::placeholder states it lacked.
+                .modal-field supplies the bottom gap. */}
             <input
               type="text"
+              class="modal-field"
               value={inputValue()}
               onChange={(e) => setInputValue(e.target.value)}
               placeholder="Conversation name"
-              style={{
-                width: '100%',
-                padding: '8px 12px',
-                fontSize: '0.875rem',
-                border: '1px solid var(--color-border)',
-                borderRadius: '4px',
-                marginBottom: '12px',
-                boxSizing: 'border-box',
-              }}
               autoFocus
             />
-            <div style={{display: 'flex', justifyContent: 'flex-end', gap: '8px'}}>
+            <div class="modal-actions">
+              {/* Was an inline style object, including
+                  `background: var(--color-primary)`. --color-primary is defined
+                  in no stylesheet, so the declaration was invalid at
+                  computed-value time and the button rendered color:white on no
+                  background. .btn-primary's :disabled rule also covers the
+                  dynamic `cursor: isSaving() ? ... : ...` ternary. */}
               <button
+                class="btn-primary"
                 onClick={handleSave}
                 disabled={isSaving()}
-                style={{
-                  padding: '6px 16px',
-                  fontSize: '0.875rem',
-                  background: 'var(--color-primary)',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: isSaving() ? 'not-allowed' : 'pointer',
-                }}
               >
                 {isSaving() ? 'Saving...' : 'Save'}
               </button>
               <button
+                class="btn-secondary"
                 onClick={() => {
                   setInputValue(props.currentTitle)
                   props.onClose()
-                }}
-                style={{
-                  padding: '6px 16px',
-                  fontSize: '0.875rem',
-                  background: 'transparent',
-                  color: 'var(--color-text)',
-                  border: '1px solid var(--color-border)',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
                 }}
               >
                 Cancel

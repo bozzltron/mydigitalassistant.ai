@@ -46,6 +46,28 @@
   text-decoration: underline;
 }
 
+/* Caption sub-elements. Each was an inline style object in MediaCard and
+   MediaGrid; the emphasis (font-weight 500) is the same shape in both, so the
+   title class is shared and only the context-specific gaps are scoped. */
+.media-caption-title {
+  font-weight: 500;
+}
+
+.msg-media-hero .media-hero-caption .caption-description {
+  font-size: 0.75rem;
+  opacity: 0.8;
+}
+
+.msg-media-hero .media-hero-caption .caption-source {
+  display: inline-block;
+  font-size: 0.7rem;
+  margin-top: 4px;
+}
+
+.media-lightbox-caption .media-caption-title {
+  margin-bottom: 4px;
+}
+
 /* ==========================================================================
    VIDEO EMBED (YouTube + direct video)
    ========================================================================== */
@@ -131,6 +153,27 @@
   color: #aaa;
 }
 
+/* Poster image sitting behind the play button, filling the placeholder.
+   Used by MediaCard and VideoEmbed; both previously carried an identical
+   seven-property inline style object. */
+.msg-video-embed .video-placeholder .video-cover-thumb {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  z-index: -1;
+}
+
+/* The poster and the iframe are swapped by visibility rather than mounting, so
+   the iframe stays in the DOM and its onLoad can fire. The placeholder must
+   therefore stay mounted too.
+   Ordering matters: .msg-video-embed .video-placeholder above is also (0,2,0),
+   so an equal-specificity rule placed earlier would lose to it. */
+.msg-video-embed .is-hidden {
+  display: none;
+}
+
 /* ==========================================================================
    MASONRY IMAGE GRID (multiple images)
    ========================================================================== */
@@ -173,7 +216,16 @@
   height: 100%;
   object-fit: cover;
   display: block;
-  transition: transform var(--transition-slow);
+  opacity: 0;
+  transition: transform var(--transition-slow), opacity var(--transition-base);
+}
+
+/* Faded in once the image has loaded, so a slow thumbnail does not pop in over
+   an empty tile. This was `style={{ opacity: ... ? 1 : 0 }}` -- a genuinely
+   dynamic value, so the static style-prop rule never saw it, but the AGENTS.md
+   ban on inline styles still applies and a class is the right carrier. */
+.msg-media-grid-item img.is-loaded {
+  opacity: 1;
 }
 
 .msg-media-grid-item a {
@@ -279,6 +331,16 @@
 .msg-preview-card:hover {
   border-color: var(--accent);
   background: var(--surface2);
+}
+
+/* The hero's broken-image placeholder fills the message width and keeps a floor
+   under its height. The base .msg-preview-card-placeholder rule sizes itself as
+   a fixed square for the list context, so the hero needs its own override
+   rather than a per-element inline override of that rule. */
+.msg-media-hero .msg-preview-card-placeholder {
+  width: 100%;
+  height: 100%;
+  min-height: 200px;
 }
 
 .msg-preview-card-image {

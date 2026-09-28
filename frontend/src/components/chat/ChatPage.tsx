@@ -20,7 +20,10 @@ import type {
 
 // Wrapper component that calls useTurnStatus with a dynamic turnId
 function StatusWrapper(props: { turnId: () => string | undefined }) {
-  const { turnStatus, isPolling } = useTurnStatus(props.turnId)
+  // Pass a thunk that defers the prop read rather than props.turnId itself.
+  // useTurnStatus wraps whatever it gets in a createMemo, so handing it the
+  // prop reference meant that memo tracked a value snapshotted at setup.
+  const { turnStatus, isPolling } = useTurnStatus(() => props.turnId())
   return <StatusIndicator turnStatus={turnStatus} isPolling={isPolling} />
 }
 

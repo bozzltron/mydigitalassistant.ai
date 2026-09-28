@@ -123,6 +123,11 @@ function measuredNoiseFloorFrame() {
 }
 
 // Test component to access hook internals
+/* eslint-disable solid/reactivity -- test harness, not a rendered component.
+   Every prop below is already a thunk (`isVoiceMode: () => boolean`), so
+   reading the reference is precisely what the hook expects; there is no
+   reactive value being snapshotted, and each TestComponent is built once per
+   test with no intent to re-render. */
 function TestComponent(props: {
   isVoiceMode: () => boolean
   isDictationMode: () => boolean
@@ -141,6 +146,7 @@ function TestComponent(props: {
   
   return null
 }
+/* eslint-enable solid/reactivity */
 
 describe('useVoiceRecording hook', () => {
   describe('TTS pause/resume coordination', () => {

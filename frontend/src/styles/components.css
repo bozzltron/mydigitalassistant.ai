@@ -231,6 +231,15 @@ select {
   border-color: var(--accent);
 }
 
+/* Spacing for a lone input in a modal body. The rest of the input's
+   presentation comes from .modal-content input above, which covers every
+   property the former inline style set (and adds :focus and ::placeholder
+   states the inline version had no rule for). Only the bottom gap is added
+   here, so the four components sharing .modal-content keep their layout. */
+.modal-field {
+  margin-bottom: var(--space-md);
+}
+
 .modal-content input::placeholder {
   color: var(--text-dim);
 }

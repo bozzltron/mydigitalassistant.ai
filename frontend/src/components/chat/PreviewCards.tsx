@@ -6,11 +6,13 @@ interface PreviewCardsProps {
 }
 
 export default function PreviewCards(props: PreviewCardsProps) {
-  const { cards } = props
-
   return (
     <div class="msg-preview-cards" role="list" aria-label="Link previews">
-      <For each={cards}>
+      {/* props.cards, not a destructured snapshot. <For> is a tracked scope, but
+          it can only track what it is given; a destructure handed it a fixed
+          array, so the card list would never follow a new `cards` prop.
+          MessageContent passes a memo here. */}
+      <For each={props.cards}>
         {(card) => (
           <a
             class="msg-preview-card"

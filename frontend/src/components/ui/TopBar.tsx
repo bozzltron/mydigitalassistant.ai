@@ -514,6 +514,11 @@ export default function TopBar(props: TopBarProps) {
           const sessionId = editSessionId()
           if (sessionId) {
             const userId = user()?.id ?? 1
+            // Called from a promise continuation, not from a render, so there is
+            // no tracked scope to read the prop in and none is needed: this is
+            // an imperative refresh after a write, and props is a proxy, so the
+            // read already yields the current function.
+            // eslint-disable-next-line solid/reactivity
             updateConversationTitle(sessionId, userId, newTitle).then(() => {
               setEditSessionId(null)
               setEditTitle('')

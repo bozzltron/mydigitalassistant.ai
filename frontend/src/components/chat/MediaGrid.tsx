@@ -18,13 +18,15 @@ interface MediaGridProps {
 }
 
 export default function MediaGrid(props: MediaGridProps) {
-  const { media, onOpenLightbox } = props
   const [lightboxOpen, setLightboxOpen] = createSignal(false)
   const [lightboxIndex, setLightboxIndex] = createSignal(0)
   const [loadedImages, setLoadedImages] = createSignal<Set<number>>(new Set())
 
+  // props.media, not a destructured snapshot: the memo below would otherwise be
+  // built once from a value that can never change, so imageMedia() would never
+  // invalidate and the grid would not follow a new `media` prop.
   const imageMedia = createMemo(() =>
-    media.filter(m => m.type === 'image')
+    props.media.filter(m => m.type === 'image')
   )
 
   const openLightbox = (index: number) => {
@@ -73,8 +75,8 @@ export default function MediaGrid(props: MediaGridProps) {
   }
 
   const handleGridItemClick = (index: number, e: MouseEvent) => {
-    if (onOpenLightbox) {
-      onOpenLightbox(imageMedia()[index], index, imageMedia())
+    if (props.onOpenLightbox) {
+      props.onOpenLightbox(imageMedia()[index], index, imageMedia())
     } else {
       openLightbox(index)
     }
@@ -121,7 +123,7 @@ export default function MediaGrid(props: MediaGridProps) {
                   alt={item.title || ''}
                   loading="lazy"
                   onLoad={() => handleImageLoad(index())}
-                  style={{ opacity: loadedImages().has(index()) ? 1 : 0 }}
+                  classList={{ 'is-loaded': loadedImages().has(index()) }}
                 />
                 <div class="grid-item-overlay">
                   {item.title && <div class="grid-item-title">{item.title}</div>}
@@ -196,7 +198,7 @@ export default function MediaGrid(props: MediaGridProps) {
             {(imageMedia()[lightboxIndex()].title || imageMedia()[lightboxIndex()].sourceUrl) && (
               <div class="media-lightbox-caption">
                 {imageMedia()[lightboxIndex()].title && (
-                  <div style={{ fontWeight: 500, marginBottom: '4px' }}>
+                  <div class="media-caption-title">
                     {imageMedia()[lightboxIndex()].title}
                   </div>
                 )}
