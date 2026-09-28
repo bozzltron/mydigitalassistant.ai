@@ -51,7 +51,9 @@ describe('design-system guards', () => {
     const used = new Map<string, Set<string>>()
 
     const collect = (f: string) => {
-      const text = read(f)
+      // stripComments so a rule matches code, not the prose written to explain
+      // it -- EditModal's comment below names the very pattern it removed.
+      const text = stripComments(read(f))
       for (const m of text.matchAll(/(--[a-zA-Z0-9_-]+)\s*:/g)) defined.add(m[1])
       for (const m of text.matchAll(/var\(\s*(--[a-zA-Z0-9_-]+)\s*([,)])/g)) {
         // `var(--x, fallback)` is legal even when --x is undefined.
@@ -63,27 +65,21 @@ describe('design-system guards', () => {
     styleFiles.forEach(collect)
     tsxFiles.forEach(collect)
 
-    // Pre-existing debt, still present and unrelated to the warning cleanup.
+    // Remaining pre-existing debt. Every entry here is a live bug, and each
+    // deletion tightens this guard.
     //
-    // Root cause of the --color-* entries: variables.css has a semantic alias
-    // layer (`--color-border: var(--border)` and 10 siblings) that is only half
-    // built. AlertsPanel and TrashCan write their CSS into a <style> block in
-    // JSX against a larger alias vocabulary than the one that shipped, so these
-    // five names resolve to nothing and every declaration using them is invalid
-    // at computed-value time. Completing the alias layer is a one-line-per-name
-    // fix, but three of the names (--color-success and its two backgrounds) have
-    // no token in the palette to alias, so the values are a design decision
-    // rather than a mechanical repair. Until then: each entry is a live bug, and
-    // deleting one tightens this guard.
+    // The --color-* family that used to fill this list is gone as of
+    // 2026-09-28. Root cause was a semantic alias layer in variables.css that
+    // was only half built: `--color-border: var(--border)` and ten siblings
+    // shipped, but --color-primary, --color-success, --color-success-bg,
+    // --color-error-bg and --color-text-secondary never did. AlertsPanel and
+    // TrashCan wrote their CSS into <style> blocks in JSX against the larger
+    // vocabulary, so those declarations were invalid at computed-value time.
+    // Both blocks are now stylesheets with the real tokens.
     const KNOWN_UNDEFINED: Record<string, string> = {
-      '--color-primary': 'no --accent alias exists; EditModal used it too, until its inline styles moved to .btn-primary',
-      '--color-success': 'no --success token exists in variables.css',
-      '--color-success-bg': 'no --success token exists in variables.css',
-      '--color-error-bg': 'no --error-background token exists in variables.css',
-      '--color-text-secondary': 'the alias block has --color-text-dim, not this name',
       '--surface3': 'chat.css trace panel background -- the declaration is dead, so that background is transparent',
       '--person': 'BrainPage.tsx legend dot -- the dot renders with no background',
-      '--concept': 'BrainPage.tsx legend dot -- the dot renders with no background',
+      '--concept': 'BrainPage.tsx legend dot and brain.css -- the dot renders with no background',
       '--event': 'BrainPage.tsx legend dot -- the dot renders with no background',
       '--household': 'BrainPage.tsx legend dot -- the dot renders with no background',
       '--entity': 'BrainPage.tsx legend dot -- the dot renders with no background',
@@ -97,29 +93,39 @@ describe('design-system guards', () => {
     expect(offenders, `newly undefined CSS variables:\n${offenders.join('\n')}`).toEqual([])
   })
 
-  it('no component defines @keyframes', () => {
-    // Keyframe names are global. VoiceStatusIndicator used to ship a third
-    // `@keyframes fadeIn` from inside a `<style>` block in JSX; injected at
-    // runtime it was appended after the linked stylesheets, won the cascade,
-    // and put its translateX(-50%) on every frame of .modal-overlay's fadeIn.
-    // Animations belong in a stylesheet: see the keyframes definitions in
-    // styles/*.css, which are the only ones allowed to exist.
+  it('no component ships CSS in a <style> block or an inline style', () => {
+    // The @keyframes version of this test asked the wrong question. Keyframe
+    // names being global only bites when a <style> block exists to hold a
+    // colliding duplicate, and by the time this migrated there were none left.
+    // The real invariant is the block itself: every CSS-in-JSX bug found this
+    // session lived in one, and none was visible to lint:
+    //   - VoiceStatusIndicator's <style> injected a third @keyframes fadeIn,
+    //     appended last, so it won the cascade and bent the modal overlay.
+    //   - AlertsPanel's <style> keyed rules on plain class names the JSX never
+    //     applied (it uses styles.* from an empty module css), so the Learning
+    //     Monitor panel rendered fully unstyled while looking plausible.
+    //   - AlertsPanel and TrashCan both referenced --color-* custom properties
+    //     that exist nowhere, silently killing those declarations.
+    // So this lists every file allowed to carry CSS in JSX -- currently none.
     const offenders = tsxFiles
-      .filter((f) => /@keyframes/.test(stripComments(read(f))))
+      .filter((f) => /<style/.test(stripComments(read(f))))
       .map(show)
-    expect(offenders, `@keyframes defined in component source:\n${offenders.join('\n')}`).toEqual([])
+    expect(offenders, `<style> block in component source (move it to a stylesheet):\n${offenders.join('\n')}`).toEqual([])
   })
 
   it('the components migrated out of inline styles contain none', () => {
-    // These five carried all 29 style-prop warnings. Every one of the rules
-    // those inline styles were breaking is now expressed in a stylesheet, so
-    // the ban is enforceable here even though the lint rule is not.
+    // Every one of the rules these inline styles were breaking is now expressed
+    // in a stylesheet, so the ban is enforceable here even though the lint rule
+    // is not. AlertsPanel and TrashCan joined the list when their <style>
+    // blocks moved to AlertsPanel.module.css and components.css.
     const migrated = [
       'components/chat/MediaCard.tsx',
       'components/chat/MediaGrid.tsx',
       'components/chat/VideoEmbed.tsx',
       'components/chat/VoiceStatusIndicator.tsx',
+      'components/ui/AlertsPanel.tsx',
       'components/ui/EditModal.tsx',
+      'components/chat/TrashCan.tsx',
     ]
     const offenders = migrated
       .map((rel) => join(SRC, rel))

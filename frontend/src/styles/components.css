@@ -480,3 +480,157 @@ select {
   font-size: 0.85rem;
   cursor: pointer;
 }
+/* Icon button: a square, borderless button sized to the glyph it wraps.
+   This class was defined inside a <style> block in TrashCan.tsx, yet it is used
+   by InputBar (file-attach, mic, max-tokens) and VoiceControls (mic) as well.
+   A shared class defined by an unrelated component, in a stylesheet injected at
+   runtime, meant every other consumer depended on TrashCan being mounted -- and
+   because the injected sheet is appended after the linked ones, it outranked any
+   real rule for the same selector. */
+.btn-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  color: #fff;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.btn-icon svg {
+  width: 1em;
+  height: 1em;
+}
+
+.btn-icon:hover:not(:disabled) {
+  background: var(--border);
+  color: var(--text);
+}
+
+.btn-icon:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ==========================================================================
+   TRASH CAN (trashed conversations, opened from TopBar)
+   Moved out of a <style> block in TrashCan.tsx. The five undefined custom
+   properties it referenced (--color-text-secondary, --color-surface,
+   --color-border, --color-text, --color-background-hover) are remapped to real
+   tokens; --color-success / --color-error and their backgrounds become --accent
+   and --error over the translucent fills already used in files.css.
+   ========================================================================== */
+
+.trash-can-trigger {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.trash-icon {
+  flex-shrink: 0;
+  width: 1em;
+  height: 1em;
+  vertical-align: middle;
+  color: #fff;
+}
+
+.trash-icon path {
+  stroke: currentColor !important;
+}
+
+.trash-icon [fill='none'] {
+  fill: currentColor !important;
+}
+
+.trash-can-modal {
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+.trash-loading {
+  padding: 24px;
+  text-align: center;
+  color: var(--text-dim);
+}
+
+.trash-empty {
+  padding: 32px;
+  text-align: center;
+  color: var(--text-dim);
+}
+
+.trash-empty-icon {
+  width: 48px;
+  height: 48px;
+  margin: 0 auto 12px;
+  opacity: 0.5;
+}
+
+.trash-empty-hint {
+  font-size: 0.875rem;
+  opacity: 0.7;
+}
+
+.trash-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.trash-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  gap: 16px;
+}
+
+.trash-item-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.trash-item-title {
+  font-weight: 500;
+  color: var(--text);
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.trash-item-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+
+.trash-item-preview {
+  max-width: 300px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.trash-item-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.restore-btn:hover:not(:disabled) {
+  background: rgba(20, 184, 166, 0.15);
+  color: var(--accent);
+}
+
+.permanent-delete-btn:hover:not(:disabled) {
+  background: rgba(244, 112, 112, 0.15);
+  color: var(--error);
+}

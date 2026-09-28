@@ -1,1 +1,208 @@
-/* AlertsPanel component styles - shared styles are in the component's <style> tag */
+/* AlertsPanel component styles.
+ *
+ * These rules used to live in a <style> block inside AlertsPanel.tsx, keyed on
+ * the plain class names (.alert-item, .alerts-panel, ...). The component never
+ * applied those names -- it applies them through `styles.*` from this module --
+ * so every rule but `.alerts-trigger` was dead, and the Learning Monitor panel
+ * rendered unstyled. The rules are here now under the names the JSX actually
+ * uses.
+ *
+ * The same block also referenced five custom properties that exist nowhere:
+ * --color-primary, --color-text-secondary, --color-success and
+ * --color-success-bg. variables.css has a semantic alias layer but it is only
+ * half built, so those declarations were invalid at computed-value time. They
+ * are remapped to real tokens below: --color-primary -> --accent (what
+ * .btn-primary uses), --color-text-secondary -> --text-dim, and the read badge
+ * to --accent over a translucent accent background, matching the
+ * rgba(20, 184, 166, ...) values already used in files.css and messages.css.
+ */
+
+.alertsTrigger {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.alertsTrigger:hover {
+  background: var(--border);
+  border-color: var(--accent);
+}
+
+.alertIcon {
+  font-size: 1.1em;
+}
+
+.unreadBadge {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  background: var(--error);
+  color: #fff;
+  border-radius: 10px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.alertsLabel {
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.alertsPanel {
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+.alertsHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 16px;
+}
+
+.markAllReadBtn {
+  padding: 6px 12px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.markAllReadBtn:hover {
+  opacity: 0.9;
+}
+
+.loading,
+.empty {
+  padding: 32px;
+  text-align: center;
+  color: var(--text-dim);
+}
+
+.emptyHint {
+  font-size: 0.875rem;
+  opacity: 0.7;
+}
+
+.alertsList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.alertItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  gap: 16px;
+  transition: border-color 0.15s ease;
+}
+
+.alertItem:not(.read):hover {
+  border-color: var(--accent);
+}
+
+.alertItem.read {
+  opacity: 0.7;
+}
+
+/* getSeverityClass() in AlertsPanel.tsx returns these three as plain strings,
+   so they stay global while the item class stays module-scoped. */
+.alertItem:global(.alert-warning) {
+  border-left: 4px solid var(--warning);
+}
+
+.alertItem:global(.alert-important) {
+  border-left: 4px solid var(--error);
+}
+
+.alertItem:global(.alert-info) {
+  border-left: 4px solid var(--accent);
+}
+
+.alertContent {
+  flex: 1;
+  min-width: 0;
+}
+
+.alertHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.alertType {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.alertTime {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+
+.alertTitle {
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.alertMessage {
+  font-size: 0.875rem;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+
+.alertActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.readBtn {
+  padding: 6px 12px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.readBtn:hover {
+  opacity: 0.9;
+}
+
+.readBadge {
+  padding: 6px 12px;
+  background: rgba(20, 184, 166, 0.15);
+  color: var(--accent);
+  border-radius: 6px;
+  font-size: 0.875rem;
+  font-weight: 500;
+}

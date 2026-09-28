@@ -149,8 +149,23 @@ match actual practice; converting these to modules is a separate refactor.
 - 28 `style={{}}` in 10 files, invisible to the rule because of kebab-case keys:
   `TopBar` (4), `BrainPage` (9), `BrainGraph` (5), `FrameDetail` (3),
   `ChatPage` (2), `MediaGrid` (1), `InputBar` (1), `TracePanel` (1), `Home` (1),
-  `BrainGraph3D` (1).
-- Two large `<style>` blocks embedded in JSX: `AlertsPanel.tsx` (~160 lines,
-  ~31 undefined-variable references) and `TrashCan.tsx` (~110 lines, 16).
-  Together they account for every undefined `--color-*` reference in the build.
+  `BrainGraph3D` (1). Many of these use `var(--…)` values that exist nowhere
+  (see bugs 5 and 6 above).
+- ~~Two large `<style>` blocks embedded in JSX~~ **resolved 2026-09-28**, and the
+  removal turned out to be mostly deletion:
+  - `AlertsPanel.tsx` — its `<style>` block (≈160 lines) keyed rules on plain
+    class names that the JSX never applied. The component applies `styles.*`
+    instead, and `AlertsPanel.module.css` was **empty** (one comment line). So
+    19 of 20 rules were dead code, and the Learning Monitor panel rendered fully
+    unstyled while looking plausible. The 20 rules now live in
+    `AlertsPanel.module.css` under the names the JSX actually uses; the one
+    live rule (`.alerts-trigger`) dropped its redundant global twin.
+  - `TrashCan.tsx` — its `<style>` block (≈118 lines) used plain names that the
+    JSX *does* apply, so it was live, but it also defined `.btn-icon`, a shared
+    class that InputBar and VoiceControls use too, in a runtime-injected sheet
+    that outranks any real rule. The rules now live in `components.css`; the
+    undefined `--color-*` names were remapped to real tokens.
+  - Both blocks referenced the five undefined `--color-*` aliases; those
+    references are gone with them. The allowlist in `designSystem.test.ts` is
+    down to the five Brain legend dots and `--surface3`.
 
