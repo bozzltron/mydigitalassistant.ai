@@ -19,7 +19,7 @@ describe('AlertsPanel', () => {
     vi.mocked(getAlerts).mockResolvedValue({ alerts: mockAlerts, unread_count: 1 })
 
     // Mock setInterval to store callbacks without actually scheduling
-    vi.spyOn(window, 'setInterval').mockImplementation((callback: () => void, _delay: number) => {
+    vi.spyOn(window, 'setInterval').mockImplementation((_callback: () => void, _delay: number) => {
       return 123 as unknown as number // Fixed ID for testing
     })
     vi.spyOn(window, 'clearInterval').mockImplementation(() => {})

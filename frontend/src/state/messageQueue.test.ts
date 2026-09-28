@@ -106,9 +106,12 @@ describe('messageQueue', () => {
 
   describe('dequeue', () => {
     it('removes a specific message by ID', () => {
-      const id1 = enqueue({ content: 'Msg 1', source: 'text', timestamp: Date.now() });
+      // The bindings for Msg 1 and Msg 3 are unused: the assertions below check
+      // their content, not their ids. The enqueue() calls themselves are NOT
+      // removable -- they are the side effect the test exists to verify.
+      enqueue({ content: 'Msg 1', source: 'text', timestamp: Date.now() });
       const id2 = enqueue({ content: 'Msg 2', source: 'text', timestamp: Date.now() });
-      const id3 = enqueue({ content: 'Msg 3', source: 'text', timestamp: Date.now() });
+      enqueue({ content: 'Msg 3', source: 'text', timestamp: Date.now() });
 
       dequeue(id2);
       expect(getQueueLength()).toBe(2);
