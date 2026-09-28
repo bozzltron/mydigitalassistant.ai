@@ -475,6 +475,39 @@ class Orchestrator:
                 parts.append(f"{label}={value * 1000:.0f}")
         logger.info("turn_timings: " + " ".join(parts))
 
+    async def _assemble_prompt(
+        self,
+        plan: Plan,
+        memory_context: MemoryContext,
+        task_type: str,
+    ) -> tuple[str, str, str]:
+        """Render the system prompt, returning it and the inputs used to build it.
+
+        Returns `(prompt_with_memory, plan_instructions, self_context)`. The last
+        two are needed verbatim by `_fit_prompt_to_cap` later, once the appends
+        are known -- measuring the appends against a re-derived prefix would
+        reintroduce the accounting gap that let a frame get cut mid-way.
+
+        This exists so the three prompt-building paths -- chat, scheduled and
+        streaming -- cannot drift apart. They were near-identical copies that had
+        already drifted once: one passed a hardcoded "functional" where the others
+        passed the real task type, so the memory budget and the prompt's own task
+        guidance could describe different turns. Copy-pasted sizing arithmetic is
+        exactly where a silent, user-visible bug hides.
+        """
+        plan_instructions = format_plan_for_prompt(plan)
+        self_context = await self._get_self_context()
+        system_prompt = build_system_prompt(
+            memory_context=format_memory_context(
+                memory_context,
+                self._memory_char_budget(task_type, plan_instructions, self_context),
+            ),
+            task_type=task_type,
+            planinstructions=plan_instructions,
+            self_context=self_context,
+        )
+        return system_prompt, plan_instructions, self_context
+
     def _fit_prompt_to_cap(
         self,
         prompt_with_memory: str,
@@ -803,20 +836,10 @@ class Orchestrator:
         stored_slots = extraction_summary.get("slots") or []
 
         # 7. Build system prompt with memory context + reasoner guidance
-        plan_instructions = format_plan_for_prompt(plan)
-        self_context = await self._get_self_context()
-        system_prompt = build_system_prompt(
-            memory_context=format_memory_context(
-                memory_context,
-                self._memory_char_budget(task_type.value, plan_instructions, self_context),
-            ),
-            task_type=task_type.value,
-            planinstructions=plan_instructions,
-            self_context=self_context,
+        prompt_with_memory, plan_instructions, self_context = await self._assemble_prompt(
+            plan, memory_context, task_type=task_type.value
         )
-        # Everything appended below lands outside _memory_char_budget's view, so
-        # keep the pre-append prompt to measure the suffix against.
-        prompt_with_memory = system_prompt
+        system_prompt = prompt_with_memory
 
         # DEBUG: Log system prompt for file tools visibility
         logger.info("DEBUG system_prompt contains file tools guidance: %s", 
@@ -1614,18 +1637,10 @@ class Orchestrator:
         # an AI-news monitor must not answer purely from yesterday's frames.
         plan.search_needed = True
 
-        plan_instructions = format_plan_for_prompt(plan)
-        self_context = await self._get_self_context()
-        system_prompt = build_system_prompt(
-            memory_context=format_memory_context(
-                memory_context,
-                self._memory_char_budget("functional", plan_instructions, self_context),
-            ),
-            task_type="functional",
-            planinstructions=plan_instructions,
-            self_context=self_context,
+        prompt_with_memory, plan_instructions, self_context = await self._assemble_prompt(
+            plan, memory_context, task_type="functional"
         )
-        prompt_with_memory = system_prompt
+        system_prompt = prompt_with_memory
 
         search_results: list[SearchResult] = []
         if plan.search_needed:
@@ -1883,18 +1898,10 @@ class Orchestrator:
         stored_slots = extraction_summary.get("slots") or []
 
         # 7. Build system prompt with memory context + reasoner guidance
-        plan_instructions = format_plan_for_prompt(plan)
-        self_context = await self._get_self_context()
-        system_prompt = build_system_prompt(
-            memory_context=format_memory_context(
-                memory_context,
-                self._memory_char_budget(task_type.value, plan_instructions, self_context),
-            ),
-            task_type=task_type.value,
-            planinstructions=plan_instructions,
-            self_context=self_context,
+        prompt_with_memory, plan_instructions, self_context = await self._assemble_prompt(
+            plan, memory_context, task_type=task_type.value
         )
-        prompt_with_memory = system_prompt
+        system_prompt = prompt_with_memory
 
         if stored_slots:
             lines = [f"- {s['frame_name']}.{s['key']} = {s['value']}" for s in stored_slots]

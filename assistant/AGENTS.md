@@ -53,6 +53,34 @@ headers arrive in tens of milliseconds regardless of how long generation takes.
 timeouts as a cause of user-visible latency without measuring headers-vs-body
 first.
 
+### Known characteristic: the answer arrives whole, not token by token
+
+`/chat/stream` streams *events* — `stage` progress, then `finalize` with the
+complete answer, then `meta` — but with `TOOLS_ENABLED=true` (the default) it does
+not stream the answer *text*. Every turn goes through `stream_tool_loop`, which
+uses blocking `chat()` calls internally and yields a single whole-answer
+`FinalizeEvent`. `TextDeltaEvent` exists in `backend/pipeline/streaming.py` and is
+never constructed; the no-tools branch does emit deltas, but it is unreachable in
+the default configuration.
+
+Measured on five live turns: `ttft_ms` tracked `turn_total_ms` to within tens of
+milliseconds (13.0s/13.1s, 13.7s/13.8s, 16.0s/16.1s, 17.8s/17.9s, 39.8s/39.9s).
+So today **total turn time is the user-visible latency** — there is no streaming to
+hide behind, and the `stage` events are what make the wait tolerable.
+
+The frontend already renders `text_delta` incrementally (`frontend/src/state/chat.ts`)
+and has tests for it, so this is a backend gap, not a UI one. Closing it would cut
+perceived wait from ~13-18s to roughly the ~2-3.6s pre-generation span. The open
+design question is what happens when a round turns out to be a tool call after its
+prose has already been shown: either flash chatter that `finalize` then replaces,
+or buffer the round (which keeps most of the wait, because the slow round is the
+first one). Deliberately not done yet.
+
+Note that the speed that is *already* in the answer is the prompt cache: sections
+are ordered stable-first so the ~11k-char stable prefix reuses its KV across
+consecutive turns, and the same model (not a different size) serves tool calls and
+the final answer so both share the hot cache.
+
 ## Web Search
 - **Default backend:** local SearXNG instance at `SEARCH_BASE_URL`. No query leaves
   the machine in the default configuration.
