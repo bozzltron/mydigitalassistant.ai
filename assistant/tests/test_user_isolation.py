@@ -1,5 +1,6 @@
 from unittest.mock import AsyncMock
 
+from assistant.backend.config import settings
 from assistant.backend.db.schema import init_db
 from assistant.backend.memory.retrieval import Retriever
 from assistant.backend.memory.store import MemoryStore
@@ -18,9 +19,9 @@ async def test_multi_user_episodic_isolation_and_shared_household_frame(tmp_path
     bob_frame = await store.create_frame("bob-thing", "entity")
     household = await store.create_frame("our-household", "household")
 
-    await store.store_frame_embedding(alice_frame.id, [0.1] * 768, "nomic-embed-text")
-    await store.store_frame_embedding(bob_frame.id, [0.2] * 768, "nomic-embed-text")
-    await store.store_frame_embedding(household.id, [1.0] + [0.0] * 767, "nomic-embed-text")
+    await store.store_frame_embedding(alice_frame.id, [0.1] * 768, settings.embedding_model)
+    await store.store_frame_embedding(bob_frame.id, [0.2] * 768, settings.embedding_model)
+    await store.store_frame_embedding(household.id, [1.0] + [0.0] * 767, settings.embedding_model)
 
     await store.create_episode(
         alice.id, "alice-session", "user", "Alice says hi", [alice_frame.id, household.id]
@@ -40,7 +41,7 @@ async def test_multi_user_episodic_isolation_and_shared_household_frame(tmp_path
     mock_llm = AsyncMock()
     mock_llm.embed.return_value = EmbeddingResponse(
         embedding=[1.0] + [0.0] * 767,
-        model="nomic-embed-text",
+        model=settings.embedding_model,
     )
     retriever = Retriever(store, mock_llm, min_relevance=0.5)
 

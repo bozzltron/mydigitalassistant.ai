@@ -1,5 +1,6 @@
 from unittest.mock import AsyncMock
 
+from assistant.backend.config import settings
 from assistant.backend.db.schema import init_db
 from assistant.backend.memory.retrieval import Retriever
 from assistant.backend.memory.store import MemoryStore
@@ -18,7 +19,7 @@ async def test_learn_fact_then_recall_in_future_session(tmp_path):
     await store.upsert_slot(guitar.id, "model", "Stratocaster")
     await store.upsert_slot(guitar.id, "strings", "6")
     await store.upsert_slot(guitar.id, "neck", "maple")
-    await store.store_frame_embedding(guitar.id, [1.0] + [0.0] * 767, "nomic-embed-text")
+    await store.store_frame_embedding(guitar.id, [1.0] + [0.0] * 767, settings.embedding_model)
 
     await store.create_episode(
         user.id,
@@ -39,7 +40,7 @@ async def test_learn_fact_then_recall_in_future_session(tmp_path):
     mock_llm = AsyncMock()
     mock_llm.embed.return_value = EmbeddingResponse(
         embedding=[1.0] + [0.0] * 767,
-        model="nomic-embed-text",
+        model=settings.embedding_model,
     )
     retriever = Retriever(store, mock_llm, min_relevance=0.5)
 

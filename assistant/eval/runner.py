@@ -168,7 +168,9 @@ async def main() -> dict:
         coder_model=settings.coder_model,
     )
     llm.force_think = {"never": False, "always": True}.get(think_mode)
-    retriever = Retriever(store=store, llm_client=llm)
+    retriever = Retriever(
+        store=store, llm_client=llm, embedding_model=settings.embedding_model
+    )
     # Eval determinism: learn-then-recall cases run without web search.
     search = WebSearchTool(base_url=settings.search_base_url, enabled=False)
     orchestrator = Orchestrator(

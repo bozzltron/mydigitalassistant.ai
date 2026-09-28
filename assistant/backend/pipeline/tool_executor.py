@@ -30,8 +30,10 @@ logger = logging.getLogger(__name__)
 _store: MemoryStore | None = None
 # Global embed function for recall tool
 _embed_fn: Callable | None = None
-# Embedding model name for search_similar_frames
-_embedding_model: str = "nomic-embed-text"
+# Embedding model name for search_similar_frames. Resolved from settings
+# rather than carrying a literal: sqlite-vec partitions vectors by model
+# name, so searching the wrong label returns zero frames, not an error.
+_embedding_model: str = settings.embedding_model
 # Global search tool instance
 _search_tool: WebSearchTool | None = None
 
@@ -39,14 +41,14 @@ _search_tool: WebSearchTool | None = None
 def init_store(
     db_path: str,
     embed_fn: Callable | None = None,
-    embedding_model: str = "nomic-embed-text",
+    embedding_model: str | None = None,
     search_tool: WebSearchTool | None = None,
 ) -> None:
     """Initialize the global MemoryStore instance, embed function, and search tool."""
     global _store, _embed_fn, _embedding_model, _search_tool
     _store = MemoryStore(db_path)
     _embed_fn = embed_fn
-    _embedding_model = embedding_model
+    _embedding_model = embedding_model or settings.embedding_model
     _search_tool = search_tool
     _register_builtin_tools()
 

@@ -18,6 +18,7 @@ import asyncio
 
 import pytest
 
+from assistant.backend.config import settings
 from assistant.backend.memory.retrieval import Retriever
 from assistant.backend.memory.store import MemoryStore
 from assistant.tests.conftest import add_embedding_cluster
@@ -52,7 +53,7 @@ def seeded_store(tmp_path):
             content="we talked about the garden project and how rushed it felt",
         )
         await s.store_episode_embedding(
-            ep_a.id, _embed("garden project urgency"), "nomic-embed-text"
+            ep_a.id, _embed("garden project urgency"), settings.embedding_model
         )
         ep_b = await s.create_episode(
             user_id=bob,
@@ -61,7 +62,7 @@ def seeded_store(tmp_path):
             content="we talked about the garden project and how rushed it felt",
         )
         await s.store_episode_embedding(
-            ep_b.id, _embed("garden project urgency"), "nomic-embed-text"
+            ep_b.id, _embed("garden project urgency"), settings.embedding_model
         )
         return s, alice, bob, ep_a.id
 
@@ -76,7 +77,7 @@ def test_roundtrip_returns_best_first(seeded_store):
             user_id=alice,
             limit=5,
             min_distance=0.7,
-        embedding_model="nomic-embed-text",
+        embedding_model=settings.embedding_model,
         )
     )
     assert [e.id for e, _sim in hits] == [ep_a]
@@ -91,7 +92,7 @@ def test_owner_isolation(seeded_store):
             user_id=bob,
             limit=10,
             min_distance=0.0,
-        embedding_model="nomic-embed-text",
+        embedding_model=settings.embedding_model,
         )
     )
     ids = [e.id for e, _sim in hits]
@@ -107,7 +108,7 @@ def test_min_distance_filters_unrelated(seeded_store):
             user_id=alice,
             limit=5,
             min_distance=0.3,
-        embedding_model="nomic-embed-text",
+        embedding_model=settings.embedding_model,
         )
     )
     assert hits == []
@@ -124,7 +125,7 @@ def test_excludes_current_session(seeded_store):
         )
     )
     await_emb = _embed("garden project urgency")
-    _run(s.store_episode_embedding(fresh.id, await_emb, "nomic-embed-text"))
+    _run(s.store_episode_embedding(fresh.id, await_emb, settings.embedding_model))
     hits = _run(
         s.search_similar_episodes(
             embedding=await_emb,
@@ -132,7 +133,7 @@ def test_excludes_current_session(seeded_store):
             limit=10,
             min_distance=0.7,
             exclude_session_ids=["s-now"],
-        embedding_model="nomic-embed-text",
+        embedding_model=settings.embedding_model,
         )
     )
     assert fresh.id not in [e.id for e, _sim in hits]
@@ -158,15 +159,15 @@ def test_backfill_and_cap(tmp_path):
 
         # Cap respected.
         done = await s.embed_missing_episodes(
-            embed, cap=2, embedding_model="nomic-embed-text"
+            embed, cap=2, embedding_model=settings.embedding_model
         )
         assert done == 2
         remaining = await s.embed_missing_episodes(
-            embed, cap=None, embedding_model="nomic-embed-text"
+            embed, cap=None, embedding_model=settings.embedding_model
         )
         assert remaining == 2
         # Idempotent once complete.
-        assert await s.embed_missing_episodes(embed, embedding_model="nomic-embed-text") == 0
+        assert await s.embed_missing_episodes(embed, embedding_model=settings.embedding_model) == 0
         return s, uid
 
     asyncio.run(scenario())
@@ -186,7 +187,7 @@ def test_fk_cascade_removes_vector(tmp_path):
         ep = await s.create_episode(
             user_id=uid, session_id="s1", role="user", content="gone soon"
         )
-        await s.store_episode_embedding(ep.id, _embed("gone soon"), "nomic-embed-text")
+        await s.store_episode_embedding(ep.id, _embed("gone soon"), settings.embedding_model)
 
         async with aiosqlite_connect(db_path) as db:
             await db.execute("PRAGMA foreign_keys = ON")
@@ -209,7 +210,7 @@ async def test_retriever_surfaces_past_conversations(store, stub_llm):
         content="tell me about the garden project again",
     )
     emb = (await stub_llm.embed("tell me about the garden project again")).embedding
-    await store.store_episode_embedding(old.id, emb, "nomic-embed-text")
+    await store.store_episode_embedding(old.id, emb, settings.embedding_model)
 
     retriever = Retriever(store, stub_llm)
     ctx = await retriever.retrieve(
@@ -228,7 +229,7 @@ async def test_retriever_empty_frames_still_recalls(store, stub_llm):
         user_id=alice.id, session_id="old", role="assistant", content="garden project notes"
     )
     emb = (await stub_llm.embed("garden project notes")).embedding
-    await store.store_episode_embedding(old.id, emb, "nomic-embed-text")
+    await store.store_episode_embedding(old.id, emb, settings.embedding_model)
 
     retriever = Retriever(store, stub_llm)
     ctx = await retriever.retrieve(query="garden project", user_id=alice.id, session_id="new")

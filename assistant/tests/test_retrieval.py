@@ -1,5 +1,6 @@
 from unittest.mock import AsyncMock, MagicMock
 
+from assistant.backend.config import settings
 from assistant.backend.memory.models import (
     Association,
     Episode,
@@ -14,6 +15,76 @@ from assistant.backend.memory.retrieval import (
     frame_to_text,
 )
 from assistant.backend.pipeline.llm_client import EmbeddingResponse
+
+
+class TestRetrieverEmbeddingModelDefault:
+    """The default must be the model the brain is actually written with.
+
+    `Retriever` defaulted to "nomic-embed-text" while production writes
+    `settings.embedding_model` (qwen3-embedding:0.6b). A default that disagrees
+    with the store is a silent trap: sqlite-vec partitions vectors by model name,
+    so searching the wrong label returns *zero* frames rather than erroring. It
+    cost a full experiment run once -- five of eleven queries came back empty and
+    the result file still looked plausible.
+
+    Production always passes the model explicitly, so this is about every other
+    caller: the eval harness, experiments, scripts, and tests.
+    """
+
+    def test_default_resolves_to_configured_model(self, store):
+        mock_llm = AsyncMock()
+        assert Retriever(store, mock_llm).embedding_model == settings.embedding_model
+
+    def test_explicit_argument_still_wins(self, store):
+        mock_llm = AsyncMock()
+        r = Retriever(store, mock_llm, embedding_model="some-other-model")
+        assert r.embedding_model == "some-other-model"
+
+    async def test_canonicalisation_default_finds_configured_model_vectors(self, store):
+        """Same trap one layer down, in the frame-name canonicalisation lookup.
+
+        `resolve_or_create_frame` embeds the normalised name and searches for an
+        existing frame with a compatible vector. It has its own `embedding_model`
+        parameter, and a wrong label there silently fails the lookup, so
+        "mountain wolf album" and "mountain_wolf_lp" become two frames instead of
+        one -- the frame-graph fragmentation the canonicalisation exists to stop.
+        """
+        from assistant.backend.pipeline.extractor import resolve_or_create_frame
+
+        async def flat_embedding(text: str) -> list[float]:
+            return [0.5] * 768
+
+        existing = await store.create_frame("mountain_wolf_album", "entity")
+        await store.upsert_slot(existing.id, "artist", "wolves")
+        await store.embed_frames([existing.id], flat_embedding, settings.embedding_model)
+
+        # No embedding_model passed: the default must still find the vector.
+        resolved = await resolve_or_create_frame(
+            store, "mountain_wolf_lp", "entity", embed_fn=flat_embedding
+        )
+
+        assert resolved == existing.id, (
+            "canonicalisation created a duplicate frame: the default model label "
+            "did not match the one the frame was indexed under"
+        )
+
+    async def test_default_finds_frames_written_with_the_configured_model(self, store):
+        """End to end: no explicit model, frame stored the way production stores it."""
+        frame = await store.create_frame("guitar", "entity")
+        await store.upsert_slot(frame.id, "strings", "6")
+        await store.store_frame_embedding(frame.id, [1.0, 0.0, 0.0], settings.embedding_model)
+
+        mock_llm = AsyncMock()
+        mock_llm.embed.return_value = MagicMock(embedding=[0.9, 0.1, 0.0])
+
+        retriever = Retriever(store, mock_llm, min_relevance=0.5)
+        user = await store.create_user("alice")
+        ctx = await retriever.retrieve("tell me about guitars", user.id)
+
+        assert [f.frame.name for f in ctx.retrieved_frames] == ["guitar"], (
+            "a default-constructed Retriever found nothing: the default model "
+            "label does not match the one the frame was written with"
+        )
 
 
 def test_frame_to_text():
@@ -202,11 +273,11 @@ async def test_retrieve_finds_relevant_frame(store):
     """A query should find a frame with similar embedding."""
     f1 = await store.create_frame("guitar", "entity")
     await store.upsert_slot(f1.id, "strings", "6")
-    await store.store_frame_embedding(f1.id, [1.0, 0.0, 0.0], "nomic-embed-text")
+    await store.store_frame_embedding(f1.id, [1.0, 0.0, 0.0], settings.embedding_model)
 
     f2 = await store.create_frame("pasta", "entity")
     await store.upsert_slot(f2.id, "type", "spaghetti")
-    await store.store_frame_embedding(f2.id, [0.0, 1.0, 0.0], "nomic-embed-text")
+    await store.store_frame_embedding(f2.id, [0.0, 1.0, 0.0], settings.embedding_model)
 
     mock_llm = AsyncMock()
     mock_llm.embed.return_value = MagicMock(embedding=[0.9, 0.1, 0.0])
@@ -222,13 +293,13 @@ async def test_retrieve_finds_relevant_frame(store):
 async def test_retrieve_graph_walk_finds_neighbors(store):
     """Graph walk should find associated frames via 1-2 hop traversal."""
     f1 = await store.create_frame("guitar", "entity")
-    await store.store_frame_embedding(f1.id, [1.0, 0.0, 0.0], "nomic-embed-text")
+    await store.store_frame_embedding(f1.id, [1.0, 0.0, 0.0], settings.embedding_model)
 
     f2 = await store.create_frame("music", "concept")
-    await store.store_frame_embedding(f2.id, [0.7, 0.7, 0.0], "nomic-embed-text")
+    await store.store_frame_embedding(f2.id, [0.7, 0.7, 0.0], settings.embedding_model)
 
     f3 = await store.create_frame("art", "concept")
-    await store.store_frame_embedding(f3.id, [0.5, 0.8, 0.0], "nomic-embed-text")
+    await store.store_frame_embedding(f3.id, [0.5, 0.8, 0.0], settings.embedding_model)
 
     await store.create_association(f1.id, f2.id, "related_to", confidence=0.9)
     await store.create_association(f2.id, f3.id, "related_to", confidence=0.9)
@@ -253,7 +324,7 @@ async def test_retrieve_includes_recent_episodes(store):
     await store.create_episode(user.id, session, "assistant", "Tell me about it", frame_ids=[])
 
     f1 = await store.create_frame("guitar", "entity")
-    await store.store_frame_embedding(f1.id, [1.0, 0.0, 0.0], "nomic-embed-text")
+    await store.store_frame_embedding(f1.id, [1.0, 0.0, 0.0], settings.embedding_model)
 
     mock_llm = AsyncMock()
     mock_llm.embed.return_value = MagicMock(embedding=[1.0, 0.0, 0.0])
@@ -310,7 +381,7 @@ async def test_graph_walk_stops_at_max_hops(store):
 
 async def test_min_relevance_boundary(store):
     f1 = await store.create_frame("guitar", "entity")
-    await store.store_frame_embedding(f1.id, [1.0, 0.0, 0.0], "nomic-embed-text")
+    await store.store_frame_embedding(f1.id, [1.0, 0.0, 0.0], settings.embedding_model)
 
     mock_llm = AsyncMock()
     mock_llm.embed.return_value = MagicMock(embedding=[0.5, 0.5, 0.0])
@@ -332,7 +403,7 @@ async def test_embed_frame(store):
     retriever = Retriever(store, mock_llm)
     embedding = await retriever.embed_frame(frame, await store.get_slots_for_frame(frame.id))
     assert embedding == [0.9, 0.1, 0.0]
-    stored = await store.get_frame_embedding(frame.id, "nomic-embed-text")
+    stored = await store.get_frame_embedding(frame.id, settings.embedding_model)
     assert stored == [0.9, 0.1, 0.0]
 
 
@@ -375,16 +446,16 @@ async def test_retrieve_identity_query_boosts_identity_frame(store):
     identity_frame = await store.create_frame("identity_name", "entity")
     await store.upsert_slot(identity_frame.id, "full_name", "Elysia")
     await store.store_frame_embedding(
-        identity_frame.id, [0.5] + [0.5] + [0.0] * 766, "nomic-embed-text"
+        identity_frame.id, [0.5] + [0.5] + [0.0] * 766, settings.embedding_model
     )
 
     unrelated = await store.create_frame("guitar", "entity")
-    await store.store_frame_embedding(unrelated.id, [1.0] + [0.0] * 767, "nomic-embed-text")
+    await store.store_frame_embedding(unrelated.id, [1.0] + [0.0] * 767, settings.embedding_model)
 
     mock_llm = AsyncMock()
     mock_llm.embed.return_value = EmbeddingResponse(
         embedding=[0.9] + [0.1] * 767,
-        model="nomic-embed-text",
+        model=settings.embedding_model,
     )
 
     retriever = Retriever(store, mock_llm, min_relevance=0.1)
@@ -404,12 +475,14 @@ async def test_retrieve_identity_query_does_not_duplicate_if_already_retrieved(s
     """If identity_name is already in top results, boost its relevance to 1.0."""
     identity_frame = await store.create_frame("identity_name", "entity")
     await store.upsert_slot(identity_frame.id, "full_name", "Elysia")
-    await store.store_frame_embedding(identity_frame.id, [0.9] + [0.1] * 767, "nomic-embed-text")
+    await store.store_frame_embedding(
+        identity_frame.id, [0.9] + [0.1] * 767, settings.embedding_model
+    )
 
     mock_llm = AsyncMock()
     mock_llm.embed.return_value = EmbeddingResponse(
         embedding=[0.9] + [0.1] * 767,
-        model="nomic-embed-text",
+        model=settings.embedding_model,
     )
 
     retriever = Retriever(store, mock_llm, min_relevance=0.1)

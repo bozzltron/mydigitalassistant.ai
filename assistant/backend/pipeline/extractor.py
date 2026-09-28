@@ -253,7 +253,7 @@ async def resolve_or_create_frame(
     source_url: str | None = None,
     source_reliability: float | None = None,
     embed_fn=None,
-    embedding_model: str = "nomic-embed-text",
+    embedding_model: str | None = None,
     known: dict[str, tuple[int, str]] | None = None,
 ) -> int:
     """Resolve a frame name to an existing frame id, or create a new frame.
@@ -296,7 +296,10 @@ async def resolve_or_create_frame(
             matches = await store.search_similar_frames(
                 query_embedding,
                 user_id=None,
-                embedding_model=embedding_model,
+                # sqlite-vec partitions by model name, so the wrong label returns
+                # zero rows rather than erroring. Resolve from settings so an
+                # omitted argument still finds vectors written by production.
+                embedding_model=embedding_model or settings.embedding_model,
                 limit=5,
                 min_distance=settings.canonical_name_distance,
             )
@@ -522,7 +525,7 @@ async def apply_extraction(
     source_url: str | None = None,
     source_reliability: float | None = None,
     embed_fn=None,
-    embedding_model: str = "nomic-embed-text",
+    embedding_model: str | None = None,
 ) -> dict:
     """Apply an ExtractionResult to the MemoryStore.
 
@@ -619,7 +622,7 @@ async def apply_search_extraction(
     store: "MemoryStore",
     embed_fn=None,
     backend_name: str = "searxng",
-    embedding_model: str = "nomic-embed-text",
+    embedding_model: str | None = None,
 ) -> dict:
     """Apply search extraction with corroboration support.
 

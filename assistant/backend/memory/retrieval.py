@@ -253,7 +253,7 @@ class Retriever:
         self,
         store: "MemoryStore",
         llm_client: "OllamaClient",
-        embedding_model: str = "nomic-embed-text",
+        embedding_model: str | None = None,
         top_k_direct: int = 3,
         graph_hops: int = 2,
         graph_decay: float = 0.5,  # relevance decay per hop
@@ -263,7 +263,11 @@ class Retriever:
     ):
         self.store = store
         self.llm_client = llm_client
-        self.embedding_model = embedding_model
+        # sqlite-vec partitions vectors by model name, so searching the wrong
+        # label returns zero frames instead of erroring. Defaulting to anything
+        # other than the configured model is therefore a silent failure, which is
+        # why this resolves from settings rather than carrying a literal.
+        self.embedding_model = embedding_model or settings.embedding_model
         self.top_k_direct = top_k_direct
         self.graph_hops = graph_hops
         self.graph_decay = graph_decay

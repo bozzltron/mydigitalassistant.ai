@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from assistant.backend.config import settings
 from assistant.backend.memory.retrieval import Retriever
 
 UNIT = [1.0, 0.0, 0.0]
@@ -172,10 +173,10 @@ async def test_retrieve_returns_more_than_top_k_direct(store):
     alice = await store.create_user("alice")
 
     seed = await store.create_frame("seed", "entity", owner_user_id=alice.id)
-    await store.store_frame_embedding(seed.id, UNIT, "nomic-embed-text")
+    await store.store_frame_embedding(seed.id, UNIT, settings.embedding_model)
     for i in range(6):
         n = await store.create_frame(f"n{i}", "entity", owner_user_id=alice.id)
-        await store.store_frame_embedding(n.id, ORTHOGONAL, "nomic-embed-text")
+        await store.store_frame_embedding(n.id, ORTHOGONAL, settings.embedding_model)
         await store.create_association(seed.id, n.id, "related_to")
 
     retriever = Retriever(store, _mock_llm(), min_relevance=0.3, top_k_direct=1)
@@ -191,10 +192,10 @@ async def test_retrieve_caps_graph_frames(store):
     alice = await store.create_user("alice")
 
     seed = await store.create_frame("seed", "entity", owner_user_id=alice.id)
-    await store.store_frame_embedding(seed.id, UNIT, "nomic-embed-text")
+    await store.store_frame_embedding(seed.id, UNIT, settings.embedding_model)
     for i in range(10):
         n = await store.create_frame(f"n{i}", "entity", owner_user_id=alice.id)
-        await store.store_frame_embedding(n.id, ORTHOGONAL, "nomic-embed-text")
+        await store.store_frame_embedding(n.id, ORTHOGONAL, settings.embedding_model)
         await store.create_association(seed.id, n.id, "related_to")
 
     retriever = Retriever(
@@ -215,9 +216,9 @@ async def test_graph_frames_rank_below_direct_matches(store):
     alice = await store.create_user("alice")
 
     seed = await store.create_frame("seed", "entity", owner_user_id=alice.id)
-    await store.store_frame_embedding(seed.id, UNIT, "nomic-embed-text")
+    await store.store_frame_embedding(seed.id, UNIT, settings.embedding_model)
     neighbour = await store.create_frame("neighbour", "entity", owner_user_id=alice.id)
-    await store.store_frame_embedding(neighbour.id, ORTHOGONAL, "nomic-embed-text")
+    await store.store_frame_embedding(neighbour.id, ORTHOGONAL, settings.embedding_model)
     await store.create_association(seed.id, neighbour.id, "related_to")
 
     retriever = Retriever(store, _mock_llm(), min_relevance=0.3, top_k_direct=1)
@@ -234,8 +235,8 @@ async def test_walk_does_not_return_a_direct_match_again(store):
 
     a = await store.create_frame("a", "entity", owner_user_id=alice.id)
     b = await store.create_frame("b", "entity", owner_user_id=alice.id)
-    await store.store_frame_embedding(a.id, UNIT, "nomic-embed-text")
-    await store.store_frame_embedding(b.id, [0.99, 0.01, 0.0], "nomic-embed-text")
+    await store.store_frame_embedding(a.id, UNIT, settings.embedding_model)
+    await store.store_frame_embedding(b.id, [0.99, 0.01, 0.0], settings.embedding_model)
     await store.create_association(a.id, b.id, "related_to")
 
     retriever = Retriever(store, _mock_llm(), min_relevance=0.3, top_k_direct=2)

@@ -15,6 +15,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from assistant.backend.config import settings
 from assistant.backend.memory.gc import run_gc
 from assistant.backend.memory.retrieval import Retriever
 from assistant.backend.memory.store import MemoryStore
@@ -131,9 +132,9 @@ async def test_semantic_search_similarity_convention(store):
     alice = await store.create_user("bob")
     frame = await store.create_frame("guitar_notes", "entity")
     emb = (await StubLLMClient().embed("guitar")).embedding
-    await store.store_frame_embedding(frame.id, emb, "nomic-embed-text")
+    await store.store_frame_embedding(frame.id, emb, settings.embedding_model)
     hits = await store.search_similar_frames(
-        emb, user_id=alice.id, limit=5, embedding_model="nomic-embed-text"
+        emb, user_id=alice.id, limit=5, embedding_model=settings.embedding_model
     )
     assert hits and hits[0][2] == pytest.approx(1.0)
 
@@ -146,10 +147,10 @@ async def test_forgotten_frame_excluded_from_semantic_search(store, stub_llm):
     frame = await store.create_frame("secret_guitar", "entity")
     await store.forget_frame(frame.id)
     emb = (await stub_llm.embed("guitar")).embedding
-    await store.store_frame_embedding(frame.id, emb, "nomic-embed-text")
+    await store.store_frame_embedding(frame.id, emb, settings.embedding_model)
 
     hits = await store.search_similar_frames(
-        emb, user_id=alice.id, limit=5, embedding_model="nomic-embed-text"
+        emb, user_id=alice.id, limit=5, embedding_model=settings.embedding_model
     )
     assert frame.id not in [f.id for f, _s, _sim in hits]
 
@@ -164,8 +165,8 @@ async def test_graph_walk_skips_tombstoned_neighbors(store, stub_llm):
     await store.create_association(hub.id, dead.id, "related_to")
 
     emb = (await stub_llm.embed("guitar")).embedding
-    await store.store_frame_embedding(hub.id, emb, "nomic-embed-text")
-    await store.store_frame_embedding(dead.id, emb, "nomic-embed-text")
+    await store.store_frame_embedding(hub.id, emb, settings.embedding_model)
+    await store.store_frame_embedding(dead.id, emb, settings.embedding_model)
 
     # Tombstone via direct SQL on THIS store's file (GC's exact effect).
 
@@ -201,7 +202,7 @@ async def test_gc_purges_vectors_of_tombstoned_frames(tmp_path):
     await init_db(db_path)
     s = MemoryStore(db_path)
     f = await s.create_frame("stale_thing", "entity")
-    await s.store_frame_embedding(f.id, [1.0] * 8, "nomic-embed-text")
+    await s.store_frame_embedding(f.id, [1.0] * 8, settings.embedding_model)
 
     async with aiosqlite_connect(db_path) as db:
         await db.execute("UPDATE frames SET priority = 0.05 WHERE id = ?", (f.id,))
