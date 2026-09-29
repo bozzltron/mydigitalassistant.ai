@@ -56,6 +56,12 @@ docker run -it --rm -v $(pwd)/frontend:/app -w /app assistant npm run test
 - Async for all LLM/Ollama calls and DB writes in the hot path.
 
 ## Testing instructions
+- **Scope tests to the change while iterating.** Run only the test files that
+  exercise the feature you are touching (e.g. `pytest assistant/tests/test_extractor.py`
+  for an extractor change, or the new regression test you just wrote). Keep the
+  edit/test loop fast. The full suite is a pre-commit gate, not an inner-loop tool.
+- **Run the full suite before every commit/merge** (`pytest assistant/tests/`), per
+  the Pre-Commit Flow below.
 - Every memory-system module must have unit tests (frames, slots, associations, conflicts, retrieval).
 - End-to-end tests must cover: learn-a-fact-then-recall, and contradiction-then-auto-resolve.
 - Critical path tests (voice, run_now, correction, search extraction) must pass before any merge.

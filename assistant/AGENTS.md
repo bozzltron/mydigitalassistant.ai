@@ -468,6 +468,10 @@ Dead code is a liability. Unused functions, duplicate logic, and monolithic file
 ## Pre-Commit Flow (Required)
 **Before every commit, run both lint and tests:**
 
+While iterating on a change, run only the test file(s) that exercise the feature
+you touched (plus the regression test you added) — that keeps the loop fast. The
+full suite below is the pre-commit gate, not the inner loop.
+
 ```bash
 # Backend (from repo root)
 docker run -it --rm -v $(pwd):/app -w /app assistant ruff check .
