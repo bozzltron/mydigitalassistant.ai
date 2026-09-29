@@ -116,10 +116,11 @@ old index frames like `uploaded_files` can carry stale references (see below).
 - **`read_file` result size.** The tool result is re-sent into the model's
   context. A 45 KB CSV is fine; near-1 MB reads are not. Keep the cap.
 - **Embedding model drift.** Frames may carry embeddings under a different
-  `embedding_model` than the runtime default (live DB uses `nomic-embed-text`,
-  768-dim). Never re-embed a frame under a new model without confirming the
-  vector dimension matches the store (`sqlite-vec` searches
-  dimension-sensitively).
+  `embedding_model` than the runtime default (the current default is
+  `qwen3-embedding:0.6b`, 1024-dim; older data may still carry
+  `nomic-embed-text`, 768-dim). Never re-embed a frame under a new model
+  without confirming the vector dimension matches the store (`sqlite-vec`
+  searches dimension-sensitively).
 - **`fetch_url` / sandbox files.** Tool-created files (`write_file`) get
   `file_create` frames; they resolve the same way as uploads.
 

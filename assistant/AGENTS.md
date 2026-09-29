@@ -357,7 +357,7 @@ assistant/backend/memory/retrieval.py          # Include summary frames in retri
 ### Functional Requirements
 1. **Periodic summarization**: Runs as a scheduled task (configurable interval, default daily via `DAILY_TASKS_TIME`)
 2. **Session-scoped**: Summarizes episodes per session; produces one summary frame per session
-3. **Model-driven**: Uses utility model (qwen2.5:3b) — cheap, fast, already loaded
+3. **Model-driven**: Uses the utility model (`UTILITY_MODEL`) — cheap, fast, already loaded
 4. **Structured output**: Generates frames with slots: `summary`, `key_entities`, `open_questions`, `session_id`, `turn_count`, `date_range`
 5. **Frame integration**: Summaries stored as frames (`conversation_summary_{session_id}`) with embeddings for retrieval
 6. **Episodic linkage**: Link summary frame to source episodes via associations (`summarizes` relation)
