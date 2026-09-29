@@ -1,9 +1,12 @@
+import logging
 import re
 from collections.abc import AsyncGenerator
 from typing import Literal
 
 import httpx
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 _THINK_BLOCK_RE = re.compile(r"<think>(.*?)</think>", re.DOTALL)
 _THINK_OPEN_RE = re.compile(r"<think>(.*)$", re.DOTALL)
@@ -219,7 +222,11 @@ class OllamaClient:
     async def model_capabilities(self, model: str | None = None) -> list[str]:
         """Return capability labels (e.g. ["thinking", "tools"]) for a model.
 
-        Results are cached per model. Empty list if the probe fails.
+        Results are cached per model. **Only a successful probe is cached.** A
+        failed probe (Ollama restarting, transient network error) returns an
+        empty list for this call but is retried next time — otherwise one
+        transient failure would silently drop `think=True` and report
+        `supports_tools() == False` for the rest of the process's life.
         """
         model = model or self.chat_model
         if model in self._capabilities_cache:
@@ -229,8 +236,9 @@ class OllamaClient:
             r = await client.post("/api/show", json={"model": model})
             r.raise_for_status()
             caps = list(r.json().get("capabilities", []))
-        except Exception:
-            caps = []
+        except Exception as e:
+            logger.debug("capability probe failed for %s (%s); not caching", model, e)
+            return []
         self._capabilities_cache[model] = caps
         return caps
 
@@ -245,13 +253,50 @@ class OllamaClient:
         """True if the model advertises the 'tools' capability."""
         return "tools" in await self.model_capabilities(model)
 
-    async def _execute_python_sandboxed(self, code: str, timeout: int) -> str:
-        """Execute Python code with timeout, no network, limited imports."""
+    async def _execute_python_subprocess(self, code: str, timeout: int) -> str:
+        """Run model-authored Python in a subprocess. NOT a security sandbox.
+
+        This executes arbitrary code with the backend's own privileges. There is
+        no namespace isolation, no filesystem restriction, no seccomp, no memory
+        cap, and no network block -- a `socket` import works. It is called with
+        model-generated code, and in the orchestrator's reasoning path with the
+        raw user message as the model's input, so treat its output as untrusted
+        and its *execution* as a trust decision, not a containment boundary.
+
+        The previous name (`_execute_python_sandboxed`) and docstring claimed
+        "no network, limited imports". The `allowed_imports` block below is a
+        *prefix* prepended to the file: it makes numpy/sympy/sp/stats convenient
+        and removes nothing (verified -- `import socket` still succeeds). The
+        name was the actual defect: a function whose name asserts a security
+        property it does not have invites callers to trust it.
+
+        What this does enforce:
+        - A wall-clock timeout, with the whole process *group* killed, so a
+          grandchild spawned by the code cannot outlive the call.
+        - A minimal environment (PATH only). It previously passed
+          `{**os.environ}`, which in the deployed container includes `DB_KEY`
+          (the SQLCipher key for the user's brain) and `BRAVE_API_KEY`; model
+          code could read and exfiltrate them.
+        - No `PYTHONPATH`, so user site-packages are not importable.
+
+        Runs off the event loop: a `subprocess.run` here blocked the whole
+        server for up to `timeout` seconds, stalling every other request.
+
+        Args:
+            code: Python source. Untrusted.
+            timeout: wall-clock seconds before the process group is killed.
+
+        Returns:
+            Combined stdout/stderr, each shaped as before; a timeout is returned
+            as an "Error: ..." string rather than raised, matching the previous
+            contract so callers need no change.
+        """
+        import asyncio
         import os
-        import subprocess
         import tempfile
 
-        # Allowed imports (extend as needed)
+        # Convenience prefix, not a restriction. Presented to the model so it can
+        # use these without importing them itself.
         allowed_imports = """
 import math, statistics, random, decimal, fractions
 import itertools, functools, collections, datetime, typing
@@ -266,32 +311,75 @@ except: pass
 """
         full_code = allowed_imports + "\n" + code
 
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as f:
             f.write(full_code)
             tmp_path = f.name
 
+        # Do not inherit the backend's environment: it carries the DB encryption
+        # key and the optional Brave API key. PATH is enough to find python3.
+        env = {"PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin")}
+
         try:
-            result = subprocess.run(
-                ["python3", tmp_path],
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                env={**os.environ, "PYTHONPATH": ""}  # No user site-packages
+            proc = await asyncio.create_subprocess_exec(
+                "python3",
+                tmp_path,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env=env,
+                # Own process group, so a timeout can kill the whole tree rather
+                # than just the interpreter that spawned it.
+                start_new_session=True,
+                cwd=tempfile.gettempdir(),
             )
-            output = result.stdout
-            if result.stderr:
-                output += f"\nSTDERR: {result.stderr}"
-            if result.returncode != 0:
-                output += f"\nExit code: {result.returncode}"
+            try:
+                stdout, stderr = await asyncio.wait_for(
+                    proc.communicate(), timeout=timeout
+                )
+            except TimeoutError:
+                self._kill_process_group(proc)
+                # Reap the child. Without this the transport is garbage
+                # collected after the loop closes and asyncio complains; more
+                # importantly, an unreaped child is a zombie.
+                try:
+                    await asyncio.wait_for(proc.wait(), timeout=5)
+                except (TimeoutError, ProcessLookupError):
+                    pass
+                return f"Error: Execution timed out after {timeout}s"
+
+            output = stdout.decode("utf-8", errors="replace")
+            err = stderr.decode("utf-8", errors="replace")
+            if err:
+                output += f"\nSTDERR: {err}"
+            if proc.returncode != 0:
+                output += f"\nExit code: {proc.returncode}"
             return output
-        except subprocess.TimeoutExpired:
-            return f"Error: Execution timed out after {timeout}s"
         except Exception as e:
             return f"Error: {e}"
         finally:
             try:
                 os.unlink(tmp_path)
-            except Exception:
+            except OSError:
+                pass
+
+    @staticmethod
+    def _kill_process_group(proc) -> None:
+        """Kill a subprocess and everything it spawned, then reap it.
+
+        `proc.kill()` signals only the direct child. Code that forks (or a
+        library that shells out) would survive the timeout and keep running. The
+        child was started with `start_new_session=True`, so its pid is also its
+        process-group id.
+        """
+        import os
+        import signal
+
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+        except (ProcessLookupError, PermissionError, OSError):
+            # Already gone, or no permission to signal the group; fall back.
+            try:
+                proc.kill()
+            except (ProcessLookupError, OSError):
                 pass
 
     async def execute_python(self, code: str, timeout: int = 30) -> str:
@@ -351,8 +439,11 @@ except: pass
 
         if response.tool_calls:
             call = response.tool_calls[0]
-            # Execute the code locally (sandboxed)
-            return await self._execute_python_sandboxed(call.arguments.get("code", ""), timeout)
+            # Executed locally with the backend's privileges; see the method
+            # docstring -- this is NOT a containment boundary.
+            return await self._execute_python_subprocess(
+                call.arguments.get("code", ""), timeout
+            )
 
         raise RuntimeError("Math model did not invoke execute_python tool")
 
@@ -399,8 +490,7 @@ except: pass
             # with empty content (extraction bug: 3 attempts, ~60s each, all
             # empty on qwen3.5:4b).
             if think and not await self.supports_thinking(model):
-                import logging
-                logging.getLogger(__name__).warning(
+                logger.warning(
                     "Model %s does not support 'thinking' capability; ignoring think=True",
                     model,
                 )
@@ -476,14 +566,12 @@ except: pass
             payload["format"] = format
         if think is not None:
             if think and not await self.supports_thinking(model):
-                import logging
-                logging.getLogger(__name__).warning(
+                logger.warning(
                     "Model %s does not support 'thinking' capability; ignoring think=True",
                     model,
                 )
                 think = False
-            if think:
-                payload["think"] = think
+            payload["think"] = think
         if num_predict is not None:
             payload["options"]["num_predict"] = num_predict
         if num_ctx is None:
