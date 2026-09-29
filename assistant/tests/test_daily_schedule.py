@@ -233,6 +233,31 @@ async def test_chat_run_now_task(env):
     assert tasks[0]["last_run"] is not None
 
 
+async def test_run_now_keeps_the_callers_session_id(env):
+    """run_now must echo the caller's session, not mint a fresh uuid.
+
+    The frontend keys its conversation state on the returned session_id, so a
+    fresh uuid made the *next* message start an empty conversation: the user
+    asked "run my briefing now" and silently lost their thread.
+    """
+    orch, llm, store, user_id = env
+    await store.upsert_scheduled_task(
+        name="briefing", description="morning news",
+        schedule_cron="daily", prompt="Give me a morning news briefing",
+        owner_user_id=user_id,
+    )
+    llm.intent_reply = {"intent": "run_now", "name": "briefing"}
+    resp = await orch.chat(
+        ChatRequest(
+            user_id=user_id,
+            message="run my briefing now",
+            session_id="my-thread-42",
+        )
+    )
+    assert resp.task_type == "scheduled"
+    assert resp.session_id == "my-thread-42"
+
+
 async def test_run_scheduled_task_episode_has_frame_ids(env):
     """run_scheduled_task should link extracted frames to the assistant episode."""
     orch, llm, store, user_id = env

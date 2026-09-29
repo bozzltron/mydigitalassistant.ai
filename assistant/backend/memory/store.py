@@ -2,12 +2,10 @@ import asyncio
 import json
 import logging
 import re
-import shutil
 import threading
 import weakref
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
-from pathlib import Path
 
 import aiosqlite
 
@@ -309,10 +307,27 @@ class MemoryStore:
             )
             if existing:
                 frame_id = existing[0][0]
+                # Restore the row to what the caller asked for, not just un-delete
+                # it. The previous version set deleted_at = NULL alone, so a
+                # frame came back with its *stale* type, confidence and source
+                # while the caller received no error -- and `type` is the field
+                # the whole retrieval layer keys off. Slots live in a separate
+                # table and are deliberately left untouched.
                 await db.execute(
-                    "UPDATE frames SET deleted_at = NULL, updated_at = datetime('now') "
+                    "UPDATE frames SET deleted_at = NULL, type = ?, confidence = ?, "
+                    "essential = ?, priority = ?, source_type = ?, source_url = ?, "
+                    "source_reliability = ?, updated_at = datetime('now') "
                     "WHERE id = ?",
-                    (frame_id,),
+                    (
+                        type,
+                        confidence,
+                        essential,
+                        priority,
+                        source_type,
+                        source_url,
+                        source_reliability,
+                        frame_id,
+                    ),
                 )
                 await db.commit()
                 return await self._get_frame_row(db, frame_id)
@@ -567,6 +582,39 @@ class MemoryStore:
                     )
 
             # Move associations from secondary to primary.
+            #
+            # The two UPDATEs below repoint edges, and `associations` is
+            # UNIQUE(from_frame_id, to_frame_id, relation_type) -- a
+            # statement-level constraint, so a collision aborts the whole merge
+            # and rolls back the slot moves already done. Two frames that both
+            # point at the same neighbour with the same relation is the most
+            # common consolidation merge candidate, so this is not an edge case.
+            #
+            # Therefore the edges that *would* collide are deleted first, while
+            # they are still attributable to the secondary. Each direction is
+            # handled separately: an edge created by the first UPDATE cannot
+            # collide with one from the second (that would require both endpoints
+            # to be primary, which the != primary guards exclude).
+            await db.execute(
+                "DELETE FROM associations "
+                "WHERE from_frame_id = ? AND to_frame_id != ? AND EXISTS ("
+                "  SELECT 1 FROM associations a2 "
+                "  WHERE a2.from_frame_id = ? "
+                "    AND a2.to_frame_id = associations.to_frame_id "
+                "    AND a2.relation_type = associations.relation_type"
+                ")",
+                (secondary_id, primary_id, primary_id),
+            )
+            await db.execute(
+                "DELETE FROM associations "
+                "WHERE to_frame_id = ? AND from_frame_id != ? AND EXISTS ("
+                "  SELECT 1 FROM associations a2 "
+                "  WHERE a2.to_frame_id = ? "
+                "    AND a2.from_frame_id = associations.from_frame_id "
+                "    AND a2.relation_type = associations.relation_type"
+                ")",
+                (secondary_id, primary_id, primary_id),
+            )
             await db.execute(
                 "UPDATE associations SET from_frame_id = ? "
                 "WHERE from_frame_id = ? AND to_frame_id != ?",
@@ -577,7 +625,9 @@ class MemoryStore:
                 "WHERE to_frame_id = ? AND from_frame_id != ?",
                 (primary_id, secondary_id, primary_id),
             )
-            # Delete any now self-referential or duplicate associations.
+            # Drop edges the repointing turned into self-loops on the survivor.
+            # An edge (secondary, secondary) becomes (primary, secondary) above,
+            # which the to_frame_id != primary guard does not catch.
             await db.execute(
                 "DELETE FROM associations "
                 "WHERE from_frame_id = to_frame_id "
@@ -1221,8 +1271,12 @@ class MemoryStore:
                         source_episode_id,
                     ),
                 )
-                await db.commit()
                 slot_id = cursor.lastrowid
+                # No commit between the slot and its history row: they are one
+                # belief change. Committing the slot alone left an unaudited
+                # value behind if the history insert failed, and slot_history is
+                # the belief-revision audit trail. It was also two fsyncs on the
+                # hottest write path where one suffices.
                 await db.execute(
                     """
                     INSERT INTO slot_history (
@@ -1332,8 +1386,7 @@ class MemoryStore:
                         """,
                         (frame_id, key, existing_value, value),
                     )
-                    await db.commit()
-                    conflict = await self._get_conflict_row(db, cursor.lastrowid)
+                    conflict_id = cursor.lastrowid
                     await db.execute(
                         """
                         INSERT INTO slot_history (
@@ -1347,7 +1400,11 @@ class MemoryStore:
                             OperationType.REVISE.value, source_episode_id,
                         ),
                     )
+                    # One belief change, one transaction: the conflict row and
+                    # its history entry commit together, so an interrupted write
+                    # cannot leave a conflict with no audit trail.
                     await db.commit()
+                    conflict = await self._get_conflict_row(db, conflict_id)
 
             slot = await self._get_slot_row(db, slot_id)
             return slot, conflict
@@ -1611,7 +1668,15 @@ class MemoryStore:
                 SELECT s.id, s.user_id, s.title, s.created_at, s.updated_at,
                        COUNT(e.id) as episode_count,
                        MAX(e.timestamp) as last_activity,
-                       MAX(CASE WHEN e.role = 'user' THEN e.content END) as first_user_message
+                       -- The opening user message, not the alphabetically-last
+                       -- one. MAX() over TEXT is the lexicographic maximum, so a
+                       -- session whose turns are "aaa first" then "zzz last" was
+                       -- labelled "zzz last" (verified). MIN(id) picks the first
+                       -- turn; the correlated subquery keeps it to user turns.
+                       (SELECT e2.content FROM episodes e2
+                        WHERE e2.session_id = s.id AND e2.user_id = s.user_id
+                          AND e2.role = 'user' AND e2.content != ''
+                        ORDER BY e2.id ASC LIMIT 1) as first_user_message
                 FROM sessions s
                 LEFT JOIN episodes e ON e.session_id = s.id AND e.user_id = s.user_id
                 WHERE s.user_id = ? AND s.deleted_at IS NULL
@@ -1738,14 +1803,47 @@ class MemoryStore:
                 })
             return sessions
 
-    async def get_episodes_for_session(self, session_id: str) -> list[Episode]:
+    async def get_episodes_for_session(
+        self, session_id: str, user_id: int | None = None, limit: int | None = None
+    ) -> list[Episode]:
+        """The most recent `limit` turns in a session, oldest first.
+
+        Owner-scoped when `user_id` is given and bounded when `limit` is. Both
+        matter: this read had neither, so it returned every turn of any session
+        whose id the caller knew, and it grew without bound as a conversation got
+        longer. Every other read behind retrieval is owner-scoped; this one was
+        the exception, and the hot callers filtered and truncated in Python after
+        paying for the full read.
+
+        `limit` selects the *most recent* N (then re-sorts oldest-first), because
+        that is what every request-path caller wants: the chat UI restores the
+        tail of a conversation, and retrieval wants the last few turns. Pass no
+        limit to read a whole session (summarisation, export). A non-positive
+        limit reads the whole session, since `episodes[-0:]` is the entire list
+        and callers relied on that by accident.
+        """
+        if limit is not None and limit <= 0:
+            limit = None
+
+        sql = (
+            "SELECT id, user_id, session_id, role, content, frame_ids, timestamp "
+            "FROM episodes WHERE session_id = ?"
+        )
+        params: list = [session_id]
+        if user_id is not None:
+            sql += " AND user_id = ?"
+            params.append(user_id)
+
+        # DESC takes the newest N when a limit is set; the result is reversed
+        # below so callers always receive chronological order.
+        sql += " ORDER BY id DESC"
+        if limit is not None:
+            sql += " LIMIT ?"
+            params.append(limit)
+
         async with self._connect() as db:
-            rows = await db.execute_fetchall(
-                "SELECT id, user_id, session_id, role, content, frame_ids, timestamp "
-                "FROM episodes WHERE session_id = ? ORDER BY id",
-                (session_id,),
-            )
-            return [Episode(**self._episode_dict(row)) for row in rows]
+            rows = await db.execute_fetchall(sql, tuple(params))
+            return [Episode(**self._episode_dict(row)) for row in reversed(rows)]
 
     async def update_episode_frame_ids(self, episode_id: int, frame_ids: list[int]) -> None:
         """Update the frame_ids for an episode after extraction completes."""
@@ -2555,20 +2653,35 @@ class MemoryStore:
             await db.commit()
 
     async def upsert_scheduler_heartbeat(self, timestamp: str) -> None:
-        """Update the scheduler heartbeat slot on the system frame."""
+        """Update the scheduler heartbeat slot on the system frame.
+
+        Upserts instead of ``INSERT OR REPLACE``: REPLACE deletes and reinserts
+        the row, churning the frame/slot ids and cascading away any associations
+        and slot history pointing at them. A heartbeat must not do that.
+        """
         async with self._connect() as db:
             now = datetime.now(UTC).isoformat()
-            cursor = await db.execute(
-                "INSERT OR REPLACE INTO frames "
-                "(name, type, confidence, essential, priority, source_type, updated_at) "
-                "VALUES ('scheduler_heartbeat', 'system', 1.0, 0, 0.0, 'system', ?)",
-                (now,),
+            rows = await db.execute_fetchall(
+                "SELECT id FROM frames WHERE name = 'scheduler_heartbeat'"
             )
-            frame_id = cursor.lastrowid
+            if rows:
+                frame_id = rows[0][0]
+                await db.execute(
+                    "UPDATE frames SET updated_at = ? WHERE id = ?", (now, frame_id)
+                )
+            else:
+                cursor = await db.execute(
+                    "INSERT INTO frames "
+                    "(name, type, confidence, essential, priority, source_type, updated_at) "
+                    "VALUES ('scheduler_heartbeat', 'system', 1.0, 0, 0.0, 'system', ?)",
+                    (now,),
+                )
+                frame_id = cursor.lastrowid
             await db.execute(
-                "INSERT OR REPLACE INTO slots "
-                "(frame_id, key, value, updated_at) "
-                "VALUES (?, 'last_heartbeat', ?, ?)",
+                "INSERT INTO slots (frame_id, key, value, updated_at) "
+                "VALUES (?, 'last_heartbeat', ?, ?) "
+                "ON CONFLICT(frame_id, key) DO UPDATE SET "
+                "value = excluded.value, updated_at = excluded.updated_at",
                 (frame_id, timestamp, now),
             )
             await db.commit()
@@ -2897,16 +3010,6 @@ class MemoryStore:
             )
             await db.commit()
             return cursor.rowcount
-
-
-    async def _create_backup(self) -> Path:
-        """Create a backup of the current DB before overwrite import."""
-
-        timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
-        backup_name = f"brain-overwrite-{timestamp}.db"
-        backup_path = Path(self.db_path).parent / backup_name
-        shutil.copy2(self.db_path, str(backup_path))
-        return backup_path
 
 
 def lexical_blend_similarity(coverage: float) -> float:

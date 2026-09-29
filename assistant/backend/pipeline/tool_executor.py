@@ -17,7 +17,14 @@ from assistant.backend.config import settings
 from assistant.backend.memory.models import Frame
 from assistant.backend.memory.store import MemoryStore
 
+# Slot-key namespaces owned by the system, not the model. Defined in extractor.py
+# so the extraction pipeline and the tool loop enforce one shared denylist.
+# `file_safe_name` is consumed as a filesystem path by the /files endpoints, so a
+# model-supplied value there is a path primitive. See test_file_slot_reserved_keys.py.
+from assistant.backend.pipeline.extractor import RESERVED_SLOT_PREFIXES
+
 if TYPE_CHECKING:
+    from assistant.backend.pipeline.orchestrator import Orchestrator
     from assistant.backend.pipeline.search import WebSearchTool
 
 logger = logging.getLogger(__name__)
@@ -36,6 +43,12 @@ _embed_fn: Callable | None = None
 _embedding_model: str = settings.embedding_model
 # Global search tool instance
 _search_tool: WebSearchTool | None = None
+# Global Orchestrator. `run_scheduled_task` needs the full cognitive loop, and
+# `fetch_url` needs an llm_client for fact extraction; both live on the
+# Orchestrator, so it is injected rather than rebuilt here. Imported under
+# TYPE_CHECKING only -- orchestrator.py imports this module, so a runtime import
+# would be circular.
+_orchestrator: Orchestrator | None = None
 
 
 def init_store(
@@ -43,13 +56,15 @@ def init_store(
     embed_fn: Callable | None = None,
     embedding_model: str | None = None,
     search_tool: WebSearchTool | None = None,
+    orchestrator: Orchestrator | None = None,
 ) -> None:
     """Initialize the global MemoryStore instance, embed function, and search tool."""
-    global _store, _embed_fn, _embedding_model, _search_tool
+    global _store, _embed_fn, _embedding_model, _search_tool, _orchestrator
     _store = MemoryStore(db_path)
     _embed_fn = embed_fn
     _embedding_model = embedding_model or settings.embedding_model
     _search_tool = search_tool
+    _orchestrator = orchestrator
     _register_builtin_tools()
 
 
@@ -173,8 +188,13 @@ def register_tool(
 # Argument validation
 # ---------------------------------------------------------------------------
 
-def validate_args(tool_name: str, raw_args: dict) -> dict:
-    """Validate raw dict args against the tool's args class."""
+def validate_args(tool_name: str, raw_args: dict) -> dict | None:
+    """Validate raw dict args against the tool's args class.
+
+    Returns the validated dict, or ``None`` when validation fails. The old
+    behaviour returned the raw args on failure, which made every Pydantic
+    constraint (types, ranges, required fields) purely advisory.
+    """
     if tool_name not in TOOL_REGISTRY:
         logger.warning(f"Unknown tool: {tool_name}")
         return raw_args
@@ -187,7 +207,7 @@ def validate_args(tool_name: str, raw_args: dict) -> dict:
         return validated.model_dump()
     except ValidationError as e:
         logger.warning(f"Args validation failed for {tool_name}: {e}")
-        return raw_args
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -209,6 +229,20 @@ async def execute_upsert_slot(args: dict, user_id: str, session_id: str) -> Tool
         source_type = args.get("source_type", "conversation")
         source_episode_id = args.get("source_episode_id")
 
+        # `file_*` slots describe where a file lives on disk. They are written by
+        # the upload/write_file paths, never by the model -- and a model-supplied
+        # value would be a filesystem path primitive, because the /files endpoints
+        # read `file_safe_name` straight off this table. Deny the prefix at the
+        # boundary so the value cannot be forged. See test_file_slot_reserved_keys.py.
+        if slot_key.startswith(RESERVED_SLOT_PREFIXES):
+            return ToolResult(
+                success=False,
+                error=(
+                    f"slot_key {slot_key!r} is reserved: the 'file_' namespace is "
+                    "owned by the upload pipeline and cannot be set by the model"
+                ),
+            )
+
         # Convert frame_name to frame_id via get_frame_by_name
         frame = await _store.get_frame_by_name(frame_name)
         if frame is None:
@@ -229,11 +263,28 @@ async def execute_upsert_slot(args: dict, user_id: str, session_id: str) -> Tool
             frame_id = frame.id
 
         # Call MemoryStore.upsert_slot with correct signature
+        #
+        # source_episode_id: the tool loop has no episode of its own, so absent an
+        # explicit id this stays NULL. The previous expression was inverted --
+        # `hash(session_id) % 2**31 if source_episode_id is None else None` wrote
+        # a fake id when the model supplied *none* and NULL when it supplied a
+        # real one. `hash()` on str is salted per process, so the fake id also
+        # drifted across restarts and could collide with a genuine episode id,
+        # silently attributing a fact to an unrelated turn.
+        episode_id: int | None = None
+        if source_episode_id is not None:
+            try:
+                episode_id = int(source_episode_id)
+            except (TypeError, ValueError):
+                logger.warning(
+                    "Ignoring non-integer source_episode_id %r", source_episode_id
+                )
+
         result = await _store.upsert_slot(
             frame_id=frame_id,
             key=slot_key,
             value=slot_value,
-            source_episode_id=hash(session_id) % (2**31) if source_episode_id is None else None,
+            source_episode_id=episode_id,
             essential=1 if essential else 0,
             priority=priority,
             source_type=source_type,
@@ -265,30 +316,65 @@ async def execute_upsert_association(args: dict, user_id: str, session_id: str =
         return ToolResult(success=False, error="MemoryStore not initialized")
 
     try:
-        source_frame = args.get("source_frame", "")
-        target_frame = args.get("target_frame", "")
+        source_name = args.get("source_frame", "")
+        target_name = args.get("target_frame", "")
         relation_type = args.get("relation_type", "")
         confidence = args.get("confidence", 0.5)
         bidirectional = args.get("bidirectional", False)
 
+        if not source_name or not target_name:
+            return ToolResult(
+                success=False, error="source_frame and target_frame are required"
+            )
+        if not relation_type:
+            return ToolResult(success=False, error="relation_type is required")
+
+        # The tool schema and its description speak in frame *names*, but
+        # `create_association` takes int frame ids -- it never resolved the
+        # names itself. With PRAGMA foreign_keys = ON every call raised
+        # IntegrityError, and because the executor swallows exceptions into a
+        # ToolResult the model was told the tool had a transient failure and
+        # would retry. Verified: name-based raises, id-based succeeds.
+
+        source = await _store.get_frame_by_name(source_name)
+        if source is None:
+            return ToolResult(
+                success=False, error=f"no frame named {source_name!r}"
+            )
+        target = await _store.get_frame_by_name(target_name)
+        if target is None:
+            return ToolResult(
+                success=False, error=f"no frame named {target_name!r}"
+            )
+        if source.id == target.id:
+            return ToolResult(
+                success=False,
+                error="source_frame and target_frame are the same frame",
+            )
+
         await _store.create_association(
-            source_frame,
-            target_frame,
-            relation_type,
+            from_frame_id=source.id,
+            to_frame_id=target.id,
+            relation_type=relation_type,
             confidence=confidence,
         )
 
         if bidirectional:
             await _store.create_association(
-                target_frame,
-                source_frame,
-                relation_type,
+                from_frame_id=target.id,
+                to_frame_id=source.id,
+                relation_type=relation_type,
                 confidence=confidence,
             )
 
         return ToolResult(
             success=True,
-            data={"source_frame": source_frame, "target_frame": target_frame},
+            data={
+                "source_frame": source_name,
+                "target_frame": target_name,
+                "relation_type": relation_type,
+                "bidirectional": bool(bidirectional),
+            },
         )
     except Exception as e:
         logger.error(f"upsert_association failed: {e}", exc_info=True)
@@ -460,15 +546,52 @@ async def execute_search_episodes(args: dict, user_id: str, session_id: str = ""
 
     try:
         query = args.get("query", "")
-        session_id = args.get("session_id")
         max_results = args.get("max_results", 5)
 
-        # Use the existing search_episodes from consolidation
-        from assistant.backend.memory.consolidate import search_episodes as ce_search
+        if not query.strip():
+            return ToolResult(success=False, error="query is required")
+        if _embed_fn is None:
+            return ToolResult(
+                success=False,
+                error=(
+                    "episode search needs the embedder, which is not configured; "
+                    "ask the user directly instead"
+                ),
+            )
 
-        results = await ce_search(query, session_id=session_id, max_results=max_results)
+        # `consolidate.search_episodes` was imported here but does not exist, so
+        # every call to this tool raised ImportError and the model was told the
+        # tool failed. The store's vector search is the real implementation; it
+        # needs the query embedding and the model label that owns the vectors.
+        embedding = await _embed_fn(query)
 
-        return ToolResult(success=True, data={"results": results})
+        exclude: list[str] = []
+        requested_session = args.get("session_id") or session_id
+        if requested_session:
+            exclude.append(requested_session)
+
+        matches = await _store.search_similar_episodes(
+            embedding=embedding,
+            user_id=int(user_id) if user_id else None,
+            embedding_model=_embedding_model,
+            limit=max_results,
+            exclude_session_ids=exclude or None,
+        )
+
+        results = [
+            {
+                "episode_id": ep.id,
+                "session_id": ep.session_id,
+                "role": ep.role,
+                "content": ep.content,
+                "similarity": round(sim, 4),
+            }
+            for ep, sim in matches
+        ]
+        return ToolResult(
+            success=True,
+            data={"query": query, "results": results, "count": len(results)},
+        )
     except Exception as e:
         logger.error(f"search_episodes failed: {e}", exc_info=True)
         return ToolResult(success=False, error=str(e))
@@ -497,14 +620,40 @@ async def execute_web_search(args: dict, user_id: str, session_id: str = "") -> 
 
 
 async def execute_fetch_url(args: dict, user_id: str, session_id: str = "") -> ToolResult:
-    """Fetch and extract text from URL. Auto-extracts facts."""
-    try:
-        from assistant.backend.pipeline.fetch import fetch_and_extract
+    """Fetch and extract text from URL. Auto-extracts facts.
 
+    The previous body imported `assistant.backend.pipeline.fetch`, a module that
+    does not exist, so this advertised tool always failed. The working
+    implementation is `_make_fetch_url_handler` in tools.py -- the same one the
+    CLI's fetch path uses. It fetches, strips HTML, respects robots.txt, and (when
+    a store and llm_client are wired in) extracts facts into memory with
+    `source_type="web_fetch"`, which is what this tool's description promises.
+
+    Note: `extract_facts=False` is honoured by skipping the memory write, which
+    `_make_fetch_url_handler` does not parameterise, so the handler is built with
+    or without the store/llm_client depending on the flag.
+    """
+    try:
         url = args.get("url", "")
         extract_facts = args.get("extract_facts", True)
 
-        result = await fetch_and_extract(url, extract_facts=extract_facts)
+        if not url:
+            return ToolResult(success=False, error="url is required")
+
+        from assistant.backend.pipeline.tools import _make_fetch_url_handler
+
+        llm_client = _orchestrator.llm_client if _orchestrator is not None else None
+        handler = _make_fetch_url_handler(
+            store=_store if extract_facts else None,
+            llm_client=llm_client if extract_facts else None,
+        )
+        content = await handler(url)
+
+        # The handler signals failure with a string prefix rather than raising.
+        if isinstance(content, str) and content.startswith("Error:"):
+            return ToolResult(success=False, error=content)
+
+        result = {"url": url, "content": content, "extract_facts": bool(extract_facts)}
 
         return ToolResult(success=True, data=result)
     except Exception as e:
@@ -826,7 +975,6 @@ async def execute_write_file(args: dict, user_id: str, session_id: str) -> ToolR
         import csv
         import json
         import re
-        from pathlib import Path
 
         from assistant.backend.pipeline.filesystem import (
             PathTraversalError,
@@ -894,10 +1042,17 @@ async def execute_write_file(args: dict, user_id: str, session_id: str) -> ToolR
                                     f"file_{written_path.name}_row_{i}", "record",
                                     source_type="csv_row", owner_user_id=user_id_int
                                 )
-                                for col, val in zip(headers, row, strict=True):
-                                    slot_key = re.sub(r'[^a-zA-Z0-9_]', '_', col.lower().strip())
+                                for col_idx, col in enumerate(headers):
+                                    # Tolerate ragged rows: pad short rows and
+                                    # ignore extra cells instead of raising in
+                                    # zip(strict=True) and orphaning the frames
+                                    # already written for this file.
+                                    val = row[col_idx] if col_idx < len(row) else ""
+                                    slot_key = re.sub(
+                                        r"[^a-zA-Z0-9_]", "_", col.lower().strip()
+                                    )
                                     if not slot_key:
-                                        slot_key = f"col_{i}"
+                                        slot_key = f"col_{col_idx}"
                                     await _store.upsert_slot(
                                         row_frame.id, slot_key, val, source_type="csv_row"
                                     )
@@ -918,7 +1073,7 @@ async def execute_write_file(args: dict, user_id: str, session_id: str) -> ToolR
                     logger.warning(f"CSV row frame creation failed: {e}")
 
         return ToolResult(success=True, data={
-            "path": str(written_path.relative_to(Path("/app/data"))),
+            "path": str(written_path.relative_to(get_sandbox_root())),
             "size": len(content),
             "frame_id": frame.id if _store and frame else None
         })
@@ -1133,14 +1288,67 @@ async def execute_list_files(args: dict, user_id: str, session_id: str) -> ToolR
 
 
 async def execute_run_scheduled_task(args: dict, user_id: str, session_id: str = "") -> ToolResult:
-    """Execute a scheduled task immediately (run_now)."""
+    """Execute a scheduled task immediately (run_now).
+
+    This is AGENTS.md critical path #2. The previous body imported
+    `assistant.backend.scheduler.run_now`, which is not exported by that package,
+    so every invocation raised ImportError and the failure was reported to the
+    model as a recoverable tool error -- the feature had never worked.
+
+    Delegates to the Orchestrator, which owns `run_scheduled_task` (the full
+    cognitive loop) and the same name lookup the chat-side "run my briefing now"
+    path uses, so the two cannot drift.
+    """
     try:
-        from assistant.backend.scheduler import run_now as scheduler_run_now
+        task_name = (args.get("task_name") or "").strip()
+        if not task_name:
+            return ToolResult(success=False, error="task_name is required")
 
-        task_name = args.get("task_name", "")
-        result = await scheduler_run_now(task_name, user_id=user_id)
+        if _orchestrator is None:
+            return ToolResult(
+                success=False,
+                error="orchestrator not initialized; cannot run scheduled tasks",
+            )
+        if _store is None:
+            return ToolResult(success=False, error="MemoryStore not initialized")
 
-        return ToolResult(success=True, data=result)
+        tasks = await _store.get_scheduled_tasks(
+            owner_user_id=int(user_id) if user_id else None
+        )
+        match = next((t for t in tasks if t["name"] == task_name), None)
+        if match is None:
+            available = [t["name"] for t in tasks]
+            return ToolResult(
+                success=False,
+                error=(
+                    f"no scheduled task named {task_name!r}. "
+                    f"Available: {available or 'none'}"
+                ),
+            )
+
+        result = await _orchestrator.run_scheduled_task(
+            match["prompt"], int(user_id), match["name"]
+        )
+
+        # Record the run so `last_run` and the task's result summary are truthful.
+        # The chat-side run_now path does this too; missing it here is what let
+        # "what did my briefing find" drift out of sync with reality.
+        from datetime import UTC, datetime
+
+        await _store.update_scheduled_task_run(
+            frame_id=match["id"],
+            last_run=datetime.now(UTC).isoformat(),
+            last_result_summary=(result or "")[:2000],
+        )
+
+        return ToolResult(
+            success=True,
+            data={
+                "task_name": match["name"],
+                "frame_id": match["id"],
+                "result": result,
+            },
+        )
     except Exception as e:
         logger.error(f"run_scheduled_task failed: {e}", exc_info=True)
         return ToolResult(success=False, error=str(e))
@@ -1270,14 +1478,19 @@ async def execute_tool(
     """
     start = time.time()
 
-    logger.info("DEBUG execute_tool: Called tool=%s args=%s", tool_name, raw_args)
+    logger.debug("execute_tool: tool=%s arg_keys=%s", tool_name, sorted(raw_args))
 
-    # 1. Validate args
-    validated = validate_args(tool_name, raw_args)
-
-    # 2. Look up executor
+    # 1. Look up executor
     if tool_name not in TOOL_REGISTRY:
         return ToolResult(success=False, error=f"Unknown tool: {tool_name}")
+
+    # 2. Validate args. A failure is a failure -- constraints are not advisory.
+    validated = validate_args(tool_name, raw_args)
+    if validated is None:
+        return ToolResult(
+            success=False,
+            error=f"Invalid arguments for tool {tool_name}: {raw_args!r}",
+        )
 
     schema_info = TOOL_REGISTRY[tool_name]
     func = schema_info["func"]

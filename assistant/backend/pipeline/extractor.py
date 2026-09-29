@@ -25,25 +25,31 @@ MAX_SOURCE_RELIABILITY = 0.99
 IDENTITY_FRAME = "identity_name"
 IDENTITY_NAME_SLOT = "full_name"
 
+# Slot-key namespaces owned by the system, not by the model. `file_safe_name` is
+# consumed as a filesystem path by the /files endpoints, so a model-authored value
+# in that namespace is a path primitive. Model output is untrusted input, so this
+# is enforced wherever a model-supplied slot key becomes a slot write.
+RESERVED_SLOT_PREFIXES: tuple[str, ...] = ("file_",)
+
 
 class ExtractedSlot(BaseModel):
-    frame_name: str
-    frame_type: str = "entity"  # 'entity' | 'concept' | 'event' | 'household'
-    key: str
-    value: str | None = None  # Optional — some facts may not have a simple value
-    source_urls: list[str] = Field(default_factory=list)
-    source_domains: list[str] = Field(default_factory=list)
+    frame_name: str = Field(max_length=200)
+    frame_type: str = Field(default="entity", max_length=50)  # entity|concept|event|household
+    key: str = Field(max_length=200)
+    value: str | None = Field(default=None, max_length=4000)
+    source_urls: list[str] = Field(default_factory=list, max_length=50)
+    source_domains: list[str] = Field(default_factory=list, max_length=50)
 
 
 class ExtractedAssociation(BaseModel):
-    from_frame: str
-    to_frame: str
-    relation_type: str = "related_to"
+    from_frame: str = Field(max_length=200)
+    to_frame: str = Field(max_length=200)
+    relation_type: str = Field(default="related_to", max_length=100)
 
 
 class ExtractionResult(BaseModel):
-    slots: list[ExtractedSlot] = Field(default_factory=list)
-    associations: list[ExtractedAssociation] = Field(default_factory=list)
+    slots: list[ExtractedSlot] = Field(default_factory=list, max_length=200)
+    associations: list[ExtractedAssociation] = Field(default_factory=list, max_length=200)
 
 
 EXTRACTION_PROMPT = """You extract structured knowledge from a conversation turn.
@@ -505,7 +511,8 @@ async def extract_facts_from_document(
             # Attach source URL to all extracted slots for traceability
             for slot in result.slots:
                 slot.source_urls = [source_url]
-                slot.source_domains = {urlparse(source_url).netloc} if source_url else set()
+                domain = urlparse(source_url).netloc if source_url else ""
+                slot.source_domains = [domain] if domain else []
             return result
         except (json.JSONDecodeError, ValueError) as e:
             logger.warning("Document extraction parse failed (attempt %d): %s", attempt + 1, e)
@@ -560,9 +567,22 @@ async def apply_extraction(
 
     slots_applied = 0
     conflicts_created = 0
+    skipped_reserved = 0
     applied_slots: list[dict] = []
     for slot in extraction.slots:
         if slot.value is None:
+            continue
+        # Model output is untrusted input. `ExtractedSlot.key` is a free-form
+        # string with no allowlist, and the `file_*` namespace is consumed as a
+        # filesystem path by the /files endpoints -- so an extracted slot key is
+        # a path primitive. See test_file_slot_reserved_keys.py.
+        if slot.key.startswith(RESERVED_SLOT_PREFIXES):
+            skipped_reserved += 1
+            logger.warning(
+                "Dropped extracted slot with reserved key %r on frame %r",
+                slot.key,
+                slot.frame_name,
+            )
             continue
         frame_id = frame_ids[slot.frame_name]
         _, conflict = await store.upsert_slot(
@@ -613,6 +633,10 @@ async def apply_extraction(
         "conflicts_created": conflicts_created,
         "frame_ids": list(frame_ids.values()),
         "slots": applied_slots,
+        # Surfaced rather than dropped silently: a model that keeps emitting
+        # `file_*` keys is misbehaving, and that should be visible in the
+        # extraction summary instead of looking like "nothing was learned".
+        "reserved_keys_skipped": skipped_reserved,
     }
 
 
@@ -654,7 +678,11 @@ async def apply_search_extraction(
         for slot in extraction.slots:
             if not slot.value:
                 continue
-            if slot.value.lower() in snippet_lower or slot.key.lower() in snippet_lower:
+            # Match on the value only. An empty or generic key would otherwise
+            # match `"" in snippet` for every snippet, so a fact seen in zero
+            # sources could still be scored as corroborated and clear the
+            # high-stakes gate.
+            if slot.value.lower() in snippet_lower:
                 fact_key_to_urls[(slot.frame_name, slot.key, slot.value)].add(result.url)
                 if domain:
                     fact_key_to_domains[(slot.frame_name, slot.key, slot.value)].add(domain)
@@ -667,24 +695,37 @@ async def apply_search_extraction(
     high_stakes_categories = {"financial", "medical", "legal", "safety", "security"}
 
     def _categorize_fact(frame_name: str, slot_key: str) -> str:
-        text = f"{frame_name} {slot_key}".lower()
+        # Tokenize on word boundaries. A substring test misfires badly here:
+        # "rate" in "fender_stratocaster", "stock" in "stockholm", "law" in
+        # "lawrence_fountain" all tagged musical/hobby frames as financial or
+        # legal and clamped them to reduced reliability. A trailing "s" is also
+        # folded so "prices" still matches "price".
+        raw_tokens = re.split(r"[^a-z0-9]+", f"{frame_name} {slot_key}".lower())
+        tokens = set(raw_tokens)
+        for token in raw_tokens:
+            if token.endswith("s") and len(token) > 3:
+                tokens.add(token[:-1])
+
+        def _has(keywords: list[str]) -> bool:
+            return any(kw in tokens for kw in keywords)
+
         financial_kw = [
             "price", "cost", "revenue", "profit", "npv", "irr",
             "investment", "stock", "bond", "rate", "yield"
         ]
-        if any(kw in text for kw in financial_kw):
+        if _has(financial_kw):
             return "financial"
         medical_kw = [
             "dose", "medication", "diagnosis", "symptom",
             "treatment", "drug", "therapy"
         ]
-        if any(kw in text for kw in medical_kw):
+        if _has(medical_kw):
             return "medical"
         legal_kw = ["law", "regulation", "compliance", "contract", "liability", "statute"]
-        if any(kw in text for kw in legal_kw):
+        if _has(legal_kw):
             return "legal"
         safety_kw = ["hazard", "danger", "warning", "recall", "toxic", "explosive", "flammable"]
-        if any(kw in text for kw in safety_kw):
+        if _has(safety_kw):
             return "safety"
         return "general"
 
@@ -741,7 +782,7 @@ async def apply_search_extraction(
     for slot in deduped_slots:
         fact_key = (slot.frame_name, slot.key, slot.value)
         slot.source_urls = list(fact_key_to_urls.get(fact_key, set()))
-        slot.source_domains = fact_key_to_domains.get(fact_key, set())
+        slot.source_domains = sorted(fact_key_to_domains.get(fact_key, set()))
 
     frame_ids: dict[str, int] = {}
     all_frame_names = {slot.frame_name for slot in deduped_slots}
@@ -767,9 +808,20 @@ async def apply_search_extraction(
 
     slots_applied = 0
     conflicts_created = 0
+    skipped_reserved = 0
     applied_slots: list[dict] = []
     for slot in deduped_slots:
         if slot.value is None:
+            continue
+        # Same reserved-namespace guard as apply_extraction: search-derived facts
+        # are model output too, and a fetched page is untrusted input.
+        if slot.key.startswith(RESERVED_SLOT_PREFIXES):
+            skipped_reserved += 1
+            logger.warning(
+                "Dropped search-extracted slot with reserved key %r on frame %r",
+                slot.key,
+                slot.frame_name,
+            )
             continue
         frame_id = frame_ids[slot.frame_name]
         fact_key = (slot.frame_name, slot.key, slot.value)
@@ -844,6 +896,7 @@ async def apply_search_extraction(
         "conflicts_created": conflicts_created,
         "frame_ids": list(frame_ids.values()),
         "slots": applied_slots,
+        "reserved_keys_skipped": skipped_reserved,
         "corroboration_status": {
             "high_stakes_checked": sum(1 for s in applied_slots if s.get("needs_corroboration")),
             "flagged_for_review": sum(1 for s in applied_slots if s.get("needs_corroboration")),
@@ -1172,7 +1225,14 @@ Respond with ONLY valid JSON:
                 temperature=0.0,
                 think=False,
             )
-            return json.loads(response.content)
+            parsed = json.loads(response.content)
+            if not isinstance(parsed, dict):
+                # A non-object (e.g. a bare list or string) would parse fine but
+                # crash the caller at `parsed.get(...)`, outside this retry loop.
+                raise ValueError(
+                    f"scheduled task JSON must be an object, got {type(parsed).__name__}"
+                )
+            return parsed
         except (json.JSONDecodeError, ValueError) as e:
             logger.warning("Scheduled task parse failed (attempt %d): %s", attempt + 1, e)
             if attempt == 0:
@@ -1180,7 +1240,6 @@ Respond with ONLY valid JSON:
                 system = ChatMessage(role="system", content=system.content + extra)
             else:
                 raise
-    raise ValueError("Failed to parse scheduled task fields")
 
 
 async def apply_correction(

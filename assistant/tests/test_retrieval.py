@@ -495,7 +495,7 @@ async def test_retrieve_identity_query_does_not_duplicate_if_already_retrieved(s
 
 
 def test_format_memory_context_truncates_really_long_episodes():
-    """Episodes beyond EPISODE_DIGEST_CHARS become digests.
+    """Episodes beyond `max_episode_digest_chars` become digests.
 
     Verbatim full episodes in the system prompt duplicated the conversation
     history and inflated prefill by thousands of tokens; the most recent
