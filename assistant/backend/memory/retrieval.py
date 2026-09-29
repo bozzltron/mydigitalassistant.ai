@@ -61,12 +61,6 @@ def frame_to_text(frame: Frame, slots: list[Slot]) -> str:
     return "\n".join(parts)
 
 
-# Max chars of any single episode shown in the memory-context digest.
-# Recent turns still arrive verbatim as chat history; this only bounds the
-# older tail so one verbose answer can't inflate every future prompt.
-EPISODE_DIGEST_CHARS = 160
-
-
 def _fits(
     lines: list[str],
     block: list[str],
@@ -437,7 +431,12 @@ class Retriever:
 
          # 6. Recent episodes — prefer session-scoped when session_id is provided
         if session_id:
-            session_episodes = await self.store.get_episodes_for_session(session_id)
+            # Owner-scoped and bounded in SQL. This was previously an unscoped
+            # read, so a session id shared across household members could pull
+            # the other member's turns straight into the prompt.
+            session_episodes = await self.store.get_episodes_for_session(
+                session_id, user_id=user_id, limit=settings.max_episodes_in_prompt
+            )
             if len(session_episodes) >= 2:
                 recent_episodes = session_episodes[-settings.max_episodes_in_prompt :]
             else:

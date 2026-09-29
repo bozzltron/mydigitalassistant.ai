@@ -250,7 +250,7 @@ class TestDocumentExtractionSources:
         assert len(result.slots) == 1
         slot = result.slots[0]
         assert slot.source_urls == ["https://source.example.com/page"]
-        assert slot.source_domains == {"source.example.com"}
+        assert slot.source_domains == ["source.example.com"]
 
 
 if __name__ == "__main__":

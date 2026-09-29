@@ -60,4 +60,7 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "N"]
-ignore = ["B008"]
+# B008: FastAPI's Depends()/Query()/File() are intentionally called in defaults.
+# UP042: (str, Enum) is kept where the enum must stay a plain str in JSON and
+#        log formatting; StrEnum changes __str__/__format__.
+ignore = ["B008", "UP042"]
