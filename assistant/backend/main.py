@@ -4,10 +4,11 @@ import logging
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime
+from enum import Enum
 from pathlib import Path
 
 from fastapi import Depends as _Depends
-from fastapi import FastAPI, File, HTTPException, Response, UploadFile
+from fastapi import FastAPI, File, HTTPException, Query, Response, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -235,6 +236,7 @@ async def lifespan(app: FastAPI):
             embed_fn=orchestrator.embed_fn(),
             embedding_model=orchestrator.llm_client.embedding_model,
             search_tool=search_tool,
+            orchestrator=orchestrator,
         )
         logger.info("Tool executor initialized successfully")
     except Exception as e:
@@ -378,8 +380,9 @@ async def get_settings() -> dict:
 @app.get("/search")
 async def search_frames(
     q: str,
-    limit: int = 10,
-    min_similarity: float = 0.3,
+    limit: int = Query(default=10, ge=1, le=100),
+    min_similarity: float | None = None,
+    min_relevance: float | None = None,
     store: MemoryStore = _Depends(get_store),
     orch: Orchestrator = _Depends(get_orchestrator),
 ):
@@ -387,20 +390,29 @@ async def search_frames(
 
     Returns frames whose embeddings are similar to the query.
     Results include frame details, slots, and similarity score.
+
+    The threshold is accepted under both spellings: ``min_relevance`` (what the
+    frontend and the retriever call it) and ``min_similarity`` (this endpoint's
+    historical name). Accepting only one meant a client sending the other got the
+    0.3 default silently.
     """
+    threshold = min_relevance if min_relevance is not None else min_similarity
+    if threshold is None:
+        threshold = 0.3
+
     if not q.strip():
         raise HTTPException(status_code=400, detail="Query cannot be empty")
 
     # Embed the query
     query_response = await orch.llm_client.embed(q)
-    
+
     # Search using sqlite-vec
     results = await store.search_similar_frames(
         embedding=query_response.embedding,
         user_id=0,   # not user-specific in this endpoint
         embedding_model=settings.embedding_model,
         limit=limit,
-        min_distance=1.0 - min_similarity,
+        min_distance=1.0 - threshold,
      )
     
     return {
@@ -767,7 +779,9 @@ async def transcribe(file: UploadFile = None):
 
     try:
         text = await transcribe_audio(tmp_path)
-        logger.info("Transcription result: %r", text)
+        # DEBUG, not INFO, and the length rather than the words: a transcript is
+        # the user's voice, and INFO logs land in the container log by default.
+        logger.debug("Transcription result: %d chars", len(text))
         return {"text": text.strip()}
     except Exception as e:
         logger.error("Transcription failed: %s", e)
@@ -828,9 +842,17 @@ async def get_user(user_id: int, store: MemoryStore = _Depends(get_store)):
 
 # Memory introspection
 @app.get("/memory/frames", response_model=list[Frame])
-async def list_frames(type: str | None = None, store: MemoryStore = _Depends(get_store)):
-    """List all frames in memory. Optionally filter by type."""
-    return await store.list_frames(type=type)
+async def list_frames(
+    type: str | None = None,
+    user_id: int | None = None,
+    store: MemoryStore = _Depends(get_store),
+):
+    """List all frames in memory. Optionally filter by type and owner.
+
+    ``user_id`` narrows to frames owned by that user; the frontend sends it, and
+    the param was previously ignored (the filter silently did nothing).
+    """
+    return await store.list_frames(type=type, owner_user_id=user_id)
 
 
 @app.get("/memory/frames/{frame_id}", response_model=Frame)
@@ -1012,7 +1034,7 @@ async def _summarize_memories(
 @app.get("/memory/search", response_model=TopicSearchResponse)
 async def memory_search(
     q: str,
-    limit: int = 8,
+    limit: int = Query(default=8, ge=1, le=100),
     summary: bool = False,
     store: MemoryStore = _Depends(get_store),
 ):
@@ -1077,7 +1099,10 @@ async def memory_search(
             similarity=score,
         )
 
-    logger.info("Topic search %r: %d matches after lexical blend", q, len(matches))
+    logger.debug(
+        "Topic search (query_len=%d): %d matches after lexical blend",
+        len(q), len(matches),
+    )
     ranked = sorted(
         matches.values(),
         key=lambda m: (m.similarity is not None, m.similarity or 0.0),
@@ -1114,7 +1139,9 @@ async def memory_search(
 # Episodes (for debugging / inspection)
 @app.get("/users/{user_id}/episodes", response_model=list[Episode])
 async def get_user_episodes(
-    user_id: int, limit: int = 50, store: MemoryStore = _Depends(get_store)
+    user_id: int,
+    limit: int = Query(default=50, ge=1, le=500),
+    store: MemoryStore = _Depends(get_store),
 ):
     return await store.get_episodes_for_user(user_id, limit=limit)
 
@@ -1129,22 +1156,22 @@ class SessionMessage(BaseModel):
 async def get_session_messages(
     session_id: str,
     user_id: int,
-    limit: int = 50,
+    limit: int = Query(default=50, ge=1, le=500),
     store: MemoryStore = _Depends(get_store),
 ):
     """Conversation turns for a session, oldest first — chat UI restore.
 
-    user_id is required and filters the episodes so one household member
-    cannot replay another member's session by guessing the session id.
+    user_id is required and scopes the read in SQL so one household member
+    cannot replay another member's session by guessing the session id. `limit`
+    selects the most recent N turns and is applied in SQL, so a long-running
+    session no longer transfers its entire history to render the last screenful.
     """
-    episodes = [
-        e
-        for e in await store.get_episodes_for_session(session_id)
-        if e.user_id == user_id
-    ]
+    episodes = await store.get_episodes_for_session(
+        session_id, user_id=user_id, limit=limit
+    )
     return [
         SessionMessage(role=e.role, content=e.content, timestamp=e.timestamp)
-        for e in episodes[-limit:]
+        for e in episodes
     ]
 
 
@@ -1165,12 +1192,19 @@ async def db_backup(store: MemoryStore = _Depends(get_store)):
     backup_name = f"backup-{timestamp}.db"
     backup_path = db_path.parent / backup_name
 
-    src = connect(str(db_path))
-    dst = connect(str(backup_path))
-    with dst:
-        src.backup(dst)
-    src.close()
-    dst.close()
+    def _copy() -> None:
+        src = connect(str(db_path))
+        dst = connect(str(backup_path))
+        try:
+            with dst:
+                src.backup(dst)
+        finally:
+            src.close()
+            dst.close()
+
+    # SQLite's backup API is blocking. A large brain would otherwise freeze the
+    # event loop -- and every in-flight request with it -- for the whole copy.
+    await asyncio.to_thread(_copy)
 
     return {
         "status": "ok",
@@ -1209,16 +1243,20 @@ async def db_restore(backup_filename: str, store: MemoryStore = _Depends(get_sto
     # silently undoes itself and the restored database will not even open. Going
     # through SQLite also gets the locking and the encryption context right, and
     # leaves open connections seeing the restored contents immediately.
-    src = connect(str(backup_path))
-    dst = connect(str(db_path))
+    def _restore() -> None:
+        src = connect(str(backup_path))
+        dst = connect(str(db_path))
+        try:
+            with dst:
+                src.backup(dst)
+        finally:
+            src.close()
+            dst.close()
+
     try:
-        with dst:
-            src.backup(dst)
+        await asyncio.to_thread(_restore)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Restore failed: {exc}") from exc
-    finally:
-        src.close()
-        dst.close()
 
     return {
         "status": "ok",
@@ -1245,10 +1283,16 @@ async def list_backups(store: MemoryStore = _Depends(get_store)):
 # Feedback
 
 
+class FeedbackKind(str, Enum):
+    positive = "positive"
+    negative = "negative"
+    correction = "correction"
+
+
 class FeedbackRequest(BaseModel):
     episode_id: str | None = None
     message_id: str
-    kind: str
+    kind: FeedbackKind
     comment: str | None = None
 
 
@@ -1269,22 +1313,42 @@ async def submit_feedback(
     - correction: records the correction text; apply it via POST /correction,
       which routes through the LLM correction pipeline
     """
-    valid_kinds = {"positive", "negative", "correction"}
-    if request.kind not in valid_kinds:
+    valid_kinds = {k.value for k in FeedbackKind}
+    if request.kind.value not in valid_kinds:  # pragma: no cover - enum enforces it
         raise HTTPException(status_code=400, detail=f"kind must be one of {valid_kinds}")
 
     feedback = await store.create_feedback(
         episode_id=request.episode_id,
         message_id=request.message_id,
-        kind=request.kind,
+        kind=request.kind.value,
         comment=request.comment,
     )
 
     slots_updated = 0
-    if request.kind == "positive":
+    if request.kind is FeedbackKind.positive:
         slots_updated = await store.apply_positive_feedback(request.episode_id)
-    elif request.kind == "negative":
+    elif request.kind is FeedbackKind.negative:
         slots_updated = await store.apply_negative_feedback(request.episode_id)
+
+    # Be honest about what happened. This handler previously reported
+    # {"status":"ok"} unconditionally, so a reaction that updated zero
+    # confidences -- which is what every reaction did, because the UI sent a
+    # null episode id -- was indistinguishable from a successful one. The
+    # feedback row is still recorded either way (it is the audit trail), but the
+    # caller can now tell that reinforcement did not happen.
+    if request.kind is FeedbackKind.positive or request.kind is FeedbackKind.negative:
+        if slots_updated == 0:
+            logger.warning(
+                "Feedback recorded but no confidences changed: kind=%s message_id=%s "
+                "episode_id=%r. The session id may be missing, or no turn in it "
+                "touched memory.",
+                request.kind.value, request.message_id, request.episode_id,
+            )
+            return FeedbackResponse(
+                status="recorded_no_memory_touched",
+                feedback=feedback,
+                slots_updated=0,
+            )
 
     return FeedbackResponse(
         status="ok",
@@ -1332,7 +1396,11 @@ async def submit_correction(
 
     source_episode_id = None
     if request.episode_id:
-        episodes = await store.get_episodes_for_session(request.episode_id)
+        # `limit=1`: only the latest turn is ever used. This endpoint has no
+        # user_id in its request shape, so it stays unscoped; the read is at
+        # least bounded. Owner-scoping it needs an API change (tracked in the
+        # plan) rather than a silent behaviour change here.
+        episodes = await store.get_episodes_for_session(request.episode_id, limit=1)
         if episodes:
             source_episode_id = episodes[-1].id
 
@@ -1486,7 +1554,7 @@ class AlertsListResponse(BaseModel):
 async def get_alerts(
     user_id: int = 1,
     unread_only: bool = False,
-    limit: int = 50,
+    limit: int = Query(default=50, ge=1, le=500),
     store: MemoryStore = _Depends(get_store),
 ):
     """Get alerts for a user (learning monitor)."""
@@ -1735,10 +1803,6 @@ async def new_conversation(
     return {"session_id": session_id, "message": "New conversation created"}
 
 
-
-# Serve static files (JS, CSS, favicon, etc.) directly from the static directory
-app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
-
 # Serve root-level assets (trash.svg, favicon.ico, favicon.svg) for direct access
 
 @app.get("/trash.svg")
@@ -1763,8 +1827,8 @@ async def conversation_details(
     Includes episode count, first message, and whether the session
     has any stored facts/frames.
     """
-    episodes = await store.get_episodes_for_session(session_id)
-    user_episodes = [e for e in episodes if e.user_id == user_id]
+    episodes = await store.get_episodes_for_session(session_id, user_id=user_id)
+    user_episodes = episodes
     
     # Get first user message
     first_msg = None
@@ -2294,6 +2358,36 @@ async def search_files(
     return FileSearchResponse(frames=frames, query=query)
 
 
+async def _file_slots_for_frame(store: MemoryStore, frame_id: int) -> dict[str, str]:
+    """All slot key/value pairs for a file frame, as a plain dict."""
+    async with store._connect() as db:
+        rows = await db.execute_fetchall(
+            "SELECT key, value FROM slots WHERE frame_id = ?", (frame_id,)
+        )
+    return {row[0]: row[1] for row in rows}
+
+
+def _contained_file_path(file_safe_name: str):
+    """Resolve a `file_safe_name` slot to a path inside the data dir.
+
+    `file_safe_name` is a DB string, and the model can write slots: the
+    `upsert_slot` tool and the extraction pipeline both accept an arbitrary
+    `slot_key` with no reserved-key denylist. Joining it by hand therefore gave
+    arbitrary file read (via the two GET handlers) and arbitrary file delete
+    (via DELETE). `Path("/app/data") / "/app/.env"` needs no `..` at all, because
+    an absolute right-hand operand discards the left.
+
+    This delegates to the same `resolve_sandbox_path` the file tools already use
+    (tool_executor reads this very slot through it), so the API surface and the
+    tool surface now agree on what a legal path is.
+
+    Raises PathTraversalError if the value escapes the data directory.
+    """
+    from assistant.backend.pipeline.filesystem import resolve_sandbox_path
+
+    return resolve_sandbox_path(file_safe_name)
+
+
 # Get file content by frame ID (download as text)
 @app.get("/files/{frame_id}/content", response_model=FileContentResponse)
 async def get_file_content(
@@ -2301,50 +2395,7 @@ async def get_file_content(
     store: MemoryStore = _Depends(get_store),
 ):
     """Get file content by frame ID for download."""
-    frame = await store.get_frame(frame_id)
-    if not frame:
-        raise HTTPException(status_code=404, detail="File not found")
-
-    # Read slots for this frame
-    async with store._connect() as db:
-        query = (
-            "SELECT id, key, value, confidence, essential, priority, "
-            "source_type, source_episode_id FROM slots WHERE frame_id = ?"
-        )
-        rows = await db.execute_fetchall(query, (frame_id,))
-
-    slots_dict = {}
-    for row in rows:
-        slots_dict[row[1]] = row[2]  # key -> value
-
-    # Extract file metadata from slots
-    file_name = slots_dict.get("file_name")
-    file_ext = slots_dict.get("file_ext")
-    file_size = slots_dict.get("file_size")
-    file_safe_name = slots_dict.get("file_safe_name")
-
-    # Build content from the actual file on disk
-    from pathlib import Path
-
-    data_dir = Path("/app/data")
-    content = ""
-
-    if file_safe_name:
-        file_path = data_dir / file_safe_name
-        if file_path.exists():
-            try:
-                content = file_path.read_text(encoding="utf-8", errors="replace")
-            except Exception:
-                content = ""
-
-    return FileContentResponse(
-        frame_id=frame.id,
-        frame_name=frame.name,
-        content=content,
-        file_name=file_name,
-        file_ext=file_ext,
-        file_size=int(file_size) if file_size else None,
-    )
+    return await _file_response(store, frame_id)
 
 
 # Get file details and content by frame ID
@@ -2354,40 +2405,41 @@ async def get_file(
     store: MemoryStore = _Depends(get_store),
 ):
     """Get file details and content by frame ID."""
+    return await _file_response(store, frame_id)
+
+
+async def _file_response(store: MemoryStore, frame_id: int) -> "FileContentResponse":
+    """Shared body for both GET /files/{frame_id} routes.
+
+    These two handlers were byte-identical duplicates. Because Starlette matches
+    routes in registration order, `/files/{id}/content` was permanently shadowed
+    by `/files/{id}`, so the first copy could never serve a request -- which meant
+    a containment fix applied to only one of them would have been no fix at all.
+    """
     frame = await store.get_frame(frame_id)
     if not frame:
         raise HTTPException(status_code=404, detail="File not found")
 
-    # Read slots for this frame
-    async with store._connect() as db:
-        query = (
-            "SELECT id, key, value, confidence, essential, priority, "
-            "source_type, source_episode_id FROM slots WHERE frame_id = ?"
-        )
-        rows = await db.execute_fetchall(query, (frame_id,))
-
-    slots_dict = {}
-    for row in rows:
-        slots_dict[row[1]] = row[2]  # key -> value
-
-    # Extract file metadata from slots
+    slots_dict = await _file_slots_for_frame(store, frame_id)
     file_name = slots_dict.get("file_name")
     file_ext = slots_dict.get("file_ext")
     file_size = slots_dict.get("file_size")
     file_safe_name = slots_dict.get("file_safe_name")
 
-    # Build content from the actual file on disk
-    from pathlib import Path
-
-    data_dir = Path("/app/data")
     content = ""
-
     if file_safe_name:
-        file_path = data_dir / file_safe_name
-        if file_path.exists():
+        from assistant.backend.pipeline.filesystem import PathTraversalError
+
+        try:
+            file_path = _contained_file_path(file_safe_name)
+        except (PathTraversalError, ValueError):
+            # A slot pointing outside the data dir is not a readable file.
+            # Return metadata with empty content rather than leaking the path.
+            file_path = None
+        if file_path is not None and file_path.exists():
             try:
                 content = file_path.read_text(encoding="utf-8", errors="replace")
-            except Exception:
+            except OSError:
                 content = ""
 
     return FileContentResponse(
@@ -2412,28 +2464,28 @@ async def delete_file(
         raise HTTPException(status_code=404, detail="File not found")
 
     # Get file safe name from slots before deleting
-    async with store._connect() as db:
-        cursor = await db.execute(
-            "SELECT value FROM slots WHERE frame_id = ? AND key = 'file_safe_name'",
-            (frame_id,),
-        )
-        row = await cursor.fetchone()
-        file_safe_name = row[0] if row else None
+    file_slots = await _file_slots_for_frame(store, frame_id)
+    file_safe_name = file_slots.get("file_safe_name")
 
     # Hard-delete the frame and its CSV row frames — soft-delete (forget_frame)
     # leaves them visible in list_frames()/the brain graph, dangling after the
     # file is gone. Deleting a file must clean up its memory.
     await store.prune_file_frame(frame_id)
 
-    # Try to remove the physical file
-    from pathlib import Path
-    data_dir = Path("/app/data")
+    # Remove the physical file, but only if it is inside the data dir. The
+    # `file_safe_name` slot is model-writable, so an unvalidated join here would
+    # let a crafted slot unlink arbitrary files on the host.
     if file_safe_name:
-        file_path = data_dir / file_safe_name
-        if file_path.exists():
+        from assistant.backend.pipeline.filesystem import PathTraversalError
+
+        try:
+            file_path = _contained_file_path(file_safe_name)
+        except (PathTraversalError, ValueError):
+            file_path = None
+        if file_path is not None and file_path.exists():
             try:
                 file_path.unlink()
-            except Exception:
+            except OSError:
                 pass
 
     return {"status": "ok", "message": "File deleted successfully"}

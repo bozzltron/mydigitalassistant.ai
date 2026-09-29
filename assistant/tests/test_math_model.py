@@ -320,7 +320,7 @@ class TestSandboxedExecution:
             math_model="",  # No math model needed for sandbox test
         )
 
-        result = await client._execute_python_sandboxed("print(2 + 2)", 10)
+        result = await client._execute_python_subprocess("print(2 + 2)", 10)
         assert "4" in result
 
     @pytest.mark.asyncio
@@ -336,7 +336,7 @@ class TestSandboxedExecution:
             math_model="",
         )
 
-        result = await client._execute_python_sandboxed("import time; time.sleep(10)", 1)
+        result = await client._execute_python_subprocess("import time; time.sleep(10)", 1)
         assert "timed out" in result.lower()
 
     @pytest.mark.asyncio
@@ -352,7 +352,7 @@ class TestSandboxedExecution:
             math_model="",
         )
 
-        result = await client._execute_python_sandboxed("import math; print(math.pi)", 10)
+        result = await client._execute_python_subprocess("import math; print(math.pi)", 10)
         assert "3.14" in result
 
     @pytest.mark.asyncio
@@ -369,7 +369,7 @@ class TestSandboxedExecution:
         )
 
         code = "import numpy as np; print(np.array([1,2,3]).sum())"
-        result = await client._execute_python_sandboxed(code, 10)
+        result = await client._execute_python_subprocess(code, 10)
         assert "6" in result
 
 

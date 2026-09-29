@@ -47,9 +47,12 @@ class Summarizer:
 
         Returns None if session has insufficient turns or doesn't exist.
         """
-        # Fetch episodes for this session
-        episodes = await self.store.get_episodes_for_session(session_id)
-        user_episodes = [e for e in episodes if e.user_id == user_id]
+        # Fetch episodes for this session (all of them: a summary needs the
+        # whole session, and the call is owner-scoped in SQL).
+        episodes = await self.store.get_episodes_for_session(
+            session_id, user_id=user_id
+        )
+        user_episodes = episodes
 
         if len(user_episodes) < settings.summarization_min_turns:
             logger.debug(

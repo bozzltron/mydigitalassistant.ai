@@ -5,6 +5,7 @@ Requires: pip install faster-whisper
 Whisper model is downloaded automatically on first transcription.
 """
 
+import asyncio
 import logging
 from pathlib import Path
 
@@ -37,14 +38,11 @@ def _load_model() -> WhisperModel:
     return _model
 
 
-async def transcribe_audio(audio_path: Path) -> str:
-    """Transcribe an audio file and return the text.
+def _transcribe_sync(audio_path: Path) -> tuple[str, float, str, int]:
+    """Blocking decode + transcribe. Runs on a worker thread, never the loop.
 
-    Args:
-        audio_path: Path to an audio file (wav, webm, mp3, etc.)
-
-    Returns:
-        Transcribed text string.
+    `faster-whisper` holds the GIL for CPU-bound decoding, so this is minutes of
+    work on a long clip; awaiting it directly stalled every other request.
     """
     model = _load_model()
     transcribed, info = model.transcribe(
@@ -54,14 +52,34 @@ async def transcribe_audio(audio_path: Path) -> str:
         vad_filter=True,
     )
     chunks = list(transcribed)
-    logger.info(
-        "Transcribed %s: duration=%.2fs language=%s chunks=%d",
-        audio_path,
+    text = " ".join(chunk.text for chunk in chunks)
+    return (
+        text,
         info.duration if info else 0.0,
         info.language if info else "unknown",
         len(chunks),
     )
-    text = " ".join(chunk.text for chunk in chunks)
+
+
+async def transcribe_audio(audio_path: Path) -> str:
+    """Transcribe an audio file and return the text.
+
+    Args:
+        audio_path: Path to an audio file (wav, webm, mp3, etc.)
+
+    Returns:
+        Transcribed text string.
+    """
+    text, duration, language, chunk_count = await asyncio.to_thread(
+        _transcribe_sync, audio_path
+    )
+    logger.info(
+        "Transcribed %s: duration=%.2fs language=%s chunks=%d",
+        audio_path,
+        duration,
+        language,
+        chunk_count,
+    )
     if not text.strip():
         logger.warning("Transcription produced empty text for %s", audio_path)
     return text

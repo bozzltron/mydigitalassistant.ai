@@ -415,7 +415,13 @@ def test_correction_endpoint_requires_correction_text(client):
 
 
 async def test_feedback_endpoint_positive_creates_record(client, store):
-    """POST /feedback with kind=positive should create a feedback record."""
+    """POST /feedback with kind=positive records the reaction.
+
+    With no episode_id there is no turn to reinforce, so the status is explicitly
+    NOT "ok" -- see test_feedback_pipeline.py for why the endpoint no longer
+    claims success for a reaction that changed no confidences. The audit row is
+    still written either way, which is what this test is about.
+    """
     r = client.post("/feedback", json={
         "message_id": "fb-msg-1",
         "episode_id": None,
@@ -424,7 +430,8 @@ async def test_feedback_endpoint_positive_creates_record(client, store):
     })
     assert r.status_code == 200
     data = r.json()
-    assert data["status"] == "ok"
+    assert data["status"] == "recorded_no_memory_touched"
+    assert data["slots_updated"] == 0
     assert data["feedback"]["kind"] == "positive"
 
     async with store._connect() as db:
@@ -437,7 +444,7 @@ async def test_feedback_endpoint_positive_creates_record(client, store):
 
 
 async def test_feedback_endpoint_negative_creates_record(client, store):
-    """POST /feedback with kind=negative should create a feedback record."""
+    """POST /feedback with kind=negative records the reaction (see above)."""
     r = client.post("/feedback", json={
         "message_id": "fb-msg-2",
         "episode_id": None,
@@ -446,17 +453,18 @@ async def test_feedback_endpoint_negative_creates_record(client, store):
     })
     assert r.status_code == 200
     data = r.json()
-    assert data["status"] == "ok"
+    assert data["status"] == "recorded_no_memory_touched"
+    assert data["slots_updated"] == 0
     assert data["feedback"]["kind"] == "negative"
 
 
 def test_feedback_endpoint_rejects_unknown_kind(client):
-    """Unknown kind should return 400."""
+    """Unknown kind is a validated-enum request failure (422), not a 400."""
     r = client.post("/feedback", json={
         "message_id": "fb-msg-3",
         "kind": "unknown_kind",
     })
-    assert r.status_code == 400
+    assert r.status_code == 422
 
 
 

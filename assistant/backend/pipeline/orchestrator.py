@@ -86,6 +86,31 @@ def _strip_html(html: str) -> str:
     return text.strip()
 
 
+# One wording, shared by chat() and chat_stream(). Local inference can be slow
+# (large prefill, model load) or the backend briefly unreachable; both paths must
+# degrade to the same readable sentence rather than raising.
+_GENERATION_FAILURE_MESSAGE = (
+    "I'm having trouble reaching my language model right now. "
+    "It may still be loading or thinking through a long answer — "
+    "please try again in a moment."
+)
+
+
+def _finalize_event(answer: str, reasoning_trace: str | None = None) -> str:
+    """A `finalize` SSE frame. Kept in one place so the wire shape cannot drift."""
+    return (
+        "data: "
+        + json.dumps(
+            {
+                "type": "finalize",
+                "answer": answer,
+                "reasoning_trace": reasoning_trace,
+            }
+        )
+        + "\n\n"
+    )
+
+
 async def _fetch_url_body(url: str) -> str | None:
     """Fetch a URL and return stripped plain text. Returns None on failure."""
     try:
@@ -273,6 +298,167 @@ class Orchestrator:
             logger.warning("Episode embedding deferred (id=%s): %s", episode.id, exc)
         return episode
 
+    async def _run_correction(
+        self,
+        request: ChatRequest,
+        session_id: str,
+        user_episode_id: int,
+        memory_context,
+        progress: "Callable[[str, str], Awaitable[None]] | None" = None,
+    ) -> ChatResponse:
+        """Extract, validate, and apply a correction — the whole CORRECT branch.
+
+        Shared by ``chat()`` and ``chat_stream()``. The streaming path used to
+        call ``chat()`` for this branch, which re-logged the user episode and
+        re-ran routing/extraction: the turn appeared twice in history and two
+        redundant LLM calls were paid before the answer. The caller has already
+        done steps 1-4, so this takes the resolved session id, episode id, and
+        memory context rather than resolving them again.
+        """
+        from assistant.backend.pipeline.extractor import (
+            apply_correction,
+            extract_correction,
+            validate_correction,
+        )
+
+        await self._report(progress, "correcting", "updating what I know")
+        correction_start = time.monotonic()
+        correction = await extract_correction(request.message, self.llm_client)
+        correction_summary: dict = {}
+
+        if (
+            correction
+            and correction.frame_name
+            and correction.slot_key
+            and correction.new_value is not None
+        ):
+            frame = await self.store.get_frame_by_name(correction.frame_name)
+            current_slot = (
+                await self.store.get_slot(frame.id, correction.slot_key) if frame else None
+            )
+            current_value = current_slot.value if current_slot else None
+
+            validation = await validate_correction(
+                correction=correction,
+                current_value=current_value,
+                store=self.store,
+                search_tool=self.search_tool,
+                llm_client=self.llm_client,
+            )
+
+            if validation.contradicted:
+                logger.info(
+                    "Correction contradicted by third party: frame=%s slot=%s "
+                    "current=%s attempted=%s",
+                    correction.frame_name,
+                    correction.slot_key,
+                    current_value,
+                    correction.new_value,
+                )
+                # Create alert for contradicted correction
+                try:
+                    await self.store.create_alert(
+                        user_id=request.user_id,
+                        type="correction",
+                        title="Correction contradicted by sources",
+                        message=(
+                            f"Your correction to '{correction.frame_name}."
+                            f"{correction.slot_key}' was contradicted by "
+                            f"third-party sources and not applied."
+                        ),
+                        severity="warning",
+                    )
+                except Exception as e:
+                    logger.warning("Failed to create correction alert: %s", e)
+                response_text = await self._acknowledge_correction(
+                    correction.frame_name,
+                    correction.slot_key,
+                    correction.new_value,
+                    contradicted=True,
+                    current_value=current_value,
+                )
+            else:
+                correction_summary = await apply_correction(
+                    correction,
+                    self.store,
+                    source_episode_id=user_episode_id,
+                    embed_fn=self.llm_client.embed_one,
+                    embedding_model=self.llm_client.embedding_model,
+                )
+                logger.info(
+                    "Correction applied: frame=%s slot=%s value=%s "
+                    "corroborated=%s",
+                    correction_summary.get("frame_name"),
+                    correction_summary.get("slot_key"),
+                    correction_summary.get("new_value"),
+                    validation.corroborated,
+                )
+                # Create alert for applied correction
+                try:
+                    corr_msg = (
+                        f"Updated '{correction.frame_name}.{correction.slot_key}' "
+                        f"to '{correction.new_value}'."
+                    )
+                    if validation.corroborated:
+                        corr_msg += " Corroborated by sources."
+                    else:
+                        corr_msg += " No third-party sources available."
+                    await self.store.create_alert(
+                        user_id=request.user_id,
+                        type="correction",
+                        title="Correction applied",
+                        message=corr_msg,
+                        severity="info",
+                    )
+                except Exception as e:
+                    logger.warning("Failed to create correction alert: %s", e)
+                response_text = await self._acknowledge_correction(
+                    correction.frame_name,
+                    correction.slot_key,
+                    correction.new_value,
+                    contradicted=False,
+                    current_value=None,
+                )
+        else:
+            logger.info("Correction could not be parsed — generating natural response")
+            # Provide a system prompt so the model doesn't hallucinate
+            system = ChatMessage(
+                role="system",
+                content=(
+                    "You are a helpful cognitive assistant. The user sent a message "
+                    "that looked like a correction but couldn't be parsed. Respond "
+                    "naturally and ask for clarification if needed."
+                ),
+            )
+            natural_response = await self.llm_client.chat(
+                [system, ChatMessage(role="user", content=request.message)],
+                model=self.llm_client.chat_model,
+                temperature=0.7,
+                think=True,
+            )
+            response_text = natural_response.content
+
+        await self._log_episode(
+            request.user_id,
+            session_id,
+            role="assistant",
+            content=response_text,
+        )
+
+        correction_time = time.monotonic() - correction_start
+        logger.debug("Correction pipeline: %.3fs", correction_time)
+
+        return ChatResponse(
+            response=response_text,
+            session_id=session_id,
+            task_type="correction",
+            memory_context=memory_context.formatted,
+            extraction_summary=None,
+            search_extraction_summary=None,
+            citations=[],
+            search_info=None,
+        )
+
     async def _acknowledge_correction(
         self,
         frame_name: str,
@@ -311,27 +497,6 @@ class Orchestrator:
             think=False,
         )
         return resp.content or f"Updated {frame_name}.{slot_key} to '{new_value}'."
-
-    async def _generate_fallback_response(self, original_message: str) -> str:
-        """Generate a fallback response when the model returned empty."""
-        system = ChatMessage(
-            role="system",
-            content=(
-                "You are a helpful cognitive assistant. The previous response was empty. "
-                "Generate a brief, natural response to the user's message."
-            ),
-        )
-        for _attempt in range(2):
-            content = f"I need to respond to: {original_message[:200]}"
-            resp = await self.llm_client.chat(
-                [system, ChatMessage(role="user", content=content)],
-                model=self.llm_client.chat_model,
-                temperature=0.7,
-                think=False,
-            )
-            if resp.content and resp.content.strip():
-                return resp.content
-        return "I'm not sure how to respond to that."
 
     @staticmethod
     async def _report(
@@ -573,6 +738,132 @@ class Orchestrator:
         )
         return rebuilt, False
 
+    async def _remember_computation(self, computation_result: str) -> None:
+        """Store a `compute` result as a memory slot, best-effort.
+
+        Shared by chat() and chat_stream(). The streaming path used to build the
+        same "Computed Result" prompt and then drop the value, so a fact the user
+        had just been given vanished at the end of the turn while the
+        non-streaming path kept it.
+        """
+        from assistant.backend.pipeline.extractor import (
+            ExtractedSlot,
+            ExtractionResult,
+            apply_extraction,
+        )
+
+        try:
+            extraction = ExtractionResult(
+                slots=[
+                    ExtractedSlot(
+                        frame_name=f"computation_{uuid.uuid4().hex[:8]}",
+                        key="result",
+                        value=computation_result[:5000],  # Truncate if too long
+                        confidence=0.9,
+                        source_type="computation",
+                    )
+                ],
+                associations=[],
+            )
+            await apply_extraction(
+                extraction,
+                self.store,
+                source_type="computation",
+                source_reliability=0.9,
+            )
+            logger.info("Stored computation result in memory")
+        except Exception as e:
+            logger.warning("Failed to store computation result: %s", e)
+
+    def _append_response_footers(
+        self,
+        answer: str,
+        citations: list[str],
+        task_type_value: str,
+        retrieved_frame_count: int,
+    ) -> str:
+        """Append the sources list and the "answered from memory" marker.
+
+        Shared by chat() and chat_stream(). The streaming path is the one the
+        frontend actually uses, and it never grew either footer: search answers
+        arrived with no citations and introspective answers without the memory
+        provenance the non-streaming path had shown all along.
+        """
+        response_text = answer
+        if not response_text:
+            response_text = "I'm not sure how to respond to that."
+            logger.warning("Empty LLM response")
+        # Sources only for informational/search tasks, never for a chat reply
+        # that merely happened to run a search.
+        if citations and task_type_value == "search":
+            unique_citations = list(dict.fromkeys(citations))
+            response_text += "\n\n**Sources:**\n" + "\n".join(
+                f"- {url}" for url in unique_citations
+            )
+        # Memory source indicator: show for introspective/recall when frames were
+        # retrieved.
+        if task_type_value == "introspective" and retrieved_frame_count:
+            fact_word = "facts" if retrieved_frame_count != 1 else "fact"
+            response_text += (
+                f"\n\n<small>_(Answered from memory"
+                f" · {retrieved_frame_count} {fact_word} retrieved)_</small>"
+            )
+        return response_text
+
+    async def _create_learning_alerts(
+        self,
+        user_id: int,
+        extraction_summary: dict,
+        search_extraction_summary: dict,
+    ) -> None:
+        """Raise the bell notifications for facts learned this turn.
+
+        Shared by chat() and chat_stream(). The streaming path had none of these,
+        so a user on the web UI was never told a search had stored facts or that a
+        contradiction had been auto-resolved, even when the trace panel said so.
+        """
+        try:
+            conv_conflicts = extraction_summary.get("conflicts_created", 0)
+            if conv_conflicts > 0:
+                fact_word = "fact" if conv_conflicts == 1 else "facts"
+                await self.store.create_alert(
+                    user_id=user_id,
+                    type="conflict",
+                    title="Auto-resolved conflict in learning",
+                    message=(
+                        f"{conv_conflicts} {fact_word} you mentioned contradicted "
+                        "existing memory and were auto-resolved. "
+                        "Check the trace panel for details."
+                    ),
+                    severity="info",
+                )
+
+            search_conflicts = search_extraction_summary.get("conflicts_created", 0)
+            search_slots = search_extraction_summary.get("slots_applied", 0)
+            if search_slots > 0:
+                if search_conflicts > 0:
+                    fact_word = "fact" if search_conflicts == 1 else "facts"
+                    await self.store.create_alert(
+                        user_id=user_id,
+                        type="conflict",
+                        title="Search conflict auto-resolved",
+                        message=(
+                            f"Search found {search_conflicts} {fact_word} that "
+                            "contradicted existing memory and were auto-resolved."
+                        ),
+                        severity="info",
+                    )
+                else:
+                    await self.store.create_alert(
+                        user_id=user_id,
+                        type="search_result",
+                        title="New facts learned from search",
+                        message=f"Search returned {search_slots} new fact(s) stored in memory.",
+                        severity="info",
+                    )
+        except Exception as e:
+            logger.warning("Failed to create learning alerts: %s", e)
+
     async def chat(
         self,
         request: ChatRequest,
@@ -689,148 +980,8 @@ class Orchestrator:
 
         # 5b. Handle correction intent: extract + validate + apply
         if plan.action == Action.CORRECT:
-            from assistant.backend.pipeline.extractor import (
-                apply_correction,
-                extract_correction,
-                validate_correction,
-            )
-
-            await self._report(progress, "correcting", "updating what I know")
-            correction_start = time.monotonic()
-            correction = await extract_correction(request.message, self.llm_client)
-            correction_summary: dict = {}
-
-            if (
-                correction
-                and correction.frame_name
-                and correction.slot_key
-                and correction.new_value is not None
-            ):
-                frame = await self.store.get_frame_by_name(correction.frame_name)
-                current_slot = (
-                    await self.store.get_slot(frame.id, correction.slot_key) if frame else None
-                )
-                current_value = current_slot.value if current_slot else None
-
-                validation = await validate_correction(
-                    correction=correction,
-                    current_value=current_value,
-                    store=self.store,
-                    search_tool=self.search_tool,
-                    llm_client=self.llm_client,
-                )
-
-                if validation.contradicted:
-                    logger.info(
-                        "Correction contradicted by third party: frame=%s slot=%s "
-                        "current=%s attempted=%s",
-                        correction.frame_name,
-                        correction.slot_key,
-                        current_value,
-                        correction.new_value,
-                    )
-                    # Create alert for contradicted correction
-                    try:
-                        await self.store.create_alert(
-                            user_id=request.user_id,
-                            type="correction",
-                            title="Correction contradicted by sources",
-                            message=(
-                                f"Your correction to '{correction.frame_name}."
-                                f"{correction.slot_key}' was contradicted by "
-                                f"third-party sources and not applied."
-                            ),
-                            severity="warning",
-                        )
-                    except Exception as e:
-                        logger.warning("Failed to create correction alert: %s", e)
-                    response_text = await self._acknowledge_correction(
-                        correction.frame_name,
-                        correction.slot_key,
-                        correction.new_value,
-                        contradicted=True,
-                        current_value=current_value,
-                    )
-                else:
-                    correction_summary = await apply_correction(
-                        correction,
-                        self.store,
-                        source_episode_id=user_episode.id,
-                        embed_fn=self.llm_client.embed_one,
-                        embedding_model=self.llm_client.embedding_model,
-                    )
-                    logger.info(
-                        "Correction applied: frame=%s slot=%s value=%s "
-                        "corroborated=%s",
-                        correction_summary.get("frame_name"),
-                        correction_summary.get("slot_key"),
-                        correction_summary.get("new_value"),
-                        validation.corroborated,
-                    )
-                    # Create alert for applied correction
-                    try:
-                        corr_msg = (
-                            f"Updated '{correction.frame_name}.{correction.slot_key}' "
-                            f"to '{correction.new_value}'."
-                        )
-                        if validation.corroborated:
-                            corr_msg += " Corroborated by sources."
-                        else:
-                            corr_msg += " No third-party sources available."
-                        await self.store.create_alert(
-                            user_id=request.user_id,
-                            type="correction",
-                            title="Correction applied",
-                            message=corr_msg,
-                            severity="info",
-                        )
-                    except Exception as e:
-                        logger.warning("Failed to create correction alert: %s", e)
-                    response_text = await self._acknowledge_correction(
-                        correction.frame_name,
-                        correction.slot_key,
-                        correction.new_value,
-                        contradicted=False,
-                        current_value=None,
-                    )
-            else:
-                logger.info("Correction could not be parsed — generating natural response")
-                # Provide a system prompt so the model doesn't hallucinate
-                system = ChatMessage(
-                    role="system",
-                    content=(
-                        "You are a helpful cognitive assistant. The user sent a message "
-                        "that looked like a correction but couldn't be parsed. Respond "
-                        "naturally and ask for clarification if needed."
-                    ),
-                )
-                natural_response = await self.llm_client.chat(
-                    [system, ChatMessage(role="user", content=request.message)],
-                    model=self.llm_client.chat_model,
-                    temperature=0.7,
-                    think=True,
-                )
-                response_text = natural_response.content
-
-            await self._log_episode(
-                request.user_id,
-                session_id,
-                role="assistant",
-                content=response_text,
-            )
-
-            correction_time = time.monotonic() - correction_start
-            logger.debug("Correction pipeline: %.3fs", correction_time)
-
-            return ChatResponse(
-                response=response_text,
-                session_id=session_id,
-                task_type="correction",
-                memory_context=memory_context.formatted,
-                extraction_summary=None,
-                search_extraction_summary=None,
-                citations=[],
-                search_info=None,
+            return await self._run_correction(
+                request, session_id, user_episode.id, memory_context, progress
             )
 
         stored_slots = extraction_summary.get("slots") or []
@@ -873,35 +1024,7 @@ class Orchestrator:
                 f"{computation_result}\n"
                 f"Incorporate this result into your response. Cite as 'computed'."
             )
-            # Store computation result in memory
-            try:
-                from assistant.backend.pipeline.extractor import (
-                    ExtractedSlot,
-                    ExtractionResult,
-                    apply_extraction,
-                )
-
-                # Create a simple extraction result for the computation
-                computation_frame = f"computation_{uuid.uuid4().hex[:8]}"
-                extraction = ExtractionResult(
-                    slots=[ExtractedSlot(
-                        frame_name=computation_frame,
-                        key="result",
-                        value=computation_result[:5000],  # Truncate if too long
-                        confidence=0.9,
-                        source_type="computation",
-                    )],
-                    associations=[],
-                )
-                await apply_extraction(
-                    extraction,
-                    self.store,
-                    source_type="computation",
-                    source_reliability=0.9,
-                )
-                logger.info("Stored computation result in memory")
-            except Exception as e:
-                logger.warning("Failed to store computation result: %s", e)
+            await self._remember_computation(computation_result)
 
         # 7b. Execute search if reasoner says it's needed
         search_results: list[SearchResult] = []
@@ -915,12 +1038,22 @@ class Orchestrator:
             await self._report(progress, "searching", "searching the web")
             # Prefer the router's keyword query; fall back to a sanitized
             # version of the raw message (never raw conversational text).
+            #
+            # `classification` is None when skip_route=True, so it must be
+            # guarded here. The router's wants_search veto above cannot cover
+            # this case: it explicitly requires `classification is not None`,
+            # so on a skip_route turn the veto never fires and this line is
+            # reached. Four _handle_scheduled_task fallbacks rewrite the message
+            # to an agent-authored string and re-enter with skip_route=True;
+            # those strings match no _NON_INFO_PATTERNS, so classify_intent
+            # always plans a search for them. See test_skip_route_crash.py.
             from assistant.backend.pipeline.search import (
                 filter_relevant,
                 sanitize_query,
             )
 
-            query = classification.search_query or sanitize_query(request.message)
+            routed_query = classification.search_query if classification else None
+            query = routed_query or sanitize_query(request.message)
             logger.info("Reasoner triggered search for: %s", query[:80])
             backend_name = self.search_tool.backend_name
             extraction_budget = self.search_tool.max_results_for_extraction
@@ -1164,10 +1297,13 @@ class Orchestrator:
         # members sharing a session string never see each other's turns.
         history_messages: list[ChatMessage] = []
         if session_id:
-            session_episodes = await self.store.get_episodes_for_session(session_id)
-            prior_turns = [
-                ep for ep in session_episodes if ep.user_id == request.user_id
-            ][:-1]  # exclude current user episode
+            # Owner-scoped in SQL now, so no cross-member filter is needed here.
+            # Bound the read to the tail we can actually use: 6 prior turns plus
+            # the current one, which `[:-1]` drops.
+            session_episodes = await self.store.get_episodes_for_session(
+                session_id, user_id=request.user_id, limit=7
+            )
+            prior_turns = session_episodes[:-1]  # exclude current user episode
             max_turns = min(len(prior_turns), 6)
             prior_turns = prior_turns[-max_turns:] if max_turns > 0 else []
             for ep in prior_turns:
@@ -1243,11 +1379,7 @@ class Orchestrator:
             # Local inference can be slow (large prefill, model load) or the
             # backend briefly unreachable — degrade gracefully instead of 500.
             logger.error("Generation failed: %s", e)
-            fallback = (
-                "I'm having trouble reaching my language model right now. "
-                "It may still be loading or thinking through a long answer — "
-                "please try again in a moment."
-            )
+            fallback = _GENERATION_FAILURE_MESSAGE
             await self._log_episode(
                 request.user_id,
                 session_id,
@@ -1283,77 +1415,18 @@ class Orchestrator:
             reasoning_trace=reasoning_trace,
         )
 
-        # 9. Append sources to response — only for informational/search tasks
-        response_text = answer
-        if not response_text:
-            response_text = "I'm not sure how to respond to that."
-            logger.warning("Empty LLM response for: " + repr(request.message[:50]))
-        if citations and task_type.value == "search":
-            unique_citations = list(dict.fromkeys(citations))
-            sources_block = "\n\n**Sources:**\n" + "\n".join(f"- {url}" for url in unique_citations)
-            response_text += sources_block
-
-        # Memory source indicator: show for introspective/recall when frames were retrieved
-        show_memory_source = (
-            task_type.value == "introspective"
-            and memory_context.retrieved_frames
+        # 9. Append sources / memory provenance to the response
+        response_text = self._append_response_footers(
+            answer,
+            citations,
+            task_type.value,
+            len(memory_context.retrieved_frames),
         )
-        if show_memory_source:
-            frame_count = len(memory_context.retrieved_frames)
-            fact_word = "facts" if frame_count != 1 else "fact"
-            memory_block = (
-                f"\n\n<small>_(Answered from memory"
-                f" · {frame_count} {fact_word} retrieved)_</small>"
-            )
-            response_text += memory_block
 
         # Create alerts for learning events
-        try:
-            # Alert for conversational extraction conflicts
-            conv_conflicts = extraction_summary.get("conflicts_created", 0)
-            if conv_conflicts > 0:
-                fact_word = "fact" if conv_conflicts == 1 else "facts"
-                await self.store.create_alert(
-                    user_id=request.user_id,
-                    type="conflict",
-                    title="Auto-resolved conflict in learning",
-                    message=(
-                        f"{conv_conflicts} {fact_word} you mentioned contradicted "
-                        "existing memory and were auto-resolved. "
-                        "Check the trace panel for details."
-                    ),
-                    severity="info",
-                )
-            
-            # Alert for search extraction
-            search_conflicts = search_extraction_summary.get("conflicts_created", 0)
-            search_slots = search_extraction_summary.get("slots_applied", 0)
-            if search_slots > 0:
-                if search_conflicts > 0:
-                    fact_word = "fact" if search_conflicts == 1 else "facts"
-                    await self.store.create_alert(
-                        user_id=request.user_id,
-                        type="conflict",
-                        title="Search conflict auto-resolved",
-                        message=(
-                            f"Search found {search_conflicts} {fact_word} that "
-                            "contradicted existing memory and were auto-resolved."
-                        ),
-                        severity="info",
-                    )
-                else:
-                    await self.store.create_alert(
-                        user_id=request.user_id,
-                        type="search_result",
-                        title="New facts learned from search",
-                        message=f"Search returned {search_slots} new fact(s) stored in memory.",
-                        severity="info",
-                    )
-            
-            # Alert for corrections (handled in correction branch above)
-            # The correction branch already returns early, so alerts would need to be added there
-        except Exception as e:
-            logger.warning("Failed to create learning alerts: %s", e)
+        await self._create_learning_alerts(
+            request.user_id, extraction_summary, search_extraction_summary
+        )
 
         # Return response
         self._log_turn_timings(
@@ -1419,9 +1492,15 @@ class Orchestrator:
                             last_run=now_str,
                             last_result_summary=summary,
                         )
+                        # Echo the resolved session id (the same value used for
+                        # the whole turn), not a fresh uuid. The frontend keys
+                        # conversation state on the returned session_id, so
+                        # minting a new one made the next message start an empty
+                        # conversation -- the user asked "run my briefing now"
+                        # and silently lost their thread.
                         return ChatResponse(
                             response=result,
-                            session_id=str(uuid.uuid4()),
+                            session_id=session_id,
                             task_type="scheduled",
                             memory_context="",
                             extraction_summary=None,
@@ -1659,9 +1738,18 @@ class Orchestrator:
                 logger.warning("Task search failed: %s", e)
                 search_results = []
 
-            search_results = await filter_relevant(
-                search_results, query, self.embed_fn()
-            )
+            # Timed out like the other two paths: a stalled embedder must not
+            # hang the scheduler's daily tick either.
+            try:
+                search_results = await asyncio.wait_for(
+                    filter_relevant(search_results, query, self.embed_fn()),
+                    timeout=settings.search_timeout,
+                )
+            except TimeoutError:
+                logger.warning(
+                    "filter_relevant timed out after %.1fs; keeping all results",
+                    settings.search_timeout,
+                )
 
             if search_results:
                 display_results = search_results[: settings.max_search_results_in_prompt]
@@ -1885,8 +1973,11 @@ class Orchestrator:
 
         # 5b. Handle correction intent
         if plan.action == Action.CORRECT:
-            # For corrections, fall back to non-streaming
-            response = await self.chat(request, progress=progress, skip_route=skip_route)
+            # Same handler as chat() -- previously this re-entered chat(), which
+            # double-logged the user episode and re-ran routing/extraction.
+            response = await self._run_correction(
+                request, session_id, user_episode.id, memory_context, progress
+            )
             event = {
                 'type': 'finalize',
                 'answer': response.response,
@@ -1930,6 +2021,7 @@ class Orchestrator:
                 f"{computation_result}\n"
                 f"Incorporate this result into your response. Cite as 'computed'."
             )
+            await self._remember_computation(computation_result)
 
         # 7b. Execute search if reasoner says it's needed
         search_results: list[SearchResult] = []
@@ -1938,12 +2030,15 @@ class Orchestrator:
         if plan.search_needed:
             await self._report(progress, "searching", "searching the web")
             stream_search_start = time.monotonic()
+            # `classification` is None when skip_route=True; see the identical
+            # guard in chat() for why the router veto does not cover it.
             from assistant.backend.pipeline.search import (
                 filter_relevant,
                 sanitize_query,
             )
 
-            query = classification.search_query or sanitize_query(request.message)
+            routed_query = classification.search_query if classification else None
+            query = routed_query or sanitize_query(request.message)
             logger.info("Reasoner triggered search for: %s", query[:80])
             backend_name = self.search_tool.backend_name
             extraction_budget = self.search_tool.max_results_for_extraction
@@ -1997,10 +2092,25 @@ class Orchestrator:
                 yield f"data: {json.dumps(event)}\n\n"
                 return
 
-            # Relevance gate
-            search_results = await filter_relevant(
-                search_results, query, self.embed_fn(), min_relevance=relevance_threshold
-            )
+            # Relevance gate: drop links that don't belong to the query before
+            # they can pollute the system prompt or citations. Bounded, exactly
+            # as in chat(): an embedder that stalls must not hang the live
+            # stream, and this is the path the frontend actually uses.
+            try:
+                search_results = await asyncio.wait_for(
+                    filter_relevant(
+                        search_results,
+                        query,
+                        self.embed_fn(),
+                        min_relevance=relevance_threshold,
+                    ),
+                    timeout=settings.search_timeout,
+                )
+            except TimeoutError:
+                logger.warning(
+                    "filter_relevant timed out after %.1fs; keeping all results",
+                    settings.search_timeout,
+                )
 
             if search_results:
                 display_results = search_results[: settings.max_search_results_in_prompt]
@@ -2146,10 +2256,12 @@ class Orchestrator:
         # Build conversation history
         history_messages: list[ChatMessage] = []
         if session_id:
-            session_episodes = await self.store.get_episodes_for_session(session_id)
-            prior_turns = [
-                ep for ep in session_episodes if ep.user_id == request.user_id
-            ][:-1]
+            # Owner-scoped in SQL now; bound to the tail we can use (6 prior
+            # turns plus the current one, which `[:-1]` drops).
+            session_episodes = await self.store.get_episodes_for_session(
+                session_id, user_id=request.user_id, limit=7
+            )
+            prior_turns = session_episodes[:-1]
             max_turns = min(len(prior_turns), 6)
             prior_turns = prior_turns[-max_turns:] if max_turns > 0 else []
             for ep in prior_turns:
@@ -2197,6 +2309,13 @@ class Orchestrator:
             stream_search_s * 1000,
         )
 
+        # Initialised before either branch so a generation failure has something
+        # to fall back to. The streaming path -- which the frontend actually
+        # uses -- used to let a generation exception escape the generator, so
+        # the user saw a broken stream instead of the sentence chat() shows.
+        final_answer = ""
+        final_reasoning: str | None = None
+
         # Check if tools enabled
         if settings.tools_enabled:
             tools = builtin_tools(
@@ -2221,8 +2340,6 @@ class Orchestrator:
 
             # Stream using the tool loop (Phase 4: stream full tool loop including tools)
             # We need to capture the final answer to persist it as an episode
-            final_answer = ""
-            final_reasoning = None
             
             async def _stream_and_capture():
                 nonlocal final_answer, final_reasoning, ttft_s
@@ -2262,8 +2379,13 @@ class Orchestrator:
                         pass
                     yield event
             
-            async for event in _stream_and_capture():
-                yield event
+            try:
+                async for event in _stream_and_capture():
+                    yield event
+            except Exception as e:
+                logger.error("Streaming generation failed: %s", e)
+                final_answer = _GENERATION_FAILURE_MESSAGE
+                yield _finalize_event(final_answer)
 
         else:
             # No tools - just stream the chat response
@@ -2279,30 +2401,35 @@ class Orchestrator:
 
             # Simple streaming without tools - collect deltas
             accumulated_content = ""
-            async for chunk in self.llm_client.chat_stream(
-                messages,
-                model=gen_model or self.llm_client.chat_model,
-                think=think,
-                num_predict=num_predict,
-            ):
-                if chunk.content:
-                    # First real token: the wait the user actually feels is over.
-                    # (No-tools path does stream deltas, so this fires early.)
-                    if ttft_s is None:
-                        ttft_s = time.monotonic() - turn_start
-                    accumulated_content += chunk.content
-                    event = {'type': 'text_delta', 'delta': chunk.content}
-                    yield f"data: {json.dumps(event)}\n\n"
-                if chunk.done:
-                    final_answer = accumulated_content
-                    final_reasoning = chunk.thinking
-                    event = {
-                        'type': 'finalize',
-                        'answer': final_answer,
-                        'reasoning_trace': chunk.thinking
-                    }
-                    yield f"data: {json.dumps(event)}\n\n"
-                    break
+            try:
+                async for chunk in self.llm_client.chat_stream(
+                    messages,
+                    model=gen_model or self.llm_client.chat_model,
+                    think=think,
+                    num_predict=num_predict,
+                ):
+                    if chunk.content:
+                        # First real token: the wait the user actually feels is over.
+                        # (No-tools path does stream deltas, so this fires early.)
+                        if ttft_s is None:
+                            ttft_s = time.monotonic() - turn_start
+                        accumulated_content += chunk.content
+                        event = {'type': 'text_delta', 'delta': chunk.content}
+                        yield f"data: {json.dumps(event)}\n\n"
+                    if chunk.done:
+                        final_answer = accumulated_content
+                        final_reasoning = chunk.thinking
+                        event = {
+                            'type': 'finalize',
+                            'answer': final_answer,
+                            'reasoning_trace': chunk.thinking
+                        }
+                        yield f"data: {json.dumps(event)}\n\n"
+                        break
+            except Exception as e:
+                logger.error("Streaming generation failed: %s", e)
+                final_answer = _GENERATION_FAILURE_MESSAGE
+                yield _finalize_event(final_answer)
 
         # Persist assistant episode to database
         if final_answer and session_id:
@@ -2315,6 +2442,26 @@ class Orchestrator:
                 )
             except Exception as e:
                 logger.warning("Failed to log assistant episode: %s", e)
+
+        # Same two footers chat() has always appended: "**Sources:**" for search
+        # answers and the memory-provenance marker for introspective ones. The
+        # streamed finalize carried the raw answer, so re-emit only when there is
+        # something to add; the frontend replaces the message on finalize.
+        footered = self._append_response_footers(
+            final_answer,
+            citations,
+            task_type.value,
+            len(memory_context.retrieved_frames),
+        )
+        if footered != final_answer:
+            final_answer = footered
+            yield _finalize_event(final_answer, final_reasoning)
+
+        # Learning alerts: the same bell notifications chat() raises, so the web
+        # UI learns that a search stored facts or a conflict was auto-resolved.
+        await self._create_learning_alerts(
+            request.user_id, extraction_summary, search_extraction_summary
+        )
 
         self._log_turn_timings(
             turn_start,

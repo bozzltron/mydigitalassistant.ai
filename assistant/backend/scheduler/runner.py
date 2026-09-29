@@ -74,8 +74,10 @@ async def _run_summarization(
                     break
 
                 # Check if session has enough turns
-                episodes = await store.get_episodes_for_session(sess["id"])
-                user_episodes = [e for e in episodes if e.user_id == user.id]
+                episodes = await store.get_episodes_for_session(
+                    sess["id"], user_id=user.id
+                )
+                user_episodes = episodes
                 if len(user_episodes) < settings.summarization_min_turns:
                     continue
 
