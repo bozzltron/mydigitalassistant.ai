@@ -120,17 +120,20 @@ Implemented in `assistant/backend/memory/`.
 
 ### 3.7 Web UI
 
-Served from the FastAPI backend at `GET /chat-ui`.
+A SolidJS single-page app, built with Vite. In development Caddy routes to the
+Vite dev server; in production the built bundle in `assistant/backend/static/`
+is served by Caddy (`/assets/*`) with the SPA shell for other paths.
 
-- **`assistant/backend/static/chat.html`** — self-contained single-page chat app.
-- **`assistant/backend/static/marked.min.js`** — vendored markdown renderer (MIT licensed).
-- No external CDN dependencies; all assets served locally.
+- **`frontend/src/`** — the SPA source (chat, Brain Observatory, files, alerts).
+- **`frontend/src/services/api.ts`** — typed API client (Zod-validated responses).
 
 Features:
-- Auto-selects first household user.
-- Session persistence via `localStorage`.
-- Markdown-rendered responses with sources block.
-- Trace panel showing `task_type`, `memory_context`, `citations`.
+- Session persistence and conversation restore via `GET /chat/session/{id}/messages`.
+- Markdown-rendered responses with a sources block.
+- Trace panel showing `task_type`, `memory_context`, `citations`, and search info.
+- "What I learned" indicator showing the slots stored this turn, including
+  auto-resolved conflicts and the search backend when a search ran.
+- Brain Observatory: force-graph of frames/associations with conflict resolution.
 - Voice conversation mode: hands-free loop using browser `MediaRecorder` + `POST /transcribe`.
 
 ### 3.8 Voice transcription
@@ -140,6 +143,44 @@ Features:
 - `POST /transcribe` endpoint accepts audio blobs and returns transcribed text.
 - Model downloads automatically on first use to `~/.cache/whisper/`.
 - All audio stays local; no cloud STT services used.
+
+### 3.9 Scheduler and background maintenance
+
+**`assistant/backend/scheduler/`** — a single background loop started by the
+FastAPI lifespan (unless `SCHEDULER_ENABLED=false`). It is plain timer logic, not
+an LLM agent: each wake checks elapsed intervals, runs whatever is due, and
+sleeps. Tasks execute through the same `Orchestrator` as chat, so their results
+become ordinary memory.
+
+**The daily list.** The agent wakes once a day at `DAILY_TASKS_TIME` and runs
+every enabled `daily` task; `once` tasks run at the next tick and disable
+themselves. There are no cron expressions — one shared daily tick. A missed tick
+(backend down) fires once late on restart, then reschedules.
+
+**Housekeeping timers.** All are offset from the same loop and are independent of
+each other:
+
+| Timer | Interval | Nature |
+|---|---|---|
+| Heartbeat | 30 min | writes `scheduler_heartbeat` (liveness) |
+| Embedding top-up | 6h | re-indexes turns/frames with missing or stale embeddings. Non-destructive, no backup. |
+| Consolidation | 6h | **checks** for near-duplicate frames and merges any it finds |
+| Brain snapshot | 12h | a plain DB copy for point-in-time recovery |
+| Summarization | 6h | compresses eligible sessions (≥10 turns) into summary frames |
+
+**Merge vs. backup — the one subtlety worth stating.** Merging is *ad hoc*: the
+6h consolidation timer is a **look cadence**, not a merge cadence. The loop
+computes a read-only plan; only if it finds duplicates does it apply them (capped
+per run). A household with no duplicates merges nothing regardless of how often it
+checks. Backups are deliberately *decoupled* from that: a separate 12h timer takes
+the snapshot, and the only place the two meet is that a merge pass running without
+a fresh snapshot takes one first — so a merge is never applied unprotected, and
+snapshot count does not scale with merge frequency.
+
+**Nothing is forgotten on a timer.** There is no decay or age-based garbage
+collection. Memory leaves only through an explicit `forget` or a deliberate
+frame/file deletion. (Merges tombstone duplicate losers, but each loser's slots
+are unioned onto the survivor before it is tombstoned, so no content is lost.)
 
 ---
 
@@ -268,7 +309,7 @@ Environment variables (via Pydantic Settings / `.env`):
 | Variable | Purpose | Default |
 |----------|---------|---------|
 | `OLLAMA_URL` | Ollama base URL | `http://127.0.0.1:11434` |
-| `OLLAMA_KEEP_ALIVE` | How long Ollama keeps models resident between requests | `30m` |
+| `OLLAMA_KEEP_ALIVE` | How long Ollama keeps models resident between requests | `-1` (never unload) |
 | `CHAT_MODEL` | User-facing chat model | `qwen3.5:9b` |
 | `UTILITY_MODEL` | Routing / cheap extraction | `qwen3.5:4b` |
 | `TOOLS_MODEL` | Tool loop (default = chat model) | `qwen3.5:9b` |
@@ -279,16 +320,22 @@ Environment variables (via Pydantic Settings / `.env`):
 | `BACKEND_PORT` | FastAPI port | `8000` |
 | `DATABASE_PATH` | SQLite path | `./assistant.db` |
 | `SEARCH_BASE_URL` | SearXNG URL | `http://127.0.0.1:8080` |
-| `SEARCH_TIMEOUT` | Search timeout | `30.0` |
-| `CONFLICT_AUTO_RESOLVE` | Auto-resolve conflicts | `true` |
+| `SEARCH_TIMEOUT` | Search timeout | `90.0` |
 | `WHISPER_MODEL` | Voice transcription model | `base` |
 | `WHISPER_DEVICE` | Transcription device | `cpu` |
+| `SCHEDULER_ENABLED` | Run the background scheduler | `true` |
+| `DAILY_TASKS_TIME` | Daily task tick (HH:MM) | `09:00` |
+| `EMBEDDING_TOPUP_INTERVAL_HOURS` | Embedding re-index cadence (0 = off) | `6` |
+| `CONSOLIDATION_INTERVAL_HOURS` | Duplicate-frame check cadence (0 = off) | `6` |
+| `BACKUP_INTERVAL_HOURS` | Periodic brain snapshot cadence (0 = off) | `12` |
+| `SUMMARIZATION_ENABLED` | Compress sessions into summary frames | `true` |
+| `SUMMARIZATION_INTERVAL_HOURS` | Summarization cadence | `6` |
 
 ---
 
 ## 8. Testing strategy
 
-Detailed in `plans/TESTING_STRATEGY.md`. Summary:
+Detailed in [`docs/TESTING.md`](./docs/TESTING.md). Summary:
 
 - **Tier 1** — Core algorithms (confidence, conflict resolution)
 - **Tier 2** — Pipeline logic (extractor, retrieval, reasoner, task router)
@@ -320,18 +367,19 @@ docker run --rm -v $(pwd):/app -w /app assistant ruff check .
 | `assistant/backend/pipeline/task_router.py` | Intent classification |
 | `assistant/backend/pipeline/reasoner.py` | Action planning |
 | `assistant/backend/pipeline/extractor.py` | Fact extraction + correction validation |
-| `assistant/backend/pipeline/search.py` | SearXNG search backend |
+| `assistant/backend/pipeline/search.py` | SearXNG search backend (+ optional Brave) |
 | `assistant/backend/pipeline/whisper.py` | Local voice transcription |
 | `assistant/backend/memory/store.py` | SQLite CRUD |
 | `assistant/backend/memory/models.py` | Pydantic data models |
 | `assistant/backend/memory/retrieval.py` | Memory retrieval + context formatting |
 | `assistant/backend/memory/confidence.py` | Confidence and conflict math |
-| `assistant/backend/static/chat.html` | Web chat UI |
-| `assistant/backend/static/marked.min.js` | Markdown renderer |
+| `assistant/backend/memory/belief_revision.py` | AGM expand/revise/contract operators |
+| `assistant/backend/memory/consolidate.py` | Near-duplicate frame merge |
+| `assistant/backend/scheduler/runner.py` | Background loop: daily ticks + housekeeping timers |
+| `assistant/backend/scheduler/summarizer.py` | Session → summary frame compression |
+| `frontend/src/` | SolidJS SPA (the live UI) |
+| `assistant/backend/static/` | Built SPA bundle (committed, served by Caddy) |
 | `assistant/cli/app.py` | CLI client |
-| `plans/TESTING_STRATEGY.md` | Testing approach |
-| `plans/CONTEXT_AND_SOURCES_PLAN.md` | Context + sources implementation plan |
-| `plans/WEB_UI_PLAN.md` | Web UI + voice implementation |
 
 ---
 
@@ -341,7 +389,7 @@ docker run --rm -v $(pwd):/app -w /app assistant ruff check .
 - **New model role** — add field to `OllamaClient` and `Settings`; use it in the relevant pipeline module.
 - **New task type** — update `task_router.py` heuristics and `reasoner.py` action mapping.
 - **New CLI command** — add a subparser in `cli/app.py` and a corresponding API endpoint if needed.
-- **New web UI feature** — edit `assistant/backend/static/chat.html`; no build step required.
+- **New web UI feature** — edit `frontend/src/`; the SPA is built with Vite (`npm run build` in `frontend/`).
 
 ---
 
@@ -349,10 +397,11 @@ docker run --rm -v $(pwd):/app -w /app assistant ruff check .
 
 - [`/AGENTS.md`](./AGENTS.md) — agent instructions, security constraints, build commands
 - [`/assistant/AGENTS.md`](./assistant/AGENTS.md) — backend cognitive architecture and memory model
-- [`plans/TESTING_STRATEGY.md`](./plans/TESTING_STRATEGY.md) — testing strategy
-- [`plans/CONTEXT_AND_SOURCES_PLAN.md`](./plans/CONTEXT_AND_SOURCES_PLAN.md) — context + sources feature plan
-- [`plans/WEB_UI_PLAN.md`](./plans/WEB_UI_PLAN.md) — web UI + voice implementation
+- [`docs/TESTING.md`](./docs/TESTING.md) — testing strategy
+- [`docs/MODEL_SELECTION.md`](./docs/MODEL_SELECTION.md) — model fleet rationale
+- [`docs/SECURITY.md`](./docs/SECURITY.md) — security model and verification
+- [`README.md`](./README.md) — first-run setup and configuration
 
 ---
 
-*Last updated: 2026-08-11*
+*Last updated: 2026-09-29*

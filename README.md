@@ -152,7 +152,8 @@ docker run -it --rm -v $(pwd):/app -w /app assistant ruff check .
 docker run -it --rm -v $(pwd):/app -w /app assistant pytest assistant/tests/
 ```
 
-**Frontend** — the SolidJS dev server hot-reloads on `http://localhost:5173`:
+**Frontend** — the SolidJS dev server hot-reloads on `http://localhost:5174` (the
+container listens on 5173 and is published on 5174):
 
 ```bash
 cd frontend && npm run lint && npm run test

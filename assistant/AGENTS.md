@@ -322,9 +322,36 @@ the assessment criteria, memory budget, and re-evaluation process.
   (`repeat: false` for one-shots). The old NL→cron parser and `croniter` dependency
   were removed.
 - **Runner (`scheduler/runner.py`):** 20s poll loop; fires due tasks, creates the daily-run
-  event frame, links associations, and reschedules. Housekeeping timers: heartbeat every
-  30 min, embedding top-up every 6h, memory consolidation every 6h (merges apply ad hoc),
-  a brain snapshot every 12h, summarization every 6h.
+  event frame, links associations, and reschedules.
+
+### Housekeeping timers (and the difference between "checked" and "applied")
+
+| Timer | Interval | What it does |
+|---|---|---|
+| Heartbeat | 30 min | sets the `scheduler_heartbeat` slot |
+| Embedding top-up | 6h | re-indexes turns/frames with missing or stale embeddings. Non-destructive, no backup. |
+| Consolidation | 6h | **checks** for near-duplicate frames and, if any are found, merges them |
+| Brain snapshot | 12h | a plain DB copy for point-in-time recovery |
+| Summarization | 6h | compresses eligible sessions (≥10 turns) into summary frames |
+
+**Merge is ad hoc; only the *check* is periodic.** Nothing emits an event when a
+duplicate frame appears, so the scheduler has to *look*. Every `CONSOLIDATION_INTERVAL_HOURS`
+it computes a read-only plan (`dry_run=True`) and, only if the plan found merges,
+applies them (capped at `CONSOLIDATION_MAX_MERGES_PER_RUN`). So the interval is a
+**look cadence**, not a merge cadence — a household with no duplicates merges nothing,
+forever, no matter how often it checks. Truly event-driven merge would need the
+duplicate check on the write path, which costs an embedding + clustering pass per
+write on the chat hot path; the periodic look keeps that work batched and off the
+hot path.
+
+**Backups are on their own clock, deliberately.** `BACKUP_INTERVAL_HOURS=12` drives
+`_run_backup_snapshot`, independent of merges. The two meet in exactly one place: a
+merge pass that runs **without a fresh snapshot** takes one first, so a merge is never
+applied unprotected; a merge that coincides with the 12h snapshot takes no extra copy.
+This is why snapshot count does not scale with merge frequency — before, every merge
+cycle snapshotted unconditionally, which wrote ~12 snapshots/day for work that often
+did nothing.
+
 - **Nothing is forgotten on a timer.** There is no decay or age-based garbage collection:
   memory only leaves through an explicit `forget` or a deliberate frame/file deletion.
   (Merges tombstone duplicate losers, but their content is unioned onto the survivor first.)

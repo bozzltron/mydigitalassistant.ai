@@ -57,8 +57,7 @@ asserts each of these):
 ## What's new in this alpha
 
 This release is the product of a full principal-level review of the Python
-backend, and the fixes that came out of it. The remediation is recorded in
-`plans/backend-review-remediation.md`; every non-trivial fix ships with a
+backend, and the fixes that came out of it. Every non-trivial fix ships with a
 regression test proven to fail against the pre-fix code.
 
 **Security**

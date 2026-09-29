@@ -1,9 +1,9 @@
 # Known Issues
 
 Deferred from the 2026-08-25 full memory+pipeline audit and re-triaged after the
-2026-09-29 backend review remediation (`plans/backend-review-remediation.md`).
-Not blocking for a single-household deployment, but the open items below should
-be addressed before the system handles untrusted multi-user input.
+2026-09-29 backend review remediation. Not blocking for a single-household
+deployment, but the open items below should be addressed before the system
+handles untrusted multi-user input.
 
 ## Closed by the 2026-09-29 remediation
 

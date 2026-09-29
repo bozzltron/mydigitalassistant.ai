@@ -50,8 +50,11 @@
 
 ## 4. Remove Old Completed Plan Docs
 
-- Archive or delete plans older than 30 days with `status: done`
-- Keep only active and recent reference plans
+- A plan is deleted when its work ships. `/plans/` holds only **active** work.
+- Do not keep shipped plans as history — git history and `docs/RELEASE_NOTES.md`
+  are the record. Archive nothing (there is no `archived/` directory by design).
+- If a plan is abandoned rather than shipped, delete it too; the reasoning that
+  still matters belongs in a doc or a code comment, not a dead plan file.
 
 ---
 

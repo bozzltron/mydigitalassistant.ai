@@ -10,7 +10,9 @@ use incl. kids.
 
 ## Repository layout
 - `/assistant/` — the cognitive assistant. See `/assistant/AGENTS.md` for the cognitive architecture and memory model.
-- `/plans/` — historical planning documents (archived for reference)
+- `/plans/` — **transient** working plans, one per active task (see `RUNBOOK.md`).
+  Plans are deleted when their work ships; they are not kept as history. Git
+  history is the archive.
 
 ## Security constraints (HARD RULES — violate these and the project's purpose is broken)
 - All LLM inference via local Ollama on 127.0.0.1:11434.

@@ -38,36 +38,9 @@
 
 **Use Case:** Production deployment, CI/CD, demos
 
----
-
-## Current Issue: Prod Build Not Building Frontend
-
-The `Dockerfile` frontend-builder stage (lines 35-44) currently only creates a placeholder `index.html` instead of running `npm run build`. This needs to be fixed for production mode to work properly.
-
-### Fix Required in Dockerfile:
-
-```dockerfile
-# --- Frontend build stage ---
-FROM node:22-alpine AS frontend-builder
-WORKDIR /app/frontend
-COPY frontend/package*.json ./
-RUN npm install
-COPY frontend/ .
-RUN npm run build
-# Output goes to ../assistant/backend/static via Vite config
-```
-
-And Vite config should output to `../assistant/backend/static`:
-
-```typescript
-// frontend/vite.config.ts
-export default defineConfig({
-  build: {
-    outDir: '../assistant/backend/static',
-    emptyOutDir: true,
-  },
-})
-```
+The `Dockerfile` `frontend-builder` stage runs a real `npm run build` (output to
+`../assistant/backend/static` via `frontend/vite.config.ts`), so prod ships the
+compiled SPA rather than a placeholder.
 
 ---
 
