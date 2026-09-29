@@ -8,7 +8,7 @@ Locks the seam bugs found when auditing module integration:
 - Graph walk never resurrects GC-tombstoned neighbors into context.
 - Scheduled-task interactions pair user + assistant episodes like every path.
 - 'resume' restores the task's original prompt instead of corrupting it.
-- GC purges vectors of tombstoned frames (candidate set + bounded vec table).
+- Explicit forgetting removes the frame from retrieval, and leaves it removed.
 """
 
 from unittest.mock import AsyncMock
@@ -16,7 +16,6 @@ from unittest.mock import AsyncMock
 import pytest
 
 from assistant.backend.config import settings
-from assistant.backend.memory.gc import run_gc
 from assistant.backend.memory.retrieval import Retriever
 from assistant.backend.memory.store import MemoryStore
 from assistant.backend.pipeline.orchestrator import ChatRequest, Orchestrator, OrchestratorDeps
@@ -190,29 +189,25 @@ async def test_graph_walk_skips_tombstoned_neighbors(store, stub_llm):
 
 
 @pytest.mark.asyncio
-async def test_gc_purges_vectors_of_tombstoned_frames(tmp_path):
-    """Tombstoning must delete the vector row too (bounded candidate set)."""
-    from pathlib import Path as _Path
+async def test_explicit_forget_removes_the_frame_from_retrieval(store, stub_llm):
+    """`forget_frame` is now the only way memory leaves; it must actually work.
 
-    db_path = str(_Path(tmp_path) / "gc.db")
+    Replaces the old GC test. GC used to tombstone frames and drop their vectors
+    on a timer; that mechanism is gone (nothing is forgotten unless the user says
+    so), so this pins the guarantee where it now lives — the explicit path.
+    """
+    add_embedding_cluster("guitar")
+    alice = await store.create_user("alice")
+    frame = await store.create_frame("guitar", "entity", owner_user_id=alice.id)
+    emb = (await stub_llm.embed("guitar")).embedding
+    await store.store_frame_embedding(frame.id, emb, settings.embedding_model)
 
-    from assistant.backend.db.schema import init_db
-    from assistant.backend.db.sqlcipher import aiosqlite_connect
+    retriever = Retriever(store=store, llm_client=stub_llm)
+    before = await retriever.retrieve(query="guitar", user_id=alice.id)
+    assert any(rf.frame.name == "guitar" for rf in before.retrieved_frames)
 
-    await init_db(db_path)
-    s = MemoryStore(db_path)
-    f = await s.create_frame("stale_thing", "entity")
-    await s.store_frame_embedding(f.id, [1.0] * 8, settings.embedding_model)
+    await store.forget_frame(frame.id)
 
-    async with aiosqlite_connect(db_path) as db:
-        await db.execute("UPDATE frames SET priority = 0.05 WHERE id = ?", (f.id,))
-        await db.commit()
+    after = await retriever.retrieve(query="guitar", user_id=alice.id)
+    assert all(rf.frame.name != "guitar" for rf in after.retrieved_frames)
 
-    report = await run_gc(db_path, dry_run=False)
-    assert report.frames_soft_deleted == 1
-
-    async with aiosqlite_connect(db_path) as db:
-        rows = await db.execute_fetchall(
-            "SELECT * FROM frame_embeddings WHERE frame_id = ?", (f.id,)
-        )
-    assert rows == []

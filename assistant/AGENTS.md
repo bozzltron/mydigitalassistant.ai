@@ -323,7 +323,11 @@ the assessment criteria, memory budget, and re-evaluation process.
   were removed.
 - **Runner (`scheduler/runner.py`):** 20s poll loop; fires due tasks, creates the daily-run
   event frame, links associations, and reschedules. Housekeeping timers: heartbeat every
-  30 min, memory GC weekly, embedding consolidation every 12h.
+  30 min, embedding top-up every 6h, memory consolidation every 6h (backing up only when a
+  pass actually merges), summarization every 6h.
+- **Nothing is forgotten on a timer.** There is no decay or age-based garbage collection:
+  memory only leaves through an explicit `forget` or a deliberate frame/file deletion.
+  (Merges tombstone duplicate losers, but their content is unioned onto the survivor first.)
 - **Missed ticks** (backend down at 09:00) fire once late on restart, then reschedule.
 - **API:** `GET /tasks`, `DELETE /tasks/{id}`, `GET /tasks/{id}/result`.
 - **Tests:** `assistant/tests/test_daily_schedule.py` plus a new integration test for
@@ -413,8 +417,9 @@ Endpoint: `POST /summarize` with body `{"session_id": "..."}`
 
 ## Key files
 - `backend/memory/store.py` — MemoryStore CRUD over SQLite; `export_brain`/`import_brain`.
-- `backend/memory/gc.py` — all memory GC: slot priority decay + stale-frame soft-delete
-  (`run_gc`); runs weekly in the scheduler and on-demand via `assistant db gc`.
+- `backend/memory/consolidate.py` — merges near-duplicate frames onto a survivor (unions
+  slots, redirects associations, tombstones losers); runs via the scheduler and
+  `assistant db consolidate`. This is the only maintenance that changes frame identity.
 - `backend/static/brain.html` — Brain Observatory: force-graph of frames/associations,
   conflict resolution, and topic memory search (`GET /memory/search` unions semantic
   frame matches with keyword hits, returning slots, associations, source episodes,

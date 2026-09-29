@@ -152,7 +152,7 @@ Snapshot: 2026-09-05. Full suite runs in both plain SQLite and SQLCipher-encrypt
 | `test_security.py` | 18 | Security verification script, local-only bindings, Brave endpoint gating. |
 | `test_docker.py` | 18 | Dockerfile security, compose config, CLI service, shell wrapper. |
 | `test_orchestrator.py` | 17 | Full cognitive loop, search injection, correction handling, scheduled-task chat flow. |
-| `test_gc.py` | 16 | Decay math, boundary conditions, essential-fact exemption, dry-run, live GC. |
+| `test_memory_maintenance.py` | 3 | No time-based decay of idle facts; consolidation skips the backup when there is nothing to merge. |
 | `test_brain_portable.py` | 16 | Encrypted portable brain export/import. |
 | `test_identity_name.py` | 14 | Identity frame/slot behavior, self-description. |
 | `test_tools.py` | 12 | `fetch_url` tool, robots.txt, extraction from fetched documents. |

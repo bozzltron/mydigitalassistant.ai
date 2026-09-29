@@ -79,7 +79,7 @@ Automatically created before destructive operations:
 
 **Before running any of these, create a backup:**
 - `assistant db migrate` / `assistant db reembed`
-- `assistant db gc --execute` / `assistant db consolidate --execute`
+- `assistant db consolidate --execute`
 - `assistant db import` / `assistant db restore-encrypted`
 - Schema upgrades: `assistant db upgrade`
 - Manual DB file manipulation

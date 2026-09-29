@@ -150,13 +150,17 @@ class Settings(BaseSettings):
     # cosine distance < 0.17, unrelated same-type pairs at 0.26+ (p01).
     # 0.15 keeps precision high; shared-title evidence catches the rest.
     consolidation_name_distance: float = 0.15
-    # Twice-daily memory consolidation ("dreaming") in the scheduler loop:
-    # merge duplicate frames + strengthen episode-backed associations.
-    # 0 disables the timer entirely.
-    consolidation_interval_hours: int = 12
+    # Memory consolidation ("dreaming") in the scheduler loop: merge duplicate
+    # frames + strengthen episode-backed associations. A backup is taken only
+    # when a pass actually has merges to apply. 0 disables the timer entirely.
+    consolidation_interval_hours: int = 6
     # Circuit breaker for unattended runs: if a pass plans more merges than
     # this, it writes nothing and logs for manual review instead.
     consolidation_max_merges_per_run: int = 10
+    # Re-index turns and frames whose embeddings are missing or stale. Cheap,
+    # non-destructive, and the thing that most benefits from running often, so
+    # it is separate from consolidation (no backup). 0 disables the timer.
+    embedding_topup_interval_hours: int = 6
 
     # TLS verification (defense-in-depth for local services)
     # Set to path of CA cert if Ollama/SearXNG use self-signed TLS
@@ -173,7 +177,7 @@ class Settings(BaseSettings):
 
     # Background summarization (episodic -> semantic compression)
     summarization_enabled: bool = True
-    summarization_interval_hours: int = 24
+    summarization_interval_hours: int = 6
     summarization_min_turns: int = 10
     summarization_max_sessions_per_run: int = 5
     summarization_max_chars: int = 4000

@@ -1,7 +1,7 @@
 """Phase 9B scheduler wiring: twice-daily consolidation + strengthening."""
 
 import asyncio
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from assistant.backend.memory.consolidate import (
@@ -11,7 +11,6 @@ from assistant.backend.memory.consolidate import (
 from assistant.backend.scheduler.runner import (
     CONSOLIDATION_BACKUPS_TO_KEEP,
     _backup_db,
-    _is_new_week,
 )
 
 
@@ -138,7 +137,18 @@ def test_backup_ring_is_pruned(tmp_path):
 
 
 def test_interval_gate_semantics():
-    """Consolidation fires when interval elapsed; GC gate unchanged."""
-    now = datetime.now(UTC).astimezone()
-    assert _is_new_week(None, now) is True
-    assert _is_new_week(now, now) is False
+    """Interval timers fire on the first tick, then only once the interval elapses.
+
+    The old ISO-week GC gate (`_is_new_week`) is gone with the GC subsystem;
+    what remains is the plain elapsed-interval check the scheduler uses for
+    embedding top-up, consolidation, and summarization.
+    """
+    interval_s = 6 * 3600
+
+    def due(last: datetime | None, now: datetime) -> bool:
+        return last is None or (now - last).total_seconds() >= interval_s
+
+    now = datetime.now(UTC)
+    assert due(None, now), "first run must fire"
+    assert not due(now - timedelta(hours=1), now), "1h into a 6h interval: not yet"
+    assert due(now - timedelta(hours=6), now), "6h elapsed: fire"

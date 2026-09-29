@@ -2,9 +2,9 @@
 
 The agent wakes once a day at the configured tick (DAILY_TASKS_TIME) and runs
 every enabled "daily" task; "once" tasks run at the next tick and disable
-themselves. Housekeeping (heartbeat every 30 min, memory GC weekly, memory
-consolidation twice daily) is plain timer logic here — not tasks, no LLM calls
-beyond embeddings for consolidation.
+themselves. Housekeeping (heartbeat every 30 min, embedding top-up and memory
+consolidation every few hours) is plain timer logic here — not tasks, no LLM
+calls beyond embeddings for maintenance.
 
 User tasks execute through the same Orchestrator instance as chat so results
 become memory normally. Started via `start_scheduler(store, orchestrator)`
@@ -24,7 +24,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
 from assistant.backend.config import settings
 from assistant.backend.db.sqlcipher import aiosqlite_connect
-from assistant.backend.memory.gc import run_gc
 from assistant.backend.memory.store import MemoryStore
 from assistant.backend.pipeline.orchestrator import SCHEDULED_TASK_ALERT_PREFIX, Orchestrator
 from assistant.backend.scheduler.summarizer import Summarizer
@@ -35,7 +34,6 @@ SHUTDOWN = False
 
 POLL_SECONDS = 20
 HEARTBEAT_INTERVAL_S = 30 * 60
-GC_INTERVAL_S = 7 * 24 * 60 * 60
 CONSOLIDATION_BACKUPS_TO_KEEP = 5
 
 # Summarization: runs at configured interval (default 24h)
@@ -292,30 +290,6 @@ async def _run_heartbeat(store: MemoryStore) -> None:
         logger.warning("Heartbeat update failed: %s", exc)
 
 
-async def _run_memory_gc(store: MemoryStore) -> None:
-    """Run memory garbage collection: slot decay + stale-frame soft-delete."""
-    try:
-        report = await run_gc(store.db_path)
-        logger.info(
-            "Memory GC completed: %d slots decayed, %d soft-deleted, "
-            "%d frames soft-deleted",
-            report.decayed,
-            report.soft_deleted,
-            report.frames_soft_deleted,
-        )
-    except Exception as exc:
-        logger.warning("Memory GC failed: %s", exc)
-
-
-def _is_new_week(last: datetime | None, now: datetime) -> bool:
-    """ISO-week comparison so GC runs once per calendar week."""
-    if last is None:
-        return True
-    local_last = last.astimezone()
-    local_now = now.astimezone()
-    return local_last.isocalendar()[:2] != local_now.isocalendar()[:2]
-
-
 async def _backup_db(db_path: str, label: str) -> Path:
     """Snapshot the brain before a mutation pass; keep a bounded ring.
 
@@ -353,22 +327,14 @@ async def _backup_db(db_path: str, label: str) -> Path:
     return dst
 
 
-async def _run_consolidation(
-    store: MemoryStore,
-    orchestrator: Orchestrator,
-) -> None:
-    """Twice-daily dreaming: backup -> strengthen + merge with circuit breaker."""
-    from assistant.backend.memory.consolidate import run_consolidation
+async def _run_embedding_topup(store: MemoryStore, orchestrator: Orchestrator) -> None:
+    """Re-index turns and frames that are missing or stale.
 
-    try:
-        backup = await _backup_db(store.db_path, "consolidation")
-        logger.info("Consolidation backup written: %s", backup.name)
-    except Exception as exc:
-        logger.warning("Consolidation aborted (backup failed): %s", exc)
-        return
-
-    # Episode top-up is independent of frame merging — run it even when the
-    # consolidation breaker trips below.
+    Non-destructive and idempotent, so it runs on a short interval with no
+    backup: an unindexed frame is invisible to semantic recall, and quiet
+    embeddings are cheap to refresh. Kept separate from the merge pass so its
+    frequency does not drag a full DB snapshot along with it.
+    """
     try:
         done = await store.embed_missing_episodes(
             orchestrator.embed_fn(),
@@ -380,10 +346,6 @@ async def _run_consolidation(
     except Exception as exc:
         logger.warning("Episode embedding top-up failed: %s", exc)
 
-    # Frame top-up for the same reason: a slot-rich frame is only findable by
-    # one of its chunks, so a frame whose slots changed without a re-embed goes
-    # quiet. Independent of frame merging, so it runs even when the breaker
-    # trips below.
     try:
         done = await store.embed_stale_frames(
             orchestrator.embed_fn(),
@@ -395,12 +357,30 @@ async def _run_consolidation(
     except Exception as exc:
         logger.warning("Stale frame embedding top-up failed: %s", exc)
 
+
+async def _run_consolidation(
+    store: MemoryStore,
+    orchestrator: Orchestrator,
+) -> None:
+    """Merge near-duplicate frames, taking a backup only when there is work.
+
+    The backup exists to protect the only destructive step here (losers are
+    tombstoned). It used to run unconditionally at the top of every cycle, which
+    meant a snapshot every interval even when nothing would merge. Compute the
+    plan first; if it is empty there is nothing to protect, so skip the backup.
+    """
+    from assistant.backend.memory.consolidate import run_consolidation
+
     try:
-        # Plan first: embeddings may be filled during clustering either way.
         plan = await run_consolidation(
             store.db_path, dry_run=True, embed_fn=orchestrator.embed_fn()
         )
         max_merges = settings.consolidation_max_merges_per_run
+
+        if not plan.planned_merges:
+            logger.debug("Consolidation: no merges to apply")
+            return
+
         if plan.capped or len(plan.planned_merges) > max_merges:
             logger.warning(
                 "Consolidation skipped (%d merges > cap %d): %s",
@@ -408,6 +388,14 @@ async def _run_consolidation(
                 max_merges,
                 plan.summary(),
             )
+            return
+
+        # There is real mutation ahead, so snapshot before applying it.
+        try:
+            backup = await _backup_db(store.db_path, "consolidation")
+            logger.info("Consolidation backup written: %s", backup.name)
+        except Exception as exc:
+            logger.warning("Consolidation aborted (backup failed): %s", exc)
             return
 
         report = await run_consolidation(
@@ -427,10 +415,10 @@ async def _scheduler_loop(store: MemoryStore, orchestrator: Orchestrator) -> Non
                 settings.daily_tasks_time, settings.daily_tasks_tz or "local")
 
     await _run_heartbeat(store)
-    await _run_memory_gc(store)
     last_hb = datetime.now(UTC)
-    last_gc = last_hb
+    last_embedding_topup: datetime | None = None
     last_summarization: datetime | None = None
+    embedding_topup_interval_s = max(0, settings.embedding_topup_interval_hours) * 3600
     consolidation_interval_s = max(0, settings.consolidation_interval_hours) * 3600
     last_consolidation: datetime | None = None
     summarization_interval_s = settings.summarization_interval_hours * 3600
@@ -442,9 +430,16 @@ async def _scheduler_loop(store: MemoryStore, orchestrator: Orchestrator) -> Non
             if (now - last_hb).total_seconds() >= HEARTBEAT_INTERVAL_S:
                 await _run_heartbeat(store)
                 last_hb = now
-            if _is_new_week(last_gc, now):
-                await _run_memory_gc(store)
-                last_gc = now
+            if (
+                embedding_topup_interval_s
+                and (
+                    last_embedding_topup is None
+                    or (now - last_embedding_topup).total_seconds()
+                    >= embedding_topup_interval_s
+                )
+            ):
+                await _run_embedding_topup(store, orchestrator)
+                last_embedding_topup = datetime.now(UTC)
             if (
                 consolidation_interval_s
                 and (

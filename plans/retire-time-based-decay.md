@@ -1,17 +1,42 @@
 ---
 date: 2026-09-29
-status: active
-estimated_hours: 4
+status: done
+estimated_hours: 6
 ---
 
-# Retire time-based memory decay
+# Retire time-based decay; make memory maintenance frequent and non-destructive
+
+**Implemented 2026-09-29.** Summary of what landed:
+
+- Deleted `assistant/backend/memory/gc.py` and its 16-test `test_gc.py`.
+- Removed the GC timer, `GC_INTERVAL_S`, `_run_memory_gc`, and `_is_new_week`
+  from `scheduler/runner.py`; removed the `assistant db gc` CLI command.
+- Split maintenance: `_run_embedding_topup` runs every 6h with no backup;
+  `_run_consolidation` now plans first and only backs up when merges are pending.
+- Intervals: consolidation 6h, summarization 6h; new
+  `EMBEDDING_TOPUP_INTERVAL_HOURS=6`.
+- Added `assistant/tests/test_memory_maintenance.py` (3 tests); replaced the GC
+  vector-purge test with an explicit-forget-retrieval test.
+- Docs updated: `assistant/AGENTS.md`, `docs/FILES.md`, `docs/TESTING.md`,
+  `docs/BACKUP_SYSTEM.md`, `.env.example`.
 
 ## Objective
 
-Nothing in the agent's memory should be forgotten unless the user says so.
-Today the memory system runs a weekly garbage collector that, unprompted,
-lowers slot priority and soft-deletes frames (dropping their embedding vectors).
-We will remove that autonomous behavior and keep only *explicit* forgetting.
+Two coupled changes with one theme — maintenance should *enrich* memory, never
+subtract from it, and its cadence should match its cost:
+
+1. **Nothing is forgotten unless the user says so.** Remove the weekly garbage
+   collector that lowers slot priority and soft-deletes frames (dropping their
+   embedding vectors).
+2. **Run the good maintenance more often, and stop paying for it.** Embedding
+   freshness and duplicate-frame merging are valuable but currently run only every
+   12h *and* take a full DB backup every time. Split them: run the cheap,
+   non-destructive part every 6h, and take a backup only when there is actually
+   destructive work to protect.
+
+The second change is not cosmetic: four runs/day with a backup each is 12
+snapshots/day of the household brain for work that is mostly idempotent embedding
+top-up.
 
 Two user-facing goals drive this:
 
@@ -60,40 +85,94 @@ Two user-facing goals drive this:
 
 ## Changes
 
-### 1. Reduce `run_gc` to a no-op-ish reporter (or delete it)
+Part A removes the destructive timer. Part B splits the valuable maintenance so
+frequency no longer costs a backup.
 
-Preferred: **delete the destructive paths** and keep `run_gc` as a
-bookkeeping/diagnostic that reports what *would* be affected, never mutating.
+### A. Delete the decay subsystem
 
-- Remove `compute_decayed_priority` and the slot-decay loop.
-- Remove the stale-frame soft-delete loop and its `frame_embeddings` deletion.
-- `GcReport` shrinks accordingly (drop `decayed`, `soft_deleted`,
-  `frames_soft_deleted`, or repurpose to counts-only).
-- Decide whether `gc.py` still earns its place. If nothing remains, delete the
-  module and its callers rather than keeping an empty shell (Clean ship).
+**A1. Delete `gc.py` and its callers.**
 
-### 2. Remove the scheduler's GC timer
+The decision is to remove it outright, not reduce it to a reporter — a module
+whose only remaining job is to report that it does nothing is not worth keeping.
+
+- Remove `compute_decayed_priority`, the slot-decay loop, the stale-frame
+  soft-delete loop, and the `frame_embeddings` deletion.
+- `GcReport`, `DECAY_AFTER_DAYS`, `DECAY_RATE`, `SOFT_DELETE_THRESHOLD`,
+  `FRAME_STALE_PRIORITY`, `FRAME_STALE_DAYS` all go with it.
+
+**A2. Remove the scheduler timer.**
 
 - `scheduler/runner.py`: drop `_run_memory_gc`, the startup call (`:430`), the
-  weekly branch (`:445-447`), `last_gc`, and the now-unused `GC_INTERVAL_S`
-  (`:38`).
-- Keep `_is_new_week` only if another timer uses it; otherwise remove and update
-  `test_phase9_scheduler_consolidation.py`.
+  weekly branch (`:445-447`), `last_gc`, `GC_INTERVAL_S` (`:38`), and
+  `_is_new_week` (its only caller was GC; remove the test too).
 
-### 3. CLI
+**A3. Remove the CLI command.**
 
-- `assistant db gc` (`cli/app.py:760`, `cli/db.py:289`) must either go, or be
-  re-described honestly. Recommendation: **remove the command** — with no decay
-  there is nothing for it to do, and a `gc` command that reports zeros is
-  misleading. Update the `db` subcommand help and the `status, gc, consolidate,
-  reembed` list (`cli/db.py:431`).
+- Delete `assistant db gc` (`cli/app.py:760,1031`, `cli/db.py:289,410,431`).
+  With no decay it has nothing to do; a `gc` that prints zeros is misleading.
 
-### 4. Keep explicit forgetting
+**A4. Keep explicit forgetting.**
 
 - `forget_frame` / `forget_slot` stay and remain the only way memory is removed
   without user-initiated deletion of a frame/file.
-- Verify retrieval still excludes `deleted_at IS NOT NULL` frames
-  (`retrieval.py:589` already does) so a deliberate forget stays forgotten.
+- Retrieval already excludes `deleted_at IS NOT NULL` frames
+  (`retrieval.py:589`); verify with a test (below).
+
+### B. Split maintenance: cheap-and-frequent vs destructive-and-protected
+
+Currently `_run_consolidation` does four things in one run, every 12h, each run
+taking a full DB backup:
+
+1. `_backup_db(...)` — full snapshot; **aborts the whole run if it fails**
+2. episode embedding top-up (cap 100)
+3. stale-frame re-embedding (cap 100)
+4. the merge pass (tombstones losers)
+
+Steps 2–3 are idempotent, non-destructive, and are the ones that *want* to be
+frequent (a frame whose slots changed is only findable by one chunk until
+re-embedded — so freshness is user-visible recall quality). Step 4 is the only
+destructive one, and the backup exists solely to protect it.
+
+**B1. Run the embedding top-up every 6 hours, with no backup.**
+
+Extract steps 2–3 into their own function and schedule them on a 6h interval
+(`EMBEDDING_TOPUP_INTERVAL_HOURS=6`, new setting). No snapshot: they mutate only
+embedding rows, which are idempotent and regenerable.
+
+**B2. Run the merge pass on its own cadence, backing up only when it will
+actually mutate.**
+
+- Keep steps 1 + 4 together, but compute the plan **first** (it is already
+  computed via `dry_run=True` at `:400`). If the plan has zero merges, skip the
+  backup entirely — there is nothing to protect.
+- Only if `plan.planned_merges` is non-empty do `_backup_db(...)` and then apply.
+- Set the merge cadence to 6h as well (`CONSOLIDATION_INTERVAL_HOURS=6`). With
+  the lazy backup this is *cheaper* than today: a quiet brain writes ~0 backups
+  per interval; a busy one writes one per interval that has real merge work.
+
+Net backup behaviour: from **12 fixed snapshots/day → back up only when merges
+happen** (bounded by `CONSOLIDATION_BACKUPS_TO_KEEP`). The circuit breaker
+(`consolidation_max_merges_per_run`) and the abort-on-backup-failure semantics
+are preserved — they just now sit behind the "is there work?" check instead of in
+front of it.
+
+**B3. Summarization cadence** — leave the interval configurable; set
+`SUMMARIZATION_INTERVAL_HOURS=6` for consistency, but note it is self-gating: it
+only summarizes sessions with ≥`SUMMARIZATION_MIN_TURNS` (default 10) and caps
+at `SUMMARIZATION_MAX_SESSIONS_PER_RUN`. A 6h poll with nothing eligible is a
+cheap no-op, so the interval change is low-risk but also low-value unless
+`MIN_TURNS` is lowered.
+
+### C. Settings added/changed
+
+| Setting | New default | Purpose |
+|---|---|---|
+| `CONSOLIDATION_INTERVAL_HOURS` | `6` | merge-pass cadence |
+| `EMBEDDING_TOPUP_INTERVAL_HOURS` | `6` | embedding top-up cadence (new) |
+| `SUMMARIZATION_INTERVAL_HOURS` | `6` | summarization cadence |
+
+`GC_INTERVAL_S` is removed. Document all three in `.env.example`.
+
 
 ## Tests
 

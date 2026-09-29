@@ -85,7 +85,7 @@ Large files are never fully embedded; the frame embeds metadata only.
 - Uploaded files are **hard-deleted** as a cluster: `DELETE /files/{frame_id}` /
   `delete_file` tool remove the disk copy *and* the frame *and* the `file_*`
   slots *and* associated row frames / associations.
-- `forget_frame` (priority → 0) is only for GC, not file deletion.
+- `forget_frame` (priority → 0) is an explicit memory forget, not file deletion.
 - Schedule, facts, episodes, and unrelated memory survive a file delete.
 
 ## Sandbox rules

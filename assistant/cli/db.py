@@ -285,30 +285,6 @@ async def consolidate_db(execute: bool = False):
         return False
 
 
-async def gc_db(dry_run: bool = False):
-    """Run priority decay garbage collection on memory slots."""
-    from assistant.backend.memory.gc import run_gc
-
-    db_path = settings.database_path
-    mode = "[bold yellow]DRY RUN[/bold yellow]" if dry_run else "[bold green]LIVE[/bold green]"
-    console.print(f"Running GC in {mode} mode on [cyan]{db_path}[/cyan]...")
-
-    try:
-        report = await run_gc(db_path, dry_run=dry_run)
-        console.print(
-            f"  Scanned:    [cyan]{report.scanned}[/cyan]\n"
-            f"  Decayed:    [cyan]{report.decayed}[/cyan]\n"
-            f"  Soft-deleted: [cyan]{report.soft_deleted}[/cyan]\n"
-            f"  Errors:     [red]{report.errors}[/red]"
-        )
-        if dry_run:
-            console.print("[yellow]Dry run — no changes written.[/yellow]")
-        return True
-    except Exception as e:
-        console.print(f"[red]GC failed: {e}[/red]")
-        return False
-
-
 async def reembed_db(target_model: str | None = None):
     """Re-embed all frames with a new embedding model.
 
@@ -407,8 +383,6 @@ async def main(
         success = await import_db(import_path, new_db_path)
     elif command == "status":
         success = await status()
-    elif command == "gc":
-        success = await gc_db(dry_run=dry_run)
     elif command == "consolidate":
         success = await consolidate_db(execute=execute)
     elif command == "embed-episodes":
@@ -428,7 +402,7 @@ def main_entry():
         print("Usage: assistant db <command> [--dry-run] [--execute] [--model <model>]")
         print(
             "Commands: upgrade, migrate, backup, export, import, "
-            "status, gc, consolidate, reembed"
+            "status, consolidate, reembed"
         )
         sys.exit(1)
 

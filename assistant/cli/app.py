@@ -757,26 +757,6 @@ def cmd_db_status(args: argparse.Namespace, client: BackendClient) -> None:
         sys.exit(1)
 
 
-def cmd_db_gc(args: argparse.Namespace, client: BackendClient) -> None:
-    """Run priority decay garbage collection on memory slots."""
-    try:
-        from assistant.backend.memory.gc import run_gc
-
-        console.print("[bold]Running GC...[/bold]")
-        report = asyncio.run(run_gc(settings.database_path, dry_run=args.dry_run))
-        console.print(
-            f"  Scanned:     [cyan]{report.scanned}[/cyan]\n"
-            f"  Decayed:     [cyan]{report.decayed}[/cyan]\n"
-            f"  Soft-deleted: [cyan]{report.soft_deleted}[/cyan]\n"
-            f"  Errors:      [red]{report.errors}[/red]"
-        )
-        if args.dry_run:
-            console.print("[yellow]Dry run — no changes written.[/yellow]")
-    except Exception as e:
-        console.print(f"[red]GC failed: {e}[/red]")
-        sys.exit(1)
-
-
 def cmd_db_reembed(args: argparse.Namespace, client: BackendClient) -> None:
     """Re-embed all frames with a new embedding model."""
     try:
@@ -1027,12 +1007,6 @@ def main() -> None:
     p_db_restore_enc.add_argument("file", help="Path to encrypted backup file")
     p_db_restore_enc.add_argument("-y", "--yes", action="store_true", help="Skip confirmation")
     p_db_restore_enc.set_defaults(func=cmd_db_restore_encrypted)
-
-    p_db_gc = db_sub.add_parser("gc", help="Run priority decay garbage collection")
-    p_db_gc.add_argument(
-        "--dry-run", action="store_true", help="Show what would be deleted without deleting"
-    )
-    p_db_gc.set_defaults(func=cmd_db_gc)
 
     p_db_reembed = db_sub.add_parser(
         "reembed", help="Re-embed all frames with a new embedding model"
