@@ -161,6 +161,10 @@ class Settings(BaseSettings):
     # non-destructive, and the thing that most benefits from running often, so
     # it is separate from consolidation (no backup). 0 disables the timer.
     embedding_topup_interval_hours: int = 6
+    # Periodic brain snapshot, on its own clock so backup count does not scale
+    # with how often merges happen. A merge cycle that finds no fresh snapshot
+    # takes one first regardless (a merge must never run unprotected).
+    backup_interval_hours: int = 12
 
     # TLS verification (defense-in-depth for local services)
     # Set to path of CA cert if Ollama/SearXNG use self-signed TLS

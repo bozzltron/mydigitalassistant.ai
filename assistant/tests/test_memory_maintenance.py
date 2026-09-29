@@ -86,23 +86,82 @@ async def test_consolidation_skips_the_backup_when_there_is_nothing_to_merge(
 
     import assistant.backend.memory.consolidate as consolidate
 
-    class _EmptyPlan:
-        planned_merges: list = []
-        capped = False
-
-        def summary(self) -> str:
-            return "0 merges"
-
-    async def fake_run_consolidation(db_path, dry_run=True, embed_fn=None, max_merges=None):
-        if dry_run:
-            return _EmptyPlan()
-        raise AssertionError("non-dry-run consolidation must not be reached")
-
-    monkeypatch.setattr(consolidate, "run_consolidation", fake_run_consolidation)
+    monkeypatch.setattr(consolidate, "run_consolidation", _fake_consolidation([]))
 
     await runner._run_consolidation(store, _OrchestratorStub())
 
     assert backups_taken == []
+
+
+@pytest.mark.asyncio
+async def test_consolidation_merges_ad_hoc_without_a_backup_when_one_is_fresh(
+    store: MemoryStore, monkeypatch
+):
+    """Merges apply as soon as they are found, even mid-backup-interval.
+
+    The 12h snapshot timer is what protects merges; a merge that runs while a
+    fresh snapshot already exists must not take a second one. This is the
+    property that keeps snapshot count independent of merge frequency.
+    """
+    backups_taken: list[str] = []
+    applied: list[bool] = []
+
+    async def fake_backup(db_path, label):  # noqa: ANN001, ANN201
+        backups_taken.append(label)
+
+    monkeypatch.setattr(runner, "_backup_db", fake_backup)
+
+    import assistant.backend.memory.consolidate as consolidate
+
+    monkeypatch.setattr(
+        consolidate, "run_consolidation", _fake_consolidation([("a", "b")], applied=applied)
+    )
+
+    await runner._run_consolidation(store, _OrchestratorStub(), has_fresh_backup=True)
+
+    assert backups_taken == [], "a fresh snapshot already covers this merge"
+    assert applied == [True], "the merge must still be applied"
+
+
+@pytest.mark.asyncio
+async def test_consolidation_takes_a_backup_before_merging_if_none_is_fresh(
+    store: MemoryStore, monkeypatch
+):
+    """A merge must never run unprotected: no fresh snapshot -> take one first."""
+    backups_taken: list[str] = []
+
+    async def fake_backup(db_path, label):  # noqa: ANN001, ANN201
+        backups_taken.append(label)
+
+    monkeypatch.setattr(runner, "_backup_db", fake_backup)
+
+    import assistant.backend.memory.consolidate as consolidate
+
+    monkeypatch.setattr(
+        consolidate, "run_consolidation", _fake_consolidation([("a", "b")])
+    )
+
+    await runner._run_consolidation(store, _OrchestratorStub(), has_fresh_backup=False)
+
+    assert backups_taken == ["consolidation"]
+
+
+def _fake_consolidation(merges, applied=None):
+    """Build a stand-in for `run_consolidation` over the given planned merges."""
+    class _Plan:
+        def __init__(self):
+            self.planned_merges = list(merges)
+            self.capped = False
+
+        def summary(self) -> str:
+            return f"{len(self.planned_merges)} merges"
+
+    async def _run(db_path, dry_run=True, embed_fn=None, max_merges=None):
+        if not dry_run and applied is not None:
+            applied.append(True)
+        return _Plan()
+
+    return _run
 
 
 class _OrchestratorStub:

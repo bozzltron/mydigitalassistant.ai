@@ -11,11 +11,17 @@ estimated_hours: 6
 - Deleted `assistant/backend/memory/gc.py` and its 16-test `test_gc.py`.
 - Removed the GC timer, `GC_INTERVAL_S`, `_run_memory_gc`, and `_is_new_week`
   from `scheduler/runner.py`; removed the `assistant db gc` CLI command.
-- Split maintenance: `_run_embedding_topup` runs every 6h with no backup;
-  `_run_consolidation` now plans first and only backs up when merges are pending.
+- Merges are **ad hoc**: `_run_consolidation` plans, and applies as soon as there
+  are merges (bounded by the per-run cap). Merging is not gated on the backup
+  clock.
+- Backups are on their **own 12h clock** (`_run_backup_snapshot`,
+  `BACKUP_INTERVAL_HOURS=12`), so snapshot count does not scale with merge
+  frequency. A merge that happens without a fresh snapshot takes one first, so a
+  merge is never applied unprotected.
+- Embedding top-up is separate and every 6h, with no backup.
 - Intervals: consolidation 6h, summarization 6h; new
-  `EMBEDDING_TOPUP_INTERVAL_HOURS=6`.
-- Added `assistant/tests/test_memory_maintenance.py` (3 tests); replaced the GC
+  `EMBEDDING_TOPUP_INTERVAL_HOURS=6` and `BACKUP_INTERVAL_HOURS=12`.
+- Added `assistant/tests/test_memory_maintenance.py` (5 tests); replaced the GC
   vector-purge test with an explicit-forget-retrieval test.
 - Docs updated: `assistant/AGENTS.md`, `docs/FILES.md`, `docs/TESTING.md`,
   `docs/BACKUP_SYSTEM.md`, `.env.example`.

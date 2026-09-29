@@ -323,8 +323,8 @@ the assessment criteria, memory budget, and re-evaluation process.
   were removed.
 - **Runner (`scheduler/runner.py`):** 20s poll loop; fires due tasks, creates the daily-run
   event frame, links associations, and reschedules. Housekeeping timers: heartbeat every
-  30 min, embedding top-up every 6h, memory consolidation every 6h (backing up only when a
-  pass actually merges), summarization every 6h.
+  30 min, embedding top-up every 6h, memory consolidation every 6h (merges apply ad hoc),
+  a brain snapshot every 12h, summarization every 6h.
 - **Nothing is forgotten on a timer.** There is no decay or age-based garbage collection:
   memory only leaves through an explicit `forget` or a deliberate frame/file deletion.
   (Merges tombstone duplicate losers, but their content is unioned onto the survivor first.)

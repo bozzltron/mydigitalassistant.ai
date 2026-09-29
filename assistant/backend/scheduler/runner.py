@@ -361,13 +361,20 @@ async def _run_embedding_topup(store: MemoryStore, orchestrator: Orchestrator) -
 async def _run_consolidation(
     store: MemoryStore,
     orchestrator: Orchestrator,
+    *,
+    has_fresh_backup: bool = False,
 ) -> None:
-    """Merge near-duplicate frames, taking a backup only when there is work.
+    """Merge near-duplicate frames as soon as they appear.
 
-    The backup exists to protect the only destructive step here (losers are
-    tombstoned). It used to run unconditionally at the top of every cycle, which
-    meant a snapshot every interval even when nothing would merge. Compute the
-    plan first; if it is empty there is nothing to protect, so skip the backup.
+    Merging is safe and idempotent enough to run whenever there is work: losers
+    are tombstoned, but their slots are unioned onto the survivor first, and the
+    pass is bounded by `consolidation_max_merges_per_run`. So this is ad hoc — it
+    plans, and if there are merges it applies them.
+
+    The backup is NOT tied to merge frequency. It runs on its own 12h clock
+    (`_run_backup_snapshot`); `has_fresh_backup` tells this pass whether that
+    clock has fired since the last merge, so a burst of merges cannot produce a
+    burst of snapshots.
     """
     from assistant.backend.memory.consolidate import run_consolidation
 
@@ -390,13 +397,16 @@ async def _run_consolidation(
             )
             return
 
-        # There is real mutation ahead, so snapshot before applying it.
-        try:
-            backup = await _backup_db(store.db_path, "consolidation")
-            logger.info("Consolidation backup written: %s", backup.name)
-        except Exception as exc:
-            logger.warning("Consolidation aborted (backup failed): %s", exc)
-            return
+        # Snapshot before mutating, but only once per backup interval: if a fresh
+        # snapshot already exists, this merge is already protected and the guard
+        # would just be re-copying the DB on every merge cycle.
+        if not has_fresh_backup:
+            try:
+                backup = await _backup_db(store.db_path, "consolidation")
+                logger.info("Consolidation backup written: %s", backup.name)
+            except Exception as exc:
+                logger.warning("Consolidation aborted (backup failed): %s", exc)
+                return
 
         report = await run_consolidation(
             store.db_path,
@@ -409,6 +419,22 @@ async def _run_consolidation(
         logger.warning("Memory consolidation failed: %s", exc)
 
 
+async def _run_backup_snapshot(store: MemoryStore) -> bool:
+    """Take a periodic snapshot of the brain, independent of any mutation pass.
+
+    On its own clock so backup frequency is predictable and does not scale with
+    how often merges happen. Returns True if a snapshot was written, so the
+    scheduler can tell the next merge pass that it is already protected.
+    """
+    try:
+        backup = await _backup_db(store.db_path, "scheduled")
+        logger.info("Scheduled backup written: %s", backup.name)
+        return True
+    except Exception as exc:
+        logger.warning("Scheduled backup failed: %s", exc)
+        return False
+
+
 async def _scheduler_loop(store: MemoryStore, orchestrator: Orchestrator) -> None:
     """Main scheduler loop: poll for due tasks + housekeeping timers."""
     logger.info("Scheduler loop started (daily tick at %s %s)",
@@ -418,10 +444,12 @@ async def _scheduler_loop(store: MemoryStore, orchestrator: Orchestrator) -> Non
     last_hb = datetime.now(UTC)
     last_embedding_topup: datetime | None = None
     last_summarization: datetime | None = None
+    last_backup: datetime | None = None
     embedding_topup_interval_s = max(0, settings.embedding_topup_interval_hours) * 3600
     consolidation_interval_s = max(0, settings.consolidation_interval_hours) * 3600
     last_consolidation: datetime | None = None
     summarization_interval_s = settings.summarization_interval_hours * 3600
+    backup_interval_s = max(0, settings.backup_interval_hours) * 3600
 
     while not SHUTDOWN:
         try:
@@ -430,6 +458,19 @@ async def _scheduler_loop(store: MemoryStore, orchestrator: Orchestrator) -> Non
             if (now - last_hb).total_seconds() >= HEARTBEAT_INTERVAL_S:
                 await _run_heartbeat(store)
                 last_hb = now
+            # Snapshot the brain on its own predictable clock. Merges below do
+            # not take their own backups; this is what protects them, and tying
+            # it to a timer keeps snapshot count independent of merge frequency.
+            fresh_backup = False
+            if (
+                backup_interval_s
+                and (
+                    last_backup is None
+                    or (now - last_backup).total_seconds() >= backup_interval_s
+                )
+            ):
+                fresh_backup = await _run_backup_snapshot(store)
+                last_backup = datetime.now(UTC)
             if (
                 embedding_topup_interval_s
                 and (
@@ -448,7 +489,12 @@ async def _scheduler_loop(store: MemoryStore, orchestrator: Orchestrator) -> Non
                     >= consolidation_interval_s
                 )
             ):
-                await _run_consolidation(store, orchestrator)
+                # Ad hoc: merges apply as soon as they are found. Only a merge
+                # cycle that coincides with a fresh snapshot is "protected"; one
+                # that does not gets its own backup first (see _run_consolidation).
+                await _run_consolidation(
+                    store, orchestrator, has_fresh_backup=fresh_backup
+                )
                 last_consolidation = datetime.now(UTC)
             if (
                 summarization_interval_s
