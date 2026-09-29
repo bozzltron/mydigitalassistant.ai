@@ -157,8 +157,8 @@ Respond with ONLY valid JSON.""",
                 system = ChatMessage(role="system", content=system.content + extra)
             else:
                 logger.error(
-                    "Sensitivity classification failed after retries for query: %s",
-                    query[:100],
+                    "Sensitivity classification failed after retries (query_len=%d)",
+                    len(query),
                 )
     return SensitivityResult(
         level=QuerySensitivity.AMBIGUOUS,
@@ -366,7 +366,9 @@ class SearXNGBackend(SearchBackend):
         except Exception:
             return False
 
-    async def search(self, query: str, num_results: int = 5) -> list[SearchResult]:
+    async def search(
+        self, query: str, num_results: int = 5
+    ) -> tuple[list[SearchResult], list[YouTubeVideo]]:
         try:
             client = await self._get_client()
             params: dict = {
@@ -438,9 +440,9 @@ class SearXNGBackend(SearchBackend):
                 if len(results) >= num_results:
                     break
 
-            logger.info(
-                "SearXNG returned %d results for %d candidates (q=%r)",
-                len(results), len(items), params["q"][:80],
+            logger.debug(
+                "SearXNG returned %d results for %d candidates (query_len=%d)",
+                len(results), len(items), len(params["q"]),
             )
             return results, video_results
         except Exception as e:
@@ -493,7 +495,9 @@ class BraveBackend(SearchBackend):
         except Exception:
             return False
 
-    async def search(self, query: str, num_results: int = 5) -> list[SearchResult]:
+    async def search(
+        self, query: str, num_results: int = 5
+    ) -> tuple[list[SearchResult], list[YouTubeVideo]]:
         try:
             client = await self._get_client()
             headers = {**self.BRAVE_HEADERS, "X-Subscription-Token": self.api_key}
@@ -508,7 +512,11 @@ class BraveBackend(SearchBackend):
             data = r.json()
             web_results = data.get("web", {}).get("results", [])
             if not web_results:
-                return []
+                # Must match the ABC's (results, videos) contract. A bare `[]`
+                # here raised "not enough values to unpack" in the caller, so
+                # every empty Brave response surfaced as a search failure
+                # instead of "no results".
+                return [], []
             results: list[SearchResult] = []
             video_results: list[YouTubeVideo] = []
             seen: set[str] = set()
@@ -562,14 +570,18 @@ class BraveBackend(SearchBackend):
                 )
                 if len(results) >= num_results:
                     break
-            logger.info(
-                "Brave returned %d results (q=%r)",
-                len(results), params["q"][:80],
+            logger.debug(
+                "Brave returned %d results (query_len=%d)",
+                len(results), len(params["q"]),
             )
             return results, video_results
         except Exception as e:
+            # Same contract as above: on error, return an empty 2-tuple rather
+            # than an empty list, so the caller's unpack does not raise and turn
+            # a Brave outage into an exception. `WebSearchTool.search_with_info`
+            # still records the error for the trace panel.
             logger.error("Brave search failed: %s", e)
-            return []
+            return [], []
 
 
 
@@ -649,11 +661,11 @@ class WebSearchTool(SearchBackend):
             )
             consent_required = sensitivity.level in sensitive_levels
             if consent_required:
-                logger.info(
-                    "Brave search query flagged as %s: %s (reason: %s, "
+                logger.debug(
+                    "Brave search query flagged as %s (query_len=%d, reason: %s, "
                     "categories: %s) - NOT executing",
                     sensitivity.level.value,
-                    raw_query,
+                    len(raw_query),
                     sensitivity.reason,
                     sensitivity.categories,
                 )
