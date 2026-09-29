@@ -10,13 +10,14 @@ browser. This is the standard link-preview behaviour (WhatsApp/Slack/Telegram).
 """
 
 import logging
-import re
 import time
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from urllib.parse import urlparse
 
 import httpx
+
+from assistant.backend.pipeline.url_safety import UnsafeURLError, assert_public_url, safe_stream
 
 logger = logging.getLogger(__name__)
 
@@ -25,27 +26,6 @@ _cache: dict[str, tuple["PreviewCard | None", float]] = {}
 _CACHE_TTL_SECONDS = 3600  # 1 hour
 _MAX_RESPONSE_SIZE = 2 * 1024 * 1024  # 2 MB max HTML
 _FETCH_TIMEOUT = 5.0  # seconds
-
-# Blocked host patterns (SSRF guard)
-_PRIVATE_HOST_PATTERNS = [
-    re.compile(r"^localhost$", re.I),
-    re.compile(r"^127\.", re.I),
-    re.compile(r"^10\.", re.I),
-    re.compile(r"^172\.(1[6-9]|2[0-9]|3[0-1])\.", re.I),
-    re.compile(r"^192\.168\.", re.I),
-    re.compile(r"^::1$", re.I),
-    re.compile(r"^0\.0\.0\.0$", re.I),
-]
-
-
-def _is_private_host(hostname: str) -> bool:
-    """Return True if hostname is a private/internal address."""
-    if not hostname:
-        return True
-    for pattern in _PRIVATE_HOST_PATTERNS:
-        if pattern.match(hostname):
-            return True
-    return False
 
 
 @dataclass
@@ -133,34 +113,52 @@ async def fetch_og_preview(url: str) -> PreviewCard | None:
         return None
 
     scheme = parsed.scheme.lower()
-    hostname = parsed.hostname or ""
 
     if scheme not in ("http", "https"):
         logger.warning("Blocked non-http(s) URL: %s", url)
         _cache[url] = (None, now)
         return None
 
-    if _is_private_host(hostname):
-        logger.warning("Blocked private host: %s", hostname)
+    # Resolve and reject private/loopback/link-local/reserved, then re-check on
+    # every redirect hop inside safe_stream(). A hostname string check cannot see
+    # a name that resolves to 127.0.0.1 or a public URL that redirects inward.
+    try:
+        await assert_public_url(url)
+    except UnsafeURLError as e:
+        logger.warning("Blocked URL %s: %s", url, e)
         _cache[url] = (None, now)
         return None
 
     try:
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(_FETCH_TIMEOUT, connect=3.0),
-            follow_redirects=True,
+            follow_redirects=False,
             headers={"User-Agent": "Mozilla/5.0 (compatible; LinkPreview/1.0)"},
         ) as client:
-            response = await client.get(url, headers={"Accept": "text/html"})
-            response.raise_for_status()
+            async with safe_stream(
+                client, url, headers={"Accept": "text/html"}
+            ) as response:
+                response.raise_for_status()
 
-        content_type = response.headers.get("content-type", "")
-        if "text/html" not in content_type.lower():
-            logger.debug("Non-HTML content-type %s for %s", content_type, url)
-            _cache[url] = (None, now)
-            return None
+                content_type = response.headers.get("content-type", "")
+                if "text/html" not in content_type.lower():
+                    logger.debug("Non-HTML content-type %s for %s", content_type, url)
+                    _cache[url] = (None, now)
+                    return None
 
-        html = response.text[: _MAX_RESPONSE_SIZE]
+                # Read at most _MAX_RESPONSE_SIZE bytes off the wire; the old
+                # `response.text[:N]` had already buffered the whole body.
+                chunks: list[bytes] = []
+                size = 0
+                async for chunk in response.aiter_bytes():
+                    chunks.append(chunk)
+                    size += len(chunk)
+                    if size >= _MAX_RESPONSE_SIZE:
+                        break
+                raw = b"".join(chunks)
+                encoding = response.encoding or "utf-8"
+
+        html = raw[:_MAX_RESPONSE_SIZE].decode(encoding, errors="replace")
         parser = _OGParser()
         parser.feed(html)
 

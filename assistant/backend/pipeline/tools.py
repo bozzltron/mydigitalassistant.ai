@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 from assistant.backend.config import settings
 from assistant.backend.memory.store import MemoryStore
 from assistant.backend.pipeline.llm_client import ChatMessage, OllamaClient
+from assistant.backend.pipeline.url_safety import UnsafeURLError, assert_public_url, safe_stream
 
 logger = logging.getLogger(__name__)
 
@@ -103,8 +104,25 @@ async def _handle_datetime(**_: object) -> str:
     return _current_datetime()
 
 
+async def _read_capped(response: httpx.Response, limit: int) -> bytes:
+    """Read at most `limit` bytes off a streaming response (real cap)."""
+    chunks: list[bytes] = []
+    size = 0
+    async for chunk in response.aiter_bytes():
+        chunks.append(chunk)
+        size += len(chunk)
+        if size >= limit:
+            break
+    return b"".join(chunks)[:limit]
+
+
 async def _fetch_single_url(url: str) -> str:
-    """Fetch a URL, strip HTML, return plain text. No external calls."""
+    """Fetch a URL, strip HTML, return plain text.
+
+    The host is resolved and rejected when it maps to a private/loopback/
+    link-local/reserved address, and the check is re-run on every redirect hop.
+    The body is read with a real byte cap off the wire.
+    """
     try:
         parsed = urllib.parse.urlparse(url)
         if parsed.scheme not in ("http", "https"):
@@ -113,9 +131,14 @@ async def _fetch_single_url(url: str) -> str:
         return f"Error: malformed URL {e}"
 
     try:
+        await assert_public_url(url)
+    except UnsafeURLError as e:
+        return f"Error: {e}"
+
+    try:
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(FETCH_TIMEOUT_SECONDS, read=20.0),
-            follow_redirects=True,
+            follow_redirects=False,
             headers={"User-Agent": "Mozilla/5.0 (compatible; AssistantBot/1.0)"},
         ) as client:
             # Simple robots.txt check
@@ -123,16 +146,17 @@ async def _fetch_single_url(url: str) -> str:
             if not allowed:
                 return f"Error: {url} is blocked by robots.txt"
 
-            r = await client.get(url)
-            content_type = r.headers.get("content-type", "")
-            if "text/html" not in content_type and "text/plain" not in content_type:
-                return r.text[:2000]
+            async with safe_stream(client, url) as r:
+                content_type = r.headers.get("content-type", "")
+                encoding = r.encoding or "utf-8"
+                if "text/html" not in content_type and "text/plain" not in content_type:
+                    return (await _read_capped(r, 2000)).decode(
+                        encoding, errors="replace"
+                    )
 
-            raw = r.content[:MAX_FETCH_BYTES]
-            try:
-                raw = raw.decode(r.encoding or "utf-8", errors="replace")
-            except Exception:
-                raw = raw.decode("utf-8", errors="replace")
+                raw = (await _read_capped(r, MAX_FETCH_BYTES)).decode(
+                    encoding, errors="replace"
+                )
 
             text = _strip_html(raw)
 
@@ -408,31 +432,6 @@ class FinalizeArgs(BaseModel):
 # Builtin tools registry – returns LLM-ready tool definitions
 # ---------------------------------------------------------------------------
 
-# Reduced tool set for the fast 1.5B tools model (Phase: Performance)
-# Only tools that the tools model actually needs for file ops, memory writes, and reasoning
-TOOLS_FOR_TOOL_MODEL = {
-    "write_file", "read_file", "edit_file", "delete_file", "glob", "list_files",
-    "recall", "upsert_slot", "upsert_association", "mark_essential",
-    "think", "finalize",
-}
-# Excluded: web_search, fetch_url, compute, run_scheduled_task, plan, search_episodes
-
-
-def _get_tools_for_model(
-    tools: list[dict],
-    model_name: str,
-    llm_client: OllamaClient | None = None,
-) -> list[dict]:
-    """Filter tools based on the model being used.
-
-    The tools model (1.5B) gets a reduced set for faster function calling.
-    Other models get the full tool set.
-    """
-    if model_name == getattr(llm_client, "tools_model", "qwen2.5-coder:1.5b"):
-        return [t for t in tools if t["function"]["name"] in TOOLS_FOR_TOOL_MODEL]
-    return tools
-
-
 def builtin_tools(
     search_tool=None,
     store: MemoryStore | None | None = None,
@@ -477,9 +476,10 @@ def builtin_tools(
         ),
         _make_def(
             "read_file",
-            "Read the full content of a file in the sandbox by its relative path. "
-            "Use when you need to examine a file's contents before editing or referencing it. "
-            "Path is relative to sandbox root (e.g., 'notes/meeting.txt', 'data.csv').",
+            "Read a file's full contents: a sandbox file by relative path "
+            "(e.g., 'notes/meeting.txt', 'data.csv'), or an uploaded file by its "
+            "frame name (e.g., 'file_subscribers_active.csv') or frame_id. "
+            "Use when you need to examine a file before editing or referencing it.",
             ReadFileArgs,
         ),
         _make_def(
@@ -540,12 +540,6 @@ def builtin_tools(
             "fetch_url",
             "Fetch and extract text from a URL. Auto-extracts facts into memory.",
             FetchUrlArgs,
-        ),
-        _make_def(
-            "read_file",
-            "Read the content of an uploaded file by frame ID or frame name. "
-            "Returns the full file content stored on disk.",
-            ReadFileArgs,
         ),
         _make_def(
             "run_scheduled_task",

@@ -1,10 +1,11 @@
 """Tests for the M5 tool framework: registry, handlers, and the tool loop."""
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
 
+from assistant.backend.pipeline import tools
 from assistant.backend.pipeline.llm_client import ChatResponse, ToolCall
 from assistant.backend.pipeline.search import WebSearchTool
 from assistant.backend.pipeline.tools import (
@@ -310,23 +311,35 @@ class TestFetchUrlHandlerIntegration:
     """
 
     @pytest.fixture
-    def mock_httpx_get(self):
-        """Patch httpx.AsyncClient.get to return controlled responses."""
-        async def mock_get(self, url, **kwargs):
-            return MockResponse(200, "Article text.", {"content-type": "text/plain"})
+    def mock_fetch(self, monkeypatch):
+        """Serve a public URL with a MockTransport; skip the DNS/SSRF check."""
+        async def allow_public(url):
+            return None
 
-        with patch.object(httpx.AsyncClient, "get", new=mock_get):
-            yield
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200, text="Article text.", headers={"content-type": "text/plain"}
+            )
+
+        transport = httpx.MockTransport(handler)
+        real_client = httpx.AsyncClient
+        monkeypatch.setattr(tools, "assert_public_url", allow_public)
+        monkeypatch.setattr(
+            tools.httpx,
+            "AsyncClient",
+            lambda *args, **kwargs: real_client(transport=transport, **kwargs),
+        )
+        yield
 
     @pytest.mark.asyncio
-    async def test_no_store_no_extraction(self, mock_httpx_get):
+    async def test_no_store_no_extraction(self, mock_fetch):
         """Without store/llm_client, fetch returns content without calling LLM."""
         handler = _make_fetch_url_handler(store=None, llm_client=None)
         result = await handler("http://example.com/article")
         assert "Article text" in result
 
     @pytest.mark.asyncio
-    async def test_with_store_and_llm_calls_extraction(self, mock_httpx_get, store, stub_llm):
+    async def test_with_store_and_llm_calls_extraction(self, mock_fetch, store, stub_llm):
         """With store + llm_client, extraction is called and facts stored."""
         stub_llm.set_extraction_result(
             slots=[
@@ -353,7 +366,7 @@ class TestFetchUrlHandlerIntegration:
         assert slot.value == "Jane Doe"
 
     @pytest.mark.asyncio
-    async def test_extraction_error_does_not_break_fetch(self, mock_httpx_get, store):
+    async def test_extraction_error_does_not_break_fetch(self, mock_fetch, store):
         """If extraction raises, fetched content is still returned."""
         bad_llm = type("BadLLM", (), {
             "utility_model": "none",
@@ -366,15 +379,25 @@ class TestFetchUrlHandlerIntegration:
         assert "Article text" in result
 
     @pytest.mark.asyncio
-    async def test_fetch_error_returns_error_message(self, store, stub_llm):
+    async def test_fetch_error_returns_error_message(self, store, stub_llm, monkeypatch):
         """Network errors are returned as error strings, not raised."""
-        async def failing_get(self, url, **kwargs):
+        async def allow_public(url):
+            return None
+
+        def failing_handler(request: httpx.Request) -> httpx.Response:
             raise httpx.ConnectError("connection refused")
 
-        with patch.object(httpx.AsyncClient, "get", new=failing_get):
-            handler = _make_fetch_url_handler(store=store, llm_client=stub_llm)
-            result = await handler("http://example.com/page")
-            assert result.startswith("Error fetching")
+        transport = httpx.MockTransport(failing_handler)
+        real_client = httpx.AsyncClient
+        monkeypatch.setattr(tools, "assert_public_url", allow_public)
+        monkeypatch.setattr(
+            tools.httpx,
+            "AsyncClient",
+            lambda *args, **kwargs: real_client(transport=transport, **kwargs),
+        )
+        handler = _make_fetch_url_handler(store=store, llm_client=stub_llm)
+        result = await handler("http://example.com/page")
+        assert result.startswith("Error fetching")
 
 
 async def test_list_files_tool(store):
@@ -741,17 +764,3 @@ async def test_read_file_miss_reports_available_files(store):
         assert safe_name in result.error  # the available file is named in the error
     finally:
         temp_path.unlink(missing_ok=True)
-
-
-class MockResponse:
-    """Minimal httpx response stand-in for mock_httpx_get."""
-
-    def __init__(self, status_code: int, text: str, headers: dict):
-        self.status_code = status_code
-        self.text = text
-        self.content = text.encode("utf-8")
-        self.headers = headers
-        self.encoding = "utf-8"
-
-    def raise_for_status(self):
-        pass
