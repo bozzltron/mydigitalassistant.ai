@@ -4,7 +4,7 @@ A privacy-first cognitive digital assistant that remembers, learns, and
 error-corrects. All inference runs locally through Ollama; nothing leaves your
 machine unless you explicitly opt into an external search backend.
 
-**Current release: [`v0.1.0-alpha`](docs/RELEASE_NOTES.md)** — the first alpha.
+**Current release: [`v0.1.1-alpha`](docs/RELEASE_NOTES.md)** — the second alpha.
 Alpha software, built for a single household, not hardened for untrusted
 multi-user input or exposure beyond localhost.
 
@@ -178,7 +178,7 @@ principles and conventions: [`AGENTS.md`](AGENTS.md) and
 
 ## Documentation
 
-- [`docs/RELEASE_NOTES.md`](docs/RELEASE_NOTES.md) — what is in `v0.1.0-alpha`
+- [`docs/RELEASE_NOTES.md`](docs/RELEASE_NOTES.md) — what is in each release
 - [`docs/TODO.md`](docs/TODO.md) — open known issues (not fixed in this alpha)
 - [`docs/TESTING.md`](docs/TESTING.md) — testing strategy
 - [`docs/SECURITY.md`](docs/SECURITY.md) — security model and verification

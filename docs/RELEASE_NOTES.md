@@ -1,4 +1,34 @@
-# MyDigitalAssistant.ai — v0.1.0-alpha
+# MyDigitalAssistant.ai — release notes
+
+## v0.1.1-alpha
+
+**Memory is never forgotten on a timer.** This release removes the background
+garbage collector and makes the maintenance that remains cheaper and more
+predictable.
+
+- **Time-based decay is gone.** The scheduler used to lower slot priority and
+  soft-delete "stale" frames weekly, dropping their embedding vectors. It could
+  only ever act on rows already below the default priority — i.e. data the user
+  had already forgotten — so it was a timer that re-forgot things on a delay.
+  Memory now leaves only through an explicit `forget` or a deliberate deletion.
+- **Merging is ad hoc; backups are not.** Near-duplicate frames merge as soon as
+  duplicates are found (the 6-hour consolidation tick is a *look* cadence, not a
+  merge cadence). The brain snapshot moved to its own predictable 12-hour clock,
+  so snapshot count no longer scales with merge frequency. A merge that runs
+  without a fresh snapshot takes one first, so a merge is never unprotected.
+- **Faster re-indexing.** Embedding top-up (turns and frames with missing/stale
+  embeddings) runs every 6 hours as its own job, with no backup attached.
+- **Removed:** the `assistant db gc` CLI command, and the `/plans/` archive
+  convention (plans are transient now — git history is the record).
+- **Docs:** `ARCHITECTURE.md` now documents the scheduler; several stale docs
+  were removed and drifted claims corrected.
+
+Full validation: `./run_ci.sh` green (dead-code check, frontend lint/test/build,
+critical-path tests, backend suite in plain and encrypted modes).
+
+---
+
+## v0.1.0-alpha
 
 **The first alpha.** A privacy-first cognitive digital assistant that remembers
 what you tell it, learns over time, and corrects itself when it is wrong. All
