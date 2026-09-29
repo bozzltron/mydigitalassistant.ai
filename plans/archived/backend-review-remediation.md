@@ -1,4 +1,15 @@
+---
+date: 2026-09-28
+status: done
+archived: 2026-09-29
+---
+
 # Backend review remediation plan
+
+Shipped in `v0.1.0-alpha`. Every P0–P3 item was resolved except the three
+deliberately-tracked items called out inline (P2 `_embed_batch` round trips, P2
+N+1 batching, and the P3 `(frame_name, value)` dedup key, which is a documented
+product decision). Retained for reference; the code is the source of truth.
 
 Written 2026-09-28 after a principal-level review of the Python backend
 (`orchestrator`, `store`, `main`, `extractor`, `tool_executor`, `llm_client`,
