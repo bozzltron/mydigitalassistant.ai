@@ -131,17 +131,34 @@ something that still matters. Before shipping a change:
 - A periodic "dead code audit" is fine; a blanket "delete unused code" without tooling
   verification is not. The goal is a codebase where nothing exists without purpose.
 
-### Speed-first UI responsiveness
-Our system should respond quickly to user inputs within 500ms for basic interactions,
-and keep response durations under 2 seconds for complete LLM processing cycles.
-Performance timing logs must be maintained for analysis of interaction speed trends.
-Visual feedback should be immediately provided during processing.
-UI animations should enhance rather than distract from the user experience.
+### Speed-first responsiveness
+Be as fast as the task allows, and no faster than it deserves. Response time
+should match what was asked: a quick factual recall or UI interaction should feel
+immediate, while a question that genuinely benefits from deep reasoning is worth
+waiting for. There is no fixed millisecond target — a number chosen without
+reference to the work is meaningless, because the right latency depends on the
+task.
+
+What we do commit to:
+- No *avoidable* latency. If a wait is fixed cost rather than necessary thinking
+  (a serial round trip, a blocking call on the hot path, a redundant model call),
+  remove it. The point of being fast is not a benchmark; it is not making the user
+  wait for something that did not need to happen.
+- Flexibility over consistency. A cheap turn should be quick; a hard, valuable
+  turn may take longer. Do not flatten that difference to hit a constant.
+- Immediate feedback. Whatever the duration, the user should see that work has
+  started right away.
+- Measure, never assume. Timing logs (`turn_pregen`, `turn_timings`, `ttft_ms`)
+  exist so speed work is driven by data, not by feel. Read them before and after
+  a change to the hot path.
 
 ### Visual feedback and transitions
-All UI elements should use appropriate CSS transitions with durations between 150-300ms
-to provide consistent feedback. Complex animations must only be used when they add clear
-value to the interaction flow. For text inputs that auto-expand, use smooth height transitions.
+Use CSS transitions for state changes (hover, focus, open/closed, loading) so
+changes read as deliberate rather than abrupt. Keep them brief — around a fifth
+of a second — so feedback feels responsive rather than laggy. Animations should
+add clarity to the interaction flow, not decorate it; reach for one only when it
+communicates something (progress, activity, arrival). For text inputs that
+auto-expand, use a smooth height transition.
 
 ### Stability: no regressions while adding features
 Every non-trivial change should be accompanied by a regression test — a test that would
