@@ -83,3 +83,34 @@ describe('MessageList streamed bubble', () => {
     expect(document.querySelector('.badge-brave')?.textContent).toContain('Searched via Brave')
   })
 })
+
+describe('MessageList feedback', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    localStorage.clear()
+    setSessionId('session-fb-1')
+  })
+
+  it('sends the current session id when reacting, not null', async () => {
+    // Regression test: this used to pass a hardcoded null. The backend's first
+    // parameter is a *session id* despite its legacy name, and it returns 0
+    // updated slots for a falsy id -- so every thumbs up/down was a silent
+    // no-op and the confidence-reinforcement loop never ran from the web UI.
+    // Without the session id the agent cannot learn from reactions at all.
+    const assistantMessages = () => [
+      { id: 'assistant-1', role: 'assistant' as const, content: 'an answer' },
+    ]
+
+    render(() => <MessageList messages={assistantMessages} />)
+
+    const positive = document.querySelector('[data-feedback="positive"]')
+    expect(positive, 'no positive reaction control rendered').not.toBeNull()
+    ;(positive as HTMLElement).click()
+    await Promise.resolve()
+
+    expect(api.postFeedback).toHaveBeenCalledTimes(1)
+    const [episodeId, , kind] = vi.mocked(api.postFeedback).mock.calls[0]
+    expect(episodeId, 'the session id was not sent').toBe('session-fb-1')
+    expect(kind).toBe('positive')
+  })
+})

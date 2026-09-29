@@ -11,6 +11,7 @@ import type {
   GraphNode,
 } from '../../types'
 import { TYPE_COLORS } from './brainLib'
+import { getFrames } from '../../services/api'
 
 function initialViewMode(): '2d' | '3d' {
   try {
@@ -64,19 +65,18 @@ export default function BrainPage() {
     setIsLoading(true)
     setError(null)
     try {
-      const [framesRes, assocRes, conflictsRes] = await Promise.all([
-        fetch('/memory/frames'),
+      const [framesData, assocRes, conflictsRes] = await Promise.all([
+        getFrames(1),
         fetch('/memory/associations'),
         fetch('/memory/conflicts'),
       ])
 
-      const [framesData, associationsData, conflictsData] = await Promise.all([
-        framesRes.json(),
+      const [associationsData, conflictsData] = await Promise.all([
         assocRes.json(),
         conflictsRes.json(),
-      ]) as [BrainFrame[], BrainAssociation[], BrainConflict[]]
+      ]) as [BrainAssociation[], BrainConflict[]]
 
-      setFrames(framesData)
+      setFrames(framesData as unknown as BrainFrame[])
       setAssociations(associationsData)
       const pendingConflicts = conflictsData.filter(c => c.status === 'pending')
       setConflicts(pendingConflicts)

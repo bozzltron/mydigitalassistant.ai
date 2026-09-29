@@ -94,7 +94,7 @@ beforeEach(() => {
   localStorage.setItem('brain-view', '2d')
   fetchMock = vi.fn((input: RequestInfo | URL) => {
     const url = String(input)
-    if (url === '/memory/frames') return Promise.resolve(jsonResponse(FRAMES))
+    if (url === '/memory/frames?user_id=1') return Promise.resolve(jsonResponse(FRAMES))
     if (url === '/memory/associations') return Promise.resolve(jsonResponse(ASSOCIATIONS))
     if (url === '/memory/conflicts') return Promise.resolve(jsonResponse(CONFLICTS))
     if (url === '/assistant/name') return Promise.resolve(jsonResponse({ name: 'Echo' }))
@@ -118,7 +118,7 @@ describe('BrainPage', () => {
     })
 
     expect(document.querySelector('.brain-canvas .node.has-conflict')).not.toBeNull()
-    expect(fetchMock).toHaveBeenCalledWith('/memory/frames')
+    expect(fetchMock).toHaveBeenCalledWith('/memory/frames?user_id=1', expect.any(Object))
     expect(fetchMock).toHaveBeenCalledWith('/memory/associations')
     expect(fetchMock).toHaveBeenCalledWith('/memory/conflicts')
   })
@@ -141,8 +141,11 @@ describe('BrainPage', () => {
       expect(document.getElementById('agent-name')?.textContent).toBe('Echo')
     })
 
+    await waitFor(() => {
+      const statsText = document.querySelector('.stats-bar')?.textContent ?? ''
+      expect(statsText).toContain('2 nodes')
+    })
     const statsText = document.querySelector('.stats-bar')?.textContent ?? ''
-    expect(statsText).toContain('2 nodes')
     expect(statsText).toContain('1 edges')
   })
 
@@ -155,7 +158,7 @@ describe('BrainPage', () => {
       expect(document.getElementById('brain-canvas-3d')).not.toBeNull()
     })
 
-    expect(fetchMock).toHaveBeenCalledWith('/memory/frames')
+    expect(fetchMock).toHaveBeenCalledWith('/memory/frames?user_id=1', expect.any(Object))
     expect(fetchMock).toHaveBeenCalledWith('/memory/conflicts')
   })
 
@@ -172,7 +175,7 @@ describe('BrainPage', () => {
     ]
     fetchMock.mockImplementation((input: RequestInfo | URL) => {
       const url = String(input)
-      if (url === '/memory/frames') return Promise.resolve(jsonResponse(FRAMES))
+      if (url === '/memory/frames?user_id=1') return Promise.resolve(jsonResponse(FRAMES))
       if (url === '/memory/associations') return Promise.resolve(jsonResponse(ASSOCIATIONS))
       if (url === '/memory/conflicts') return Promise.resolve(jsonResponse(CONFLICTS))
       if (url === '/assistant/name') return Promise.resolve(jsonResponse({ name: 'Echo' }))
@@ -238,7 +241,7 @@ describe('BrainPage', () => {
 
     // Resolution reloads brain data (fresh /memory/frames fetch).
     await waitFor(() => {
-      const frameCalls = fetchMock.mock.calls.filter(([u]) => String(u) === '/memory/frames')
+      const frameCalls = fetchMock.mock.calls.filter(([u]) => String(u) === '/memory/frames?user_id=1')
       expect(frameCalls.length).toBeGreaterThanOrEqual(2)
     })
   })
@@ -246,7 +249,7 @@ describe('BrainPage', () => {
   it('shows the empty state when memory has no frames', async () => {
     fetchMock.mockImplementation((input: RequestInfo | URL) => {
       const url = String(input)
-      if (url === '/memory/frames') return Promise.resolve(jsonResponse([]))
+      if (url === '/memory/frames?user_id=1') return Promise.resolve(jsonResponse([]))
       if (url === '/memory/associations') return Promise.resolve(jsonResponse([]))
       if (url === '/memory/conflicts') return Promise.resolve(jsonResponse([]))
       if (url === '/assistant/name') return Promise.resolve(jsonResponse({ name: 'Echo' }))
@@ -263,7 +266,7 @@ describe('BrainPage', () => {
   it('shows an error banner when memory loading fails', async () => {
     fetchMock.mockImplementation((input: RequestInfo | URL) => {
       const url = String(input)
-      if (url === '/memory/frames') return Promise.reject(new Error('boom'))
+      if (url === '/memory/frames?user_id=1') return Promise.reject(new Error('boom'))
       return Promise.resolve(jsonResponse([]))
     })
 

@@ -139,6 +139,7 @@ export default function Message(props: MessageProps) {
           <>
             <button
               class="reaction-btn"
+              data-feedback="positive"
               title="This was good"
               onClick={() => handleReact('positive')}
             >
@@ -149,6 +150,7 @@ export default function Message(props: MessageProps) {
             </button>
             <button
               class="reaction-btn"
+              data-feedback="negative"
               title="This was bad"
               onClick={() => handleReact('negative')}
             >

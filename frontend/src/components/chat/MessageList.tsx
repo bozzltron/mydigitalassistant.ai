@@ -1,14 +1,19 @@
 import { For, Show } from 'solid-js'
 import Message from './Message'
-import { ChatMessage } from '../../state/chat'
+import { ChatMessage, sessionId } from '../../state/chat'
 import { postFeedback } from '../../services/api'
 
 export default function MessageList(props: { messages: () => ChatMessage[] }) {
   const handleReact = async (kind: 'positive' | 'negative' | 'correction', msgId: string) => {
     if (kind === 'correction') return
     try {
+      // The backend's first parameter is a *session id* despite its legacy name
+      // (see MemoryStore.apply_positive_feedback). Passing null here made every
+      // reaction a silent no-op: the handler returned 0 updated slots and still
+      // reported {"status":"ok"}, so the confidence-reinforcement loop never ran
+      // from the web UI.
       await postFeedback(
-        null,
+        sessionId(),
         msgId,
         kind,
         null

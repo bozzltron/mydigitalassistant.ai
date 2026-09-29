@@ -73,15 +73,15 @@ export const FrameSchema = z.object({
   name: z.string(),
   type: z.string(),
   confidence: z.number(),
-  essential: z.boolean(),
+  essential: z.number(),
   priority: z.number(),
   owner_user_id: z.number().nullable(),
   source_type: z.string().nullable(),
   source_url: z.string().nullable(),
   source_reliability: z.number().nullable(),
   embedding_model: z.string().nullable(),
-  created_at: z.string(),
-  updated_at: z.string(),
+  created_at: z.string().nullable(),
+  updated_at: z.string().nullable(),
 })
 
 export const AssociationSchema = z.object({
@@ -100,13 +100,12 @@ export const AssociationSchema = z.object({
 })
 
 export const SearchResultSchema = z.object({
-  id: z.number().int(),
   query: z.string(),
   results: z.array(z.object({
     url: z.string(),
     title: z.string(),
     content: z.string(),
-    relevance: z.number(),
+    relevance: z.number().optional(),
   })),
 })
 
@@ -201,6 +200,23 @@ export async function api<T>(
 
   console.log('[api] Response data:', data)
   return data as Promise<T>
+}
+
+/**
+ * Parse a response against its Zod schema.
+ *
+ * The schemas above were dead code: `api()` cast the body with `as Promise<T>`
+ * and never parsed it, so a backend field rename or a shape change reached the
+ * UI as `undefined` instead of a loud error. This is the contract check the
+ * schemas were written for.
+ */
+function validate<T>(schema: z.ZodType<T>, data: unknown): T {
+  const result = schema.safeParse(data)
+  if (!result.success) {
+    console.error('[api] Schema validation failed:', result.error.issues)
+    throw new Error(`Unexpected API response shape: ${result.error.issues[0]?.message ?? 'invalid'}`)
+  }
+  return result.data
 }
 
 export async function postChat(
@@ -387,7 +403,8 @@ export function createTurnId(): string {
 
 export async function getFrames(user_id: number): Promise<Frame[]> {
   console.log('Fetching frames for user:', user_id)
-  return api<Frame[]>(`/memory/frames?user_id=${user_id}`)
+  const data = await api<unknown>(`/memory/frames?user_id=${user_id}`)
+  return validate(z.array(FrameSchema), data)
 }
 
 export async function getAssociations(frame_id: number): Promise<Association[]> {
@@ -399,9 +416,11 @@ export async function getSearchResults(query: string, minRelevance?: number): Pr
   console.log('Searching:', { query, minRelevance })
   const params = new URLSearchParams({ q: query })
   if (minRelevance !== undefined) {
+    // Must match the backend param; it aliases min_relevance onto min_similarity.
     params.append('min_relevance', String(minRelevance))
   }
-  return api<SearchResult>(`/search?${params.toString()}`)
+  const data = await api<unknown>(`/search?${params.toString()}`)
+  return validate(SearchResultSchema, data)
 }
 
 export async function listFiles(): Promise<FileEntry[]> {
@@ -489,10 +508,16 @@ export async function getSettings(): Promise<{ brave_enabled: boolean; brave_con
   return api<{ brave_enabled: boolean; brave_configured: boolean }>('/settings')
 }
 
+/**
+ * The API validates `kind` against this exact enum server-side; typing it here
+ * keeps a typo a compile error instead of a runtime 422.
+ */
+export type FeedbackKind = 'positive' | 'negative' | 'correction'
+
 export async function postFeedback(
   episode_id: string | null,
   message_id: string,
-  kind: string,
+  kind: FeedbackKind,
   comment: string | null
 ): Promise<{ status: string }> {
   return api<{ status: string }>('/feedback', {

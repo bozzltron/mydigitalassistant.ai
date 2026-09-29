@@ -136,7 +136,21 @@ describe('api service', () => {
 
   describe('getFrames', () => {
     it('fetches frames for user', async () => {
-      const mockFrames = [{ id: 1, name: 'Test' }]
+      const mockFrames = [{
+        id: 1,
+        name: 'Test',
+        type: 'entity',
+        confidence: 0.5,
+        essential: 0,
+        priority: 0.5,
+        owner_user_id: null,
+        source_type: null,
+        source_url: null,
+        source_reliability: null,
+        embedding_model: null,
+        created_at: '2026-01-01T00:00:00',
+        updated_at: '2026-01-01T00:00:00',
+      }]
       mockFetch.mockResolvedValue({
         ok: true,
         text: () => Promise.resolve(JSON.stringify(mockFrames)),
@@ -166,7 +180,7 @@ describe('api service', () => {
 
   describe('getSearchResults', () => {
     it('searches with query and optional minRelevance', async () => {
-      const mockResults = { results: [] }
+      const mockResults = { query: 'test query', results: [] }
       mockFetch.mockResolvedValue({
         ok: true,
         text: () => Promise.resolve(JSON.stringify(mockResults)),
@@ -180,7 +194,7 @@ describe('api service', () => {
     it('searches without minRelevance', async () => {
       mockFetch.mockResolvedValue({
         ok: true,
-        text: () => Promise.resolve(JSON.stringify({ results: [] })),
+        text: () => Promise.resolve(JSON.stringify({ query: 'test query', results: [] })),
       })
 
       await getSearchResults('test query')
@@ -339,11 +353,11 @@ describe('api service', () => {
         text: () => Promise.resolve(JSON.stringify({ success: true })),
       })
 
-      await postFeedback('ep-1', 'msg-1', 'thumbs_up', 'Great!')
+      await postFeedback('ep-1', 'msg-1', 'positive', 'Great!')
 
       expect(mockFetch).toHaveBeenCalledWith('/feedback', {
         method: 'POST',
-        body: JSON.stringify({ episode_id: 'ep-1', message_id: 'msg-1', kind: 'thumbs_up', comment: 'Great!' }),
+        body: JSON.stringify({ episode_id: 'ep-1', message_id: 'msg-1', kind: 'positive', comment: 'Great!' }),
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
       })
