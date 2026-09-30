@@ -174,16 +174,31 @@ Produce a JSON object with these fields:
         turn_count: int,
         date_range: tuple[str, str],
     ) -> bool:
-        """Upsert the summary frame. Returns True if created, False if updated."""
+        """Upsert the summary frame. Returns True if created, False if updated.
+
+        Content slots (the summary prose, entities, questions) are beliefs and go
+        through ``upsert_slot``. Bookkeeping slots (counters, timestamps, session
+        id) are written directly: they change on every run by design, so routing
+        them through conflict detection recorded a disagreement with the previous
+        run each time. That produced 1,172 conflict rows on zero disagreements.
+        """
         frame_name = f"conversation_summary_{session_id}"
 
         # Check if frame exists
         existing = await self.store.get_frame_by_name(frame_name)
 
-        slots = {
+        # Content: real beliefs, so they bump confidence and participate in
+        # conflict detection like any other fact.
+        content_slots = {
             "summary": summary,
-            "key_entities": ", ".join(key_entities) if key_entities else "",
-            "open_questions": ", ".join(open_questions) if open_questions else "",
+        }
+        if key_entities:
+            content_slots["key_entities"] = ", ".join(key_entities)
+        if open_questions:
+            content_slots["open_questions"] = ", ".join(open_questions)
+
+        # Bookkeeping: not beliefs. Written directly, never through revise().
+        bookkeeping_slots = {
             "session_id": session_id,
             "turn_count": str(turn_count),
             "date_start": date_range[0],
@@ -193,7 +208,7 @@ Produce a JSON object with these fields:
         if existing:
             # Update existing frame
             frame_id = existing.id
-            for key, value in slots.items():
+            for key, value in content_slots.items():
                 await self.store.upsert_slot(
                     frame_id=frame_id,
                     key=key,
@@ -202,6 +217,13 @@ Produce a JSON object with these fields:
                     priority=0.5,
                     source_type="summarization",
                     source_reliability=0.8,
+                )
+            for key, value in bookkeeping_slots.items():
+                await self.store.set_bookkeeping_slot(
+                    frame_id=frame_id,
+                    key=key,
+                    value=value,
+                    source_type="summarization",
                 )
             # Update embedding
             await self.store.embed_frames(
@@ -219,7 +241,7 @@ Produce a JSON object with these fields:
                 source_type="summarization",
                 source_reliability=0.8,
             )
-            for key, value in slots.items():
+            for key, value in content_slots.items():
                 await self.store.upsert_slot(
                     frame_id=frame.id,
                     key=key,
@@ -228,6 +250,13 @@ Produce a JSON object with these fields:
                     priority=0.5,
                     source_type="summarization",
                     source_reliability=0.8,
+                )
+            for key, value in bookkeeping_slots.items():
+                await self.store.set_bookkeeping_slot(
+                    frame_id=frame.id,
+                    key=key,
+                    value=value,
+                    source_type="summarization",
                 )
             # Generate embedding for new summary frame
             await self.store.embed_frames(

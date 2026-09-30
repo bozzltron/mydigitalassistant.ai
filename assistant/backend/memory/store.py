@@ -1228,6 +1228,39 @@ class MemoryStore:
             await db.commit()
 
     # Slots
+    async def set_bookkeeping_slot(
+        self,
+        frame_id: int,
+        key: str,
+        value: str,
+        source_type: str | None = None,
+    ) -> None:
+        """Write a slot that is bookkeeping, not a belief about the world.
+
+        Counters and timestamps change on a schedule, so routing them through
+        ``upsert_slot`` means every rewrite "conflicts" with the previous value
+        and lands in the conflicts ledger. The summarizer did exactly that:
+        ``turn_count`` and ``date_end`` produced 1,172 conflict rows on 0
+        disagreements, and 2,054 more came from the summary prose being
+        re-upserted each run.
+
+        A counter rewritten every run is not a belief, so it must not travel the
+        belief-revision path. This writes the value and nothing else -- no
+        conflict, no slot_history, no confidence change.
+        """
+        async with self._connect() as db:
+            await db.execute(
+                "INSERT INTO slots "
+                "(frame_id, key, value, confidence, essential, priority, "
+                "source_type, last_strengthened_at) "
+                "VALUES (?, ?, ?, ?, 0, 0.5, ?, datetime('now')) "
+                "ON CONFLICT(frame_id, key) DO UPDATE SET "
+                "value = excluded.value, "
+                "updated_at = datetime('now')",
+                (frame_id, key, value, initial_confidence(), source_type),
+            )
+            await db.commit()
+
     async def upsert_slot(
         self,
         frame_id: int,
@@ -1960,6 +1993,12 @@ class MemoryStore:
                     "FROM conflicts ORDER BY id"
                 )
             return [Conflict(**self._conflict_dict(row)) for row in rows]
+
+    async def count_conflicts(self) -> int:
+        """Total conflict rows. Used by tests and the hygiene audit."""
+        async with self._connect() as db:
+            rows = await db.execute_fetchall("SELECT COUNT(*) FROM conflicts")
+            return rows[0][0] if rows else 0
 
     async def get_conflicts_for_frame(self, frame_id: int) -> list[Conflict]:
         async with self._connect() as db:
