@@ -1,6 +1,6 @@
 ---
 date: 2026-09-30
-status: active
+status: done
 estimated_hours: 6
 ---
 
