@@ -78,7 +78,7 @@
 .settings-btn {
   background: none;
   border: none;
-  color: var(--text-dim);
+  color: var(--text);
   cursor: pointer;
   font-size: 1.1rem;
   padding: 0.25rem;
@@ -109,8 +109,15 @@
   letter-spacing: 0.03em;
 }
 
-.badge-brave { background: #ff7733; color: #fff; }
+.badge-brave {
+  background: rgba(255, 138, 76, 0.16);
+  color: #f0995e;
+  border: 1px solid rgba(255, 138, 76, 0.32);
+}
 .badge-searxng { background: #4a9eff; color: #fff; }
+
+/* Gap between the "What I learned" label and the backend badge. */
+.learned-indicator .badge { margin-left: var(--space-xs); }
 
 /* Form elements */
 input[type="checkbox"] {
@@ -533,7 +540,7 @@ select {
   width: 1em;
   height: 1em;
   vertical-align: middle;
-  color: #fff;
+  color: currentColor;
 }
 
 .trash-icon path {
@@ -637,7 +644,7 @@ select {
 
 /* Top-bar navigation links (moved out of inline styles). */
 .nav-link {
-  color: var(--text-dim);
+  color: var(--text);
   text-decoration: none;
   font-size: 0.8rem;
   padding: 0.35rem 0.75rem;

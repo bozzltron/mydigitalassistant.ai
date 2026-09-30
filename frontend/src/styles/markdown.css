@@ -140,19 +140,28 @@
   margin: var(--space-lg) 0;
 }
 
+/* Rounded, roomier table. `display:block` + `overflow-x:auto` lets a wide table
+   scroll, and because that makes the element a scroll container it clips its
+   content -- so the border-radius actually rounds the corners. Cell borders are
+   drawn per row (separate model) so the outer radius is not squared off. */
 .msg-assistant .content table {
   width: 100%;
-  border-collapse: collapse;
+  display: block;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   margin: var(--space-md) 0;
   font-size: 0.9rem;
-  overflow-x: auto;
-  display: block;
 }
 
 .msg-assistant .content th,
 .msg-assistant .content td {
-  padding: var(--space-xs) var(--space-sm);
-  border: 1px solid var(--border);
+  padding: var(--space-sm) var(--space-md);
+  border: none;
+  border-bottom: 1px solid var(--border);
   text-align: left;
 }
 
@@ -160,6 +169,10 @@
   background: var(--surface2);
   font-weight: 600;
   color: var(--text);
+}
+
+.msg-assistant .content tr:last-child td {
+  border-bottom: none;
 }
 
 .msg-assistant .content tr:nth-child(even) td {

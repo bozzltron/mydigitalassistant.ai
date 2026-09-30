@@ -63,6 +63,9 @@
   --masonry-column-width: 280px;
   --preview-card-image-size: 80px;
 
+  /* Chat content column max width (shared by the transcript and input row). */
+  --content-max: 72rem;
+
   /* Z-index scale */
   --z-dropdown: 100;
   --z-modal: 200;

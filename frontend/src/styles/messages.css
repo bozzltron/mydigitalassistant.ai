@@ -1,7 +1,7 @@
 /* Messages - Chat message styles */
 
 .msg {
-  max-width: min(85%, 48rem);
+  max-width: min(88%, 64rem);
   padding: calc(var(--space-md) + 5px) calc(var(--space-lg) + 5px);
   border-radius: var(--radius-lg);
   line-height: 1.7;
@@ -98,22 +98,23 @@
   font-size: 0.65rem;
 }
 
-/* Reaction buttons */
+/* Reaction buttons. The base state needs a visible chip: a transparent button
+   with a white glyph disappears against the bubble until hovered. The resting
+   tint is a darker version of the hover tint. */
 .reaction-btn {
-  background: transparent;
+  background: rgba(0, 0, 0, 0.22);
   border: none;
   cursor: pointer;
   font-size: 0.9rem;
   padding: var(--space-xs);
   border-radius: var(--radius-sm);
-  opacity: 0.8;
-  transition: opacity var(--transition-fast), background var(--transition-fast);
-  color: #fff;
+  color: var(--text-dim);
+  transition: background var(--transition-fast), color var(--transition-fast);
 }
 
 .reaction-btn:hover {
-  opacity: 1;
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.14);
+  color: var(--text);
 }
 
 /* Correction panel */
@@ -359,4 +360,24 @@
   color: var(--error);
   font-size: 0.85rem;
   font-style: italic;
+}
+
+/* Transcript wrapper: remounted on conversation change to replay the enter
+   animation (ChatPage keys the transcript on the active session). */
+.chat-transcript {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  animation: conversationEnter 260ms ease-out both;
+}
+
+@keyframes conversationEnter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
