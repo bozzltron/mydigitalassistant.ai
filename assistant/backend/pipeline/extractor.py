@@ -585,7 +585,7 @@ async def apply_extraction(
             )
             continue
         frame_id = frame_ids[slot.frame_name]
-        _, conflict = await store.upsert_slot(
+        stored_slot, conflict = await store.upsert_slot(
             frame_id=frame_id,
             key=slot.key,
             value=slot.value,
@@ -603,6 +603,9 @@ async def apply_extraction(
                 "key": slot.key,
                 "value": slot.value,
                 "conflict": conflict is not None,
+                # The confidence the slot now carries, for the UI to annotate the
+                # statement(s) that rest on it.
+                "confidence": stored_slot.confidence,
             }
         )
 
@@ -843,7 +846,7 @@ async def apply_search_extraction(
                 corrob_info.get("category", "unknown"),
             )
 
-        _, conflict = await store.upsert_slot(
+        stored_slot, conflict = await store.upsert_slot(
             frame_id=frame_id,
             key=slot.key,
             value=slot.value,
@@ -860,6 +863,7 @@ async def apply_search_extraction(
                 "key": slot.key,
                 "value": slot.value,
                 "conflict": conflict is not None,
+                "confidence": stored_slot.confidence,
                 "needs_corroboration": corrob_info.get("needs_corroboration", False),
                 "corroboration_domains": corrob_info.get("unique_domains", 0),
                 "corroboration_category": corrob_info.get("category", "general"),
