@@ -75,7 +75,10 @@ export class VoiceActivityDetector {
     const td = this.timeDomain;
     analyser.getFloatTimeDomainData(td);
     let sumSquares = 0;
-    for (let i = 0; i < td.length; i++) sumSquares += td[i] * td[i];
+    for (let i = 0; i < td.length; i++) {
+      const v = td[i] ?? 0;
+      sumSquares += v * v;
+    }
     return this.push(Math.sqrt(sumSquares / td.length));
   }
 

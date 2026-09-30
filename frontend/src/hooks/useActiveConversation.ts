@@ -26,16 +26,17 @@ export function useActiveConversation(conversations: () => Session[]) {
   const initializeFromSavedSession = (sessions: Session[]) => {
     const savedSessionId = localStorage.getItem('session_id')
     const u = user()
+    const first = sessions[0]
 
     if (savedSessionId && u) {
       const saved = sessions.find(c => c.id === savedSessionId)
       if (saved) {
         setActiveConversation(saved)
-      } else if (sessions.length > 0) {
-        setActiveConversation(sessions[0])
+      } else if (first) {
+        setActiveConversation(first)
       }
-    } else if (sessions.length > 0) {
-      setActiveConversation(sessions[0])
+    } else if (first) {
+      setActiveConversation(first)
     }
   }
 

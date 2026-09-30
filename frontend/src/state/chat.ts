@@ -282,12 +282,13 @@ function setStreamingMessageContent(
   const list = chatState.conversationMessages[sessionIdParam]
   if (!list) return
   const index = list.findIndex(msg => msg.id === messageId)
-  if (index === -1) return
+  const msg = index === -1 ? undefined : list[index]
+  if (!msg) return
 
   setChatState('conversationMessages', sessionIdParam, index, 'content', content)
   if (streamingState !== undefined) {
     setChatState('conversationMessages', sessionIdParam, index, 'meta', {
-      ...list[index].meta,
+      ...msg.meta,
       isStreaming: streamingState,
     })
   }
@@ -301,10 +302,11 @@ function mergeStreamingMessageMeta(
   const list = chatState.conversationMessages[sessionIdParam]
   if (!list) return
   const index = list.findIndex(msg => msg.id === messageId)
-  if (index === -1) return
+  const msg = index === -1 ? undefined : list[index]
+  if (!msg) return
 
   setChatState('conversationMessages', sessionIdParam, index, 'meta', {
-    ...list[index].meta,
+    ...msg.meta,
     ...meta,
   })
 }

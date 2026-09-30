@@ -211,7 +211,9 @@ export const isQueueProcessing = () => queueState().processing;
 
 export function combineQueuedMessages(messages: QueuedMessage[]): string {
   if (messages.length === 0) return '';
-  if (messages.length === 1) return messages[0].content;
+  const first = messages[0];
+  if (!first) return '';
+  if (messages.length === 1) return first.content;
 
   const separator = '\n\n---\n\n';
   const combined = messages.map((m) => m.content).join(separator);

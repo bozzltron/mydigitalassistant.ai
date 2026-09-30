@@ -74,6 +74,7 @@ export function extractMediaFromMarkdown(content: string): MediaContent[] {
 
   while ((match = imageRegex.exec(content)) !== null) {
     const url = match[2]
+    if (!url) continue
     if (isYouTubeUrl(url)) {
       const videoId = extractYouTubeId(url)
       if (videoId) {

@@ -32,6 +32,7 @@ export const fetchUser = async () => {
       ? Number(localStorage.getItem('user_id'))
       : NaN
     const chosen = users.find((u) => u.id === savedId) ?? users[0]
+    if (!chosen) return
     setUser({ id: chosen.id, name: chosen.name })
     if (typeof localStorage !== 'undefined') {
       localStorage.setItem('user_id', String(chosen.id))
