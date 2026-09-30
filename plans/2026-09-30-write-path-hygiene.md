@@ -128,6 +128,63 @@ not revertible by `git revert`, and the memory system's data health is the found
 rest of the system stands on. The backup is taken and its `integrity_check` verified
 before any row is deleted.
 
+### Phase 3c — the 92 unvectorised frames (diagnosed, resolved by the top-up)
+
+Diagnosis first, because the naive "re-index 88 frames" would have hidden the cause.
+
+**The 92 split into two different things:**
+
+| Group | Count | Reality |
+|---|---|---|
+| Zero-slot frames | 34 | Created as **association endpoints** (`ai_control_system`, `kexp.org`, `news_summary_skill`). 35 of 35 appear in an association. Nothing to embed — not a bug. |
+| Slot-bearing frames | 58 | Real misses: `open_meteo` (3 slots), `sxsx_music_festival`, `acl_music_festival`… |
+
+**Cause of the 58:** both are non-chat write paths — `search` (27) and `scheduled_task`
+(22). Chat extraction embeds via `apply_extraction`; the search path attempts embedding
+*after* its pipeline inside a `search_timeout`-bounded `wait_for`, and the scheduled-task
+path only explicitly embeds the `daily_run` frame. The safety net for exactly this — the
+6-hourly `_run_embedding_topup` — **has not run since 2026-09-23**, because
+`SCHEDULER_ENABLED=false`.
+
+**Resolution: fix the mechanism, not the data.** `embed_stale_frames` checks the invariant
+directly (a frame's stored vector count must equal what its slots imply) rather than
+auditing call sites, so it catches both missing and stale vectors. Run manually:
+
+```
+episode top-up: 0 indexed
+stale frame top-up: 100 re-indexed   (cap)
+→ 2 remaining, then 61, then 0, 0, 0
+```
+
+Converged, and **idempotent** — three consecutive passes reported 0. Final state:
+
+```
+live frames missing a qwen3 vector:  0
+episodes missing a qwen3 vector:     0
+frame_embeddings:   qwen3-embedding:0.6b = 3,508   (sole model)
+episode_embeddings: qwen3-embedding:0.6b = 2,592   (sole model)
+```
+
+The startup embedding audit (`main.py:_check_embedding_model_mismatch`) is now silent.
+
+**What this establishes and what it does not.** It proves the top-up fixes the class of
+defect. It does **not** prove it will keep up in production: the cap is 100 frames per run
+on a 6-hour timer, and the job is currently off. Whether 100-per-6h is sufficient is
+unmeasured, and the scheduler being disabled is Plan B Phase 4's subject.
+
+**Nomic removal (was part of this phase).** The 3,643 non-`qwen3` rows
+(`frame_embeddings` 1,714 + `episode_embeddings` 1,929) were stale supersets from the
+nomic→qwen3 migration: every nomic-bearing frame already had a qwen3 vector
+(`nomic_frames == both == 1,714`), so nothing was stranded and retrieval was unaffected.
+The startup audit sanctions the prune explicitly ("the old vectors are dead weight, not a
+defect… Safe to prune"). Deleted after a pre-check found **one genuinely stranded episode**
+(1986, "Say hello in 3 words", 2026-09-24 — a 768-dim nomic-only vector from the migration
+window), which was re-embedded to qwen3 (1024-dim) *before* deletion. Verified: no
+production code reads `nomic-embed-text` by label.
+
+**Acceptance:** zero live frames and zero episodes lack a vector under the configured
+model; three consecutive top-up passes report 0; zero non-`qwen3` embedding rows remain.
+
 ### Phase 4 — Fold in the manual-run timeout (~1 h)
 
 `POST /tasks/run-due` returned **504 at 300s** while the work completed successfully
