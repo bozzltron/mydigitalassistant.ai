@@ -1,4 +1,4 @@
-import type { ChatMessage, MediaContent, SearchResultItem } from '../types/chat'
+import type { ChatMessage, MediaContent } from '../types/chat'
 
 const YOUTUBE_URL_PATTERNS = [
   /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/,
@@ -136,12 +136,6 @@ export function getExtraVideos(media: MediaContent[], hero?: MediaContent | null
   return media.filter(
     (m) => (m.type === 'youtube' || m.type === 'video') && m.url !== heroUrl
   )
-}
-
-/** Results with no image or video, rendered as a compact source list. */
-export function getSourceResults(message: ChatMessage): SearchResultItem[] {
-  const results = message.meta?.search_info?.results ?? []
-  return results.filter((r) => !r.thumbnail && !r.image)
 }
 
 export function getYouTubeEmbedUrl(videoId: string): string {

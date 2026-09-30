@@ -4,7 +4,6 @@ import {
   getHeroMedia,
   getGridMedia,
   getExtraVideos,
-  getSourceResults,
   imageSrc,
   extractYouTubeId,
 } from './media'
@@ -137,7 +136,6 @@ describe('composition', () => {
     expect(hero?.type).toBe('image')
     expect(getGridMedia(media, hero)).toHaveLength(1)
     expect(getExtraVideos(media, hero)).toHaveLength(1)
-    expect(getSourceResults(m).map((r) => r.title)).toEqual(['C'])
   })
 
   it('falls back to a video hero when there are no images', () => {

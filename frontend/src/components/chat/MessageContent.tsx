@@ -1,14 +1,7 @@
 import { createMemo, For, Show } from 'solid-js'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
-import {
-  searchMedia,
-  getHeroMedia,
-  getGridMedia,
-  getExtraVideos,
-  getSourceResults,
-  hostnameOf,
-} from '../../utils/media'
+import { searchMedia, getHeroMedia, getGridMedia, getExtraVideos } from '../../utils/media'
 import MediaCard from './MediaCard'
 import MediaGrid from './MediaGrid'
 import type { ChatMessage, MediaContent } from '../../types/chat'
@@ -32,7 +25,6 @@ export default function MessageContent(props: {
   const heroMedia = createMemo(() => getHeroMedia(media()))
   const gridMedia = createMemo(() => getGridMedia(media(), heroMedia()))
   const extraVideos = createMemo(() => getExtraVideos(media(), heroMedia()))
-  const sources = createMemo(() => getSourceResults(props.message()))
 
   const htmlContent = createMemo(() => marked.parse(props.message().content || '') as string)
 
@@ -52,21 +44,6 @@ export default function MessageContent(props: {
       <For each={extraVideos()}>
         {(video) => <MediaCard media={video} onOpenLightbox={props.onOpenLightbox} />}
       </For>
-
-      <Show when={sources().length > 0}>
-        <ul class="msg-sources" aria-label="Sources">
-          <For each={sources()}>
-            {(result) => (
-              <li>
-                <a href={result.url} target="_blank" rel="noopener">
-                  {result.title || hostnameOf(result.url)}
-                </a>
-                <span class="source-host">{hostnameOf(result.url)}</span>
-              </li>
-            )}
-          </For>
-        </ul>
-      </Show>
     </div>
   )
 }

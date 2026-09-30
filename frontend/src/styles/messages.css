@@ -241,30 +241,6 @@
   margin-top: var(--space-xs);
 }
 
-/* Message sources */
-.msg-sources {
-  margin-top: var(--space-sm);
-  font-size: 0.85rem;
-  color: var(--text-dim);
-  border-top: 1px solid var(--border);
-  padding-top: var(--space-xs);
-}
-
-.sources-header {
-  font-weight: 600;
-  color: var(--accent2);
-  display: block;
-  margin-bottom: var(--space-xs);
-}
-
-.sources-list {
-  list-style: none;
-  margin-top: var(--space-xs);
-}
-
-.sources-list li { margin: var(--space-xs) 0; }
-.sources-list a { color: var(--accent); }
-
 /* File attachment */
 .msg .file-attachment {
   display: flex;
@@ -395,36 +371,6 @@
        descendants (the image lightbox), which then scrolls with the content. */
     transform: none;
   }
-}
-
-/* Source list for search results with no image/video. */
-.msg-sources {
-  list-style: none;
-  margin: var(--space-md) 0 0;
-  padding: var(--space-sm) 0 0;
-  border-top: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-xs);
-  font-size: 0.8rem;
-}
-
-.msg-sources li {
-  display: flex;
-  gap: var(--space-sm);
-  align-items: baseline;
-}
-
-.msg-sources a {
-  color: var(--accent);
-  text-decoration: none;
-}
-
-.msg-sources a:hover { text-decoration: underline; }
-
-.msg-sources .source-host {
-  color: var(--text-dim);
-  font-size: 0.7rem;
 }
 
 /* Answer confidence: a small chip with a band colour (memory-grounded). */

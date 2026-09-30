@@ -5,14 +5,13 @@
    ========================================================================== */
 
 .msg-media-hero {
-  margin: calc(-1 * var(--space-lg)) calc(-1 * var(--space-lg)) var(--space-md);
-  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  margin: 0 0 var(--space-md);
+  border-radius: var(--radius-lg);
   overflow: hidden;
   position: relative;
 }
 
 .msg-media-hero:only-child {
-  border-radius: var(--radius-lg);
   margin-bottom: 0;
 }
 
@@ -73,15 +72,15 @@
    ========================================================================== */
 
 .msg-video-embed {
-  margin: calc(-1 * var(--space-lg)) calc(-1 * var(--space-lg)) var(--space-md);
-  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  /* Inset left/right, with vertical space above and below so stacked videos
+     never touch. No bleed: the embed sits inside the bubble's padding. */
+  margin: var(--space-md);
+  border-radius: var(--radius-md);
   overflow: hidden;
-  position: relative;
   background: #000;
 }
 
 .msg-video-embed:only-child {
-  border-radius: var(--radius-lg);
   margin-bottom: 0;
 }
 
@@ -483,10 +482,7 @@
 
   .msg-media-hero,
   .msg-video-embed {
-    margin-left: calc(-1 * var(--space-md));
-    margin-right: calc(-1 * var(--space-md));
-    margin-top: calc(-1 * var(--space-md));
-    border-radius: var(--radius-md) var(--radius-md) 0 0;
+    border-radius: var(--radius-md);
   }
 
   .msg-media-grid {
