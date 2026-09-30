@@ -1,5 +1,4 @@
-import { createSignal, createEffect } from 'solid-js'
-import { debug } from '../services/logger'
+import { createSignal, onMount } from 'solid-js'
 import { fetchUser } from '../state/user'
 import { loadSettings } from '../state/settings'
 import { getAssistantName } from '../services/api'
@@ -9,11 +8,8 @@ export function useAppInit(assistantNameSignal: [() => string, (v: string) => vo
   const [initialized, setInitialized] = createSignal(false)
 
   const initializeApp = async () => {
-    debug('APP INIT: Starting initialization...')
     await fetchUser()
-    debug('APP INIT: fetchUser completed')
     loadSettings()
-    debug('APP INIT: loadSettings completed')
 
     try {
       const result = await getAssistantName()
@@ -28,30 +24,11 @@ export function useAppInit(assistantNameSignal: [() => string, (v: string) => vo
     setInitialized(true)
   }
 
-  const initializeOnce = () => {
-    const alreadyInitialized = localStorage.getItem('app_initialize_complete')
-
-    if (alreadyInitialized) return
-    localStorage.setItem('app_initialize_complete', 'true')
-
-    const savedSessionId = localStorage.getItem('session_id')
-    const u = { id: 1 } // placeholder - user() will be available after fetchUser
-
-    if (savedSessionId && u) {
-      debug('APP INIT: Restoring conversation, session_id =', savedSessionId)
-      // Session messages will be loaded by useActiveConversation effect
-    } else {
-      if (!savedSessionId) debug('APP INIT: No saved session_id in localStorage')
-      if (!u) debug('APP INIT: User not yet loaded')
-    }
-  }
-
-  createEffect(() => {
-    initializeApp()
-  })
-
-  createEffect(() => {
-    initializeOnce()
+  // Runs once on mount. This was a createEffect with no dependencies, which is
+  // mount-only work expressed the wrong way; the sibling `initializeOnce`
+  // effect was a no-op (it wrote a localStorage flag nothing ever read).
+  onMount(() => {
+    void initializeApp()
   })
 
   return {

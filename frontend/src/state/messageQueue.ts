@@ -40,36 +40,27 @@ const STORAGE_KEY = 'messageQueue';
 const MAX_QUEUE_SIZE = 10;
 
 // ============================================================================
-// Lazy Store Initialization
+// Store
 // ============================================================================
 
-let _queueState: QueueState | null = null;
-let _setQueueState: ((patch: Partial<QueueState> | ((prev: QueueState) => Partial<QueueState>)) => void) | null = null;
-
-function getStore(): [QueueState, (patch: Partial<QueueState> | ((prev: QueueState) => Partial<QueueState>)) => void] {
-  if (!_queueState || !_setQueueState) {
-    const [state, setState] = createStore<QueueState>({
-      queue: [],
-      processing: false,
-      activeConversationId: null,
-      drainBlocked: false,
-    });
-    // eslint-disable-next-line solid/reactivity -- state assigned to module-level ref
-    _queueState = state;
-    _setQueueState = setState;
-  }
-  return [_queueState, _setQueueState!];
-}
+// Created eagerly at module scope rather than lazily on first access. A store is
+// not a computation, so it does not need a reactive owner; the lazy indirection
+// only added nullable refs and an eslint suppression.
+const [queueStore, setQueueStore] = createStore<QueueState>({
+  queue: [],
+  processing: false,
+  activeConversationId: null,
+  drainBlocked: false,
+});
 
 // Export reactive accessors
 export function queueState(): QueueState {
-  return getStore()[0];
+  return queueStore;
 }
 
 export function setQueueState(patch: Partial<QueueState> | ((prev: QueueState) => Partial<QueueState>)): void {
-  const [, setState] = getStore();
   // setState accepts Partial<QueueState> or a function that receives QueueState and returns Partial<QueueState>
-  setState(patch as Parameters<typeof setState>[0]);
+  setQueueStore(patch as Parameters<typeof setQueueStore>[0]);
 }
 
 // ============================================================================
@@ -153,7 +144,7 @@ export function dequeue(messageId: string): void {
   setQueueState((prev) => ({
     queue: prev.queue.filter((m) => m.id !== messageId),
   }));
-  saveToStorage(queueState().queue.filter((m) => m.id !== messageId));
+  saveToStorage(queueState().queue);
 }
 
 export function clearQueue(): void {
