@@ -111,10 +111,13 @@ export function searchMedia(message: ChatMessage): MediaContent[] {
   })
 }
 
-/** The single item shown as the card at the top: a video if present, else the first image. */
+/**
+ * The card at the top: the first image (images are pushed before videos in
+ * `searchMedia`), else the first video when there are no images.
+ */
 export function getHeroMedia(media: MediaContent[]): MediaContent | null {
   if (media.length === 0) return null
-  return media.find((m) => m.type === 'video' || m.type === 'youtube') ?? media[0] ?? null
+  return media[0] ?? null
 }
 
 /** Images other than the hero; `MediaGrid` caps how many it displays. */

@@ -116,7 +116,7 @@ describe('extractYouTubeId', () => {
 })
 
 describe('composition', () => {
-  it('hero prefers a video; grid holds the images; sources are results without media', () => {
+  it('hero is the first image; grid holds the rest; videos are extra; sources have no media', () => {
     const m = msg({
       search_info: {
         backend: 'brave',
@@ -131,10 +131,22 @@ describe('composition', () => {
     })
     const media = searchMedia(m)
     const hero = getHeroMedia(media)
-    expect(hero?.type).toBe('youtube')
-    expect(getGridMedia(media, hero)).toHaveLength(2)
-    expect(getExtraVideos(media, hero)).toHaveLength(0)
+    expect(hero?.type).toBe('image')
+    expect(getGridMedia(media, hero)).toHaveLength(1)
+    expect(getExtraVideos(media, hero)).toHaveLength(1)
     expect(getSourceResults(m).map((r) => r.title)).toEqual(['C'])
+  })
+
+  it('falls back to a video hero when there are no images', () => {
+    const m = msg({
+      search_info: {
+        backend: 'brave',
+        query: 'q',
+        results: [],
+        video_results: [{ video_id: 'abcdefghijk', title: 'V', thumbnail_url: 'https://img/v.png' }],
+      },
+    })
+    expect(getHeroMedia(searchMedia(m))?.type).toBe('youtube')
   })
 })
 
