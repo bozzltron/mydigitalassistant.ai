@@ -154,6 +154,36 @@ async def test_fetch_url_refuses_link_local_without_a_request(monkeypatch):
     assert _NoNetworkClient.attempts == []
 
 
+# --- trusted internal origins (SearXNG image proxy) --------------------------
+
+
+def test_url_is_trusted_matches_origin():
+    from assistant.backend.pipeline.url_safety import url_is_trusted
+
+    assert url_is_trusted("http://searxng:8080/image_proxy?url=x", ["http://searxng:8080"])
+    assert not url_is_trusted("http://searxng:9090/x", ["http://searxng:8080"])
+    assert not url_is_trusted("http://searxng:8080/x", [])
+
+
+@pytest.mark.asyncio
+async def test_trusted_origin_bypasses_the_public_check():
+    # SearXNG lives on an internal host; the proxy trust-passes its origin so
+    # its own /image_proxy URLs are reachable without opening the guard.
+    await assert_public_url(
+        "http://searxng:8080/image_proxy?url=x",
+        trusted_prefixes=["http://searxng:8080"],
+    )
+
+
+@pytest.mark.asyncio
+async def test_untrusted_internal_host_is_still_rejected():
+    with pytest.raises(UnsafeURLError):
+        await assert_public_url(
+            "http://other-internal:8080/x",
+            trusted_prefixes=["http://searxng:8080"],
+        )
+
+
 # --- the byte cap is real -----------------------------------------------------
 
 

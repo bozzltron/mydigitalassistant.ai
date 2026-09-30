@@ -2,7 +2,7 @@ import asyncio
 import json
 import logging
 import time
-from contextlib import AsyncExitStack, asynccontextmanager
+from contextlib import asynccontextmanager
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
@@ -10,7 +10,7 @@ from pathlib import Path
 import httpx
 from fastapi import Depends as _Depends
 from fastapi import FastAPI, File, HTTPException, Query, Response, UploadFile
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -834,16 +834,20 @@ _IMAGE_PROXY_HEADERS = {
 
 @app.get("/image-proxy")
 async def image_proxy(url: str):
-    """Fetch a remote image server-side and stream it back.
+    """Fetch a remote image server-side and return it.
 
     Privacy: rendering search thumbnails directly would make the browser contact
     third-party hosts, leaking the user's IP. Routing through the backend keeps
-    the browser talking only to localhost. SSRF-guarded by `safe_stream`
-    (public hosts only, redirects revalidated) and restricted to image
-    content-types.
+    the browser talking only to localhost. SSRF-guarded by `safe_stream` (public
+    hosts only, redirects revalidated) and restricted to image content-types.
+
+    SearXNG's own image proxy lives on an internal host, so the configured
+    SearXNG base URL is trusted through the guard.
     """
+    trusted = [settings.search_base_url] if settings.search_base_url else None
+
     try:
-        await assert_public_url(url)
+        await assert_public_url(url, trusted_prefixes=trusted)
     except UnsafeURLError as e:
         raise HTTPException(status_code=400, detail=f"blocked url: {e}") from e
 
@@ -851,39 +855,31 @@ async def image_proxy(url: str):
         timeout=httpx.Timeout(10.0, connect=5.0),
         follow_redirects=False,
     )
-    stack = AsyncExitStack()
+    buffer = bytearray()
     try:
-        response = await stack.enter_async_context(
-            safe_stream(client, url, headers=_IMAGE_PROXY_HEADERS)
-        )
-        response.raise_for_status()
-        content_type = response.headers.get("content-type", "")
-        if not content_type.lower().startswith("image/"):
-            raise HTTPException(status_code=415, detail="not an image")
+        async with safe_stream(
+            client, url, headers=_IMAGE_PROXY_HEADERS, trusted_prefixes=trusted
+        ) as response:
+            response.raise_for_status()
+            content_type = response.headers.get("content-type", "")
+            if not content_type.lower().startswith("image/"):
+                raise HTTPException(status_code=415, detail="not an image")
+            # Buffer up to cap+1 so an oversized image is a clean 413, never a
+            # truncated body the browser cannot decode.
+            async for chunk in response.aiter_bytes():
+                buffer.extend(chunk)
+                if len(buffer) > _MAX_IMAGE_BYTES:
+                    raise HTTPException(status_code=413, detail="image too large")
     except HTTPException:
-        await stack.aclose()
-        await client.aclose()
         raise
     except Exception as e:
-        await stack.aclose()
-        await client.aclose()
         logger.warning("image proxy failed for %s: %s", url, e)
         raise HTTPException(status_code=502, detail="image fetch failed") from e
+    finally:
+        await client.aclose()
 
-    async def body():
-        try:
-            size = 0
-            async for chunk in response.aiter_bytes():
-                size += len(chunk)
-                if size > _MAX_IMAGE_BYTES:
-                    break
-                yield chunk
-        finally:
-            await stack.aclose()
-            await client.aclose()
-
-    return StreamingResponse(
-        body(),
+    return Response(
+        content=bytes(buffer),
         media_type=content_type,
         headers={"Cache-Control": "public, max-age=3600"},
     )

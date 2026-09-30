@@ -86,8 +86,37 @@ async def _resolve(hostname: str) -> list[ipaddress.IPv4Address | ipaddress.IPv6
     return addresses
 
 
-async def assert_public_url(url: str) -> None:
-    """Raise `UnsafeURLError` unless `url` is http(s) and resolves only to public IPs."""
+def _origin(url: str) -> tuple[str, str | None, int | None] | None:
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        return None
+    default_port = 443 if parsed.scheme.lower() == "https" else 80
+    return (parsed.scheme.lower(), parsed.hostname, parsed.port or default_port)
+
+
+def url_is_trusted(url: str, trusted_prefixes: list[str] | None) -> bool:
+    """True when `url` shares an origin with one of the trusted base URLs.
+
+    Lets the backend reach its own SearXNG instance (an internal host) through
+    the SSRF guard without opening the guard to arbitrary private addresses.
+    """
+    if not trusted_prefixes:
+        return False
+    target = _origin(url)
+    if target is None:
+        return False
+    return any(_origin(prefix) == target for prefix in trusted_prefixes)
+
+
+async def assert_public_url(
+    url: str, *, trusted_prefixes: list[str] | None = None
+) -> None:
+    """Raise `UnsafeURLError` unless `url` is http(s) and resolves only to public IPs.
+
+    A URL whose origin matches a trusted prefix (e.g. the local SearXNG base) is
+    allowed without the public-IP check.
+    """
     try:
         parsed = urlparse(url)
     except Exception as e:  # pragma: no cover - urlparse rarely raises
@@ -95,6 +124,9 @@ async def assert_public_url(url: str) -> None:
 
     if parsed.scheme.lower() not in ("http", "https"):
         raise UnsafeURLError(f"only http(s) URLs are allowed, got {parsed.scheme!r}")
+
+    if url_is_trusted(url, trusted_prefixes):
+        return
 
     hostname = parsed.hostname
     if not hostname:
@@ -122,6 +154,7 @@ async def safe_stream(
     *,
     headers: dict[str, str] | None = None,
     max_redirects: int = _MAX_REDIRECTS,
+    trusted_prefixes: list[str] | None = None,
 ) -> AsyncIterator[httpx.Response]:
     """Open a streaming GET, validating the host before every redirect hop.
 
@@ -130,7 +163,7 @@ async def safe_stream(
     """
     current = url
     for _ in range(max_redirects + 1):
-        await assert_public_url(current)
+        await assert_public_url(current, trusted_prefixes=trusted_prefixes)
         request = client.build_request("GET", current, headers=headers)
         response = await client.send(request, stream=True)
         if response.is_redirect:

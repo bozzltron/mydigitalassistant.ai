@@ -30,7 +30,7 @@ class _FakeResponse:
             yield chunk
 
 
-async def _public(url: str) -> None:
+async def _public(url: str, **kwargs) -> None:
     return None
 
 
@@ -42,7 +42,7 @@ def test_blocks_private_urls_without_fetching():
 
 def test_rejects_non_image_content_type(monkeypatch):
     @asynccontextmanager
-    async def fake_stream(client, url, headers=None):
+    async def fake_stream(client, url, headers=None, **kwargs):
         yield _FakeResponse("text/html", [b"<html>"])
 
     monkeypatch.setattr(main, "assert_public_url", _public)
@@ -53,9 +53,23 @@ def test_rejects_non_image_content_type(monkeypatch):
     assert resp.status_code == 415
 
 
+def test_rejects_an_oversized_image_instead_of_truncating_it(monkeypatch):
+    @asynccontextmanager
+    async def fake_stream(client, url, headers=None, **kwargs):
+        yield _FakeResponse("image/png", [b"12345", b"6789"])
+
+    monkeypatch.setattr(main, "assert_public_url", _public)
+    monkeypatch.setattr(main, "safe_stream", fake_stream)
+    monkeypatch.setattr(main, "_MAX_IMAGE_BYTES", 8)
+
+    client = TestClient(app)
+    resp = client.get("/image-proxy", params={"url": "https://example.com/big.png"})
+    assert resp.status_code == 413
+
+
 def test_streams_an_image(monkeypatch):
     @asynccontextmanager
-    async def fake_stream(client, url, headers=None):
+    async def fake_stream(client, url, headers=None, **kwargs):
         yield _FakeResponse("image/png", [b"\x89PNG", b"rest"])
 
     monkeypatch.setattr(main, "assert_public_url", _public)
