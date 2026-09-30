@@ -540,15 +540,6 @@ select {
   width: 1em;
   height: 1em;
   vertical-align: middle;
-  color: currentColor;
-}
-
-.trash-icon path {
-  stroke: currentColor !important;
-}
-
-.trash-icon [fill='none'] {
-  fill: currentColor !important;
 }
 
 .trash-can-modal {
