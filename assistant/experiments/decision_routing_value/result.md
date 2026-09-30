@@ -153,6 +153,37 @@ result alone.** The honest position:
    `search_to_enrich` cases (the sharp edge), and turns 8/10 should not be counted
    toward an accuracy total they cannot discriminate within.
 
+## Follow-up: the decision model was not needed — measured
+
+The routing experiment established the *decision*. It did not establish that a
+decision model was the right way to *implement* it, and that gap was closed by
+testing the cheapest alternative instead of refining the router.
+
+**Condition B of the follow-up:** withhold `web_search` from the tool list on a turn
+that transforms supplied content — a routing rule, no second model, no added
+latency. Applied on both orchestrator paths, gated on
+`extraction_summary["user_content"]`.
+
+Measured live against the real 7-URL paste:
+
+| | assistant response |
+|---|---|
+| before | *"Here is a summary of **Indie Rage Radio (KIRR-DB)**"* — one station, from a search the model chose itself |
+| **after** | **all 7 URLs, ranked 1–7, against the user's own stated goal ("impact for Mozworth", indie alt rock, Austin)** |
+
+No search ran (`search_info: null`, zero tool calls).
+
+**So the outcome the decision models routed toward is reachable without them.**
+This experiment's practical value is therefore not "adopt a decision model" but
+"the tool choice was the fault, and it can be corrected directly". The decision
+endpoint remains interesting for Plan D — where the decision is genuinely open-ended
+and has four typed outcomes — but Plan A did not need it.
+
+This is the second time on this thread that measuring the cheap alternative beat
+building the sophisticated one, and the routing accuracy figures above should be read
+with that in mind: they justify the *decision*, not the *model*.
+
+
 ## What this does not establish
 
 - **Not that adoption is safe.** 10 turns, self-labelled. Reported as a signal.
