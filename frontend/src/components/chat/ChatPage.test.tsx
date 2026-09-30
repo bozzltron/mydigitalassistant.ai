@@ -18,8 +18,8 @@ vi.mock('../../services/api', () => ({
 
 vi.mock('../../services/status', () => ({
   useTurnStatus: () => ({ turnStatus: () => null, isPolling: () => false }),
-  startStatusPolling: vi.fn(),
-  stopStatusPolling: vi.fn(),
+  beginTurnStatus: vi.fn(),
+  endTurnStatus: vi.fn(),
   setStreamStage: vi.fn(),
   getStageLabel: (stage: string, detail?: string) => detail || stage,
 }))

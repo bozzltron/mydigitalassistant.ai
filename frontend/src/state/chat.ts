@@ -1,7 +1,7 @@
 import { createSignal, createMemo } from 'solid-js'
 import { createStore } from 'solid-js/store'
-import { postChat, postChatStream, createTurnId } from '../services/api'
-import { startStatusPolling, stopStatusPolling, setStreamStage } from '../services/status'
+import { postChatStream, createTurnId } from '../services/api'
+import { beginTurnStatus, endTurnStatus, setStreamStage } from '../services/status'
 import { getSessionMessages } from '../services/api'
 import {
   enqueue as mqEnqueue,
@@ -17,17 +17,17 @@ import type {
   OgData,
   SessionMessage,
   AttachedFile,
-} from '../../types'
+} from '../types'
 
 interface ChatState {
-  conversationMessages: Map<string, ChatMessage[]>
+  conversationMessages: Record<string, ChatMessage[]>
   conversationTurnIds: Map<string, string>
   conversationTurnActive: Map<string, boolean>
   // conversationQueues removed - now using messageQueue
 }
 
 const [chatState, setChatState] = createStore<ChatState>({
-  conversationMessages: new Map(),
+  conversationMessages: {},
   conversationTurnIds: new Map(),
   conversationTurnActive: new Map(),
 })
@@ -56,7 +56,7 @@ export const messages = createMemo(() => {
     // message render twice: once in the transcript and once in the panel.
     // MessageList ignores meta.isQueued, so the transcript copy looked like an
     // already-sent message -- it read as "sent and queued" at the same time.
-    return chatState.conversationMessages.get(sid) || []
+    return chatState.conversationMessages[sid] || []
   }
   return []
 })
@@ -96,9 +96,8 @@ export async function loadConversationMessages(sessionIdParam: string, userId: n
         },
       }
     })
-    setChatState('conversationMessages', (prev: Map<string, ChatMessage[]>) => {
-      const next = new Map(prev)
-      const existing = next.get(sessionIdParam) || []
+    setChatState('conversationMessages', (prev) => {
+      const existing = prev[sessionIdParam] || []
       // Preserve optimistic messages that the server hasn't persisted yet:
       // a history load racing an in-flight turn would otherwise wipe the user
       // bubble and the streaming placeholder, orphaning the live stream (the
@@ -113,86 +112,11 @@ export async function loadConversationMessages(sessionIdParam: string, userId: n
         )
         return !persisted
       })
-      next.set(sessionIdParam, [...loadedMessages, ...active])
-      return next
+      return { [sessionIdParam]: [...loadedMessages, ...active] }
     })
   } catch (error) {
     console.error('Failed to load conversation messages:', error)
-    setChatState('conversationMessages', (prev: Map<string, ChatMessage[]>) => {
-      const next = new Map(prev)
-      next.set(sessionIdParam, [])
-      return next
-    })
-  }
-}
-
-export async function postChatMessage(
-  message: string,
-  session_id?: string,
-  attached_files?: AttachedFile[],
-  max_intelligence?: boolean
-): Promise<{
-  response: string
-  task_type?: string
-  extraction_summary?: ExtractionSummary
-  search_extraction_summary?: ExtractionSummary
-  search_info?: SearchInfo
-  session_id?: string
-}> {
-  const turnId = createTurnId()
-  setCurrentTurnId(turnId)
-  // Set turn active for this specific conversation
-  if (session_id) {
-    setChatState('conversationTurnActive', (prev: Map<string, boolean>) => {
-      const next = new Map(prev)
-      next.set(session_id, true)
-      return next
-    })
-    setChatState('conversationTurnIds', (prev: Map<string, string>) => {
-      const next = new Map(prev)
-      next.set(session_id, turnId)
-      return next
-    })
-  }
-
-  startStatusPolling(turnId)
-
-  try {
-    const result = await postChat(message, session_id, attached_files, turnId, undefined, max_intelligence)
-    return {
-      response: result.response,
-      task_type: result.task_type,
-      extraction_summary: result.extraction_summary,
-      search_extraction_summary: result.search_extraction_summary,
-      search_info: result.search_info,
-      session_id: result.session_id,
-    }
-  } catch (error) {
-    console.error('Error sending message:', error)
-    throw error
-  } finally {
-    stopStatusPolling(turnId)
-    setCurrentTurnId(null)
-
-    if (session_id) {
-      setChatState('conversationTurnActive', (prev: Map<string, boolean>) => {
-        const next = new Map(prev)
-        next.delete(session_id)
-        return next
-      })
-      setChatState('conversationTurnIds', (prev: Map<string, string>) => {
-        const next = new Map(prev)
-        next.delete(session_id)
-        return next
-      })
-    }
-
-    // Keep the active conversation current so the queue drainer knows where to
-    // send. Do NOT drain here: draining clears the queue, which silently
-    // destroyed messages the user queued while this turn was streaming.
-    if (session_id) {
-      setActiveConversation(session_id)
-    }
+    setChatState('conversationMessages', sessionIdParam, [])
   }
 }
 
@@ -227,7 +151,7 @@ export async function postChatMessageStream(
     })
   }
 
-  startStatusPolling(turnId)
+  beginTurnStatus(turnId)
 
   // Create a placeholder assistant message that will be updated during streaming
   const assistantMessageId = `streaming-${turnId}-assistant`
@@ -317,7 +241,7 @@ export async function postChatMessageStream(
     }
     throw error
   } finally {
-    stopStatusPolling(turnId)
+    endTurnStatus(turnId)
     setCurrentTurnId(null)
     setIsStreaming(false)
     setStreamingMessageId(null)
@@ -350,18 +274,21 @@ function setStreamingMessageContent(
   content: string,
   streamingState?: boolean
 ): void {
-  setChatState('conversationMessages', (prev: Map<string, ChatMessage[]>) => {
-    const next = new Map(prev)
-    const updated = (next.get(sessionIdParam) || []).map(msg =>
-      msg.id === messageId
-        ? streamingState === undefined
-          ? { ...msg, content }
-          : { ...msg, content, meta: { ...msg.meta, isStreaming: streamingState } }
-        : msg
-    )
-    next.set(sessionIdParam, updated)
-    return next
-  })
+  // Fine-grained: walk to the streaming message and update only its fields.
+  // Rebuilding the array (and the old Map) on every text_delta invalidated the
+  // whole transcript memo, so the stream cost O(messages) per token.
+  const list = chatState.conversationMessages[sessionIdParam]
+  if (!list) return
+  const index = list.findIndex(msg => msg.id === messageId)
+  if (index === -1) return
+
+  setChatState('conversationMessages', sessionIdParam, index, 'content', content)
+  if (streamingState !== undefined) {
+    setChatState('conversationMessages', sessionIdParam, index, 'meta', {
+      ...list[index].meta,
+      isStreaming: streamingState,
+    })
+  }
 }
 
 function mergeStreamingMessageMeta(
@@ -369,26 +296,23 @@ function mergeStreamingMessageMeta(
   messageId: string,
   meta: Partial<NonNullable<ChatMessage['meta']>>
 ): void {
-  setChatState('conversationMessages', (prev: Map<string, ChatMessage[]>) => {
-    const next = new Map(prev)
-    const updated = (next.get(sessionIdParam) || []).map(msg =>
-      msg.id === messageId ? { ...msg, meta: { ...msg.meta, ...meta } } : msg
-    )
-    next.set(sessionIdParam, updated)
-    return next
+  const list = chatState.conversationMessages[sessionIdParam]
+  if (!list) return
+  const index = list.findIndex(msg => msg.id === messageId)
+  if (index === -1) return
+
+  setChatState('conversationMessages', sessionIdParam, index, 'meta', {
+    ...list[index].meta,
+    ...meta,
   })
 }
 
 export function addMessageToConversation(sessionIdParam: string, message: ChatMessage): void {
-  setChatState('conversationMessages', (prev: Map<string, ChatMessage[]>) => {
-    const next = new Map(prev)
-    const existing = next.get(sessionIdParam) || []
-    // Re-committing an id happens when a send is retried, and the transcript
-    // must not grow a second copy of the same turn.
-    if (existing.some((m) => m.id === message.id)) return prev
-    next.set(sessionIdParam, [...existing, message])
-    return next
-  })
+  const existing = chatState.conversationMessages[sessionIdParam] || []
+  // Re-committing an id happens when a send is retried, and the transcript
+  // must not grow a second copy of the same turn.
+  if (existing.some((m) => m.id === message.id)) return
+  setChatState('conversationMessages', sessionIdParam, [...existing, message])
 }
 
 export function getConversationTurnId(sessionIdParam: string): string | undefined {
@@ -429,16 +353,4 @@ export function drainQueue(sessionIdParam?: string): void {
 
 export function clearQueue(): void {
   mqClearQueue()
-}
-
-interface SessionMessage {
-  role: string
-  content: string
-  task_type?: string
-  memory_context?: string
-  citations?: string[]
-  extraction_summary?: ExtractionSummary
-  search_extraction_summary?: ExtractionSummary
-  search_info?: SearchInfo
-  ogData?: Record<string, OgData>
 }

@@ -14,6 +14,12 @@ export interface MessageMeta {
   search_info?: SearchInfo
   ogData?: Record<string, OgData>
   media?: MediaContent[]
+  /** True while assistant text is still arriving over the stream. */
+  isStreaming?: boolean
+  /** True for a message rendered in the pending-queue panel, not the transcript. */
+  isQueued?: boolean
+  /** Entry point that produced the message. */
+  source?: 'voice' | 'text'
 }
 
 export interface ExtractionSummary {
@@ -48,6 +54,16 @@ export interface SensitivityResult {
 }
 
 export interface OgData {
+  title?: string
+  description?: string
+  image?: string
+  site_name?: string
+}
+
+/** Response from `GET /og-preview`. `found` is false when no metadata was scraped. */
+export interface OgPreviewResponse {
+  url: string
+  found: boolean
   title?: string
   description?: string
   image?: string
@@ -100,15 +116,16 @@ export interface Frame {
   name: string
   type: string
   confidence: number
-  essential: boolean
+  /** 0/1 int from the API; treat as boolean with truthiness. */
+  essential: number
   priority: number
   owner_user_id: number | null
   source_type: string | null
   source_url: string | null
   source_reliability: number | null
   embedding_model: string | null
-  created_at: string
-  updated_at: string
+  created_at: string | null
+  updated_at: string | null
 }
 
 export interface Association {
@@ -117,7 +134,8 @@ export interface Association {
   to_frame_id: number
   relation_type: string
   confidence: number
-  essential: boolean
+  /** 0/1 int from the API; treat as boolean with truthiness. */
+  essential: number
   priority: number
   source_type: string | null
   source_url: string | null
@@ -137,17 +155,6 @@ export interface Conflict {
   created_at: string
 }
 
-export interface SearchResult {
-  id: number
-  query: string
-  results: Array<{
-    url: string
-    title: string
-    content: string
-    relevance: number
-  }>
-}
-
 export interface FileEntry {
   id: string
   name: string
@@ -164,14 +171,24 @@ export interface User {
   created_at: string
 }
 
+/** Raw item from `GET /users/{id}/sessions`. */
+export interface SessionSummary {
+  id: string
+  episode_count: number
+  last_activity: string | null
+  /**
+   * Backend-computed display label, not a chat message: an explicit title if
+   * one was set, else the first user message (truncated), else "Conversation N".
+   */
+  last_message: string
+}
+
+/** A conversation as the UI consumes it (see `sessionTitle`). */
 export interface Session {
   id: string
-  user_id: number
-  title: string | null
-  created_at: string
-  updated_at: string
+  title: string
   episode_count: number
-  last_message: string | null
+  last_activity: string | null
 }
 
 export interface DeletedSession {

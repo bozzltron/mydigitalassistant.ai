@@ -1,4 +1,5 @@
 import { createSignal, createEffect } from 'solid-js'
+import { debug } from '../services/logger'
 import { fetchUser } from '../state/user'
 import { loadSettings } from '../state/settings'
 import { getAssistantName } from '../services/api'
@@ -8,11 +9,11 @@ export function useAppInit(assistantNameSignal: [() => string, (v: string) => vo
   const [initialized, setInitialized] = createSignal(false)
 
   const initializeApp = async () => {
-    console.log('APP INIT: Starting initialization...')
+    debug('APP INIT: Starting initialization...')
     await fetchUser()
-    console.log('APP INIT: fetchUser completed')
+    debug('APP INIT: fetchUser completed')
     loadSettings()
-    console.log('APP INIT: loadSettings completed')
+    debug('APP INIT: loadSettings completed')
 
     try {
       const result = await getAssistantName()
@@ -37,11 +38,11 @@ export function useAppInit(assistantNameSignal: [() => string, (v: string) => vo
     const u = { id: 1 } // placeholder - user() will be available after fetchUser
 
     if (savedSessionId && u) {
-      console.log('APP INIT: Restoring conversation, session_id =', savedSessionId)
+      debug('APP INIT: Restoring conversation, session_id =', savedSessionId)
       // Session messages will be loaded by useActiveConversation effect
     } else {
-      if (!savedSessionId) console.log('APP INIT: No saved session_id in localStorage')
-      if (!u) console.log('APP INIT: User not yet loaded')
+      if (!savedSessionId) debug('APP INIT: No saved session_id in localStorage')
+      if (!u) debug('APP INIT: User not yet loaded')
     }
   }
 

@@ -64,7 +64,7 @@ export const EditModal = (props: EditModalProps) => {
               value={inputValue()}
               onChange={(e) => setInputValue(e.target.value)}
               placeholder="Conversation name"
-              autoFocus
+              autofocus
             />
             <div class="modal-actions">
               {/* Was an inline style object, including

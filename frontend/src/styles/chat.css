@@ -1138,3 +1138,8 @@ select {
 .consent-actions button {
   min-width: 120px;
 }
+/* Trace header icon (was an inline style). */
+.trace-header-icon {
+  vertical-align: middle;
+  margin-right: 4px;
+}

@@ -1,7 +1,8 @@
 import { For, Show } from 'solid-js'
 import Message from './Message'
-import { ChatMessage, sessionId } from '../../state/chat'
-import { postFeedback } from '../../services/api'
+import { sessionId } from '../../state/chat'
+import type { ChatMessage } from '../../types/chat'
+import { postFeedback, postCorrection } from '../../services/api'
 
 export default function MessageList(props: { messages: () => ChatMessage[] }) {
   const handleReact = async (kind: 'positive' | 'negative' | 'correction', msgId: string) => {
@@ -34,15 +35,25 @@ export default function MessageList(props: { messages: () => ChatMessage[] }) {
     }).catch(() => {})
   }
 
-  const handleCorrect = async () => {
-    // This will be handled by the Message component's correction panel
+  const handleCorrect = async (msgId: string, text: string): Promise<boolean> => {
+    try {
+      // The endpoint takes the session id in its `episode_id` field (legacy
+      // name); `message_id` scopes the audit record. Applying the correction is
+      // the whole point of the panel — this used to be an empty function, so
+      // every submitted correction was silently discarded.
+      await postCorrection(sessionId(), msgId, text)
+      return true
+    } catch (e) {
+      console.error('Failed to submit correction:', e)
+      return false
+    }
   }
 
   return (
-    // Key by stable message id (not object reference): streamed updates replace
-    // the message object on every text_delta/finalize, so by="id" lets Solid
-    // reconcile the bubble in place instead of recreating the row each update.
-    <For each={props.messages()} by="id">
+    // Solid diffs <For> by item identity. The streaming message keeps a stable
+    // id and is updated in place through the chat store, so the bubble
+    // reconciles instead of being recreated on every token.
+    <For each={props.messages()}>
       {(message) => (
         // Don't render empty streaming assistant messages (wait for first token)
         <Show when={!(message.role === 'assistant' && message.meta?.isStreaming && !message.content.trim())}>

@@ -3,6 +3,7 @@
  * Uses Zod schemas for request/response validation.
  */
 import { z } from 'zod'
+import { debug } from './logger'
 import type {
   AttachedFile,
   ChatResponse,
@@ -11,33 +12,17 @@ import type {
   SearchInfo,
   Frame,
   Association,
-  SearchResult,
   FileEntry,
   User,
-  Session,
+  SessionSummary,
   SessionMessage,
+  DeletedSession,
   OgPreviewResponse,
-} from '../../types'
+} from '../types'
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
 
 // Define Zod schemas for API responses (simplified versions)
-export const ChatRequestSchema = z.object({
-  user_id: z.number().int(),
-  message: z.string(),
-  session_id: z.string().uuid().optional(),
-  turn_id: z.string().uuid().optional(),
-  attached_files: z.array(z.object({
-    name: z.string(),
-    ext: z.string(),
-    preview: z.string(),
-    content: z.string(),
-    text: z.string(),
-    key_entities: z.array(z.string()),
-    open_questions: z.array(z.string()),
-  })).optional(),
-})
-
 export const ExtractionSummarySchema = z.object({
   slots_applied: z.number(),
   associations_created: z.number(),
@@ -99,16 +84,6 @@ export const AssociationSchema = z.object({
   created_at: z.string(),
 })
 
-export const SearchResultSchema = z.object({
-  query: z.string(),
-  results: z.array(z.object({
-    url: z.string(),
-    title: z.string(),
-    content: z.string(),
-    relevance: z.number().optional(),
-  })),
-})
-
 export const FileEntrySchema = z.object({
   id: z.string().uuid(),
   name: z.string(),
@@ -124,14 +99,11 @@ export const UserSchema = z.object({
   created_at: z.string(),
 })
 
-export const SessionSchema = z.object({
+export const SessionSummarySchema = z.object({
   id: z.string(),
-  user_id: z.number().int(),
-  title: z.string().nullable(),
-  created_at: z.string(),
-  updated_at: z.string(),
   episode_count: z.number().int(),
-  last_message: z.string().nullable(),
+  last_activity: z.string().nullable(),
+  last_message: z.string(),
 })
 
 export const SessionMessageSchema = z.object({
@@ -149,11 +121,11 @@ export type {
   SearchInfo,
   Frame,
   Association,
-  SearchResult,
   FileEntry,
   User,
-  Session,
+  SessionSummary,
   SessionMessage,
+  DeletedSession,
   OgPreviewResponse,
 }
 
@@ -163,7 +135,7 @@ export async function api<T>(
   options: RequestInit = {}
 ): Promise<T> {
   const url = `${BASE_URL}${path}`
-  console.log('[api] Request:', options.method || 'GET', url)
+  debug('[api] Request:', options.method || 'GET', url)
   const response = await fetch(url, {
     ...options,
     headers: {
@@ -173,7 +145,7 @@ export async function api<T>(
     credentials: 'include',
   })
 
-  console.log('[api] Response:', response.status, response.statusText)
+  debug('[api] Response:', response.status, response.statusText)
   // Read the body as text and parse defensively: a proxy or error page can
   // return a non-JSON body (HTML, empty 200, gzip'd error), and response.json()
   // would throw SyntaxError ("unexpected character at line 1 column 1") that
@@ -198,8 +170,8 @@ export async function api<T>(
     throw new Error(detail)
   }
 
-  console.log('[api] Response data:', data)
-  return data as Promise<T>
+  debug('[api] Response data:', data)
+  return data as T
 }
 
 /**
@@ -217,32 +189,6 @@ function validate<T>(schema: z.ZodType<T>, data: unknown): T {
     throw new Error(`Unexpected API response shape: ${result.error.issues[0]?.message ?? 'invalid'}`)
   }
   return result.data
-}
-
-export async function postChat(
-  message: string,
-  session_id?: string,
-  attached_files?: AttachedFile[],
-  turn_id?: string,
-  search_consent?: boolean,
-  max_intelligence?: boolean
-): Promise<ChatResponse> {
-  const requestBody = {
-    user_id: 1,
-    message,
-    session_id,
-    attached_files,
-    turn_id,
-    search_consent,
-    max_intelligence,
-  }
-
-  console.log('Sending chat request:', requestBody)
-
-  return api<ChatResponse>('/chat', {
-    method: 'POST',
-    body: JSON.stringify(requestBody),
-  })
 }
 
 export interface StreamEvent {
@@ -402,34 +348,23 @@ export function createTurnId(): string {
 }
 
 export async function getFrames(user_id: number): Promise<Frame[]> {
-  console.log('Fetching frames for user:', user_id)
+  debug('Fetching frames for user:', user_id)
   const data = await api<unknown>(`/memory/frames?user_id=${user_id}`)
   return validate(z.array(FrameSchema), data)
 }
 
 export async function getAssociations(frame_id: number): Promise<Association[]> {
-  console.log('Fetching associations for frame:', frame_id)
+  debug('Fetching associations for frame:', frame_id)
   return api<Association[]>(`/memory/frames/${frame_id}/associations`)
 }
 
-export async function getSearchResults(query: string, minRelevance?: number): Promise<SearchResult> {
-  console.log('Searching:', { query, minRelevance })
-  const params = new URLSearchParams({ q: query })
-  if (minRelevance !== undefined) {
-    // Must match the backend param; it aliases min_relevance onto min_similarity.
-    params.append('min_relevance', String(minRelevance))
-  }
-  const data = await api<unknown>(`/search?${params.toString()}`)
-  return validate(SearchResultSchema, data)
-}
-
 export async function listFiles(): Promise<FileEntry[]> {
-  console.log('Listing files')
+  debug('Listing files')
   return api<FileEntry[]>(`/files/list`)
 }
 
 export async function postFileUpload(file: File): Promise<FileEntry> {
-  console.log('Uploading file:', file.name)
+  debug('Uploading file:', file.name)
   const formData = new FormData()
   formData.append('file', file)
   
@@ -448,7 +383,7 @@ export async function postFileUpload(file: File): Promise<FileEntry> {
 }
 
 export async function deleteFile(file_id: string): Promise<{ success: boolean }> {
-  console.log('Deleting file:', file_id)
+  debug('Deleting file:', file_id)
   const response = await fetch(`${BASE_URL}/files/${file_id}`, {
     method: 'DELETE',
     credentials: 'include',
@@ -462,13 +397,13 @@ export async function deleteFile(file_id: string): Promise<{ success: boolean }>
   return response.json()
 }
 
-export async function getUserSessions(user_id: number): Promise<Session[]> {
-  console.log('Fetching sessions for user:', user_id)
-  return api<Session[]>(`/users/${user_id}/sessions`)
+export async function getUserSessions(user_id: number): Promise<SessionSummary[]> {
+  debug('Fetching sessions for user:', user_id)
+  return api<SessionSummary[]>(`/users/${user_id}/sessions`)
 }
 
 export async function createNewConversation(user_id: number): Promise<{ session_id: string; message: string }> {
-  console.log('Creating new conversation for user:', user_id)
+  debug('Creating new conversation for user:', user_id)
   return api<{ session_id: string; message: string }>(`/conversations/new?user_id=${user_id}`, {
     method: 'POST',
   })
@@ -479,7 +414,7 @@ export async function updateConversationTitle(
   user_id: number,
   title: string
 ): Promise<{ session_id: string; title: string }> {
-  console.log('Updating conversation title:', { session_id, user_id, title })
+  debug('Updating conversation title:', { session_id, user_id, title })
   return api<{ session_id: string; title: string }>(
     `/conversations/${encodeURIComponent(session_id)}/title`,
     {
@@ -494,7 +429,7 @@ export async function getSessionMessages(
   user_id: number,
   limit: number = 50
 ): Promise<SessionMessage[]> {
-  console.log('Fetching session messages:', { session_id, user_id, limit })
+  debug('Fetching session messages:', { session_id, user_id, limit })
   return api<SessionMessage[]>(
     `/chat/session/${encodeURIComponent(session_id)}/messages?user_id=${user_id}&limit=${limit}`
   )
@@ -556,25 +491,13 @@ export async function transcribeAudio(audioBlob: Blob): Promise<{ text: string }
 }
 
 // Conversation trash can
-export interface DeletedSession {
-  id: string
-  user_id: number
-  title?: string
-  created_at: string
-  updated_at: string
-  deleted_at: string
-  episode_count: number
-  last_activity: string | null
-  first_user_message: string | null
-}
-
 export async function getDeletedSessions(user_id: number): Promise<DeletedSession[]> {
-  console.log('Fetching deleted sessions for user:', user_id)
+  debug('Fetching deleted sessions for user:', user_id)
   return api<DeletedSession[]>(`/conversations/trash?user_id=${user_id}`)
 }
 
 export async function restoreConversation(session_id: string, user_id: number): Promise<{ status: string; session_id: string }> {
-  console.log('Restoring conversation:', session_id)
+  debug('Restoring conversation:', session_id)
   return api<{ status: string; session_id: string }>(
     `/conversations/${encodeURIComponent(session_id)}/restore?user_id=${user_id}`,
     { method: 'POST' }
@@ -582,7 +505,7 @@ export async function restoreConversation(session_id: string, user_id: number): 
 }
 
 export async function deleteConversation(session_id: string, user_id: number): Promise<{ status: string; session_id: string }> {
-  console.log('[deleteConversation] Called with:', session_id, user_id)
+  debug('[deleteConversation] Called with:', session_id, user_id)
   return api<{ status: string; session_id: string }>(
     `/conversations/${encodeURIComponent(session_id)}?user_id=${user_id}`,
     { method: 'DELETE' }
@@ -613,12 +536,12 @@ export interface AlertsListResponse {
 }
 
 export async function getAlerts(user_id: number, limit: number = 50): Promise<AlertsListResponse> {
-  console.log('Fetching alerts for user:', user_id)
+  debug('Fetching alerts for user:', user_id)
   return api<AlertsListResponse>(`/alerts?user_id=${user_id}&limit=${limit}`)
 }
 
 export async function markAlertAsRead(alert_id: number, user_id: number): Promise<{ status: string }> {
-  console.log('Marking alert as read:', alert_id)
+  debug('Marking alert as read:', alert_id)
   return api<{ status: string }>(
     `/alerts/${encodeURIComponent(String(alert_id))}/read?user_id=${user_id}`,
     { method: 'POST' }
@@ -626,6 +549,6 @@ export async function markAlertAsRead(alert_id: number, user_id: number): Promis
 }
 
 export async function markAllAlertsAsRead(user_id: number): Promise<{ status: string }> {
-  console.log('Marking all alerts as read for user:', user_id)
+  debug('Marking all alerts as read for user:', user_id)
   return api<{ status: string }>(`/alerts/read-all?user_id=${user_id}`, { method: 'POST' })
 }

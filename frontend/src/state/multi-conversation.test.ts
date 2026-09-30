@@ -1,25 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { createRoot } from 'solid-js'
-import { ChatMessage, QueuedMessage, ExtractionSummary, SearchInfo } from '../state/chat'
+import type { ChatMessage } from '../types'
 import { TurnStatus } from '../services/status'
-import type { AttachedFile } from '../services/api'
 
 interface ChatModule {
   messages: () => ChatMessage[]
-  queue: () => QueuedMessage[]
   isTurnActive: () => boolean
   sessionId: () => string | null
   setSessionId: (v: string | null) => void
   currentTurnId: () => string | null
   setCurrentTurnId: (v: string | null) => void
-  postChatMessage: (message: string, session_id?: string, attached_files?: File[]) => Promise<{
-    response: string
-    task_type?: string
-    extraction_summary?: ExtractionSummary
-    search_extraction_summary?: ExtractionSummary
-    search_info?: SearchInfo
-    session_id?: string
-  }>
   loadConversationMessages: (sessionIdParam: string, userId: number) => Promise<void>
   addMessageToConversation: (sessionIdParam: string, message: ChatMessage) => void
   getConversationTurnId: (sessionIdParam: string) => string | undefined
@@ -29,22 +19,14 @@ interface ChatModule {
 import type { SessionMessage } from '../services/api'
 
 interface ApiModule {
-  postChat: (message: string, session_id?: string, attached_files?: AttachedFile[], turn_id?: string) => Promise<{
-    response: string
-    task_type?: string
-    extraction_summary?: ExtractionSummary
-    search_extraction_summary?: ExtractionSummary
-    search_info?: SearchInfo
-    session_id?: string
-  }>
   createTurnId: () => string
   getSessionMessages: (session_id: string, user_id: number, limit?: number) => Promise<SessionMessage[]>
 }
 
 interface StatusModule {
-  useTurnStatus: (turnId?: string) => { turnStatus: () => TurnStatus | null; isPolling: () => boolean }
-  startStatusPolling: (turnId: string) => void
-  stopStatusPolling: (turnId?: string) => void
+  useTurnStatus: (turnId?: () => string | undefined) => { turnStatus: () => TurnStatus | null; isPolling: () => boolean }
+  beginTurnStatus: (turnId: string) => void
+  endTurnStatus: (turnId?: string) => void
 }
 
 let chatModule: ChatModule
@@ -54,7 +36,6 @@ let statusModule: StatusModule
 beforeEach(async () => {
   vi.resetModules()
   vi.mock('../services/api', () => ({
-    postChat: vi.fn(),
     createTurnId: vi.fn(() => 'test-turn-id-123'),
     getSessionMessages: vi.fn(),
   }))
@@ -63,11 +44,6 @@ beforeEach(async () => {
   apiModule = await import('../services/api')
   statusModule = await import('../services/status')
 
-  vi.mocked(apiModule.postChat).mockResolvedValue({
-    response: 'OK',
-    task_type: 'functional',
-    session_id: 'session-123',
-  })
   vi.mocked(apiModule.getSessionMessages).mockResolvedValue([])
 
   localStorage.clear()
@@ -145,13 +121,13 @@ describe('multi-conversation isolation', () => {
       expect(statusA()).toBeNull()
       expect(statusB()).toBeNull()
 
-      statusModule.startStatusPolling(turnIdA)
+      statusModule.beginTurnStatus(turnIdA)
       expect(statusA()).not.toBeNull()
       expect(statusA()?.stage).toBe('queued')
 
       expect(statusB()).toBeNull()
 
-      statusModule.stopStatusPolling(turnIdA)
+      statusModule.endTurnStatus(turnIdA)
       expect(statusA()).toBeNull()
     })
   })

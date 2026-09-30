@@ -1,29 +1,31 @@
 import { createSignal } from 'solid-js'
-import { getUserSessions, createNewConversation, updateConversationTitle, getSessionMessages } from '../services/api'
+import { getUserSessions, createNewConversation, updateConversationTitle } from '../services/api'
+import type { Session, SessionSummary } from '../types'
 
-// Session type definition
-export interface Session {
-  id: string
-  title?: string
-  createdAt: string
-  updatedAt: string
-  episode_count?: number
-  last_message?: string
+// The conversation shape the UI consumes is defined once in `src/types` and
+// re-exported here so the existing `from '../state/session'` import sites stay
+// valid without a second, drifting definition.
+export type { Session }
+
+/**
+ * Display name for a conversation.
+ *
+ * The sessions endpoint returns a backend-computed label in `last_message`
+ * (explicit title, else the first user message, else "Conversation N"); it does
+ * not return a separate `title` field. This picks the explicit/derived label and
+ * only falls back to a generic when even that is empty.
+ */
+export function sessionTitle(summary: Pick<SessionSummary, 'last_message' | 'episode_count'>): string {
+  return summary.last_message?.trim() || `Conversation ${summary.episode_count}`
 }
 
-interface ApiSession {
-  id: string
-  title?: string
-  last_message?: string
-  created_at: string
-  updated_at: string
-  episode_count?: number
-}
-
-interface ApiMessage {
-  role: string
-  content: string
-  timestamp: string
+function toSession(summary: SessionSummary): Session {
+  return {
+    id: summary.id,
+    title: sessionTitle(summary),
+    episode_count: summary.episode_count,
+    last_activity: summary.last_activity,
+  }
 }
 
 // Create signal for session state
@@ -34,35 +36,13 @@ export const [isSessionLoading, setIsSessionLoading] = createSignal(false)
 export const fetchSessions = async (userId: number): Promise<Session[]> => {
   setIsSessionLoading(true)
   try {
-    const data = await getUserSessions(userId)
-    return data.map((s: ApiSession) => ({
-      id: s.id,
-      title: s.title || s.last_message || `Conversation ${s.episode_count}`,
-      createdAt: s.created_at,
-      updatedAt: s.updated_at,
-      episode_count: s.episode_count,
-      last_message: s.last_message,
-    }))
+    const summaries = await getUserSessions(userId)
+    return summaries.map(toSession)
   } catch (error) {
     console.error('Failed to fetch sessions:', error)
     return []
   } finally {
     setIsSessionLoading(false)
-  }
-}
-
-// Fetch messages for a session from the API
-export const fetchSessionMessages = async (sessionId: string, userId: number) => {
-  try {
-    const data = await getSessionMessages(sessionId, userId, 50)
-    return data.map((m: ApiMessage) => ({
-      role: m.role,
-      content: m.content,
-      timestamp: m.timestamp,
-    }))
-  } catch (error) {
-    console.error('Failed to fetch session messages:', error)
-    return []
   }
 }
 

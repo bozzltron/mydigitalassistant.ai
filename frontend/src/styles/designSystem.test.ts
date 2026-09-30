@@ -121,8 +121,6 @@ describe('design-system guards', () => {
     const migrated = [
       'components/chat/MediaCard.tsx',
       'components/chat/MediaGrid.tsx',
-      'components/chat/VideoEmbed.tsx',
-      'components/chat/VoiceStatusIndicator.tsx',
       'components/ui/AlertsPanel.tsx',
       'components/ui/EditModal.tsx',
       'components/chat/TrashCan.tsx',
@@ -132,5 +130,26 @@ describe('design-system guards', () => {
       .filter((f) => /style=\{\{/.test(stripComments(read(f))))
       .map(show)
     expect(offenders, `inline styles reintroduced:\n${offenders.join('\n')}`).toEqual([])
+  })
+
+  it('no component adds an inline style outside the known-debt list', () => {
+    // AGENTS.md bans inline styles outright. The migration is unfinished, so this
+    // pins exactly which files may still carry one: the set can only shrink, and
+    // a new inline style anywhere else fails the build.
+    const KNOWN_INLINE_STYLE = new Set([
+      'components/brain/BrainGraph.tsx',
+      'components/brain/BrainGraph3D.tsx',
+      'components/brain/BrainPage.tsx',
+      'components/brain/FrameDetail.tsx',
+      'components/chat/InputBar.tsx',
+    ])
+    const offenders = tsxFiles
+      .filter((f) => /style=\{\{/.test(stripComments(read(f))))
+      .map(show)
+      .filter((rel) => !KNOWN_INLINE_STYLE.has(rel))
+    expect(
+      offenders,
+      `inline style added to a file not in the known-debt list (use a stylesheet or a class):\n${offenders.join('\n')}`,
+    ).toEqual([])
   })
 })

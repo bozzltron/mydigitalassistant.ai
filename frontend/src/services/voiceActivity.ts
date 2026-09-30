@@ -50,7 +50,7 @@ export interface VadReading {
 
 export class VoiceActivityDetector {
   private floor = ABSOLUTE_NOISE_FLOOR;
-  private timeDomain: Float32Array | null = null;
+  private timeDomain: Float32Array<ArrayBuffer> | null = null;
 
   /** Current adaptive noise floor. */
   get noiseFloor(): number {

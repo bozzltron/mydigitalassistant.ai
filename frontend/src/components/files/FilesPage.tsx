@@ -15,7 +15,7 @@ export default function FilesPage() {
       <div class="files-content">
         <div class="files-main">
           <section class="upload-section">
-            <UploadZone onUploadComplete={() => setSelectedFileId(null)} />
+            <UploadZone />
           </section>
 
           <section class="files-grid-section">

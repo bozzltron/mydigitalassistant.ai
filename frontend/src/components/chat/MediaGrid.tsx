@@ -1,20 +1,10 @@
-import { createSignal, createMemo, createEffect, onCleanup, For } from 'solid-js'
-
-interface MediaGridItem {
-  type: 'image' | 'preview-card'
-  url: string
-  thumbnail?: string
-  title?: string
-  description?: string
-  sourceUrl?: string
-  aspectRatio?: number
-  width?: number
-  height?: number
-}
+import { createSignal, createMemo, createEffect, onCleanup, For, Show } from 'solid-js'
+import type { MediaContent } from '../../types/chat'
+import { hostnameOf } from '../../utils/media'
 
 interface MediaGridProps {
-  media: MediaGridItem[]
-  onOpenLightbox?: (media: MediaGridItem, index: number, allMedia: MediaGridItem[]) => void
+  media: MediaContent[]
+  onOpenLightbox?: (media: MediaContent, index: number, allMedia: MediaContent[]) => void
 }
 
 export default function MediaGrid(props: MediaGridProps) {
@@ -28,6 +18,20 @@ export default function MediaGrid(props: MediaGridProps) {
   const imageMedia = createMemo(() =>
     props.media.filter(m => m.type === 'image')
   )
+
+  // The media prop can shrink between renders (a re-extraction, a reconciled
+  // stream). Close the lightbox, or clamp the index, so the accessor below can
+  // never index past the end of the list.
+  createEffect(() => {
+    const count = imageMedia().length
+    if (count === 0) {
+      if (lightboxOpen()) closeLightbox()
+      return
+    }
+    setLightboxIndex(i => Math.min(i, count - 1))
+  })
+
+  const currentImage = createMemo(() => imageMedia()[lightboxIndex()])
 
   const openLightbox = (index: number) => {
     setLightboxIndex(index)
@@ -74,16 +78,19 @@ export default function MediaGrid(props: MediaGridProps) {
     })
   }
 
-  const handleGridItemClick = (index: number, e: MouseEvent) => {
+  const handleGridItemClick = (index: number, e: Event) => {
+    const media = imageMedia()
+    const item = media[index]
+    if (!item) return
     if (props.onOpenLightbox) {
-      props.onOpenLightbox(imageMedia()[index], index, imageMedia())
+      props.onOpenLightbox(item, index, media)
     } else {
       openLightbox(index)
     }
     e.preventDefault()
   }
 
-  const getAspectRatioClass = (item: MediaGridItem) => {
+  const getAspectRatioClass = (item: MediaContent) => {
     if (item.aspectRatio) {
       if (item.aspectRatio > 1.5) return 'msg-media-grid-item--wide'
       if (item.aspectRatio < 0.75) return 'msg-media-grid-item--tall'
@@ -108,7 +115,7 @@ export default function MediaGrid(props: MediaGridProps) {
               onClick={(e) => handleGridItemClick(index(), e)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
-                  handleGridItemClick(index(), e as unknown as MouseEvent)
+                  handleGridItemClick(index(), e)
                 }
               }}
             >
@@ -129,7 +136,7 @@ export default function MediaGrid(props: MediaGridProps) {
                   {item.title && <div class="grid-item-title">{item.title}</div>}
                   {item.sourceUrl && (
                     <div class="grid-item-source">
-                      {new URL(item.sourceUrl).hostname}
+                      {hostnameOf(item.sourceUrl)}
                     </div>
                   )}
                 </div>
@@ -151,7 +158,7 @@ export default function MediaGrid(props: MediaGridProps) {
         </For>
       </div>
 
-      {lightboxOpen() && imageMedia().length > 0 && (
+      <Show when={lightboxOpen() && currentImage()}>
         <div class="media-lightbox" onClick={closeLightbox}>
           <button
             class="media-lightbox-close"
@@ -170,7 +177,6 @@ export default function MediaGrid(props: MediaGridProps) {
                 class="media-lightbox-nav media-lightbox-nav--prev"
                 onClick={(e) => { e.stopPropagation(); goToPrev(); }}
                 aria-label="Previous image"
-                disabled={imageMedia().length <= 1}
               >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <polyline points="15 18 9 12 15 6" />
@@ -180,7 +186,6 @@ export default function MediaGrid(props: MediaGridProps) {
                 class="media-lightbox-nav media-lightbox-nav--next"
                 onClick={(e) => { e.stopPropagation(); goToNext(); }}
                 aria-label="Next image"
-                disabled={imageMedia().length <= 1}
               >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <polyline points="9 18 15 12 9 6" />
@@ -192,24 +197,24 @@ export default function MediaGrid(props: MediaGridProps) {
           <div class="media-lightbox-content" onClick={(e) => e.stopPropagation()}>
             <img
               class="media-lightbox-image"
-              src={imageMedia()[lightboxIndex()].url}
-              alt={imageMedia()[lightboxIndex()].title || ''}
+              src={currentImage()!.url}
+              alt={currentImage()!.title || ''}
             />
-            {(imageMedia()[lightboxIndex()].title || imageMedia()[lightboxIndex()].sourceUrl) && (
+            {(currentImage()!.title || currentImage()!.sourceUrl) && (
               <div class="media-lightbox-caption">
-                {imageMedia()[lightboxIndex()].title && (
+                {currentImage()!.title && (
                   <div class="media-caption-title">
-                    {imageMedia()[lightboxIndex()].title}
+                    {currentImage()!.title}
                   </div>
                 )}
-                {imageMedia()[lightboxIndex()].sourceUrl && (
+                {currentImage()!.sourceUrl && (
                   <a
-                    href={imageMedia()[lightboxIndex()].sourceUrl}
+                    href={currentImage()!.sourceUrl}
                     target="_blank"
                     rel="noopener"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    {new URL(imageMedia()[lightboxIndex()].sourceUrl!).hostname}
+                    {hostnameOf(currentImage()!.sourceUrl)}
                   </a>
                 )}
               </div>
@@ -221,7 +226,7 @@ export default function MediaGrid(props: MediaGridProps) {
             )}
           </div>
         </div>
-      )}
+      </Show>
     </>
   )
 }

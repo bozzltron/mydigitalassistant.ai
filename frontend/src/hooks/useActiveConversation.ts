@@ -1,7 +1,7 @@
 import { createSignal, createEffect } from 'solid-js'
 import { loadConversationMessages } from '../state/chat'
 import { user } from '../state/user'
-import { Session } from '../state/session'
+import type { Session } from '../state/session'
 import { setSessionId } from '../state/chat'
 
 export function useActiveConversation(conversations: () => Session[]) {

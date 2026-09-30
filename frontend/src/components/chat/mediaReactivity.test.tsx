@@ -1,4 +1,4 @@
-import { render, screen, cleanup } from '@solidjs/testing-library'
+import { render, screen, fireEvent, cleanup } from '@solidjs/testing-library'
 import { describe, it, expect, afterEach } from 'vitest'
 import { createSignal } from 'solid-js'
 import MediaCard from './MediaCard'
@@ -96,5 +96,35 @@ describe('MediaGrid reactivity', () => {
     ])
 
     expect(document.querySelectorAll('.msg-media-grid-item')).toHaveLength(2)
+  })
+})
+
+describe('MediaGrid lightbox', () => {
+  it('opens the internal lightbox when no external handler is provided', () => {
+    // Regression: Message used to pass a no-op onOpenLightbox, so MediaGrid
+    // always took the "handled externally" branch and the lightbox never opened.
+    render(() => <MediaGrid media={[{ type: 'image' as const, url: 'https://example.com/a.png' }]} />)
+
+    fireEvent.click(document.querySelector('.msg-media-grid-item')!)
+
+    expect(document.querySelector('.media-lightbox')).not.toBeNull()
+  })
+
+  it('survives the media list shrinking while open and closes when it empties', () => {
+    const [media, setMedia] = createSignal([
+      { type: 'image' as const, url: 'https://example.com/a.png' },
+      { type: 'image' as const, url: 'https://example.com/b.png' },
+    ])
+    render(() => <MediaGrid media={media()} />)
+
+    fireEvent.click(document.querySelectorAll('.msg-media-grid-item')[1] as Element)
+    expect(document.querySelector('.media-lightbox')).not.toBeNull()
+
+    // Shrinking must not read past the end of the list.
+    setMedia([{ type: 'image' as const, url: 'https://example.com/a.png' }])
+    expect(document.querySelector('.media-lightbox')).not.toBeNull()
+
+    setMedia([])
+    expect(document.querySelector('.media-lightbox')).toBeNull()
   })
 })

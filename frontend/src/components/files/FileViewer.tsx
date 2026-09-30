@@ -11,7 +11,7 @@ interface FileContentResponse {
   file_size: number | null;
 }
 
-export const FileViewer = (props: { fileId?: string }) => {
+export const FileViewer = (props: { fileId?: string | null }) => {
   const [fileData, setFileData] = createSignal<FileContentResponse | null>(null);
   const [isLoading, setIsLoading] = createSignal(false);
   const [toast, setToast] = createSignal<{ message: string; type: 'success' | 'error' } | null>(null);
@@ -50,7 +50,7 @@ export const FileViewer = (props: { fileId?: string }) => {
     }
   });
 
-  const getFileIcon = (ext: string | null) => {
+  const getFileIcon = (ext: string | null | undefined) => {
     if (!ext) return '📄';
     switch (ext) {
       case 'txt': return '📄';
@@ -63,7 +63,7 @@ export const FileViewer = (props: { fileId?: string }) => {
     }
   };
 
-  const formatFileSize = (bytes: number | null) => {
+  const formatFileSize = (bytes: number | null | undefined) => {
     if (!bytes) return 'Unknown';
     if (bytes < 1024) return bytes + ' B';
     else if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';

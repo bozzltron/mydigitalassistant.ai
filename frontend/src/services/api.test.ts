@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { api, postChat, postChatStream, getFrames, getAssociations, getSearchResults, listFiles, postFileUpload, deleteFile, getUserSessions, createNewConversation, updateConversationTitle, getSessionMessages, getAssistantName, getSettings, postFeedback, postCorrection, transcribeAudio, getOGPreview, createTurnId } from '../services/api'
+import { api, postChatStream, getFrames, getAssociations, listFiles, postFileUpload, deleteFile, getUserSessions, createNewConversation, updateConversationTitle, getSessionMessages, getAssistantName, getSettings, postFeedback, postCorrection, transcribeAudio, getOGPreview, createTurnId } from '../services/api'
 
 const mockFetch = vi.fn()
 global.fetch = mockFetch
@@ -66,59 +66,6 @@ describe('api service', () => {
     })
   })
 
-  describe('postChat', () => {
-    it('sends chat request with correct body', async () => {
-      const mockResponse = {
-        session_id: 'session-123',
-        response: 'Hello!',
-        task_type: 'functional',
-      }
-      mockFetch.mockResolvedValue({
-        ok: true,
-        text: () => Promise.resolve(JSON.stringify(mockResponse)),
-      })
-
-      const result = await postChat('Hi there', 'session-123', [], 'turn-456')
-
-      expect(mockFetch).toHaveBeenCalledWith('/chat', {
-        method: 'POST',
-        body: JSON.stringify({
-          user_id: 1,
-          message: 'Hi there',
-          session_id: 'session-123',
-          attached_files: [],
-          turn_id: 'turn-456',
-        }),
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-      })
-      expect(result).toEqual(mockResponse)
-    })
-
-    it('includes max_intelligence in the body when passed', async () => {
-      mockFetch.mockResolvedValue({
-        ok: true,
-        text: () => Promise.resolve(JSON.stringify({ response: 'ok' })),
-      })
-
-      await postChat('hard query', 'session-123', [], 'turn-456', undefined, true)
-
-      expect(mockFetch).toHaveBeenCalledWith('/chat', {
-        method: 'POST',
-        body: JSON.stringify({
-          user_id: 1,
-          message: 'hard query',
-          session_id: 'session-123',
-          attached_files: [],
-          turn_id: 'turn-456',
-          max_intelligence: true,
-        }),
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-      })
-    })
-  })
-
   describe('createTurnId', () => {
     it('generates UUID', () => {
       const id = createTurnId()
@@ -175,31 +122,6 @@ describe('api service', () => {
 
       expect(mockFetch).toHaveBeenCalledWith('/memory/frames/1/associations', expect.any(Object))
       expect(result).toEqual(mockAssociations)
-    })
-  })
-
-  describe('getSearchResults', () => {
-    it('searches with query and optional minRelevance', async () => {
-      const mockResults = { query: 'test query', results: [] }
-      mockFetch.mockResolvedValue({
-        ok: true,
-        text: () => Promise.resolve(JSON.stringify(mockResults)),
-      })
-
-      await getSearchResults('test query', 0.5)
-
-      expect(mockFetch).toHaveBeenCalledWith('/search?q=test+query&min_relevance=0.5', expect.any(Object))
-    })
-
-    it('searches without minRelevance', async () => {
-      mockFetch.mockResolvedValue({
-        ok: true,
-        text: () => Promise.resolve(JSON.stringify({ query: 'test query', results: [] })),
-      })
-
-      await getSearchResults('test query')
-
-      expect(mockFetch).toHaveBeenCalledWith('/search?q=test+query', expect.any(Object))
     })
   })
 

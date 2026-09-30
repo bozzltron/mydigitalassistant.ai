@@ -1,9 +1,10 @@
-import { createSignal, createEffect, For, onMount, Show, createMemo } from 'solid-js'
-import { Session } from '../../state/session'
+import { createSignal, createEffect, For, onMount, onCleanup, Show, createMemo } from 'solid-js'
+import type { Session } from '../../state/session'
 import { user } from '../../state/user'
 import { settings, updateSetting } from '../../state/settings'
 import { enterVoiceMode, exitVoiceMode, voice, isListening, isProcessing, isSpeaking, isIdle, isTtsSpeaking, stopRecording, cancelSpeech } from '../../state/voice'
-import { api, getDeletedSessions, updateConversationTitle, deleteConversation } from '../../services/api'
+import { getSettings, updateConversationTitle, deleteConversation } from '../../services/api'
+import { debug } from '../../services/logger'
 import TrashCan from '../chat/TrashCan'
 import { AlertsPanel } from './AlertsPanel'
 import { EditModal } from './EditModal'
@@ -20,6 +21,17 @@ interface TopBarProps {
   onRefreshConversations?: () => Promise<void>
 }
 
+// Names that make a pleasant default when the user has not chosen a voice yet.
+const PREFERRED_VOICE_NAMES = [
+  'Samantha',
+  'Google US English',
+  'Microsoft Aria',
+  'Alex',
+  'Karen',
+  'Victoria',
+  'Moira',
+]
+
 export default function TopBar(props: TopBarProps) {
   const [showSettings, setShowSettings] = createSignal(false)
   const [editSessionId, setEditSessionId] = createSignal<string | null>(null)
@@ -27,43 +39,64 @@ export default function TopBar(props: TopBarProps) {
   const [braveConfigured, setBraveConfigured] = createSignal(false)
   const [archiveConfirmSessionId, setArchiveConfirmSessionId] = createSignal<string | null>(null)
 
+  // Local voices, rendered declaratively. Previously the <select> was built
+  // imperatively with innerHTML/appendChild against a DOM ref.
+  const [voices, setVoices] = createSignal<SpeechSynthesisVoice[]>([])
+
+  // Draft values for the sliders so the label follows the thumb during a drag
+  // without writing to localStorage on every input event; onChange persists.
+  const [speedDraft, setSpeedDraft] = createSignal(settings.voiceSpeed)
+  const [pitchDraft, setPitchDraft] = createSignal(settings.voicePitch)
+  const [volumeDraft, setVolumeDraft] = createSignal(settings.voiceVolume)
+
   // Use the same session_id key as useActiveConversation for consistency
-  const [selectedSessionId, setSelectedSessionId] = createSignal<string | null>(() => {
-    if (typeof localStorage !== 'undefined') {
-      return localStorage.getItem('session_id')
-    }
-    return null
-  })
+  const [selectedSessionId, setSelectedSessionId] = createSignal<string | null>(
+    typeof localStorage !== 'undefined' ? localStorage.getItem('session_id') : null
+  )
 
   // Update document title when assistant name changes
   createEffect(() => {
     document.title = props.assistantName
   })
 
-  // Fetch conversations on mount
-  onMount(async () => {
-    const userId = user()?.id ?? 1
-    if (!userId) return
+  const loadVoices = () => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return
+    // Local voices only; the platform's `localService` flag is the standard
+    // signal for this (the old code read the non-standard `voice.url`).
+    setVoices(speechSynthesis.getVoices().filter(v => v.localService))
+  }
 
-    // Fetch trash sessions for TrashCan component
-    const _trash = await getDeletedSessions(userId)
-    // TrashCan handles its own state internally
+  onMount(() => {
+    if ('speechSynthesis' in window) {
+      speechSynthesis.onvoiceschanged = loadVoices
+      loadVoices()
+    }
+    fetchBackendSettings()
   })
 
-  // Load voices on mount
-  onMount(() => {
-    if (window.speechSynthesis) {
-      speechSynthesis.onvoiceschanged = populateVoices
+  onCleanup(() => {
+    if ('speechSynthesis' in window) {
+      speechSynthesis.onvoiceschanged = null
     }
-    // Fetch backend settings (Brave toggle visibility)
-    fetchBackendSettings()
-    // Apply settings on mount
-    applySettings()
+  })
+
+  // Pick a sensible default voice once voices are known and the user has none.
+  createEffect(() => {
+    const list = voices()
+    if (settings.voiceUri || list.length === 0) return
+    const preferred = list.find(v => PREFERRED_VOICE_NAMES.some(p => v.name.includes(p))) ?? list[0]
+    if (preferred) updateSetting('voiceUri', preferred.voiceURI)
+  })
+
+  // Keep the draft sliders in sync when settings load or change externally.
+  createEffect(() => {
+    setSpeedDraft(settings.voiceSpeed)
+    setPitchDraft(settings.voicePitch)
+    setVolumeDraft(settings.voiceVolume)
   })
 
   // Ref for dropdown click-outside detection
   let dropdownRef: HTMLDivElement
-  let voiceSelectRef: HTMLSelectElement
 
   // Close dropdown when clicking outside
   onMount(() => {
@@ -76,73 +109,15 @@ export default function TopBar(props: TopBarProps) {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   })
 
-  const populateVoices = () => {
-    const voices = speechSynthesis.getVoices()
-    const localVoices = voices.filter(v => !v.url)
-    const voiceSelect = voiceSelectRef
-    if (!voiceSelect) return
-
-    const currentSettings = settings
-    const preferredNames = [
-      'Samantha',
-      'Google US English',
-      'Microsoft Aria',
-      'Alex',
-      'Karen',
-      'Victoria',
-      'Moira',
-    ]
-
-    let defaultIndex = -1
-    if (!currentSettings.voiceUri) {
-      for (let i = 0; i < localVoices.length; i++) {
-        const name = localVoices[i].name
-        if (preferredNames.some(p => name.includes(p))) {
-          defaultIndex = i
-          break
-        }
-      }
-      if (defaultIndex === -1) defaultIndex = 0
-    }
-
-    voiceSelect.innerHTML = ''
-    if (localVoices.length === 0) {
-      voiceSelect.innerHTML = '<option value="">No local voices found</option>'
-      return
-    }
-
-    localVoices.forEach((v, i) => {
-      const opt = document.createElement('option')
-      opt.value = v.voiceURI
-      opt.textContent = `${v.name} (${v.lang})`
-      if (currentSettings.voiceUri && v.voiceURI === currentSettings.voiceUri) opt.selected = true
-      if (!currentSettings.voiceUri && i === defaultIndex) opt.selected = true
-      voiceSelect.appendChild(opt)
-    })
-    if (!currentSettings.voiceUri && defaultIndex >= 0) {
-      updateSetting('voiceUri', localVoices[defaultIndex].voiceURI)
-    }
-  }
-
   const fetchBackendSettings = async () => {
     try {
-      const backendSettings = await api('/settings')
+      const backendSettings = await getSettings()
       setBraveConfigured(backendSettings.brave_configured)
       if (backendSettings.brave_configured) {
         updateSetting('braveEnabled', backendSettings.brave_enabled)
       }
     } catch {
-      // Ignore
-    }
-  }
-
-  const applySettings = () => {
-    const s = settings
-
-    // Apply Brave setting - only for search settings section visibility
-    const searchSettingsSection = document.getElementById('search-settings-section')
-    if (searchSettingsSection) {
-      searchSettingsSection.style.display = s.braveEnabled ? 'block' : 'none'
+      // Ignore — the Brave section stays hidden when settings are unavailable.
     }
   }
 
@@ -155,57 +130,15 @@ export default function TopBar(props: TopBarProps) {
   }
 
   const handleVoiceSelectChange = (e: Event) => {
-    const select = e.target as HTMLSelectElement
-    updateSetting('voiceUri', select.value)
-  }
-
-  const handleVoiceSpeedChange = (e: Event) => {
-    const input = e.target as HTMLInputElement
-    const speedValue = document.getElementById('voice-speed-value')
-    if (speedValue) speedValue.textContent = `${input.value}x`
-  }
-
-  const handleVoiceSpeedSave = (e: Event) => {
-    const input = e.target as HTMLInputElement
-    updateSetting('voiceSpeed', parseFloat(input.value))
-  }
-
-  const handleVoicePitchChange = (e: Event) => {
-    const input = e.target as HTMLInputElement
-    const pitchValue = document.getElementById('voice-pitch-value')
-    if (pitchValue) pitchValue.textContent = `${input.value}x`
-  }
-
-  const handleVoicePitchSave = (e: Event) => {
-    const input = e.target as HTMLInputElement
-    updateSetting('voicePitch', parseFloat(input.value))
-  }
-
-  const handleVoiceVolumeChange = (e: Event) => {
-    const input = e.target as HTMLInputElement
-    const volumeValue = document.getElementById('voice-volume-value')
-    if (volumeValue) volumeValue.textContent = input.value
-  }
-
-  const handleVoiceVolumeSave = (e: Event) => {
-    const input = e.target as HTMLInputElement
-    updateSetting('voiceVolume', parseFloat(input.value))
+    updateSetting('voiceUri', (e.target as HTMLSelectElement).value)
   }
 
   const handleTraceVisibleChange = (e: Event) => {
-    const checked = (e.target as HTMLInputElement).checked
-    updateSetting('traceVisible', checked)
-    const tracePanel = document.getElementById('trace-panel')
-    if (tracePanel) tracePanel.classList.toggle('hidden', !checked)
+    updateSetting('traceVisible', (e.target as HTMLInputElement).checked)
   }
 
   const handleBraveChange = (e: Event) => {
-    const checked = (e.target as HTMLInputElement).checked
-    updateSetting('braveEnabled', checked)
-    const searchSettingsSection = document.getElementById('search-settings-section')
-    if (searchSettingsSection) {
-      searchSettingsSection.style.display = checked ? 'block' : 'none'
-    }
+    updateSetting('braveEnabled', (e.target as HTMLInputElement).checked)
   }
 
   // Declarative voice status computed signals
@@ -235,7 +168,7 @@ export default function TopBar(props: TopBarProps) {
 
   // Custom dropdown for conversation selection
   const [showConversationDropdown, setShowConversationDropdown] = createSignal(false)
-  
+
   // Use selectedSessionId (from localStorage) to find title in conversations list,
   // fallback to activeConversation from props, then default
   const currentTitle = createMemo(() => 
@@ -304,7 +237,6 @@ export default function TopBar(props: TopBarProps) {
                             title="Archive conversation"
                             onClick={(e) => {
                               e.stopPropagation()
-                              console.log('[Archive] Clicked for conversation:', conv.id, conv.title)
                               setArchiveConfirmSessionId(conv.id)
                               setShowConversationDropdown(false)
                             }}
@@ -389,8 +321,8 @@ export default function TopBar(props: TopBarProps) {
           <button class="settings-btn" id="settings-toggle" title="Settings" onClick={() => setShowSettings(true)}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 1-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
           </button>
-          <a href="/brain" class="nav-link" title="Brain Observatory" style={{"color":"var(--text-dim)","text-decoration":"none","font-size":"0.8rem","padding":"0.35rem 0.75rem","border":"1px solid var(--border)","border-radius":"6px"}}>Brain</a>
-          <a href="/files" class="nav-link" title="File Browser" style={{"color":"var(--text-dim)","text-decoration":"none","font-size":"0.8rem","padding":"0.35rem 0.75rem","border":"1px solid var(--border)","border-radius":"6px","margin-left":"0.5rem"}}>Files</a>
+          <a href="/brain" class="nav-link" title="Brain Observatory">Brain</a>
+          <a href="/files" class="nav-link" title="File Browser">Files</a>
         </div>
       </header>
 
@@ -425,8 +357,13 @@ export default function TopBar(props: TopBarProps) {
           </div>
           <div class="settings-section">
             <label for="voice-select">Voice</label>
-            <select id="voice-select" ref={(el) => { voiceSelectRef = el; populateVoices(); }} onChange={handleVoiceSelectChange}>
-              <option value="">Loading voices...</option>
+            <select id="voice-select" value={settings.voiceUri} onChange={handleVoiceSelectChange}>
+              <Show when={voices().length === 0}>
+                <option value="">Loading voices...</option>
+              </Show>
+              <For each={voices()}>
+                {(v) => <option value={v.voiceURI}>{v.name} ({v.lang})</option>}
+              </For>
             </select>
           </div>
           <div class="settings-section">
@@ -437,11 +374,11 @@ export default function TopBar(props: TopBarProps) {
               min="0.5"
               max="2"
               step="0.1"
-              value={settings.voiceSpeed}
-              onInput={handleVoiceSpeedChange}
-              onChange={handleVoiceSpeedSave}
+              value={speedDraft()}
+              onInput={(e) => setSpeedDraft(parseFloat(e.target.value))}
+              onChange={(e) => updateSetting('voiceSpeed', parseFloat(e.target.value))}
             />
-            <span id="voice-speed-value">{settings.voiceSpeed.toFixed(1)}x</span>
+            <span id="voice-speed-value">{speedDraft().toFixed(1)}x</span>
           </div>
           <div class="settings-section">
             <label for="voice-pitch">Pitch</label>
@@ -451,11 +388,11 @@ export default function TopBar(props: TopBarProps) {
               min="0"
               max="2"
               step="0.1"
-              value={settings.voicePitch}
-              onInput={handleVoicePitchChange}
-              onChange={handleVoicePitchSave}
+              value={pitchDraft()}
+              onInput={(e) => setPitchDraft(parseFloat(e.target.value))}
+              onChange={(e) => updateSetting('voicePitch', parseFloat(e.target.value))}
             />
-            <span id="voice-pitch-value">{settings.voicePitch.toFixed(1)}x</span>
+            <span id="voice-pitch-value">{pitchDraft().toFixed(1)}x</span>
           </div>
           <div class="settings-section">
             <label for="voice-volume">Volume</label>
@@ -465,11 +402,11 @@ export default function TopBar(props: TopBarProps) {
               min="0"
               max="1"
               step="0.1"
-              value={settings.voiceVolume}
-              onInput={handleVoiceVolumeChange}
-              onChange={handleVoiceVolumeSave}
+              value={volumeDraft()}
+              onInput={(e) => setVolumeDraft(parseFloat(e.target.value))}
+              onChange={(e) => updateSetting('voiceVolume', parseFloat(e.target.value))}
             />
-            <span id="voice-volume-value">{settings.voiceVolume}</span>
+            <span id="voice-volume-value">{volumeDraft()}</span>
           </div>
         </div>
 
@@ -486,21 +423,23 @@ export default function TopBar(props: TopBarProps) {
           </div>
         </div>
 
-        <div class="settings-section" id="search-settings-section" style={{"display": braveConfigured() && settings.braveEnabled ? 'block' : 'none'}}>
-          <label>Search backend</label>
-          <div class="toggle-row">
-            <span class="toggle-label">Use Brave Search API</span>
-            <input
-              type="checkbox"
-              id="brave-enabled"
-              checked={settings.braveEnabled}
-              onChange={handleBraveChange}
-            />
+        <Show when={braveConfigured() && settings.braveEnabled}>
+          <div class="settings-section" id="search-settings-section">
+            <label>Search backend</label>
+            <div class="toggle-row">
+              <span class="toggle-label">Use Brave Search API</span>
+              <input
+                type="checkbox"
+                id="brave-enabled"
+                checked={settings.braveEnabled}
+                onChange={handleBraveChange}
+              />
+            </div>
+            <p class="settings-hint">
+              When enabled, queries are sent to Brave's servers. Only available when a Brave API key is configured.
+            </p>
           </div>
-          <p style={{"font-size":"0.75rem","color":"var(--text-dim)","margin-top":"0.25rem"}}>
-            When enabled, queries are sent to Brave's servers. Only available when a Brave API key is configured.
-          </p>
-        </div>
+        </Show>
       </div>
 
       {/* Edit modal */}
@@ -515,9 +454,8 @@ export default function TopBar(props: TopBarProps) {
           if (sessionId) {
             const userId = user()?.id ?? 1
             // Called from a promise continuation, not from a render, so there is
-            // no tracked scope to read the prop in and none is needed: this is
-            // an imperative refresh after a write, and props is a proxy, so the
-            // read already yields the current function.
+            // no tracked scope to read the prop in and none is needed: this is an
+            // imperative refresh after a write.
             // eslint-disable-next-line solid/reactivity
             updateConversationTitle(sessionId, userId, newTitle).then(() => {
               setEditSessionId(null)
@@ -557,13 +495,11 @@ export default function TopBar(props: TopBarProps) {
                 if (!sessionId) return
                 const u = user()
                 if (u) {
-                  console.log('[Archive] Calling deleteConversation with:', sessionId, u.id)
+                  debug('[Archive] Deleting conversation', sessionId)
                   await deleteConversation(sessionId, u.id)
-                  console.log('[Archive] Delete complete, refreshing conversations')
                   if (props.onRefreshConversations) {
                     await props.onRefreshConversations()
                   }
-                  console.log('[Archive] Refresh complete')
                   // Notify trash can to refresh if open
                   window.dispatchEvent(new CustomEvent('conversation-archived'))
                 }

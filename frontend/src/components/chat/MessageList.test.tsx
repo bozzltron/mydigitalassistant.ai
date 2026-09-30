@@ -1,4 +1,4 @@
-import { render } from '@solidjs/testing-library'
+import { render, screen, fireEvent } from '@solidjs/testing-library'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import MessageList from './MessageList'
 import { postChatMessageStream, setSessionId, messages } from '../../state/chat'
@@ -10,11 +10,12 @@ vi.mock('../../services/api', () => ({
   createTurnId: vi.fn(() => 'test-turn-id-123'),
   getSessionMessages: vi.fn(),
   postFeedback: vi.fn(),
+  postCorrection: vi.fn(),
 }))
 
 vi.mock('../../services/status', () => ({
-  startStatusPolling: vi.fn(),
-  stopStatusPolling: vi.fn(),
+  beginTurnStatus: vi.fn(),
+  endTurnStatus: vi.fn(),
   setStreamStage: vi.fn(),
 }))
 
@@ -26,9 +27,10 @@ describe('MessageList streamed bubble', () => {
   })
 
   it('renders meta that arrives after finalize (search info + extraction summary)', async () => {
-    // Regression test: the streamed bubble reconciles in place (For by="id");
-    // late-arriving meta must still render the learned indicator and the
-    // backend badge instead of being frozen at placeholder time.
+    // Regression test: the streamed bubble reconciles in place (fine-grained
+    // store updates); late-arriving meta must still render the learned
+    // indicator and the backend badge instead of being frozen at placeholder
+    // time.
     let onEvent: ((e: api.StreamEvent) => void) | undefined
     let resolveStream: (v: unknown) => void
     const streamDone = new Promise(r => { resolveStream = r })
@@ -112,5 +114,36 @@ describe('MessageList feedback', () => {
     const [episodeId, , kind] = vi.mocked(api.postFeedback).mock.calls[0]
     expect(episodeId, 'the session id was not sent').toBe('session-fb-1')
     expect(kind).toBe('positive')
+  })
+})
+
+describe('MessageList correction', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    localStorage.clear()
+    setSessionId('session-corr-1')
+  })
+
+  it('submits the typed correction to POST /correction with the session id and message id', async () => {
+    // Regression: the correction panel's handler was an empty function, so every
+    // correction was silently discarded and the pipeline never ran from the UI.
+    const assistantMessages = () => [
+      { id: 'assistant-1', role: 'assistant' as const, content: 'the wrong answer' },
+    ]
+    vi.mocked(api.postCorrection).mockResolvedValue({ status: 'ok' })
+
+    render(() => <MessageList messages={assistantMessages} />)
+
+    fireEvent.click(screen.getByTitle('Correct this response'))
+    const textarea = screen.getByPlaceholderText(/What should I have said/i)
+    fireEvent.input(textarea, { target: { value: 'the right answer' } })
+    fireEvent.click(screen.getByText('Submit Correction'))
+    await Promise.resolve()
+
+    expect(api.postCorrection).toHaveBeenCalledWith(
+      'session-corr-1',
+      'assistant-1',
+      'the right answer',
+    )
   })
 })

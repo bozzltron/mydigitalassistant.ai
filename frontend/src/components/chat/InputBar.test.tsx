@@ -140,21 +140,21 @@ describe('InputBar', () => {
     expect(screen.getByText('test.txt')).toBeInTheDocument()
   })
 
-  it('removes file when remove button clicked', () => {
+  it('removes the file chip when its remove button is clicked', () => {
     render(() => <InputBar onSend={defaultProps.onSend} isSending={defaultProps.isSending} onDictationStart={defaultProps.onDictationStart} onDictationStop={defaultProps.onDictationStop} isDictating={defaultProps.isDictating} />)
-    
+
     const fileInput = screen.getByTestId('file-input') as HTMLInputElement
     const file = new File(['content'], 'test.txt', { type: 'text/plain' })
     fireEvent.change(fileInput, { target: { files: [file] } })
-    
+
     expect(screen.getByText('test.txt')).toBeInTheDocument()
-    
-    const removeBtn = screen.getByText('×')
-    fireEvent.click(removeBtn)
-    
-    // In test environment, the click might not trigger reactive update immediately
-    // Verify the button click works by checking the function was called
-    expect(removeBtn).toBeInTheDocument()
+
+    fireEvent.click(screen.getByText('×'))
+
+    // Regression: the handler used to receive the <For> index accessor itself
+    // (`removeFile(i)`) instead of its value (`removeFile(i())`), so the filter
+    // compared a number to a function and never removed anything.
+    expect(screen.queryByText('test.txt')).not.toBeInTheDocument()
   })
 
   it('renders the Max intelligence toggle', () => {

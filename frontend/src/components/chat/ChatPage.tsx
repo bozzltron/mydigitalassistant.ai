@@ -6,12 +6,12 @@ import { Modal } from '../ui/Modal'
 import { messages, sessionId, isTurnActive, useConversationTurnId, addMessageToConversation, isStreaming } from '../../state/chat'
 import { getQueue, getQueueLength, dequeue, enqueue, isProcessing, setActiveConversation, isDrainBlocked } from '../../state/messageQueue'
 import { triggerDrain, drainQueueIfReady, onSearchConsentRequired } from '../../services/queueDrainer'
-import { Session } from '../../state/session'
+import type { Session } from '../../state/session'
 import { useTurnStatus } from '../../services/status'
 import { useVoiceRecording } from '../../hooks/useVoiceRecording'
 import { useConversationVoiceRecording } from '../../hooks/useConversationVoiceRecording'
 import { speakReplacing, startDictation, endDictation, isVoiceModeActive } from '../../state/voice'
-import { settings } from '../../state/settings'
+import { settings, updateSetting } from '../../state/settings'
 import { initQueue } from '../../state/messageQueue'
 import type {
   SearchInfo,
@@ -30,7 +30,6 @@ function StatusWrapper(props: { turnId: () => string | undefined }) {
 export default function ChatPage(props: {
   conversation: Session | null
 }) {
-  const [showTrace, setShowTrace] = createSignal(false)
   const [messagesContainerRef, setMessagesContainerRef] = createSignal<HTMLDivElement | null>(null)
   const [localIsDictating, setLocalIsDictating] = createSignal(false)
   const [maxIntelligence, setMaxIntelligence] = createSignal(false)
@@ -177,7 +176,7 @@ export default function ChatPage(props: {
     try {
       const saved = localStorage.getItem('tts_spoken_messages')
       if (saved) {
-        setSpokenMsgIds(new Set(JSON.parse(saved)))
+        setSpokenMsgIds(new Set<string>(JSON.parse(saved) as string[]))
       }
     } catch (e) {
       console.warn('Failed to load spoken messages:', e)
@@ -362,15 +361,15 @@ export default function ChatPage(props: {
         </div>
       </div>
 
-      <div id="trace-panel" class={`trace-panel ${showTrace() ? '' : 'hidden'}`}>
+      <div id="trace-panel" class={`trace-panel ${settings.traceVisible ? '' : 'hidden'}`}>
         <div class="trace-header">
           <span>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style={{"vertical-align":"middle","margin-right":"4px"}}><line x1="18" x2="18" y1="20" y2="10"/><line x1="12" x2="12" y1="20" y2="4"/><line x1="6" x2="6" y1="20" y2="14"/></svg>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="trace-header-icon"><line x1="18" x2="18" y1="20" y2="10"/><line x1="12" x2="12" y1="20" y2="4"/><line x1="6" x2="6" y1="20" y2="14"/></svg>
             Trace
           </span>
           <button 
             class="trace-close" 
-            onClick={() => setShowTrace(false)}
+            onClick={() => updateSetting('traceVisible', false)}
             id="trace-close"
           >&times;</button>
         </div>
@@ -387,7 +386,7 @@ export default function ChatPage(props: {
             <div class="trace-label">Citations</div>
             <div class="trace-value" id="trace-citations">-</div>
           </div>
-          <div class="trace-section" id="trace-search-section" style={{"display":"none"}}>
+          <div class="trace-section" id="trace-search-section" hidden>
             <div class="trace-label">Search</div>
             <div class="trace-value" id="trace-search-info">-</div>
           </div>
@@ -395,69 +394,69 @@ export default function ChatPage(props: {
       </div>
 
       {/* Search Consent Modal */}
-      <Show when={pendingSearchConsent()}>
-        <Modal
-          isOpen={true}
-          onClose={handleConsentCancel}
-          title="Search Consent Required"
-          size="medium"
-        >
-          <div class="consent-modal-content">
-            <div class="consent-warning">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-                <line x1="12" x2="12" y1="9" y2="13"/>
-                <line x1="12" x2="12.01" y1="17" y2="17"/>
-              </svg>
-            </div>
-            <h3>Sensitive Search Query</h3>
-            <p>This search query may contain sensitive information that would be sent to Brave's servers.</p>
-            
-            <Show when={pendingSearchConsent()?.searchInfo.sensitivity}>
-              {() => {
-                const sensitivity = pendingSearchConsent()!.searchInfo.sensitivity
-                return (
+      <Show when={pendingSearchConsent()} keyed>
+        {(consent) => {
+          const sensitivity = consent.searchInfo.sensitivity
+          return (
+            <Modal
+              isOpen={true}
+              onClose={handleConsentCancel}
+              title="Search Consent Required"
+              size="medium"
+            >
+              <div class="consent-modal-content">
+                <div class="consent-warning">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                    <line x1="12" x2="12" y1="9" y2="13"/>
+                    <line x1="12" x2="12.01" y1="17" y2="17"/>
+                  </svg>
+                </div>
+                <h3>Sensitive Search Query</h3>
+                <p>This search query may contain sensitive information that would be sent to Brave's servers.</p>
+
+                <Show when={sensitivity}>
                   <div class="consent-details">
                     <div class="consent-level">
-                      <span class={`consent-badge ${sensitivity.level}`}>{sensitivity.level}</span>
-                      <span>{sensitivity.reason}</span>
+                      <span class={`consent-badge ${sensitivity!.level}`}>{sensitivity!.level}</span>
+                      <span>{sensitivity!.reason}</span>
                     </div>
-                    <Show when={sensitivity.categories.length > 0}>
+                    <Show when={sensitivity!.categories.length > 0}>
                       <div class="consent-categories">
                         <strong>Categories:</strong>
                         <ul>
-                          <For each={sensitivity.categories}>
+                          <For each={sensitivity!.categories}>
                             {(cat) => <li>{cat}</li>}
                           </For>
                         </ul>
                       </div>
                     </Show>
                   </div>
-                )
-              }}
-            </Show>
+                </Show>
 
-            <div class="consent-query">
-              <strong>Query:</strong>
-              <code>{pendingSearchConsent()?.searchInfo.query}</code>
-            </div>
+                <div class="consent-query">
+                  <strong>Query:</strong>
+                  <code>{consent.searchInfo.query}</code>
+                </div>
 
-            <div class="consent-actions">
-              <button 
-                class="btn-secondary" 
-                onClick={handleConsentCancel}
-              >
-                Cancel
-              </button>
-              <button 
-                class="btn-primary" 
-                onClick={handleConsentProceed}
-              >
-                Proceed with Search
-              </button>
-            </div>
-          </div>
-        </Modal>
+                <div class="consent-actions">
+                  <button 
+                    class="btn-secondary" 
+                    onClick={handleConsentCancel}
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    class="btn-primary" 
+                    onClick={handleConsentProceed}
+                  >
+                    Proceed with Search
+                  </button>
+                </div>
+              </div>
+            </Modal>
+          )
+        }}
       </Show>
     </div>
   )

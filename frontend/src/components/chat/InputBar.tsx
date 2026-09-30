@@ -128,7 +128,7 @@ export default function InputBar(props: InputBarProps) {
               <button 
                 type="button" 
                 class="remove-file-btn"
-                onClick={() => removeFile(i)}
+                onClick={() => removeFile(i())}
               >
                 ×
               </button>

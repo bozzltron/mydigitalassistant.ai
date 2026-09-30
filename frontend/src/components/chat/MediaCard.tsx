@@ -1,17 +1,10 @@
 import { createMemo, createSignal, Show } from 'solid-js'
-import { getYouTubeEmbedUrl, getYouTubeThumbnailUrl, extractYouTubeId } from '../../utils/media'
+import type { MediaContent } from '../../types/chat'
+import { getYouTubeEmbedUrl, getYouTubeThumbnailUrl, extractYouTubeId, hostnameOf } from '../../utils/media'
 
 interface MediaCardProps {
-  media: {
-    type: 'image' | 'video' | 'youtube'
-    url: string
-    thumbnail?: string
-    title?: string
-    description?: string
-    sourceUrl?: string
-    aspectRatio?: number
-  }
-  onOpenLightbox?: (media: MediaCardProps['media'], index: number, allMedia: MediaCardProps['media'][]) => void
+  media: MediaContent
+  onOpenLightbox?: (media: MediaContent, index: number, allMedia: MediaContent[]) => void
 }
 
 export default function MediaCard(props: MediaCardProps) {
@@ -89,26 +82,22 @@ export default function MediaCard(props: MediaCardProps) {
       <Show when={!isYoutube() && !isVideo()}>
         <div class="msg-media-hero" onClick={handleClick}>
           <Show when={!imageError()}>
-            {() => (
-              <img
-                src={props.media.url}
-                alt={props.media.title || ''}
-                onError={handleImageError}
-                onLoad={handleImageLoad}
-                loading="lazy"
-              />
-            )}
+            <img
+              src={props.media.url}
+              alt={props.media.title || ''}
+              onError={handleImageError}
+              onLoad={handleImageLoad}
+              loading="lazy"
+            />
           </Show>
           <Show when={imageError()}>
-            {() => (
-              <div class="msg-preview-card-placeholder">
-                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-                  <circle cx="8.5" cy="8.5" r="1.5" />
-                  <path d="M21 15l-5-5L5 21" />
-                </svg>
-              </div>
-            )}
+            <div class="msg-preview-card-placeholder">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                <circle cx="8.5" cy="8.5" r="1.5" />
+                <path d="M21 15l-5-5L5 21" />
+              </svg>
+            </div>
           </Show>
           {(props.media.title || props.media.description || props.media.sourceUrl) && (
             <div class="media-hero-caption">
@@ -123,7 +112,7 @@ export default function MediaCard(props: MediaCardProps) {
                   target="_blank"
                   rel="noopener"
                 >
-                  {new URL(props.media.sourceUrl).hostname}
+                  {hostnameOf(props.media.sourceUrl)}
                 </a>
               )}
             </div>

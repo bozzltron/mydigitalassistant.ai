@@ -42,6 +42,31 @@ export function isDirectImageUrl(url: string): boolean {
   }
 }
 
+/**
+ * Best-effort hostname for display. Returns `''` when the URL is missing or not
+ * absolute/parseable rather than throwing: `new URL()` in a render path took the
+ * whole message tree down on a relative or malformed `sourceUrl` from search or
+ * OG data.
+ */
+export function hostnameOf(url: string | undefined | null): string {
+  if (!url) return ''
+  try {
+    return new URL(url).hostname
+  } catch {
+    return ''
+  }
+}
+
+/** Best-effort pathname for display; `''` when the URL cannot be parsed. */
+export function pathnameOf(url: string | undefined | null, maxLength = 50): string {
+  if (!url) return ''
+  try {
+    return new URL(url).pathname.slice(0, maxLength)
+  } catch {
+    return ''
+  }
+}
+
 export function extractMediaFromMarkdown(content: string): MediaContent[] {
   const media: MediaContent[] = []
   const imageRegex = /!\[([^\]]*)\]\(([^)]+)\)/g
@@ -194,7 +219,7 @@ export function getHeroMedia(media: MediaContent[]): MediaContent | null {
   const videoMedia = media.find(m => m.type === 'video' || m.type === 'youtube')
   if (videoMedia) return videoMedia
 
-  return media[0]
+  return media[0] ?? null
 }
 
 export function getGridMedia(media: MediaContent[], hero?: MediaContent | null): MediaContent[] {

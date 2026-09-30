@@ -1,15 +1,20 @@
 import { createSignal, createEffect, onCleanup, batch } from 'solid-js';
+import { debug } from '../services/logger';
 import { enqueue, isProcessing } from '../state/messageQueue';
 import { triggerDrain } from '../services/queueDrainer';
 import { VoiceActivityDetector } from '../services/voiceActivity';
-import { settings } from '../state/settings';
+import {
+  MAX_RECORDING_MS,
+  MIN_AUDIO_FRAMES,
+  MIN_RECORDING_MS,
+  MONITOR_INTERVAL_MS,
+  SILENCE_DURATION,
+  getAudioContextCtor,
+  isExitCommand,
+  playEarcon,
+  selectMimeType,
+} from '../services/audio';
 import { exitVoiceMode, isOutputActive, isOutputActiveNow, outputGeneration } from '../state/voice';
-
-const SILENCE_DURATION = 2000;
-const MIN_RECORDING_MS = 500;
-const MIN_AUDIO_FRAMES = 3;
-const MAX_RECORDING_MS = 180000;
-const MONITOR_INTERVAL_MS = 80;
 
 // How long to stay shut after the microphone fails to open. Long enough that a
 // transient failure is ridden out, short enough that a transient failure does not
@@ -26,46 +31,6 @@ interface UseConversationVoiceRecordingOptions {
 interface UseConversationVoiceRecordingReturn {
   isRecording: () => boolean;
   state: () => ConvVoiceState;
-}
-
-function playEarcon(type: 'start' | 'stop' | 'error') {
-  if (!settings.soundEffectsEnabled) return;
-  if (!window.AudioContext && !window.webkitAudioContext) return;
-  try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    const now = ctx.currentTime;
-    if (type === 'start') {
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(880, now);
-      osc.frequency.exponentialRampToValueAtTime(1760, now + 0.08);
-      gain.gain.setValueAtTime(0.08, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
-      osc.start(now);
-      osc.stop(now + 0.12);
-    } else if (type === 'stop') {
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(1760, now);
-      osc.frequency.exponentialRampToValueAtTime(880, now + 0.08);
-      gain.gain.setValueAtTime(0.08, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
-      osc.start(now);
-      osc.stop(now + 0.12);
-    } else if (type === 'error') {
-      osc.type = 'triangle';
-      osc.frequency.setValueAtTime(300, now);
-      gain.gain.setValueAtTime(0.06, now);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
-      osc.start(now);
-      osc.stop(now + 0.25);
-    }
-    setTimeout(() => ctx.close(), 300);
-  } catch {
-    // ignore
-  }
 }
 
 export function useConversationVoiceRecording({
@@ -180,7 +145,7 @@ export function useConversationVoiceRecording({
     const turnActive = isTurnActive();
     redecide();
 
-    console.log('[convVoice] policy', { voiceMode, output, inFlight, recording, blocked, turnActive });
+    debug('[convVoice] policy', { voiceMode, output, inFlight, recording, blocked, turnActive });
 
     if (!voiceMode) {
       if (recording) stopRecording();
@@ -258,7 +223,7 @@ export function useConversationVoiceRecording({
       if (!silenceTimeout() && metMinDuration && loudFrameCount() >= MIN_AUDIO_FRAMES) {
         const st = window.setTimeout(() => {
           if (isRecording()) {
-            console.log('[convVoice] silence timeout fired — stopping');
+            debug('[convVoice] silence timeout fired — stopping');
             stopRecording();
           }
         }, SILENCE_DURATION);
@@ -283,7 +248,7 @@ export function useConversationVoiceRecording({
   }
 
   async function startRecording() {
-    console.log('[convVoice] startRecording called');
+    debug('[convVoice] startRecording called');
     // isRecording() is not a sufficient guard. It only becomes true at the very
     // end of this function, so for the whole of the awaits below the hook looked
     // idle while a capture was being opened: a second request sailed straight
@@ -301,8 +266,9 @@ export function useConversationVoiceRecording({
     let stream: MediaStream | null = null;
     let started = false;
     try {
-      if (audioContext()) {
-        await audioContext().close().catch(() => {});
+      const existingCtx = audioContext();
+      if (existingCtx) {
+        await existingCtx.close().catch(() => {});
       }
 
       stream = await navigator.mediaDevices.getUserMedia({
@@ -312,12 +278,12 @@ export function useConversationVoiceRecording({
           autoGainControl: true,
         },
       });
-      console.log('[convVoice] got media stream', stream.getTracks());
+      debug('[convVoice] got media stream', stream.getTracks());
 
       // The mic was granted, but the world moved on while we waited. Starting
       // now would put an open microphone in a room where the agent is talking.
       if (!isVoiceMode() || isOutputActiveNow() || outputGeneration() !== spokeFor) {
-        console.log('[convVoice] dropping capture — voice mode ended or the agent started speaking while the mic was opening');
+        debug('[convVoice] dropping capture — voice mode ended or the agent started speaking while the mic was opening');
         consecutiveDrops += 1;
         return;
       }
@@ -325,7 +291,12 @@ export function useConversationVoiceRecording({
 
       setMediaStream(stream);
 
-      const AudioContextCtor = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      const AudioContextCtor = getAudioContextCtor();
+      if (!AudioContextCtor) {
+        setConvState('idle');
+        parkCapture();
+        return;
+      }
       const newAudioContext = new AudioContextCtor();
       setAudioContext(newAudioContext);
 
@@ -336,19 +307,14 @@ export function useConversationVoiceRecording({
       const source = newAudioContext.createMediaStreamSource(stream);
       source.connect(newAnalyser);
 
-      const mimeType =
-        MediaRecorder.isTypeSupported('audio/ogg') ? 'audio/ogg' :
-        MediaRecorder.isTypeSupported('audio/wav') ? 'audio/wav' :
-        MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' :
-        MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' :
-        null;
+      const mimeType = selectMimeType();
 
       if (!mimeType) {
         console.error('Audio recording not supported in this browser');
         setConvState('idle');
         return;
       }
-      console.log('[convVoice] selected mimeType:', mimeType);
+      debug('[convVoice] selected mimeType:', mimeType);
 
       const mr = new MediaRecorder(stream, { mimeType });
       setMediaRecorder(mr);
@@ -415,7 +381,8 @@ export function useConversationVoiceRecording({
   }
 
   function stopRecording() {
-    if (!isRecording() || !mediaRecorder()) return;
+    const mr = mediaRecorder();
+    if (!isRecording() || !mr) return;
     const st = silenceTimeout();
     if (st) {
       clearTimeout(st);
@@ -427,7 +394,6 @@ export function useConversationVoiceRecording({
       setRecordingTimeoutId(null);
     }
     stopAudioMonitor();
-    const mr = mediaRecorder();
     // One atomic teardown, and `settling` goes up *inside* the batch. Solid
     // flushes effects after each individual signal write, so clearing
     // isRecording first would let the policy run against a half-closed hook --
@@ -506,7 +472,7 @@ export function useConversationVoiceRecording({
       if (submittedCapture) return;
       submittedCapture = true;
 
-      console.log('[convVoice] sending blob size:', blob.size, 'mime:', currentMimeType());
+      debug('[convVoice] sending blob size:', blob.size, 'mime:', currentMimeType());
 
       await sendForTranscription(blob);
 
@@ -521,7 +487,7 @@ export function useConversationVoiceRecording({
   }
 
   function handleDiscard(reason: string) {
-    console.log('[convVoice] Discarded:', reason);
+    debug('[convVoice] Discarded:', reason);
     // No explicit restart. The finally above clears `settling`, which is what
     // was holding the gate; the policy effect reopens the mic. The old code
     // scheduled its own restart from here, which raced the policy and was
@@ -568,7 +534,7 @@ export function useConversationVoiceRecording({
       if (isExitCommand(text)) {
         // User said "stop listening" - exit voice mode so the state machine
         // stops reopening the mic.
-        console.log('[convVoice] Exit command detected:', text);
+        debug('[convVoice] Exit command detected:', text);
         exitVoiceMode();
         return;
       }
@@ -598,22 +564,18 @@ export function useConversationVoiceRecording({
     }
   }
 
-  function isExitCommand(text: string): boolean {
-    const EXIT_COMMANDS = ['stop listening', 'exit voice mode', 'stop voice mode', 'goodbye', 'bye'];
-    const t = text.toLowerCase().trim();
-    return EXIT_COMMANDS.includes(t);
-  }
-
   function cleanup() {
     stopAudioMonitor();
 
-    if (mediaStream()) {
-      mediaStream().getTracks().forEach(t => t.stop());
+    const ms = mediaStream();
+    if (ms) {
+      ms.getTracks().forEach(t => t.stop());
       setMediaStream(null);
     }
 
-    if (audioContext()) {
-      audioContext().close().catch(() => {});
+    const ctx = audioContext();
+    if (ctx) {
+      ctx.close().catch(() => {});
       setAudioContext(null);
     }
 
@@ -633,7 +595,7 @@ export function useConversationVoiceRecording({
     }
 
     pendingTimeouts().forEach(id => clearTimeout(id));
-    setPendingTimeouts(new Set());
+    setPendingTimeouts(new Set<number>());
   }
 
   // Cleanup on unmount

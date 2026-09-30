@@ -1,5 +1,6 @@
 import { For } from 'solid-js'
 import type { MediaContent } from '../../types/chat'
+import { hostnameOf, pathnameOf } from '../../utils/media'
 
 interface PreviewCardsProps {
   cards: MediaContent[]
@@ -35,7 +36,7 @@ export default function PreviewCards(props: PreviewCardsProps) {
             <div class="msg-preview-card-body">
               {card.sourceUrl && (
                 <div class="msg-preview-card-site">
-                  {new URL(card.sourceUrl).hostname}
+                  {hostnameOf(card.sourceUrl)}
                 </div>
               )}
               {card.title && (
@@ -46,7 +47,7 @@ export default function PreviewCards(props: PreviewCardsProps) {
               )}
               {card.sourceUrl && (
                 <div class="msg-preview-card-url">
-                  {new URL(card.sourceUrl).pathname.slice(0, 50)}
+                  {pathnameOf(card.sourceUrl)}
                 </div>
               )}
             </div>

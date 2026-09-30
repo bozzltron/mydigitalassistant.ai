@@ -1,13 +1,17 @@
 import { createSignal, For, createMemo, createEffect } from 'solid-js'
+import type { JSX } from 'solid-js'
 import type { ChatMessage } from '../../types/chat'
 import MessageContent from './MessageContent'
-import type { MediaContent } from '../../types/chat'
 
 interface MessageProps {
   message: ChatMessage
   onReact: (kind: 'positive' | 'negative' | 'correction', msgId: string) => void
   onCopy: (text: string) => void
-  onCorrect: (msgId: string) => void
+  /**
+   * Submits a natural-language correction for this message. Resolves `true` when
+   * the backend accepted it, so the panel can show inline feedback.
+   */
+  onCorrect: (msgId: string, text: string) => Promise<boolean> | boolean
 }
 
 export default function Message(props: MessageProps) {
@@ -18,10 +22,12 @@ export default function Message(props: MessageProps) {
   const isUser = createMemo(() => message().role === 'user')
   const [showCorrection, setShowCorrection] = createSignal(false)
   const [correctionText, setCorrectionText] = createSignal('')
+  const [correctionPending, setCorrectionPending] = createSignal(false)
+  const [correctionStatus, setCorrectionStatus] = createSignal<string | null>(null)
 
-  // Message ids are stable row keys (history-* / streaming-* / epoch), so
-  // reading the id once is safe even as streamed content updates reconcile
-  // the row in place (For by="id").
+  // Message ids are stable row keys (history-* / streaming-*), so reading the
+  // id once is safe: the row is updated in place through the chat store, so
+  // <For> reconciles it rather than recreating it.
   const msgId = createMemo(() => props.message.id || `msg-${Date.now()}`)
 
   const handleCopy = () => {
@@ -37,11 +43,22 @@ export default function Message(props: MessageProps) {
     getOnReact()(kind, msgId())
   }
 
-  const handleCorrect = () => {
-    if (correctionText().trim()) {
-      getOnCorrect()(msgId())
-      setShowCorrection(false)
-      setCorrectionText('')
+  const handleCorrect = async () => {
+    const text = correctionText().trim()
+    if (!text || correctionPending()) return
+    setCorrectionPending(true)
+    setCorrectionStatus(null)
+    try {
+      const applied = await getOnCorrect()(msgId(), text)
+      if (applied) {
+        setShowCorrection(false)
+        setCorrectionText('')
+        setCorrectionStatus('Correction sent')
+      } else {
+        setCorrectionStatus('Could not apply the correction — try rephrasing.')
+      }
+    } finally {
+      setCorrectionPending(false)
     }
   }
 
@@ -73,33 +90,26 @@ export default function Message(props: MessageProps) {
   const [backendBadge, setBackendBadge] = createSignal<JSX.Element | null>(null)
 
   createEffect(() => {
-    if (isSearch() && message().meta?.search_info) {
-      const backend = message().meta.search_info.backend
-      const badgeClass = backend === 'brave' ? 'badge-brave' : 'badge-searxng'
-      const badgeLabel = backend === 'brave' ? 'Searched via Brave' : 'Searched via local SearXNG'
+    const info = message().meta?.search_info
+    if (isSearch() && info) {
+      const badgeClass = info.backend === 'brave' ? 'badge-brave' : 'badge-searxng'
+      const badgeLabel = info.backend === 'brave' ? 'Searched via Brave' : 'Searched via local SearXNG'
       setBackendBadge(<span class={`badge ${badgeClass}`}>{badgeLabel}</span>)
     } else {
       setBackendBadge(null)
     }
   })
 
-  const handleOpenLightbox = (_media: MediaContent, _index: number, _allMedia: MediaContent[]) => {
-    // Lightbox is handled internally by MediaGrid
-  }
-
   return (
     <div
       class={`msg ${isUser() ? 'msg-user' : 'msg-assistant'}`}
     >
       <div class="content">
-        <MessageContent
-          message={message}
-          onOpenLightbox={handleOpenLightbox}
-        />
+        <MessageContent message={message} />
 
         {message().meta?.task_type && (
           <div class="msg-meta">
-            type: {message().meta.task_type}
+            type: {message().meta!.task_type}
           </div>
         )}
 
@@ -162,7 +172,7 @@ export default function Message(props: MessageProps) {
             <button
               class="reaction-btn"
               title="Correct this response"
-              onClick={() => setShowCorrection(true)}
+              onClick={() => { setShowCorrection(true); setCorrectionStatus(null) }}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
@@ -183,17 +193,21 @@ export default function Message(props: MessageProps) {
             <div class="correction-actions">
               <button
                 class="correction-cancel"
-                onClick={() => { setShowCorrection(false); setCorrectionText('') }}
+                onClick={() => { setShowCorrection(false); setCorrectionText(''); setCorrectionStatus(null) }}
               >
                 Cancel
               </button>
               <button
                 class="correction-submit"
                 onClick={handleCorrect}
+                disabled={correctionPending() || !correctionText().trim()}
               >
-                Submit Correction
+                {correctionPending() ? 'Sending…' : 'Submit Correction'}
               </button>
             </div>
+            {correctionStatus() && (
+              <div class="correction-status" role="status">{correctionStatus()}</div>
+            )}
           </div>
         )}
       </div>

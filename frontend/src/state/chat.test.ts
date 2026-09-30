@@ -1,11 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { messages, isTurnActive, sessionId, setSessionId, currentTurnId, setCurrentTurnId, postChatMessage, postChatMessageStream, loadConversationMessages, initChat, drainQueue, enqueueMessage, addMessageToConversation } from '../state/chat'
+import { messages, isTurnActive, sessionId, setSessionId, currentTurnId, setCurrentTurnId, postChatMessageStream, loadConversationMessages, initChat, drainQueue, enqueueMessage, addMessageToConversation } from '../state/chat'
 import * as api from '../services/api'
 import * as status from '../services/status'
 import * as messageQueue from '../state/messageQueue'
 
 vi.mock('../services/api', () => ({
-  postChat: vi.fn(),
   postChatStream: vi.fn(),
   createTurnId: vi.fn(() => 'test-turn-id-123'),
   getSessionMessages: vi.fn(),
@@ -132,58 +131,6 @@ describe('chat state', () => {
     })
   })
 
-  describe('postChatMessage', () => {
-    it('sends message and returns response', async () => {
-      setSessionId('session-123')
-      const mockResponse = {
-        response: 'Hello there!',
-        task_type: 'functional',
-        session_id: 'session-123',
-      }
-      vi.mocked(api.postChat).mockResolvedValue(mockResponse)
-      vi.mocked(status.startStatusPolling).mockImplementation(() => {})
-      vi.mocked(status.stopStatusPolling).mockImplementation(() => {})
-
-      const result = await postChatMessage('Hi', 'session-123')
-
-      expect(api.postChat).toHaveBeenCalledWith('Hi', 'session-123', undefined, 'test-turn-id-123', undefined, undefined)
-      expect(result).toEqual(mockResponse)
-      expect(isTurnActive()).toBe(false)
-      expect(currentTurnId()).toBeNull()
-    })
-
-    it('sets turn active during request for the session', async () => {
-      setSessionId('session-123')
-      let resolvePolling: () => void
-      const pollingPromise = new Promise(r => { resolvePolling = r })
-      vi.mocked(api.postChat).mockImplementation(() => pollingPromise)
-      vi.mocked(status.startStatusPolling).mockImplementation(() => {})
-      vi.mocked(status.stopStatusPolling).mockImplementation(() => {})
-
-      const promise = postChatMessage('Hi', 'session-123')
-
-      expect(isTurnActive()).toBe(true)
-      expect(currentTurnId()).not.toBeNull()
-
-      resolvePolling!({ response: 'OK', task_type: 'functional', session_id: 's1' })
-      await promise
-
-      expect(isTurnActive()).toBe(false)
-    })
-
-    it('cleans up on error', async () => {
-      setSessionId('session-123')
-      vi.mocked(api.postChat).mockRejectedValue(new Error('Network error'))
-      vi.mocked(status.startStatusPolling).mockImplementation(() => {})
-      vi.mocked(status.stopStatusPolling).mockImplementation(() => {})
-
-      await expect(postChatMessage('Hi', 'session-123')).rejects.toThrow('Network error')
-      expect(isTurnActive()).toBe(false)
-      expect(currentTurnId()).toBeNull()
-      expect(status.stopStatusPolling).toHaveBeenCalled()
-    })
-  })
-
   describe('postChatMessageStream', () => {
     it('renders the streamed answer into the conversation bubbles', async () => {
       setSessionId('session-123')
@@ -197,8 +144,8 @@ describe('chat state', () => {
           return streamPromise
         }
       )
-      vi.mocked(status.startStatusPolling).mockImplementation(() => {})
-      vi.mocked(status.stopStatusPolling).mockImplementation(() => {})
+      vi.mocked(status.beginTurnStatus).mockImplementation(() => {})
+      vi.mocked(status.endTurnStatus).mockImplementation(() => {})
 
       const promise = postChatMessageStream('Hi', 'session-123')
 
@@ -227,8 +174,8 @@ describe('chat state', () => {
     it('never leaves a dangling empty bubble after a non-ok stream', async () => {
       setSessionId('session-err-987')
       vi.mocked(api.postChatStream).mockRejectedValue(new Error('HTTP 500'))
-      vi.mocked(status.startStatusPolling).mockImplementation(() => {})
-      vi.mocked(status.stopStatusPolling).mockImplementation(() => {})
+      vi.mocked(status.beginTurnStatus).mockImplementation(() => {})
+      vi.mocked(status.endTurnStatus).mockImplementation(() => {})
 
       await expect(postChatMessageStream('Hi', 'session-err-987')).rejects.toThrow('HTTP 500')
 

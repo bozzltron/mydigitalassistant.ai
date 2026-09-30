@@ -1,7 +1,7 @@
 import { createSignal, createEffect } from 'solid-js'
 import { fetchSessions, createConversation } from '../state/session'
 import { user } from '../state/user'
-import { Session } from '../state/session'
+import type { Session } from '../state/session'
 
 export function useConversations() {
   const [conversations, setConversations] = createSignal<Session[]>([])
