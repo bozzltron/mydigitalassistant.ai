@@ -542,7 +542,6 @@
   .media-lightbox,
   .media-lightbox-close,
   .media-lightbox-nav,
-  .msg-video-embed .video-placeholder,
   .msg-preview-card {
     transition: none !important;
     animation: none !important;

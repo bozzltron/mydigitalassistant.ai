@@ -152,3 +152,44 @@ describe('MessageList correction', () => {
     )
   })
 })
+
+describe('MessageList source ordering', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    localStorage.clear()
+    setSessionId('session-order-1')
+  })
+
+  it('renders the appended sources footer after the extra images', () => {
+    // The backend appends "**Sources:**" to the answer text; it must end the
+    // response, following the media rather than sitting between text and images.
+    const withSources = () => [
+      {
+        id: 'a1',
+        role: 'assistant' as const,
+        content:
+          'Here you go.\n\n**Sources:**\n- https://a.example\n- https://b.example',
+        meta: {
+          search_info: {
+            backend: 'brave',
+            query: 'q',
+            results: [
+              { title: 'A', url: 'https://a.example', snippet: '', engine: 'brave', thumbnail: 'https://img/a.png' },
+              { title: 'B', url: 'https://b.example', snippet: '', engine: 'brave', thumbnail: 'https://img/b.png' },
+            ],
+          },
+        },
+      },
+    ]
+
+    render(() => <MessageList messages={withSources} />)
+
+    const grid = document.querySelector('.msg-media-grid')
+    const sources = document.querySelector('.msg-sources-block')
+    expect(grid, 'no media grid rendered').not.toBeNull()
+    expect(sources, 'no sources block rendered').not.toBeNull()
+    expect(
+      grid!.compareDocumentPosition(sources!) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+  })
+})

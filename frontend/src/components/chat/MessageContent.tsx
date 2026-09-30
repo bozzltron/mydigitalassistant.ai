@@ -16,6 +16,11 @@ marked.use({
   }
 })
 
+// The backend appends a `**Sources:**` footer to search answers. Render it after
+// the media so it ends the response, instead of sitting between the answer text
+// and the extra images/video.
+const SOURCES_MARKER = '\n\n**Sources:**'
+
 export default function MessageContent(props: {
   message: () => ChatMessage
   onOpenLightbox?: (media: MediaContent, index: number, allMedia: MediaContent[]) => void
@@ -26,7 +31,17 @@ export default function MessageContent(props: {
   const gridMedia = createMemo(() => getGridMedia(media(), heroMedia()))
   const extraVideos = createMemo(() => getExtraVideos(media(), heroMedia()))
 
-  const htmlContent = createMemo(() => marked.parse(props.message().content || '') as string)
+  const parts = createMemo(() => {
+    const content = props.message().content || ''
+    const idx = content.indexOf(SOURCES_MARKER)
+    if (idx === -1) return { body: content, sources: '' }
+    return { body: content.slice(0, idx), sources: content.slice(idx).trim() }
+  })
+
+  const bodyHtml = createMemo(() => marked.parse(parts().body) as string)
+  const sourcesHtml = createMemo(() =>
+    parts().sources ? (marked.parse(parts().sources) as string) : ''
+  )
 
   return (
     <div class="message-content">
@@ -35,7 +50,7 @@ export default function MessageContent(props: {
       </Show>
 
       {/* eslint-disable-next-line solid/no-innerhtml -- content sanitized by DOMPurify */}
-      <div class="msg-markdown" innerHTML={DOMPurify.sanitize(htmlContent())} />
+      <div class="msg-markdown" innerHTML={DOMPurify.sanitize(bodyHtml())} />
 
       <Show when={gridMedia().length > 0}>
         <MediaGrid media={gridMedia()} onOpenLightbox={props.onOpenLightbox} />
@@ -44,6 +59,11 @@ export default function MessageContent(props: {
       <For each={extraVideos()}>
         {(video) => <MediaCard media={video} onOpenLightbox={props.onOpenLightbox} />}
       </For>
+
+      <Show when={parts().sources}>
+        {/* eslint-disable-next-line solid/no-innerhtml -- content sanitized by DOMPurify */}
+        <div class="msg-markdown msg-sources-block" innerHTML={DOMPurify.sanitize(sourcesHtml())} />
+      </Show>
     </div>
   )
 }

@@ -373,6 +373,26 @@
   }
 }
 
+/* Sources footer (split out of the answer text so it renders last, after the
+   media). */
+.msg-sources-block {
+  margin-top: var(--space-md);
+  padding-top: var(--space-sm);
+  border-top: 1px solid var(--border);
+  font-size: 0.82rem;
+  color: var(--text-dim);
+}
+
+.msg-sources-block a {
+  color: var(--accent);
+  overflow-wrap: anywhere;
+}
+
+.msg-sources-block ul {
+  margin: 0;
+  padding-left: var(--space-lg);
+}
+
 /* Answer confidence: a small chip with a band colour (memory-grounded). */
 .msg-confidence {
   display: inline-flex;
