@@ -75,7 +75,10 @@ export interface OgPreviewResponse {
 
 export interface MediaContent {
   type: 'image' | 'video' | 'youtube' | 'preview-card'
+  /** Display URL (for search images, the reliable Brave-CDN thumbnail). */
   url: string
+  /** Full-size image; often hotlink-blocked, so callers fall back to `url`. */
+  fullUrl?: string
   thumbnail?: string
   title?: string
   description?: string

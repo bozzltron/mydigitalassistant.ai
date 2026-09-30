@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import httpx
 from fastapi import Depends as _Depends
@@ -832,6 +833,15 @@ _IMAGE_PROXY_HEADERS = {
 }
 
 
+def _image_proxy_headers(url: str) -> dict[str, str]:
+    """Proxy headers with a same-origin Referer; some hosts hotlink-block without one."""
+    headers = dict(_IMAGE_PROXY_HEADERS)
+    parts = urlsplit(url)
+    if parts.scheme and parts.netloc:
+        headers["Referer"] = f"{parts.scheme}://{parts.netloc}/"
+    return headers
+
+
 @app.get("/image-proxy")
 async def image_proxy(url: str):
     """Fetch a remote image server-side and return it.
@@ -858,7 +868,7 @@ async def image_proxy(url: str):
     buffer = bytearray()
     try:
         async with safe_stream(
-            client, url, headers=_IMAGE_PROXY_HEADERS, trusted_prefixes=trusted
+            client, url, headers=_image_proxy_headers(url), trusted_prefixes=trusted
         ) as response:
             response.raise_for_status()
             content_type = response.headers.get("content-type", "")

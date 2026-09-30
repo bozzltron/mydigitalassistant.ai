@@ -38,6 +38,31 @@ export default function MediaGrid(props: MediaGridProps) {
   })
 
   const currentImage = createMemo(() => imageMedia()[lightboxIndex()])
+  // Full-size in the lightbox, falling back to the thumbnail if the source
+  // host blocks the fetch.
+  const [lightboxThumb, setLightboxThumb] = createSignal(false)
+  createEffect(() => {
+    lightboxIndex()
+    setLightboxThumb(false)
+  })
+  const lightboxSrc = () => {
+    const item = currentImage()
+    if (!item) return ''
+    return lightboxThumb()
+      ? imageSrc(item.thumbnail ?? item.url)
+      : imageSrc(item.fullUrl ?? item.url)
+  }
+  const handleLightboxError = () => {
+    const item = currentImage()
+    if (
+      item &&
+      !lightboxThumb() &&
+      item.thumbnail &&
+      item.thumbnail !== (item.fullUrl ?? item.url)
+    ) {
+      setLightboxThumb(true)
+    }
+  }
 
   const openLightbox = (index: number) => {
     setLightboxIndex(index)
@@ -227,8 +252,9 @@ export default function MediaGrid(props: MediaGridProps) {
           <div class="media-lightbox-content" onClick={(e) => e.stopPropagation()}>
             <img
               class="media-lightbox-image"
-              src={imageSrc(currentImage()!.url)}
+              src={lightboxSrc()}
               alt={currentImage()!.title || ''}
+              onError={handleLightboxError}
             />
             {(currentImage()!.title || currentImage()!.sourceUrl) && (
               <div class="media-lightbox-caption">

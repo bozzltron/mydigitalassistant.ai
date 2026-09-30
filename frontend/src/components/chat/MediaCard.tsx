@@ -1,4 +1,4 @@
-import { createMemo, createSignal, Show } from 'solid-js'
+import { createMemo, createSignal, createEffect, on, Show } from 'solid-js'
 import type { MediaContent } from '../../types/chat'
 import { getYouTubeEmbedUrl, getYouTubeThumbnailUrl, extractYouTubeId, hostnameOf, imageSrc } from '../../utils/media'
 
@@ -9,6 +9,27 @@ interface MediaCardProps {
 
 export default function MediaCard(props: MediaCardProps) {
   const [imageError, setImageError] = createSignal(false)
+  // Try the full-size image first; many source hosts block hotlinking, so fall
+  // back to the (reliable) thumbnail before giving up on a placeholder.
+  const [useThumbFallback, setUseThumbFallback] = createSignal(false)
+
+  // Reset the fallback state whenever the media changes.
+  createEffect(
+    on(
+      () => props.media,
+      () => {
+        setUseThumbFallback(false)
+        setImageError(false)
+      },
+      { defer: true }
+    )
+  )
+
+  const displaySrc = () => {
+    const m = props.media
+    if (useThumbFallback()) return imageSrc(m.thumbnail ?? m.url)
+    return imageSrc(m.fullUrl ?? m.url)
+  }
 
   // Read through props rather than destructuring it. A destructure snapshots the
   // value at component-creation time, so a later change to the `media` prop
@@ -24,6 +45,12 @@ export default function MediaCard(props: MediaCardProps) {
   const embedUrl = createMemo(() => (videoId() ? getYouTubeEmbedUrl(videoId()!) : ''))
 
   const handleImageError = () => {
+    const m = props.media
+    const full = m.fullUrl ?? m.url
+    if (!useThumbFallback() && m.thumbnail && m.thumbnail !== full) {
+      setUseThumbFallback(true)
+      return
+    }
     setImageError(true)
   }
 
@@ -83,7 +110,7 @@ export default function MediaCard(props: MediaCardProps) {
         <div class="msg-media-hero" onClick={handleClick}>
           <Show when={!imageError()}>
             <img
-              src={imageSrc(props.media.url)}
+              src={displaySrc()}
               alt={props.media.title || ''}
               onError={handleImageError}
               onLoad={handleImageLoad}

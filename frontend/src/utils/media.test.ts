@@ -44,8 +44,11 @@ describe('searchMedia', () => {
     expect(media).toHaveLength(1)
     expect(media[0]).toMatchObject({
       type: 'image',
-      url: 'https://img/a-o.png',
+      // Display URL is the reliable CDN thumbnail; the source image is kept for
+      // the hero/lightbox, which fall back to the thumbnail if it is blocked.
+      url: 'https://img/a-s.png',
       thumbnail: 'https://img/a-s.png',
+      fullUrl: 'https://img/a-o.png',
       sourceUrl: 'https://page/a',
     })
   })

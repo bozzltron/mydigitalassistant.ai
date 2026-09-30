@@ -77,12 +77,16 @@ export function searchMedia(message: ChatMessage): MediaContent[] {
   for (const result of info.results ?? []) {
     // Coerce: a result's thumbnail/image may arrive as an object
     // ({src, original}) from a backend that has not normalised it yet.
+    // `thumbnail` is Brave's own CDN copy (reliable); `image` is the source
+    // site's image, which is frequently hotlink-blocked.
     const preview = asStr(result.thumbnail)
-    const full = asStr(result.image) ?? preview
-    if (!preview && !full) continue
+    const full = asStr(result.image)
+    const display = preview ?? full
+    if (!display) continue
     media.push({
       type: 'image',
-      url: full ?? '',
+      url: display,
+      fullUrl: full && full !== display ? full : undefined,
       thumbnail: preview,
       title: asStr(result.title),
       sourceUrl: asStr(result.url),
