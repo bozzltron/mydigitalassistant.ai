@@ -177,6 +177,53 @@ _FILLER_PATTERN = re.compile(
 )
 
 
+def _youtube_id(url: str) -> str | None:
+    """Extract a YouTube video id from any common URL form."""
+    if not url or ("youtube.com" not in url and "youtu.be" not in url):
+        return None
+    for pattern in (
+        r"(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})",
+        r"youtube\.com\/watch\?.*v=([a-zA-Z0-9_-]{11})",
+    ):
+        match = re.search(pattern, url)
+        if match:
+            return match.group(1)
+    return None
+
+
+def _thumb_urls(item: dict) -> tuple[str | None, str | None]:
+    """(thumbnail, full_image) URLs from a result item.
+
+    Engines disagree on the shape: Brave returns ``thumbnail`` as an object
+    ``{src, original}`` (src = preview, original = full image), while others
+    return flat strings. Accept both, and fall back to ``image``.
+    """
+    thumb = item.get("thumbnail")
+    if isinstance(thumb, str):
+        return thumb, thumb
+    if isinstance(thumb, dict):
+        src = thumb.get("src") or thumb.get("original")
+        original = thumb.get("original") or thumb.get("src")
+        return (str(src) if src else None, str(original) if original else None)
+    image = item.get("image")
+    if isinstance(image, str):
+        return image, image
+    if isinstance(image, dict):
+        src = image.get("src") or image.get("original")
+        original = image.get("original") or image.get("src")
+        return (str(src) if src else None, str(original) if original else None)
+    return None, None
+
+
+def _absolute(url: str, base: str) -> str:
+    """Resolve a possibly-relative URL (SearXNG image_proxy) against its host."""
+    if url.startswith("http://") or url.startswith("https://"):
+        return url
+    if url.startswith("/"):
+        return base.rstrip("/") + url
+    return url
+
+
 @dataclass
 class SearchResult:
     """A single search result."""
@@ -185,6 +232,7 @@ class SearchResult:
     snippet: str
     engine: str
     thumbnail: str | None = None
+    image: str | None = None
 
 
 @dataclass
@@ -402,32 +450,29 @@ class SearXNGBackend(SearchBackend):
                     continue
                 seen_urls.add(norm)
                 
-                # Extract thumbnail if available
-                thumbnail = item.get("img_src") or item.get("thumbnail")
-                
-                # Check if it's a YouTube video
-                video_id = None
-                if "youtube.com" in url or "youtu.be" in url:
-                    import re
-                    yt_patterns = [
-                        r"(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})",
-                        r"youtube\.com\/watch\?.*v=([a-zA-Z0-9_-]{11})",
-                    ]
-                    for pattern in yt_patterns:
-                        match = re.search(pattern, url)
-                        if match:
-                            video_id = match.group(1)
-                            break
-                
+                # Image: SearXNG exposes image results as img_src (full) and
+                # thumbnail_src (preview), often relative when image_proxy is on.
+                thumbnail, image = _thumb_urls(item)
+                img_src = item.get("img_src")
+                thumb_src = item.get("thumbnail_src")
+                if isinstance(img_src, str) and img_src:
+                    image = _absolute(img_src, self.base_url)
+                    thumbnail = _absolute(
+                        thumb_src if isinstance(thumb_src, str) and thumb_src else img_src,
+                        self.base_url,
+                    )
+
+                video_id = _youtube_id(url)
                 if video_id:
                     video_results.append(YouTubeVideo(
                         video_id=video_id,
                         title=item.get("title", ""),
                         channel_title=None,
-                        thumbnail_url=f"https://img.youtube.com/vi/{video_id}/maxresdefault.jpg",
+                        thumbnail_url=thumbnail
+                        or f"https://img.youtube.com/vi/{video_id}/maxresdefault.jpg",
                         url=url,
                     ))
-                
+
                 results.append(
                     SearchResult(
                         title=item.get("title", ""),
@@ -435,6 +480,7 @@ class SearXNGBackend(SearchBackend):
                         snippet=item.get("content", ""),
                         engine=item.get("engine", "searxng"),
                         thumbnail=thumbnail,
+                        image=image,
                     )
                 )
                 if len(results) >= num_results:
@@ -529,32 +575,19 @@ class BraveBackend(SearchBackend):
                     continue
                 seen.add(norm)
 
-                # Extract thumbnail if available
-                thumbnail = item.get("thumbnail") or item.get("image")
+                # Brave returns `thumbnail` as {src, original} (an object), not
+                # a string; _thumb_urls normalises that to (preview, full).
+                thumbnail, image = _thumb_urls(item)
 
-                # Check if it's a YouTube video
-                video_id = None
-                if "youtube.com" in url or "youtu.be" in url:
-                    import re
-                    yt_patterns = [
-                        r"(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})",
-                        r"youtube\.com\/watch\?.*v=([a-zA-Z0-9_-]{11})",
-                    ]
-                    for pattern in yt_patterns:
-                        match = re.search(pattern, url)
-                        if match:
-                            video_id = match.group(1)
-                            break
-
+                video_id = _youtube_id(url)
                 if video_id:
                     video_results.append(
                         YouTubeVideo(
                             video_id=video_id,
                             title=item.get("title", ""),
-                            channel_title=item.get("meta", {}).get("author")
-                            if item.get("meta")
-                            else None,
-                            thumbnail_url=f"https://img.youtube.com/vi/{video_id}/maxresdefault.jpg",
+                            channel_title=(item.get("meta") or {}).get("author"),
+                            thumbnail_url=thumbnail
+                            or f"https://img.youtube.com/vi/{video_id}/maxresdefault.jpg",
                             url=url,
                         )
                     )
@@ -566,10 +599,36 @@ class BraveBackend(SearchBackend):
                         snippet=item.get("description", "") or item.get("snippet", ""),
                         engine="brave",
                         thumbnail=thumbnail,
+                        image=image,
                     )
                 )
                 if len(results) >= num_results:
                     break
+
+            # Brave attaches a `videos` section to the web response for
+            # video-ish queries -- free, no second request. Merge it with the
+            # YouTube-URL results captured above, deduped by video id.
+            seen_video_ids = {v.video_id for v in video_results}
+            for vitem in (data.get("videos") or {}).get("results") or []:
+                vurl = vitem.get("url", "") or ""
+                vthumb, _ = _thumb_urls(vitem)
+                vid = _youtube_id(vurl)
+                if vid:
+                    if vid in seen_video_ids:
+                        continue
+                    seen_video_ids.add(vid)
+                video_meta = vitem.get("video") or {}
+                video_results.append(
+                    YouTubeVideo(
+                        video_id=vid or "",
+                        title=vitem.get("title", ""),
+                        channel_title=video_meta.get("creator")
+                        or video_meta.get("publisher"),
+                        thumbnail_url=vthumb,
+                        url=vurl or None,
+                    )
+                )
+
             logger.debug(
                 "Brave returned %d results (query_len=%d)",
                 len(results), len(params["q"]),
