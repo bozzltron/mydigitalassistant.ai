@@ -83,6 +83,8 @@ class MetaEvent(ToolLoopEvent):
         extraction_summary: dict | None = None,
         search_extraction_summary: dict | None = None,
         search_info: object | None = None,
+        confidence: float | None = None,
+        confidence_basis: str | None = None,
     ):
         self.type = "meta"
         self.session_id = session_id
@@ -90,6 +92,8 @@ class MetaEvent(ToolLoopEvent):
         self.extraction_summary = extraction_summary
         self.search_extraction_summary = search_extraction_summary
         self.search_info = search_info
+        self.confidence = confidence
+        self.confidence_basis = confidence_basis
 
 
 def _event_json_default(obj: object) -> object:
@@ -139,6 +143,8 @@ def serialize_event(event: ToolLoopEvent) -> str:
             'extraction_summary': event.extraction_summary,
             'search_extraction_summary': event.search_extraction_summary,
             'search_info': event.search_info,
+            'confidence': event.confidence,
+            'confidence_basis': event.confidence_basis,
         }
         return f"data: {json.dumps(data, default=_event_json_default)}\n\n"
     else:

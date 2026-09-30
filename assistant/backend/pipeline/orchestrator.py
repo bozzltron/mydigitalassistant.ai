@@ -169,6 +169,46 @@ class ChatResponse(BaseModel):
     search_extraction_summary: dict | None = None  # search extraction (sync, available immediately)
     citations: list[str] = []  # source URLs for the response
     search_info: SearchInfo | None = None  # which backend + query + results (for UI transparency)
+    confidence: float = 0.0  # 0-1 answer confidence (memory-grounded)
+    confidence_basis: str = "none"  # "memory" | "search" | "none"
+
+
+def compute_answer_confidence(
+    retrieved_frames: list,
+    search_info: "SearchInfo | None",
+    *,
+    min_relevance: float = 0.3,
+) -> tuple[float, str]:
+    """Memory-grounded confidence (0-1) and its basis ('memory'|'search'|'none').
+
+    Memory answers score on the average confidence of the frames that actually
+    cleared the relevance bar; search answers score on source corroboration
+    (independent result domains). No model call, no extra latency.
+    """
+    relevant = [
+        rf for rf in retrieved_frames if getattr(rf, "relevance", 0.0) >= min_relevance
+    ]
+    mem_conf = (
+        sum(rf.frame.confidence for rf in relevant) / len(relevant)
+        if relevant
+        else 0.0
+    )
+
+    results = getattr(search_info, "results", None) if search_info else None
+    if results:
+        hosts = {
+            host
+            for host in (urlparse(getattr(r, "url", "") or "").hostname for r in results)
+            if host
+        }
+        # One source is a claim; several independent sources are corroboration.
+        search_conf = min(0.9, 0.5 + 0.1 * max(0, len(hosts) - 1))
+        if search_conf >= mem_conf:
+            return round(search_conf, 2), "search"
+
+    if mem_conf > 0:
+        return round(mem_conf, 2), "memory"
+    return 0.0, "none"
 
 
 @dataclass
@@ -1441,6 +1481,9 @@ class Orchestrator:
             ttft_ms=None,  # non-streaming: the response arrives whole, so there
                            # is no first token to measure. pregen_ms governs.
         )
+        confidence, confidence_basis = compute_answer_confidence(
+            memory_context.retrieved_frames, search_info
+        )
         return ChatResponse(
             response=response_text,
             session_id=session_id,
@@ -1450,6 +1493,8 @@ class Orchestrator:
             search_extraction_summary=search_extraction_summary or None,
             citations=citations,
             search_info=search_info,
+            confidence=confidence,
+            confidence_basis=confidence_basis,
         )
 
     async def _handle_scheduled_task(
@@ -2476,6 +2521,9 @@ class Orchestrator:
         # Final metadata: same transparency the non-streaming ChatResponse carries
         # (session id, task type, extraction/search summaries, search info). The UI
         # uses it for the consent dialog, search trace, and "what I learned".
+        confidence, confidence_basis = compute_answer_confidence(
+            memory_context.retrieved_frames, search_info
+        )
         yield serialize_event(
             MetaEvent(
                 session_id=session_id,
@@ -2483,6 +2531,8 @@ class Orchestrator:
                 extraction_summary=extraction_summary,
                 search_extraction_summary=search_extraction_summary,
                 search_info=search_info,
+                confidence=confidence,
+                confidence_basis=confidence_basis,
             )
         )
 

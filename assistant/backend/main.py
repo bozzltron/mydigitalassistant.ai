@@ -2,14 +2,15 @@ import asyncio
 import json
 import logging
 import time
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
 
+import httpx
 from fastapi import Depends as _Depends
 from fastapi import FastAPI, File, HTTPException, Query, Response, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -46,6 +47,11 @@ from assistant.backend.pipeline.llm_client import ChatMessage, OllamaClient
 from assistant.backend.pipeline.orchestrator import ChatRequest, ChatResponse, Orchestrator
 from assistant.backend.pipeline.orchestrator import OrchestratorDeps as _OrchestratorDeps
 from assistant.backend.pipeline.search import WebSearchTool
+from assistant.backend.pipeline.url_safety import (
+    UnsafeURLError,
+    assert_public_url,
+    safe_stream,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -815,6 +821,72 @@ async def get_og_preview(url: str):
         "image": card.image,
         "site_name": card.site_name,
     }
+
+
+# Search thumbnails are small; anything larger is not worth streaming through
+# the backend.
+_MAX_IMAGE_BYTES = 5 * 1024 * 1024
+_IMAGE_PROXY_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (compatible; AssistantBot/1.0)",
+    "Accept": "image/*,*/*;q=0.8",
+}
+
+
+@app.get("/image-proxy")
+async def image_proxy(url: str):
+    """Fetch a remote image server-side and stream it back.
+
+    Privacy: rendering search thumbnails directly would make the browser contact
+    third-party hosts, leaking the user's IP. Routing through the backend keeps
+    the browser talking only to localhost. SSRF-guarded by `safe_stream`
+    (public hosts only, redirects revalidated) and restricted to image
+    content-types.
+    """
+    try:
+        await assert_public_url(url)
+    except UnsafeURLError as e:
+        raise HTTPException(status_code=400, detail=f"blocked url: {e}") from e
+
+    client = httpx.AsyncClient(
+        timeout=httpx.Timeout(10.0, connect=5.0),
+        follow_redirects=False,
+    )
+    stack = AsyncExitStack()
+    try:
+        response = await stack.enter_async_context(
+            safe_stream(client, url, headers=_IMAGE_PROXY_HEADERS)
+        )
+        response.raise_for_status()
+        content_type = response.headers.get("content-type", "")
+        if not content_type.lower().startswith("image/"):
+            raise HTTPException(status_code=415, detail="not an image")
+    except HTTPException:
+        await stack.aclose()
+        await client.aclose()
+        raise
+    except Exception as e:
+        await stack.aclose()
+        await client.aclose()
+        logger.warning("image proxy failed for %s: %s", url, e)
+        raise HTTPException(status_code=502, detail="image fetch failed") from e
+
+    async def body():
+        try:
+            size = 0
+            async for chunk in response.aiter_bytes():
+                size += len(chunk)
+                if size > _MAX_IMAGE_BYTES:
+                    break
+                yield chunk
+        finally:
+            await stack.aclose()
+            await client.aclose()
+
+    return StreamingResponse(
+        body(),
+        media_type=content_type,
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
 
 
 # Users
