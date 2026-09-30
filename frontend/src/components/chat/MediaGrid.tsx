@@ -1,4 +1,5 @@
 import { createSignal, createMemo, createEffect, onCleanup, For, Show } from 'solid-js'
+import { Portal } from 'solid-js/web'
 import type { MediaContent } from '../../types/chat'
 import { hostnameOf, imageSrc } from '../../utils/media'
 
@@ -214,7 +215,11 @@ export default function MediaGrid(props: MediaGridProps) {
       </div>
 
       <Show when={lightboxOpen() && currentImage()}>
-        <div class="media-lightbox" onClick={closeLightbox}>
+        {/* Portal to <body>: the transcript carries an animated transform, which
+            would otherwise become the containing block for this fixed overlay so
+            it scrolled with the content. */}
+        <Portal>
+          <div class="media-lightbox" onClick={closeLightbox}>
           <button
             class="media-lightbox-close"
             onClick={(e) => { e.stopPropagation(); closeLightbox(); }}
@@ -279,7 +284,8 @@ export default function MediaGrid(props: MediaGridProps) {
               </div>
             )}
           </div>
-        </div>
+          </div>
+        </Portal>
       </Show>
     </>
   )

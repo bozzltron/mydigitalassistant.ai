@@ -70,6 +70,19 @@
 
 .msg:hover .msg-actions { opacity: 1; }
 
+/* Footer row: reactions on the left, confidence on the right. */
+.msg-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  margin-top: var(--space-sm);
+}
+
+.msg-footer .msg-actions {
+  margin-top: 0;
+}
+
 .msg-action-btn {
   background: transparent;
   border: none;
@@ -378,7 +391,10 @@
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    /* `none`, not `translateY(0)`: with fill-mode `both` a lingering transform
+       would make this element the containing block for position: fixed
+       descendants (the image lightbox), which then scrolls with the content. */
+    transform: none;
   }
 }
 
@@ -418,7 +434,7 @@
   align-items: center;
   gap: var(--space-xs);
   width: fit-content;
-  margin-top: var(--space-sm);
+  margin: 0;
   padding: 0.2rem 0.55rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-full);

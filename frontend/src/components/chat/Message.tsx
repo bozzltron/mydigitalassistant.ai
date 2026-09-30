@@ -151,18 +151,10 @@ export default function Message(props: MessageProps) {
           </details>
         )}
 
-        {!isUser() && confidence() !== undefined && (
-          <div
-            class={`msg-confidence confidence-${confidenceBand()}`}
-            title={`Confidence ${Math.round((confidence() ?? 0) * 100)}% — ${confidenceLabel()}`}
-          >
-            <span class="confidence-dot" aria-hidden="true" />
-            <span>Confidence {Math.round((confidence() ?? 0) * 100)}%</span>
-          </div>
-        )}
       </div>
 
-      <div class="msg-actions">
+      <div class="msg-footer">
+        <div class="msg-actions">
         <button
           class="msg-action-btn"
           title="Copy message"
@@ -210,8 +202,20 @@ export default function Message(props: MessageProps) {
             </button>
           </>
         )}
+        </div>
 
-        {showCorrection() && (
+        {!isUser() && confidence() !== undefined && (
+          <div
+            class={`msg-confidence confidence-${confidenceBand()}`}
+            title={`Confidence ${Math.round((confidence() ?? 0) * 100)}% — ${confidenceLabel()}`}
+          >
+            <span class="confidence-dot" aria-hidden="true" />
+            <span>Confidence {Math.round((confidence() ?? 0) * 100)}%</span>
+          </div>
+        )}
+      </div>
+
+      {showCorrection() && (
           <div class="correction-panel">
             <textarea
               placeholder="What should I have said? Or what do you want to correct?"
@@ -239,7 +243,6 @@ export default function Message(props: MessageProps) {
             )}
           </div>
         )}
-      </div>
     </div>
   )
 }
