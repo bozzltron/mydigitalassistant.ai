@@ -38,18 +38,16 @@ describe('MediaCard reactivity', () => {
     expect(video!.querySelector('source[src="https://example.com/clip.mp4"]')).not.toBeNull()
   })
 
-  it('switches branch when the media prop changes to a youtube embed (regression: a second early return)', () => {
+  it('switches branch when the media prop changes to a youtube embed', () => {
     const [media, setMedia] = createSignal(image)
     render(() => <MediaCard media={media()} />)
 
     setMedia(youtube)
 
-    // The youtube branch renders a placeholder carrying the derived embed URL.
-    // Asserted loosely on the id: the exact host and query string are
-    // getYouTubeEmbedUrl's business, not what this test is pinning.
-    const placeholder = document.querySelector('.video-placeholder')
-    expect(placeholder).not.toBeNull()
-    expect(placeholder!.getAttribute('data-embed-url')).toContain('dQw4w9WgXcQ')
+    // The YouTube branch renders a real embed (an in-flow iframe).
+    const iframe = document.querySelector('iframe')
+    expect(iframe).not.toBeNull()
+    expect(iframe!.getAttribute('src')).toContain('dQw4w9WgXcQ')
   })
 
   it('reflects a changed title on the same card instance', () => {

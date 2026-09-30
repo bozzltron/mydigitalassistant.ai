@@ -1,6 +1,6 @@
 import { createMemo, createSignal, createEffect, on, Show } from 'solid-js'
 import type { MediaContent } from '../../types/chat'
-import { getYouTubeEmbedUrl, getYouTubeThumbnailUrl, extractYouTubeId, hostnameOf, imageSrc } from '../../utils/media'
+import { getYouTubeEmbedUrl, extractYouTubeId, hostnameOf, imageSrc } from '../../utils/media'
 
 interface MediaCardProps {
   media: MediaContent
@@ -39,9 +39,6 @@ export default function MediaCard(props: MediaCardProps) {
   const isVideo = createMemo(() => props.media.type === 'video')
 
   const videoId = createMemo(() => extractYouTubeId(props.media.url))
-  const thumbnail = createMemo(
-    () => props.media.thumbnail || (videoId() ? getYouTubeThumbnailUrl(videoId()!) : '')
-  )
   const embedUrl = createMemo(() => (videoId() ? getYouTubeEmbedUrl(videoId()!) : ''))
 
   const handleImageError = () => {
@@ -71,24 +68,14 @@ export default function MediaCard(props: MediaCardProps) {
   return (
     <>
       <Show when={isYoutube()}>
-        <div class="msg-video-embed" onClick={handleClick}>
-          <div class="video-placeholder" data-embed-url={embedUrl()}>
-            <button class="play-button" aria-label="Play video">
-              <svg viewBox="0 0 24 24" fill="currentColor">
-                <path d="M8 5v14l11-7z" />
-              </svg>
-            </button>
-            {thumbnail() && (
-              <img
-                src={imageSrc(thumbnail()!)}
-                alt=""
-                class="video-cover-thumb"
-                aria-hidden="true"
-              />
-            )}
-            {props.media.title && <div class="video-title">{props.media.title}</div>}
-            {props.media.description && <div class="video-channel">{props.media.description}</div>}
-          </div>
+        <div class="msg-video-embed">
+          <iframe
+            src={embedUrl()}
+            title={props.media.title || 'YouTube video'}
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+            allowfullscreen
+            loading="lazy"
+          />
         </div>
       </Show>
 
