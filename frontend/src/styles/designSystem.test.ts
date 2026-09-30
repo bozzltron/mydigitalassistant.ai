@@ -78,11 +78,6 @@ describe('design-system guards', () => {
     // Both blocks are now stylesheets with the real tokens.
     const KNOWN_UNDEFINED: Record<string, string> = {
       '--surface3': 'chat.css trace panel background -- the declaration is dead, so that background is transparent',
-      '--person': 'BrainPage.tsx legend dot -- the dot renders with no background',
-      '--concept': 'BrainPage.tsx legend dot and brain.css -- the dot renders with no background',
-      '--event': 'BrainPage.tsx legend dot -- the dot renders with no background',
-      '--household': 'BrainPage.tsx legend dot -- the dot renders with no background',
-      '--entity': 'BrainPage.tsx legend dot -- the dot renders with no background',
     }
 
     const offenders: string[] = []
@@ -132,24 +127,23 @@ describe('design-system guards', () => {
     expect(offenders, `inline styles reintroduced:\n${offenders.join('\n')}`).toEqual([])
   })
 
-  it('no component adds an inline style outside the known-debt list', () => {
-    // AGENTS.md bans inline styles outright. The migration is unfinished, so this
-    // pins exactly which files may still carry one: the set can only shrink, and
-    // a new inline style anywhere else fails the build.
-    const KNOWN_INLINE_STYLE = new Set([
-      'components/brain/BrainGraph.tsx',
-      'components/brain/BrainGraph3D.tsx',
-      'components/brain/BrainPage.tsx',
-      'components/brain/FrameDetail.tsx',
-      'components/chat/InputBar.tsx',
-    ])
-    const offenders = tsxFiles
-      .filter((f) => /style=\{\{/.test(stripComments(read(f))))
-      .map(show)
-      .filter((rel) => !KNOWN_INLINE_STYLE.has(rel))
+  it('uses inline styles only for CSS custom properties', () => {
+    // AGENTS.md bans inline styles. The sanctioned exception is passing a
+    // dynamic value to CSS as a custom property (style={{ '--x': v }}), which
+    // keeps the actual declaration in the stylesheet. A literal property in an
+    // inline style object is a violation.
+    const offenders: string[] = []
+    for (const f of tsxFiles) {
+      const text = stripComments(read(f))
+      for (const m of text.matchAll(/style=\{\{([\s\S]*?)\}\}/g)) {
+        const keys = [...m[1].matchAll(/(?:'|")?([A-Za-z0-9_-]+)(?:'|")?\s*:/g)].map((k) => k[1])
+        const bad = keys.filter((k) => !k.startsWith('--'))
+        if (bad.length > 0) offenders.push(`${show(f)}: ${bad.join(', ')}`)
+      }
+    }
     expect(
       offenders,
-      `inline style added to a file not in the known-debt list (use a stylesheet or a class):\n${offenders.join('\n')}`,
+      `inline style with a non-custom-property key (use a class or a custom property):\n${offenders.join('\n')}`,
     ).toEqual([])
   })
 })

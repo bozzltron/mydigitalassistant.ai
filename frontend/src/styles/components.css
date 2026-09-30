@@ -661,3 +661,8 @@ select {
   color: var(--text-dim);
   margin-top: 0.25rem;
 }
+
+/* Hidden native file input (the visible control is the attach button). */
+.file-input-hidden {
+  display: none;
+}

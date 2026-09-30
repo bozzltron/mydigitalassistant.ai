@@ -110,10 +110,10 @@ export default function InputBar(props: InputBarProps) {
           ref={setFileInputRef}
           id="file-input"
           data-testid="file-input"
+          class="file-input-hidden"
           multiple
           accept=".txt,.csv,.json,.xml,.html,.ics"
           onChange={handleFileChange}
-          style={{ display: 'none' }}
         />
       </div>
       

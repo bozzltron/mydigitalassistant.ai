@@ -763,3 +763,50 @@
     width: 150px;
   }
 }
+/* --- Dynamic values passed as CSS custom properties (no inline styles) --- */
+
+.brain-graph-wrapper {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  flex: 1;
+}
+
+.brain-canvas-3d {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.edge-legend .legend-line {
+  border-top-color: var(--legend-color, currentColor);
+}
+
+.legend-dot,
+.topic-card-dot {
+  background: var(--dot-color, #8b8fa3);
+}
+
+.conf-bar > div {
+  width: var(--conf, 0%);
+}
+
+.frame-type {
+  background: var(--type-color, var(--accent));
+}
+
+.essential-badge {
+  color: var(--warning);
+}
+
+.tooltip {
+  left: var(--tip-x, 0px);
+  top: var(--tip-y, 0px);
+}
+
+.brain-header .refresh-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}

@@ -386,7 +386,7 @@ export default function BrainGraph(props: BrainGraphProps) {
   onCleanup(() => document.removeEventListener('click', handleTooltipAction))
 
   return (
-    <div class="brain-graph-wrapper" style={{ 'position': 'relative', 'width': '100%', 'height': '100%', 'flex': '1' }}>
+    <div class="brain-graph-wrapper">
       <Show when={props.mode() === '2d'}>
         <svg ref={setSvgRef} width={props.width()} height={props.height()} class="brain-canvas">
           <rect width="100%" height="100%" fill="var(--bg)" />
@@ -425,11 +425,11 @@ export default function BrainGraph(props: BrainGraphProps) {
         </Suspense>
       </Show>
 
-      <div class="edge-legend" style={{ 'position': 'absolute', 'left': '1rem', 'bottom': '3.2rem', 'z-index': 10 }}>
+      <div class="edge-legend">
         <For each={RELATION_GROUPS}>
           {(g) => (
-            <div class="legend-item" style={{ 'display': 'flex', 'align-items': 'center', 'gap': '0.45rem', 'font-size': '0.72rem', 'color': 'var(--text-dim)' }}>
-              <div class="legend-line" style={{ 'width': '18px', 'height': '0', 'border-top': `2px solid ${g.color}`, 'border-radius': '2px' }} />
+            <div class="legend-item">
+              <div class="legend-line" style={{ '--legend-color': g.color }} />
               {g.label}
             </div>
           )}
@@ -440,7 +440,7 @@ export default function BrainGraph(props: BrainGraphProps) {
         class="tooltip"
         id="tooltip"
         classList={{ visible: tooltipVisible() }}
-        style={{ 'left': `${tooltipPosition().x}px`, 'top': `${tooltipPosition().y}px` }}
+        style={{ '--tip-x': `${tooltipPosition().x}px`, '--tip-y': `${tooltipPosition().y}px` }}
       >
         {/* eslint-disable-next-line solid/no-innerhtml -- content sanitized by tooltipHtml() then DOMPurify */}
         <div innerHTML={DOMPurify.sanitize(tooltipContent())} />

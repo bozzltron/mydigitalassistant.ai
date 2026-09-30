@@ -403,5 +403,5 @@ export default function BrainGraph3D(props: BrainGraph3DProps) {
     onCleanup(() => el.removeEventListener('mousemove', track))
   })
 
-  return <div ref={setContainerRef} id="brain-canvas-3d" style={{ 'position': 'absolute', 'inset': '0', 'width': '100%', 'height': '100%' }} />
+  return <div ref={setContainerRef} id="brain-canvas-3d" class="brain-canvas-3d" />
 }

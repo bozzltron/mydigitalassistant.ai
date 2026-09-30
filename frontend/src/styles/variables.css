@@ -69,3 +69,13 @@
   --z-toast: 300;
   --z-overlay: 400;
 }
+/* Frame-type palette (semantic tokens for the Brain Observatory).
+   Mirrored in brainLib.TYPE_COLORS for canvas/SVG rendering, which cannot
+   read CSS custom properties. */
+:root {
+  --person: #f78166;
+  --concept: #d2a8ff;
+  --event: #79c0ff;
+  --household: #7ee787;
+  --entity: #ffa657;
+}

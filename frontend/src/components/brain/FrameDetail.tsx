@@ -19,7 +19,7 @@ function fmtTs(ts: string | null | undefined): string {
 function confBar(pct: number): JSX.Element {
   return (
     <div class="conf-bar">
-      <div style={{ width: `${Math.round((pct || 0.5) * 100)}%` }} />
+      <div style={{ '--conf': `${Math.round((pct || 0.5) * 100)}%` }} />
     </div>
   )
 }
@@ -100,7 +100,7 @@ export default function FrameDetail(props: FrameDetailProps) {
             <div class="frame-header">
               <button onClick={props.onBack} class="back-button">← Back</button>
               <h3>{esc(f.name)}</h3>
-              <span class={`frame-type ${f.type}`} style={{ background: typeColor(f.type) }}>
+              <span class={`frame-type ${f.type}`} style={{ '--type-color': typeColor(f.type) }}>
                 {f.type}
               </span>
             </div>
@@ -120,7 +120,7 @@ export default function FrameDetail(props: FrameDetailProps) {
                 </div>
                 <Show when={f.essential}>
                   <div class="info-item essential-badge">
-                    <span style={{ color: 'var(--warning)' }}>⬢ Essential</span>
+                    <span>⬢ Essential</span>
                   </div>
                 </Show>
                 <Show when={f.source_url}>
