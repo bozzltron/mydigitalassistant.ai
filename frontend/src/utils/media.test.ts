@@ -121,6 +121,68 @@ describe('searchMedia', () => {
   })
 })
 
+describe('searchMedia image quality', () => {
+  const withImage = (query: string, result: Record<string, unknown>) =>
+    searchMedia(
+      msg({
+        search_info: {
+          backend: 'brave',
+          query,
+          results: [{ title: 'A', url: 'https://news.example.com/story', snippet: '', engine: 'brave', ...result }],
+        },
+      })
+    )
+
+  it('drops logo/branding imagery from a news query', () => {
+    expect(withImage('today news', { image: 'https://cdn.example.com/assets/logo.png' })).toHaveLength(0)
+    expect(withImage('today news', { image: 'https://cdn.example.com/brand-mark.png' })).toHaveLength(0)
+  })
+
+  it('drops SVG imagery (logos/diagrams) from a web result', () => {
+    expect(withImage('today news', { image: 'https://cdn.example.com/site/wordmark.svg' })).toHaveLength(0)
+  })
+
+  it('drops ad-network imagery', () => {
+    expect(
+      withImage('today news', { image: 'https://pagead2.googlesyndication.com/pagead/banner.jpg' })
+    ).toHaveLength(0)
+  })
+
+  it('drops imagery served from a site homepage (usually branding)', () => {
+    const media = searchMedia(
+      msg({
+        search_info: {
+          backend: 'brave',
+          query: 'today news',
+          results: [
+            {
+              title: 'Example',
+              url: 'https://example.com/',
+              snippet: '',
+              engine: 'brave',
+              image: 'https://cdn.example.com/hero.jpg',
+            },
+          ],
+        },
+      })
+    )
+    expect(media).toHaveLength(0)
+  })
+
+  it('keeps a meaningful content image', () => {
+    const media = withImage('machu picchu', {
+      image: 'https://cdn.example.com/photos/machu-picchu-2024.jpg',
+    })
+    expect(media).toHaveLength(1)
+    expect(media[0].type).toBe('image')
+  })
+
+  it('keeps logos when the query asks for branding', () => {
+    const media = withImage('apple logo', { image: 'https://cdn.example.com/apple-logo.png' })
+    expect(media).toHaveLength(1)
+  })
+})
+
 describe('extractYouTubeId', () => {
   it('tolerates non-string input', () => {
     expect(extractYouTubeId(undefined as unknown as string)).toBeNull()

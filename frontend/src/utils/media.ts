@@ -64,6 +64,48 @@ export function pathnameOf(url: string | undefined | null, maxLength = 50): stri
 // showing it for "pics of Nick Cage" is noise.
 const VIDEO_INTENT = /\b(videos?|watch|clips?|trailers?|youtube|vlogs?|music)\b/i
 
+// When the query is about branding, keep logo/icon imagery; otherwise drop it.
+const WANTS_BRAND_IMAGE = /\b(logos?|icons?|branding|brand|favicon|emblem)\b/i
+
+// Tokens that mark an image as site chrome (logo, icon, ad, tracking pixel)
+// rather than content. Tokens must be delimited so "advertising" or "iconic"
+// are not caught.
+const JUNK_IMAGE_TOKEN =
+  /(^|[/_.-])(logos?|icons?|favicons?|sprite|brand|branding|badge|avatar|placeholder|blank|spacer|pixel|advert|advertisement|sponsor|banner|ads?|tracking|1x1)([/_.-]|$)/i
+// Hosts that serve branding or ad assets.
+const JUNK_IMAGE_HOST =
+  /(^|\.)(clearbit\.com|icons8\.com|brandfetch\.io|gravatar\.com|doubleclick\.net|googlesyndication\.com|adsystem\.com|adservice\.google\.com)$/i
+
+/**
+ * True when an image is site chrome (logo/icon/ad) rather than meaningful
+ * content. Uses the source image URL (Brave's `thumbnail.original`) plus the
+ * page URL; images served from a site's homepage are treated as branding.
+ */
+function isJunkImage(imageUrl: string | undefined, resultUrl: string | undefined): boolean {
+  const img = (imageUrl || '').toLowerCase()
+  if (!img) return true
+  // SVGs are almost always logos/diagrams for a web result.
+  if (/\.svg(\?|#|$)/.test(img)) return true
+  if (/s2\/favicons|favicon\./.test(img)) return true
+  try {
+    const url = new URL(img)
+    if (JUNK_IMAGE_HOST.test(url.hostname)) return true
+    if (JUNK_IMAGE_TOKEN.test(url.pathname)) return true
+  } catch {
+    if (JUNK_IMAGE_TOKEN.test(img)) return true
+  }
+  // A page with no path is a homepage; its image is usually the site logo.
+  if (resultUrl) {
+    try {
+      const page = new URL(resultUrl)
+      if (page.pathname === '' || page.pathname === '/') return true
+    } catch {
+      // Unparseable page URL: leave the image decision to the checks above.
+    }
+  }
+  return false
+}
+
 /**
  * Media for a message, drawn ONLY from its search results.
  *
@@ -78,6 +120,7 @@ export function searchMedia(message: ChatMessage): MediaContent[] {
   if (!info) return []
 
   const media: MediaContent[] = []
+  const wantsBrand = WANTS_BRAND_IMAGE.test(info.query || '')
 
   for (const result of info.results ?? []) {
     // Coerce: a result's thumbnail/image may arrive as an object
@@ -88,6 +131,8 @@ export function searchMedia(message: ChatMessage): MediaContent[] {
     const full = asStr(result.image)
     const display = preview ?? full
     if (!display) continue
+    // Skip logos, icons and ad imagery unless the query is about branding.
+    if (!wantsBrand && isJunkImage(full ?? preview, asStr(result.url))) continue
     media.push({
       type: 'image',
       url: display,
