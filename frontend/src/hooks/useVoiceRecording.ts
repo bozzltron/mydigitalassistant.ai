@@ -1,28 +1,16 @@
 import { createSignal, createEffect, onCleanup } from 'solid-js'
 import { debug } from '../services/logger'
-import { 
-  endDictation, 
-  startListening, 
+import {
+  endDictation,
+  startListening,
   startProcessing,
   exitVoiceMode,
   registerStopRecording,
   unregisterStopRecording,
   isTtsSpeaking,
-  isOutputActiveNow,
-  outputGeneration
 } from '../state/voice'
-import { VoiceActivityDetector } from '../services/voiceActivity'
-import {
-  MAX_RECORDING_MS,
-  MIN_AUDIO_FRAMES,
-  MIN_RECORDING_MS,
-  MONITOR_INTERVAL_MS,
-  SILENCE_DURATION,
-  getAudioContextCtor,
-  isExitCommand,
-  playEarcon,
-  selectMimeType,
-} from '../services/audio'
+import { isExitCommand, playEarcon } from '../services/audio'
+import { createVoiceCapture } from './voiceCapture'
 
 interface UseVoiceRecordingOptions {
   isVoiceMode: () => boolean
@@ -48,58 +36,52 @@ export function useVoiceRecording({
   const getIsVoiceMode = isVoiceMode
   const getIsDictationMode = isDictationMode
   const getIsTurnActive = isTurnActive
-  
-  debug('[useVoiceRecording] init')
-  
-  // Core recording state
-  const [mediaRecorder, setMediaRecorder] = createSignal<MediaRecorder | null>(null)
-  const [audioChunks, setAudioChunks] = createSignal<Blob[]>([])
-  const [isRecording, setIsRecording] = createSignal(false)
-  const [currentMimeType, setCurrentMimeType] = createSignal<string | null>(null)
-  const [audioContext, setAudioContext] = createSignal<AudioContext | null>(null)
-  const [analyser, setAnalyser] = createSignal<AnalyserNode | null>(null)
-  const [mediaStream, setMediaStream] = createSignal<MediaStream | null>(null)
-  const [silenceTimeout, setSilenceTimeout] = createSignal<number | null>(null)
-  const [recordingTimeoutId, setRecordingTimeoutId] = createSignal<number | null>(null)
-  const [recordingStartTime, setRecordingStartTime] = createSignal<number>(0)
-  const [loudFrameCount, setLoudFrameCount] = createSignal(0)
-  const [silenceAfterLoud, setSilenceAfterLoud] = createSignal(false)
-  const [monitorIntervalId, setMonitorIntervalId] = createSignal<number | null>(null)
-  
-  // Owns the silence decision and the adaptive noise floor. Reset at the start
-  // of every recording so one turn's calibration never leaks into the next.
-  const vad = new VoiceActivityDetector()
 
   // State machine state
   const [modeState, setModeState] = createSignal<VoiceModeState>('idle')
   const [userInitiatedStop, setUserInitiatedStop] = createSignal(false)
 
-  // True from the first line of startRecording until it returns or throws, set
-  // before any await. isRecording() only becomes true at the very end, so
-  // without this a second startRecording() walks past the guard and opens a
-  // second microphone. Plain variable: read once per attempt, drives no
-  // rendering.
-  let startingUp = false
-  
-  // Track timers for cleanup
+  // Track timers for cleanup (scheduleListenRetry's no-op timeout).
   const [pendingTimeouts, setPendingTimeouts] = createSignal<Set<number>>(new Set())
-  
+
   function addTimeout(id: number) {
     setPendingTimeouts(prev => new Set(prev).add(id))
   }
 
+  const capture = createVoiceCapture({
+    label: '[voice]',
+    // Either mode counts: dictation records with voice mode off by design, so
+    // asking only about voice mode would drop every dictation capture.
+    shouldCapture: () => getIsVoiceMode() || getIsDictationMode(),
+    onCapture: (blob, mime) => sendAudioForTranscription(blob, mime),
+    onDiscard: (reason) => handleRecordingDiscard(reason),
+    onStartError: () => {
+      if (getIsVoiceMode()) {
+        startProcessing()
+        setTimeout(() => exitVoiceMode(), 100)
+      }
+    },
+    onRecorderError: () => {
+      if (getIsVoiceMode()) {
+        scheduleListenRetry('Recording error, retrying...')
+      }
+    },
+    // Back to 'starting -> idle' is a dead end: the machine only leaves
+    // 'starting' when a condition is lost, and by now the condition that caused
+    // the drop may already be gone. Nudging the state re-enters 'idle', which
+    // re-checks everything.
+    onStartDropped: () => setModeState('idle'),
+  })
+
+  const isRecording = capture.isRecording
 
   // Register stopRecording callback for external access (e.g., TopBar buttons)
+  createEffect(() => {
+    registerStopRecording(() => capture.stop())
+  })
+
   onCleanup(() => {
     unregisterStopRecording()
-  })
-  
-  const stopRecordingFn = () => {
-    stopRecording()
-  }
-  
-  createEffect(() => {
-    registerStopRecording(stopRecordingFn)
   })
 
   // Unified state machine - single effect managing all transitions
@@ -108,7 +90,7 @@ export function useVoiceRecording({
     const turnActive = getIsTurnActive()
     const ttsSpeaking = isTtsSpeaking()
     const state = modeState()
-    const recording = isRecording()
+    const recording = capture.isRecording()
 
     debug('[useVoiceRecording] state machine tick', { state, voiceMode, turnActive, ttsSpeaking, recording, userStop: userInitiatedStop() })
 
@@ -117,36 +99,36 @@ export function useVoiceRecording({
         if (voiceMode && !turnActive && !ttsSpeaking && !userInitiatedStop()) {
           debug('[useVoiceRecording] idle -> starting')
           setModeState('starting')
-          startRecording()
+          void capture.start()
         }
         break
-        
+
       case 'starting':
-        // Waiting for startRecording to complete (sets isRecording=true)
+        // Waiting for start() to complete (sets isRecording=true)
         if (!voiceMode || turnActive || ttsSpeaking) {
           debug('[useVoiceRecording] starting -> idle (condition lost)')
           setModeState('idle')
-          if (recording) stopRecording()
+          if (recording) capture.stop()
         }
         break
-        
+
       case 'recording':
         if (!voiceMode || turnActive) {
           debug('[useVoiceRecording] recording -> idle (voiceMode/turnActive lost)')
           setModeState('idle')
-          stopRecording()
+          capture.stop()
         } else if (ttsSpeaking) {
           debug('[useVoiceRecording] recording -> paused_tts (TTS started)')
           setModeState('paused_tts')
-          stopRecording()
+          capture.stop()
         } else if (userInitiatedStop()) {
           debug('[useVoiceRecording] recording -> user_stopped (user clicked stop)')
           setModeState('user_stopped')
-          stopRecording()
+          capture.stop()
           setUserInitiatedStop(false)
         }
         break
-        
+
       case 'processing':
         // Transcription in progress
         if (!voiceMode) {
@@ -161,7 +143,7 @@ export function useVoiceRecording({
           debug('[useVoiceRecording] processing -> waiting for turn')
         }
         break
-        
+
       case 'paused_tts':
         if (!voiceMode || turnActive) {
           debug('[useVoiceRecording] paused_tts -> idle (voiceMode/turnActive lost)')
@@ -175,7 +157,7 @@ export function useVoiceRecording({
           setUserInitiatedStop(false)
         }
         break
-        
+
       case 'user_stopped':
         // Stay stopped until voice mode is exited
         if (!voiceMode) {
@@ -186,259 +168,11 @@ export function useVoiceRecording({
     }
   })
 
-  function checkAudioLevels() {
-    const reading = vad.read(analyser())
-    if (!reading) return
-    const elapsed = Date.now() - recordingStartTime()
-    const metMinDuration = elapsed >= MIN_RECORDING_MS
-    if (reading.speech) {
-      if (loudFrameCount() === 0) {
-        debug('[voice] speech detected', { rms: reading.rms, threshold: reading.threshold })
-      }
-      setLoudFrameCount(loudFrameCount() + 1)
-      setSilenceAfterLoud(false)
-      const st = silenceTimeout()
-      if (st) {
-        clearTimeout(st)
-        setSilenceTimeout(null)
-      }
-    } else {
-      if (!silenceAfterLoud() && loudFrameCount() > 0) {
-        setSilenceAfterLoud(true)
-        debug('[voice] silence detected after speech, will timeout in', SILENCE_DURATION, 'ms')
-      }
-      if (!silenceTimeout() && metMinDuration && loudFrameCount() >= MIN_AUDIO_FRAMES) {
-        debug('[voice] setting silence timeout:', SILENCE_DURATION, 'ms')
-        const st = window.setTimeout(() => {
-          if (isRecording()) {
-            debug('[voice] silence timeout fired — stopping')
-            stopRecording()
-          }
-        }, SILENCE_DURATION)
-        setSilenceTimeout(st)
-        addTimeout(st)
-      }
-    }
-  }
-
-  function startAudioMonitor() {
-    stopAudioMonitor()
-    const id = window.setInterval(checkAudioLevels, MONITOR_INTERVAL_MS)
-    setMonitorIntervalId(id)
-  }
-
-  function stopAudioMonitor() {
-    const id = monitorIntervalId()
-    if (id !== null) {
-      clearInterval(id)
-      setMonitorIntervalId(null)
-    }
-  }
-
-  async function startRecording() {
-    debug('[voice] startRecording called', { isRecording: isRecording(), modeState: modeState() })
-    // isRecording() is not a sufficient guard. It only becomes true at the end of
-    // this function, so for the whole of the awaits below the hook looked idle
-    // while a capture was being opened, and a second call walked straight past
-    // the guard and opened a second microphone. Set before any suspension point.
-    if (isRecording() || startingUp) return
-    startingUp = true
-    // Half-duplex has to survive the awaits below, not merely be intended.
-    // Opening a microphone can take long enough -- a permission prompt, a cold
-    // AudioContext -- for the agent to start answering. A boolean read before the
-    // await is stale after it; a changed generation proves the speaker moved.
-    const spokeFor = outputGeneration()
-    let stream: MediaStream | null = null
-    let started = false
-    // Set when the capture is handed straight back because the gate closed while
-    // the microphone was opening.
-    let dropped = false
-    try {
-      const ctx = audioContext()
-      if (ctx) {
-        await ctx.close().catch(() => {})
-      }
-
-      stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-      })
-      debug('[voice] got media stream', stream.getTracks())
-
-      // The mic was granted, but the world moved on while we waited. Starting
-      // now would put an open microphone in a room where the agent is talking.
-      // Either mode counts: dictation records with voice mode off by design, so
-      // asking only about voice mode would drop every dictation capture.
-      if (!getIsVoiceMode() && !getIsDictationMode()) {
-        debug('[voice] dropping capture — voice mode ended while the mic was opening')
-        dropped = true
-        return
-      }
-      if (isOutputActiveNow() || outputGeneration() !== spokeFor) {
-        debug('[voice] dropping capture — the agent started speaking while the mic was opening')
-        dropped = true
-        return
-      }
-
-      setMediaStream(stream)
-
-      const AudioContextCtor = getAudioContextCtor()
-      if (!AudioContextCtor) {
-        dropped = true
-        return
-      }
-      const newAudioContext = new AudioContextCtor()
-      setAudioContext(newAudioContext)
-      
-      const newAnalyser = newAudioContext.createAnalyser()
-      newAnalyser.fftSize = 256
-      setAnalyser(newAnalyser)
-      
-      const source = newAudioContext.createMediaStreamSource(stream)
-      source.connect(newAnalyser)
-
-      const mimeType = selectMimeType()
-      if (!mimeType) {
-        console.error('Audio recording not supported in this browser')
-        if (getIsVoiceMode()) {
-          startProcessing()
-          setTimeout(() => exitVoiceMode(), 100)
-        }
-        return
-      }
-      debug('[voice] selected mimeType:', mimeType)
-      const mr = new MediaRecorder(stream, { mimeType })
-      setMediaRecorder(mr)
-      setAudioChunks([])
-      setCurrentMimeType(mimeType)
-
-      mr.ondataavailable = (e) => {
-        if (e.data && e.data.size > 0) {
-          setAudioChunks(prev => [...prev, e.data])
-          debug('[voice] chunk received:', e.data.size, 'total chunks:', audioChunks().length + 1, 'mime:', mimeType)
-        } else {
-          debug('[voice] empty chunk received')
-        }
-      }
-
-      mr.onstop = async () => {
-        const elapsed = Date.now() - recordingStartTime()
-        const currentLoudFrames = loudFrameCount()
-        // Capture voice mode state at stop time (before any state changes)
-        const wasVoiceModeAtStop = getIsVoiceMode()
-        debug('[voice] onstop chunks:', audioChunks().length, 'elapsed:', elapsed, 'loudFrames:', currentLoudFrames)
-        try {
-          if (audioChunks().length === 0) {
-            handleRecordingDiscard("Didn't catch that", wasVoiceModeAtStop)
-            return
-          }
-          const tooShort = elapsed < MIN_RECORDING_MS
-          const notEnoughLoud = currentLoudFrames < MIN_AUDIO_FRAMES
-          debug('[voice] onstop checks tooShort:', tooShort, 'notEnoughLoud:', notEnoughLoud)
-          if (tooShort || notEnoughLoud) {
-            handleRecordingDiscard("Didn't catch that", wasVoiceModeAtStop)
-            return
-          }
-          const blob = new Blob(audioChunks(), { type: currentMimeType() || 'audio/webm' })
-          setAudioChunks([])
-          debug('[voice] sending blob size:', blob.size, 'mime:', currentMimeType())
-          await sendAudioForTranscription(blob)
-        } catch (err) {
-          console.error('[voice] onstop error:', err)
-        }
-      }
-
-      mr.onerror = (e) => {
-        console.error('MediaRecorder error:', e)
-        // Capture voice mode state at error time
-        const wasVoiceModeAtError = getIsVoiceMode()
-        if (wasVoiceModeAtError) {
-          scheduleListenRetry('Recording error, retrying...')
-        }
-      }
-
-      mr.start()
-      started = true
-      setIsRecording(true)
-      setRecordingStartTime(Date.now())
-      setLoudFrameCount(0)
-      setSilenceAfterLoud(false)
-      vad.reset()
-
-      startAudioMonitor()
-
-      const timeoutId = window.setTimeout(() => {
-        if (isRecording()) stopRecording()
-      }, MAX_RECORDING_MS)
-      setRecordingTimeoutId(timeoutId)
-      addTimeout(timeoutId)
-    } catch (e) {
-      console.warn('[voice] Failed to start recording:', e)
-      if (getIsVoiceMode()) {
-        startProcessing()
-        setTimeout(() => exitVoiceMode(), 100)
-      }
-    } finally {
-      startingUp = false
-      // A microphone we were granted but did not use must not be left open --
-      // the recording indicator would stay lit with nothing running.
-      if (stream && !started) {
-        stream.getTracks().forEach(t => t.stop())
-        if (dropped) {
-          // Back to 'starting -> idle' is a dead end: the machine only leaves
-          // 'starting' when a condition is lost, and by now the condition that
-          // caused the drop may already be gone -- an answer can start and finish
-          // entirely inside the await. Nudging the state re-enters the 'idle'
-          // branch, which re-checks everything.
-          setModeState('idle')
-        }
-      }
-    }
-  }
-
-  function stopRecording() {
-    const mr = mediaRecorder()
-    if (!isRecording() || !mr) return
-    const st = silenceTimeout()
-    if (st) {
-      clearTimeout(st)
-      setSilenceTimeout(null)
-    }
-    const rt = recordingTimeoutId()
-    if (rt) {
-      clearTimeout(rt)
-      setRecordingTimeoutId(null)
-    }
-    stopAudioMonitor()
-    setMediaRecorder(null)
-    setIsRecording(false)
-    setSilenceAfterLoud(false)
-    try {
-      mr.stop()
-    } catch (e) {
-      console.warn('Error stopping recorder:', e)
-    }
-    const ms = mediaStream()
-    if (ms) {
-      ms.getTracks().forEach(t => t.stop())
-      setMediaStream(null)
-    }
-    const ctx = audioContext()
-    if (ctx) {
-      ctx.close().catch(() => {})
-      setAudioContext(null)
-      setAnalyser(null)
-    }
-  }
-
   function handleRecordingDiscard(message: string, voiceModeOverride?: boolean) {
-    stopRecording()
+    // The capture is already stopped when this runs from the core; only the
+    // policy side is left to decide.
     const voiceMode = voiceModeOverride ?? getIsVoiceMode()
-    const dictationMode = getIsDictationMode()
-    if (dictationMode) {
+    if (getIsDictationMode()) {
       endDictation()
     } else if (voiceMode) {
       scheduleListenRetry(message)
@@ -454,18 +188,16 @@ export function useVoiceRecording({
     addTimeout(timeoutId)
   }
 
-  async function sendAudioForTranscription(blob: Blob) {
-    debug('[voice] sendAudioForTranscription blob:', blob.size, 'mime:', blob.type, 'voiceMode:', getIsVoiceMode(), 'dictation:', getIsDictationMode())
-    // Capture voice mode state BEFORE startProcessing() changes it to 'processing'
+  async function sendAudioForTranscription(blob: Blob, mime: string) {
+    // Capture voice/dictation state BEFORE startProcessing() changes status
     const wasVoiceMode = getIsVoiceMode()
     const wasDictationMode = getIsDictationMode()
     if (!wasVoiceMode && !wasDictationMode) return
     startProcessing()
-    // State machine will transition to 'processing'
     playEarcon('stop')
 
     try {
-      const mimeExt = (currentMimeType() || 'audio/webm').split('/')[1]
+      const mimeExt = (mime || 'audio/webm').split('/')[1]
       const formData = new FormData()
       formData.append('file', blob, `audio.${mimeExt}`)
 
@@ -509,9 +241,7 @@ export function useVoiceRecording({
       console.error('Transcription error:', err)
       if (wasDictationMode) {
         endDictation()
-        console.error('Transcription failed')
       } else {
-        console.error('Transcription failed')
         scheduleListenRetry('Transcription error, retrying...')
       }
     }
@@ -519,9 +249,7 @@ export function useVoiceRecording({
 
   // Cleanup all pending timeouts on unmount
   onCleanup(() => {
-    stopRecording()
-    stopAudioMonitor()
-    // Clear any pending timeouts
+    capture.cleanup()
     pendingTimeouts().forEach(id => clearTimeout(id))
   })
 
@@ -529,12 +257,12 @@ export function useVoiceRecording({
   const handleUserStop = () => {
     debug('[useVoiceRecording] User initiated stop')
     setUserInitiatedStop(true)
-    stopRecording()
+    capture.stop()
   }
 
   return {
     isRecording,
-    startRecording,
+    startRecording: capture.start,
     stopRecording: handleUserStop,
   }
 }
