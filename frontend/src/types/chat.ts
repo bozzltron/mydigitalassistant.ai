@@ -20,6 +20,9 @@ export interface MessageMeta {
   isQueued?: boolean
   /** Entry point that produced the message. */
   source?: 'voice' | 'text'
+  /** 0-1 answer confidence (memory-grounded) and what it is based on. */
+  confidence?: number
+  confidence_basis?: string
 }
 
 export interface ExtractionSummary {
@@ -83,13 +86,14 @@ export interface MediaContent {
 }
 
 export interface YouTubeVideo {
-  videoId: string
+  // Wire shape from the backend search pipeline (snake_case, as serialized).
+  video_id: string
   title: string
-  channelTitle?: string
-  thumbnailUrl?: string
-  url?: string
-  publishedAt?: string
-  duration?: string
+  channel_title?: string | null
+  thumbnail_url?: string | null
+  url?: string | null
+  published_at?: string | null
+  duration?: string | null
 }
 
 export interface SearchResultItem {
@@ -97,7 +101,9 @@ export interface SearchResultItem {
   url: string
   snippet: string
   engine: string
-  thumbnail?: string
+  thumbnail?: string | null
+  /** Full-size image (Brave thumbnail.original); falls back to `thumbnail`. */
+  image?: string | null
 }
 
 export interface SearchResponse {

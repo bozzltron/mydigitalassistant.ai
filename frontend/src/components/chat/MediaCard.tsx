@@ -1,6 +1,6 @@
 import { createMemo, createSignal, Show } from 'solid-js'
 import type { MediaContent } from '../../types/chat'
-import { getYouTubeEmbedUrl, getYouTubeThumbnailUrl, extractYouTubeId, hostnameOf } from '../../utils/media'
+import { getYouTubeEmbedUrl, getYouTubeThumbnailUrl, extractYouTubeId, hostnameOf, imageSrc } from '../../utils/media'
 
 interface MediaCardProps {
   media: MediaContent
@@ -53,7 +53,7 @@ export default function MediaCard(props: MediaCardProps) {
             </button>
             {thumbnail() && (
               <img
-                src={thumbnail()!}
+                src={imageSrc(thumbnail()!)}
                 alt=""
                 class="video-cover-thumb"
                 aria-hidden="true"
@@ -70,7 +70,7 @@ export default function MediaCard(props: MediaCardProps) {
           <video
             controls
             preload="metadata"
-            poster={props.media.thumbnail}
+            poster={imageSrc(props.media.thumbnail)}
           >
             <source src={props.media.url} type="video/mp4" />
             <source src={props.media.url} type="video/webm" />
@@ -83,7 +83,7 @@ export default function MediaCard(props: MediaCardProps) {
         <div class="msg-media-hero" onClick={handleClick}>
           <Show when={!imageError()}>
             <img
-              src={props.media.url}
+              src={imageSrc(props.media.url)}
               alt={props.media.title || ''}
               onError={handleImageError}
               onLoad={handleImageLoad}

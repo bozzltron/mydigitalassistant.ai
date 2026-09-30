@@ -3,7 +3,6 @@ import { describe, it, expect, afterEach } from 'vitest'
 import { createSignal } from 'solid-js'
 import MediaCard from './MediaCard'
 import MediaGrid from './MediaGrid'
-import PreviewCards from './PreviewCards'
 
 // Every test here targets the same defect: a component read its props by
 // destructuring (`const { media } = props`) or returned early from the body.
@@ -65,25 +64,6 @@ describe('MediaCard reactivity', () => {
   })
 })
 
-describe('PreviewCards reactivity', () => {
-  const card = (host: string) => ({
-    type: 'image' as const,
-    url: `https://${host}/page`,
-    sourceUrl: `https://${host}/page`,
-    thumbnail: `https://${host}/thumb.png`,
-  })
-
-  it('follows a changed cards prop (regression: <For each={cards}> received a frozen array)', () => {
-    const [cards, setCards] = createSignal([card('one.example')])
-    render(() => <PreviewCards cards={cards()} />)
-    expect(document.querySelectorAll('.msg-preview-card')).toHaveLength(1)
-
-    setCards([card('one.example'), card('two.example')])
-
-    expect(document.querySelectorAll('.msg-preview-card')).toHaveLength(2)
-  })
-})
-
 describe('MediaGrid reactivity', () => {
   it('follows a changed media prop (regression: imageMedia was memoised from a destructured snapshot)', () => {
     const [media, setMedia] = createSignal([{ type: 'image' as const, url: 'https://example.com/a.png' }])
@@ -96,6 +76,20 @@ describe('MediaGrid reactivity', () => {
     ])
 
     expect(document.querySelectorAll('.msg-media-grid-item')).toHaveLength(2)
+  })
+})
+
+describe('MediaGrid cap', () => {
+  it('caps visible tiles and shows a +N overflow tile', () => {
+    const media = Array.from({ length: 9 }, (_, i) => ({
+      type: 'image' as const,
+      url: `https://example.com/${i}.png`,
+    }))
+    render(() => <MediaGrid media={media} maxVisible={6} />)
+
+    // 5 tiles + 1 overflow tile.
+    expect(document.querySelectorAll('.msg-media-grid-item')).toHaveLength(6)
+    expect(document.querySelector('.grid-more-count')?.textContent).toBe('+3')
   })
 })
 

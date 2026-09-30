@@ -1,9 +1,13 @@
 import { createSignal, createMemo, createEffect, onCleanup, For, Show } from 'solid-js'
 import type { MediaContent } from '../../types/chat'
-import { hostnameOf } from '../../utils/media'
+import { hostnameOf, imageSrc } from '../../utils/media'
+
+const DEFAULT_MAX_VISIBLE = 6
 
 interface MediaGridProps {
   media: MediaContent[]
+  /** Tiles shown before an overflow tile; the rest open in the lightbox. */
+  maxVisible?: number
   onOpenLightbox?: (media: MediaContent, index: number, allMedia: MediaContent[]) => void
 }
 
@@ -11,24 +15,26 @@ export default function MediaGrid(props: MediaGridProps) {
   const [lightboxOpen, setLightboxOpen] = createSignal(false)
   const [lightboxIndex, setLightboxIndex] = createSignal(0)
   const [loadedImages, setLoadedImages] = createSignal<Set<number>>(new Set())
+  const [failedImages, setFailedImages] = createSignal<Set<number>>(new Set())
 
-  // props.media, not a destructured snapshot: the memo below would otherwise be
-  // built once from a value that can never change, so imageMedia() would never
-  // invalidate and the grid would not follow a new `media` prop.
-  const imageMedia = createMemo(() =>
-    props.media.filter(m => m.type === 'image')
+  const imageMedia = createMemo(() => props.media.filter((m) => m.type === 'image'))
+  const maxVisible = () => props.maxVisible ?? DEFAULT_MAX_VISIBLE
+  const hiddenCount = createMemo(() => Math.max(0, imageMedia().length - maxVisible()))
+  // One slot is given to the "+N more" tile when there is overflow.
+  const visibleMedia = createMemo(() =>
+    hiddenCount() > 0 ? imageMedia().slice(0, maxVisible() - 1) : imageMedia()
   )
+  const overflowIndex = () => maxVisible() - 1
 
-  // The media prop can shrink between renders (a re-extraction, a reconciled
-  // stream). Close the lightbox, or clamp the index, so the accessor below can
-  // never index past the end of the list.
+  // The media prop can shrink between renders; close or clamp so the accessor
+  // below can never index past the end.
   createEffect(() => {
     const count = imageMedia().length
     if (count === 0) {
       if (lightboxOpen()) closeLightbox()
       return
     }
-    setLightboxIndex(i => Math.min(i, count - 1))
+    setLightboxIndex((i) => Math.min(i, count - 1))
   })
 
   const currentImage = createMemo(() => imageMedia()[lightboxIndex()])
@@ -45,11 +51,11 @@ export default function MediaGrid(props: MediaGridProps) {
   }
 
   const goToPrev = () => {
-    setLightboxIndex(i => (i - 1 + imageMedia().length) % imageMedia().length)
+    setLightboxIndex((i) => (i - 1 + imageMedia().length) % imageMedia().length)
   }
 
   const goToNext = () => {
-    setLightboxIndex(i => (i + 1) % imageMedia().length)
+    setLightboxIndex((i) => (i + 1) % imageMedia().length)
   }
 
   const handleKeyDown = (e: KeyboardEvent) => {
@@ -70,12 +76,12 @@ export default function MediaGrid(props: MediaGridProps) {
     document.removeEventListener('keydown', handleKeyDown)
   })
 
-  const handleImageLoad = (index: number) => {
-    setLoadedImages(prev => {
-      const next = new Set(prev)
-      next.add(index)
-      return next
-    })
+  const markLoaded = (index: number) => {
+    setLoadedImages((prev) => new Set(prev).add(index))
+  }
+
+  const markFailed = (index: number) => {
+    setFailedImages((prev) => new Set(prev).add(index))
   }
 
   const handleGridItemClick = (index: number, e: Event) => {
@@ -106,7 +112,7 @@ export default function MediaGrid(props: MediaGridProps) {
   return (
     <>
       <div class="msg-media-grid" role="list" aria-label="Image gallery">
-        <For each={imageMedia()}>
+        <For each={visibleMedia()}>
           {(item, index) => (
             <div
               class={['msg-media-grid-item', getAspectRatioClass(item)].join(' ')}
@@ -119,43 +125,67 @@ export default function MediaGrid(props: MediaGridProps) {
                 }
               }}
             >
-              <a
-                href={item.sourceUrl || item.url}
-                target="_blank"
-                rel="noopener"
-                onClick={(e) => e.stopPropagation()}
+              <Show
+                when={!failedImages().has(index())}
+                fallback={<div class="msg-media-grid-placeholder" aria-hidden="true" />}
               >
                 <img
-                  src={item.url}
+                  src={imageSrc(item.thumbnail ?? item.url)}
                   alt={item.title || ''}
                   loading="lazy"
-                  onLoad={() => handleImageLoad(index())}
+                  onLoad={() => markLoaded(index())}
+                  onError={() => markFailed(index())}
                   classList={{ 'is-loaded': loadedImages().has(index()) }}
                 />
-                <div class="grid-item-overlay">
-                  {item.title && <div class="grid-item-title">{item.title}</div>}
-                  {item.sourceUrl && (
-                    <div class="grid-item-source">
-                      {hostnameOf(item.sourceUrl)}
-                    </div>
-                  )}
-                </div>
-                <button
-                  class="grid-item-expand"
-                  aria-label="View full size"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    handleGridItemClick(index(), e)
-                  }}
-                >
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
-                  </svg>
-                </button>
-              </a>
+              </Show>
+              <div class="grid-item-overlay">
+                {item.title && <div class="grid-item-title">{item.title}</div>}
+                {item.sourceUrl && (
+                  <a
+                    class="grid-item-source"
+                    href={item.sourceUrl}
+                    target="_blank"
+                    rel="noopener"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {hostnameOf(item.sourceUrl)}
+                  </a>
+                )}
+              </div>
+              <button
+                class="grid-item-expand"
+                aria-label="View full size"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  handleGridItemClick(index(), e)
+                }}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+                </svg>
+              </button>
             </div>
           )}
         </For>
+
+        <Show when={hiddenCount() > 0}>
+          <div
+            class="msg-media-grid-item msg-media-grid-item--more"
+            role="listitem"
+            tabindex="0"
+            onClick={(e) => handleGridItemClick(overflowIndex(), e)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                handleGridItemClick(overflowIndex(), e)
+              }
+            }}
+          >
+            <div class="grid-more">
+              <span class="grid-more-count">+{hiddenCount()}</span>
+              <span class="grid-more-label">more</span>
+            </div>
+          </div>
+        </Show>
       </div>
 
       <Show when={lightboxOpen() && currentImage()}>
@@ -197,15 +227,13 @@ export default function MediaGrid(props: MediaGridProps) {
           <div class="media-lightbox-content" onClick={(e) => e.stopPropagation()}>
             <img
               class="media-lightbox-image"
-              src={currentImage()!.url}
+              src={imageSrc(currentImage()!.url)}
               alt={currentImage()!.title || ''}
             />
             {(currentImage()!.title || currentImage()!.sourceUrl) && (
               <div class="media-lightbox-caption">
                 {currentImage()!.title && (
-                  <div class="media-caption-title">
-                    {currentImage()!.title}
-                  </div>
+                  <div class="media-caption-title">{currentImage()!.title}</div>
                 )}
                 {currentImage()!.sourceUrl && (
                   <a

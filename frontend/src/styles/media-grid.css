@@ -201,6 +201,7 @@
   background: var(--surface2);
   aspect-ratio: 1 / 1;
   break-inside: avoid;
+  cursor: pointer;
 }
 
 .msg-media-grid-item--tall {
@@ -228,15 +229,7 @@
   opacity: 1;
 }
 
-.msg-media-grid-item a {
-  display: block;
-  border-radius: var(--media-radius);
-  overflow: hidden;
-  text-decoration: none;
-  color: inherit;
-}
-
-.msg-media-grid-item a:hover img {
+.msg-media-grid-item:hover img {
   transform: scale(1.03);
 }
 
@@ -252,7 +245,7 @@
   transition: opacity var(--transition-base);
 }
 
-.msg-media-grid-item a:hover .grid-item-overlay {
+.msg-media-grid-item:hover .grid-item-overlay {
   opacity: 1;
 }
 
@@ -292,7 +285,7 @@
   backdrop-filter: blur(4px);
 }
 
-.msg-media-grid-item a:hover .grid-item-expand {
+.msg-media-grid-item:hover .grid-item-expand {
   opacity: 1;
 }
 
@@ -654,4 +647,43 @@
   .media-lightbox {
     display: none !important;
   }
+}
+/* Grid tile that failed to load: a diagonal slash marks the empty slot rather
+   than leaving it blank. */
+.msg-media-grid-placeholder {
+  width: 100%;
+  height: 100%;
+  background:
+    linear-gradient(135deg, transparent 46%, var(--border) 46%, var(--border) 54%, transparent 54%),
+    var(--surface2);
+}
+
+.msg-media-grid-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Overflow tile: hidden images open in the lightbox. */
+.grid-more {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+}
+
+.grid-more-count {
+  font-size: 1.3rem;
+  font-weight: 700;
+}
+
+.grid-more-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.85;
 }

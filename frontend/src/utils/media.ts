@@ -1,12 +1,9 @@
-import type { ChatMessage, MediaContent, YouTubeVideo, OgData, SearchInfo } from '../types/chat'
+import type { ChatMessage, MediaContent, SearchResultItem } from '../types/chat'
 
 const YOUTUBE_URL_PATTERNS = [
   /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/,
   /youtube\.com\/watch\?.*v=([a-zA-Z0-9_-]{11})/,
 ]
-
-const VIDEO_EXTENSIONS = ['.mp4', '.webm', '.mov', '.mkv', '.avi', '.m4v']
-const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.avif', '.bmp', '.svg']
 
 export function extractYouTubeId(url: string): string | null {
   for (const pattern of YOUTUBE_URL_PATTERNS) {
@@ -18,28 +15,15 @@ export function extractYouTubeId(url: string): string | null {
   return null
 }
 
-export function isYouTubeUrl(url: string): boolean {
-  return extractYouTubeId(url) !== null
-}
-
-export function isDirectVideoUrl(url: string): boolean {
-  try {
-    const parsed = new URL(url)
-    const pathname = parsed.pathname.toLowerCase()
-    return VIDEO_EXTENSIONS.some(ext => pathname.endsWith(ext))
-  } catch {
-    return false
-  }
-}
-
-export function isDirectImageUrl(url: string): boolean {
-  try {
-    const parsed = new URL(url)
-    const pathname = parsed.pathname.toLowerCase()
-    return IMAGE_EXTENSIONS.some(ext => pathname.endsWith(ext))
-  } catch {
-    return false
-  }
+/**
+ * Route an image URL through the backend proxy so the browser never contacts
+ * third-party image hosts directly (which would leak the user's IP). Non-http
+ * URLs are returned unchanged.
+ */
+export function imageSrc(url: string | undefined | null): string {
+  if (!url) return ''
+  if (!/^https?:\/\//i.test(url)) return url
+  return `/image-proxy?url=${encodeURIComponent(url)}`
 }
 
 /**
@@ -67,187 +51,90 @@ export function pathnameOf(url: string | undefined | null, maxLength = 50): stri
   }
 }
 
-export function extractMediaFromMarkdown(content: string): MediaContent[] {
-  const media: MediaContent[] = []
-  const imageRegex = /!\[([^\]]*)\]\(([^)]+)\)/g
-  let match
+/**
+ * Media for a message, drawn ONLY from its search results.
+ *
+ * Search is the only source of imagery: we do not store images, so nothing is
+ * rendered from memory, slots, or markdown. Returns `[]` for non-search turns.
+ *
+ * Each image keeps both URLs: `thumbnail` (small, for the grid tile) and `url`
+ * (the full image, for the hero and the lightbox).
+ */
+export function searchMedia(message: ChatMessage): MediaContent[] {
+  const info = message.meta?.search_info
+  if (!info) return []
 
-  while ((match = imageRegex.exec(content)) !== null) {
-    const url = match[2]
+  const media: MediaContent[] = []
+
+  for (const result of info.results ?? []) {
+    const preview = result.thumbnail
+    const full = result.image || result.thumbnail
+    if (!preview && !full) continue
+    media.push({
+      type: 'image',
+      url: full ?? '',
+      thumbnail: preview ?? undefined,
+      title: result.title,
+      sourceUrl: result.url,
+    })
+  }
+
+  for (const video of info.video_results ?? []) {
+    const url =
+      video.url ||
+      (video.video_id ? `https://www.youtube.com/watch?v=${video.video_id}` : '')
     if (!url) continue
-    if (isYouTubeUrl(url)) {
-      const videoId = extractYouTubeId(url)
-      if (videoId) {
-        media.push({
-          type: 'youtube',
-          url: `https://www.youtube.com/watch?v=${videoId}`,
-          thumbnail: `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
-        })
-      }
-    } else if (isDirectVideoUrl(url)) {
-      media.push({
-        type: 'video',
-        url,
-      })
-    } else {
-      media.push({
-        type: 'image',
-        url,
-        title: match[1] || undefined,
-      })
-    }
+    media.push({
+      type: 'youtube',
+      url,
+      thumbnail: video.thumbnail_url ?? undefined,
+      title: video.title,
+      description: video.channel_title ?? undefined,
+    })
   }
-
-  return media
-}
-
-export function extractMediaFromOgData(ogData: Record<string, OgData>): MediaContent[] {
-  const media: MediaContent[] = []
-
-  for (const [url, data] of Object.entries(ogData)) {
-    if (data && data.image && typeof data.image === 'string') {
-      media.push({
-        type: 'image',
-        url: data.image,
-        title: data.title,
-        description: data.description,
-        sourceUrl: url,
-        aspectRatio: 16 / 9,
-      })
-    }
-  }
-
-  return media
-}
-
-export function extractMediaFromSearchInfo(searchInfo: SearchInfo): MediaContent[] {
-  const media: MediaContent[] = []
-
-  if (searchInfo?.results) {
-    for (const result of searchInfo.results) {
-      if (result.thumbnail && typeof result.thumbnail === 'string') {
-        media.push({
-          type: 'image',
-          url: result.thumbnail,
-          title: result.title,
-          sourceUrl: result.url,
-        })
-      }
-    }
-  }
-
-  if (searchInfo?.video_results) {
-    for (const video of searchInfo.video_results) {
-      if (video.thumbnailUrl && typeof video.thumbnailUrl === 'string') {
-        media.push({
-          type: 'youtube',
-          url: video.url || `https://www.youtube.com/watch?v=${video.videoId}`,
-          thumbnail: video.thumbnailUrl,
-          title: video.title,
-          description: video.channelTitle,
-        })
-      }
-    }
-  }
-
-  return media
-}
-
-export function extractMediaFromSlots(slots: Array<{ value: string }>): MediaContent[] {
-  const media: MediaContent[] = []
-
-  for (const slot of slots) {
-    if (slot.value && typeof slot.value === 'string') {
-      if (isYouTubeUrl(slot.value)) {
-        const videoId = extractYouTubeId(slot.value)
-        if (videoId) {
-          media.push({
-            type: 'youtube',
-            url: slot.value,
-            thumbnail: `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
-          })
-        }
-      } else if (isDirectImageUrl(slot.value)) {
-        media.push({
-          type: 'image',
-          url: slot.value,
-        })
-      } else if (isDirectVideoUrl(slot.value)) {
-        media.push({
-          type: 'video',
-          url: slot.value,
-        })
-      }
-    }
-  }
-
-  return media
-}
-
-export function extractAllMedia(message: ChatMessage): MediaContent[] {
-  const media: MediaContent[] = []
-
-  if (message.meta?.ogData) {
-    media.push(...extractMediaFromOgData(message.meta.ogData))
-  }
-
-  if (message.meta?.search_info) {
-    media.push(...extractMediaFromSearchInfo(message.meta.search_info))
-  }
-
-  if (message.meta?.extraction_summary?.slots) {
-    media.push(...extractMediaFromSlots(message.meta.extraction_summary.slots))
-  }
-
-  if (message.meta?.search_extraction_summary?.slots) {
-    media.push(...extractMediaFromSlots(message.meta.search_extraction_summary.slots))
-  }
-
-  media.push(...extractMediaFromMarkdown(message.content))
 
   const seen = new Set<string>()
-  return media.filter(m => {
-    const key = m.url
-    if (seen.has(key)) return false
-    seen.add(key)
+  return media.filter((m) => {
+    if (!m.url || seen.has(m.url)) return false
+    seen.add(m.url)
     return true
   })
 }
 
+/** The single item shown as the card at the top: a video if present, else the first image. */
 export function getHeroMedia(media: MediaContent[]): MediaContent | null {
   if (media.length === 0) return null
-
-  const videoMedia = media.find(m => m.type === 'video' || m.type === 'youtube')
-  if (videoMedia) return videoMedia
-
-  return media[0] ?? null
+  return media.find((m) => m.type === 'video' || m.type === 'youtube') ?? media[0] ?? null
 }
 
+/** Images other than the hero; `MediaGrid` caps how many it displays. */
 export function getGridMedia(media: MediaContent[], hero?: MediaContent | null): MediaContent[] {
-  if (media.length <= 1) return []
-
   const heroUrl = hero?.url
-  return media.filter(m => m.url !== heroUrl && m.type === 'image')
+  return media.filter((m) => m.type === 'image' && m.url !== heroUrl)
 }
 
-export function getPreviewCards(media: MediaContent[]): MediaContent[] {
-  return media.filter(m => m.type === 'preview-card' || (m.type === 'image' && m.sourceUrl))
+/** Videos other than the hero (rare; usually there is at most one). */
+export function getExtraVideos(media: MediaContent[], hero?: MediaContent | null): MediaContent[] {
+  const heroUrl = hero?.url
+  return media.filter(
+    (m) => (m.type === 'youtube' || m.type === 'video') && m.url !== heroUrl
+  )
 }
 
-export function createYouTubeVideoFromId(videoId: string, title: string = ''): YouTubeVideo {
-  return {
-    videoId,
-    title,
-    thumbnailUrl: `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`,
-    url: `https://www.youtube.com/watch?v=${videoId}`,
-  }
+/** Results with no image or video, rendered as a compact source list. */
+export function getSourceResults(message: ChatMessage): SearchResultItem[] {
+  const results = message.meta?.search_info?.results ?? []
+  return results.filter((r) => !r.thumbnail && !r.image)
 }
 
 export function getYouTubeEmbedUrl(videoId: string): string {
   return `https://www.youtube-nocookie.com/embed/${videoId}?rel=0&modestbranding=1&enablejsapi=1`
 }
 
-export function getYouTubeThumbnailUrl(videoId: string, quality: 'default' | 'mq' | 'hq' | 'sd' | 'maxres' = 'maxres'): string {
+export function getYouTubeThumbnailUrl(
+  videoId: string,
+  quality: 'default' | 'mq' | 'hq' | 'sd' | 'maxres' = 'maxres'
+): string {
   const qualityMap = {
     default: 'default',
     mq: 'mqdefault',

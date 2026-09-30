@@ -80,6 +80,21 @@ export default function Message(props: MessageProps) {
     searchExtractionSummary()?.slots && searchExtractionSummary()!.slots.length > 0)
   const conflictCount = createMemo(() => learnedSlots().filter(s => s.conflict).length)
 
+  const confidence = createMemo(() => message().meta?.confidence)
+  const confidenceBand = createMemo(() => {
+    const c = confidence()
+    if (c === undefined) return ''
+    if (c >= 0.75) return 'high'
+    if (c >= 0.5) return 'medium'
+    return 'low'
+  })
+  const confidenceLabel = createMemo(() => {
+    const basis = message().meta?.confidence_basis
+    if (basis === 'search') return 'based on search sources'
+    if (basis === 'memory') return 'based on what I remember'
+    return 'little prior knowledge'
+  })
+
   const learnedLabel = createMemo(() => {
     let label = 'What I learned'
     if (conflictCount() > 0) label += ` (${conflictCount()} auto-resolved)`
@@ -134,6 +149,16 @@ export default function Message(props: MessageProps) {
               </For>
             </div>
           </details>
+        )}
+
+        {!isUser() && confidence() !== undefined && (
+          <div
+            class={`msg-confidence confidence-${confidenceBand()}`}
+            title={`Confidence ${Math.round((confidence() ?? 0) * 100)}% — ${confidenceLabel()}`}
+          >
+            <span class="confidence-dot" aria-hidden="true" />
+            <span>Confidence {Math.round((confidence() ?? 0) * 100)}%</span>
+          </div>
         )}
       </div>
 

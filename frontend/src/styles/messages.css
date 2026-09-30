@@ -381,3 +381,75 @@
     transform: translateY(0);
   }
 }
+
+/* Source list for search results with no image/video. */
+.msg-sources {
+  list-style: none;
+  margin: var(--space-md) 0 0;
+  padding: var(--space-sm) 0 0;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  font-size: 0.8rem;
+}
+
+.msg-sources li {
+  display: flex;
+  gap: var(--space-sm);
+  align-items: baseline;
+}
+
+.msg-sources a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.msg-sources a:hover { text-decoration: underline; }
+
+.msg-sources .source-host {
+  color: var(--text-dim);
+  font-size: 0.7rem;
+}
+
+/* Answer confidence: a small chip with a band colour (memory-grounded). */
+.msg-confidence {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  width: fit-content;
+  margin-top: var(--space-sm);
+  padding: 0.2rem 0.55rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: var(--surface2);
+  color: var(--text-dim);
+  font-size: 0.72rem;
+  font-weight: 500;
+}
+
+.msg-confidence .confidence-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  flex-shrink: 0;
+}
+
+.msg-confidence.confidence-high {
+  color: var(--accent2);
+  border-color: rgba(78, 201, 160, 0.4);
+}
+.msg-confidence.confidence-high .confidence-dot { background: var(--accent2); }
+
+.msg-confidence.confidence-medium {
+  color: var(--warning);
+  border-color: rgba(240, 185, 124, 0.4);
+}
+.msg-confidence.confidence-medium .confidence-dot { background: var(--warning); }
+
+.msg-confidence.confidence-low {
+  color: var(--error);
+  border-color: rgba(244, 112, 112, 0.35);
+}
+.msg-confidence.confidence-low .confidence-dot { background: var(--error); }
