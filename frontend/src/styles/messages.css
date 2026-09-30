@@ -354,3 +354,9 @@
   font-size: 0.95rem;
   margin: 0;
 }
+/* Per-message render error fallback. */
+.msg-error {
+  color: var(--error);
+  font-size: 0.85rem;
+  font-style: italic;
+}

@@ -1,4 +1,5 @@
 /* @refresh reload */
+import { ErrorBoundary } from 'solid-js'
 import { render } from 'solid-js/web'
 import { MetaProvider } from '@solidjs/meta'
 import { Router } from '@solidjs/router'
@@ -7,8 +8,18 @@ import './styles/index.css'
 
 render(() => (
   <MetaProvider>
-    <Router base="/">
-      {routes}
-    </Router>
+    <ErrorBoundary
+      fallback={(err, reset) => (
+        <div class="app-error" role="alert">
+          <h2>Something went wrong</h2>
+          <p class="app-error-detail">{String(err)}</p>
+          <button class="btn-primary" onClick={() => reset()}>Try again</button>
+        </div>
+      )}
+    >
+      <Router base="/">
+        {routes}
+      </Router>
+    </ErrorBoundary>
   </MetaProvider>
 ), document.getElementById('root')!)

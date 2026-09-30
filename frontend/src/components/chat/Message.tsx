@@ -1,4 +1,4 @@
-import { createSignal, For, createMemo, createEffect } from 'solid-js'
+import { createSignal, For, createMemo, createEffect, ErrorBoundary } from 'solid-js'
 import type { JSX } from 'solid-js'
 import type { ChatMessage } from '../../types/chat'
 import MessageContent from './MessageContent'
@@ -105,7 +105,11 @@ export default function Message(props: MessageProps) {
       class={`msg ${isUser() ? 'msg-user' : 'msg-assistant'}`}
     >
       <div class="content">
-        <MessageContent message={message} />
+        {/* A throw while rendering one message (bad markdown, a malformed
+            media URL) must not take down the whole transcript. */}
+        <ErrorBoundary fallback={<div class="msg-error">This message could not be rendered.</div>}>
+          <MessageContent message={message} />
+        </ErrorBoundary>
 
         {message().meta?.task_type && (
           <div class="msg-meta">

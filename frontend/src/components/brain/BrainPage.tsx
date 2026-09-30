@@ -1,4 +1,4 @@
-import { createSignal, createMemo, onMount, onCleanup, For, Show } from 'solid-js'
+import { createSignal, createMemo, onMount, onCleanup, For, Show, ErrorBoundary } from 'solid-js'
 import BrainGraph from './BrainGraph'
 import FrameDetail from './FrameDetail'
 import type {
@@ -325,20 +325,22 @@ export default function BrainPage() {
                 </div>
               </Show>
               <Show when={!isLoading() && nodes().length > 0}>
-                <BrainGraph
-                  nodes={nodes}
-                  links={links}
-                  width={width}
-                  height={height}
-                  onNodeClick={handleNodeClick}
-                  highlightedNodeIds={highlightedNodeIds}
-                  conflictsByFrame={conflictsByFrame}
-                  mode={mode}
-                  onModeChange={handleModeChange}
-                  onConflictResolve={handleConflictResolve}
-                  touring={touring}
-                  setTouring={setTouring}
-                />
+                <ErrorBoundary fallback={<div class="graph-placeholder">The memory graph could not be displayed.</div>}>
+                  <BrainGraph
+                    nodes={nodes}
+                    links={links}
+                    width={width}
+                    height={height}
+                    onNodeClick={handleNodeClick}
+                    highlightedNodeIds={highlightedNodeIds}
+                    conflictsByFrame={conflictsByFrame}
+                    mode={mode}
+                    onModeChange={handleModeChange}
+                    onConflictResolve={handleConflictResolve}
+                    touring={touring}
+                    setTouring={setTouring}
+                  />
+                </ErrorBoundary>
               </Show>
               <Show when={isLoading()}>
                 <div class="graph-placeholder">Loading brain...</div>
