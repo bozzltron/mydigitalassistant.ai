@@ -1465,20 +1465,6 @@ class Orchestrator:
                     llm_client=self.llm_client,
                     embed_fn=self.embed_fn(),
                 )
-                # Same reason as the streaming path: a turn transforming
-                # user-supplied content answers from that content, and web_search
-                # is the tool that pre-empts it.
-                if extraction_summary.get("user_content"):
-                    tools = [
-                        t for t in tools if t["function"]["name"] != "web_search"
-                    ]
-                    logger.info(
-                        "web_search withheld: turn transforms user-supplied "
-                        "content (frame=%s)",
-                        (extraction_summary.get("user_content") or {}).get(
-                            "frame_name"
-                        ),
-                    )
                 tool_names = [t["function"]["name"] for t in tools]
                 logger.info("DEBUG: Available tools: %s", tool_names)
                 llm_response = await run_tool_loop(
@@ -2470,27 +2456,6 @@ class Orchestrator:
                 llm_client=self.llm_client,
                 embed_fn=self.embed_fn(),
             )
-
-            # A turn that transforms content the user supplied must answer from
-            # that content, and `web_search` is the tool that pre-empts it. Routed
-            # the way it was, the model asked to rank a supplied list calls
-            # web_search per link and answers about the links instead of the list
-            # (measured 2026-09-30; see experiments/decision_routing_value).
-            #
-            # Withholding the tool is a routing decision the system is entitled to
-            # make: it already knows the turn supplied content and that the request
-            # is to transform it. `fetch_url` stays -- fetching a link the user
-            # actually handed over is working from their content, not replacing it.
-            if extraction_summary.get("user_content"):
-                tools = [
-                    t for t in tools if t["function"]["name"] != "web_search"
-                ]
-                logger.info(
-                    "web_search withheld: turn transforms user-supplied content "
-                    "(frame=%s)",
-                    (extraction_summary.get("user_content") or {}).get("frame_name"),
-                )
-
             tool_names = [t["function"]["name"] for t in tools]
             logger.info("DEBUG: Available tools for streaming: %s", tool_names)
 
