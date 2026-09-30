@@ -10,7 +10,7 @@ import type { Session } from '../../state/session'
 import { useTurnStatus } from '../../services/status'
 import { useVoiceRecording } from '../../hooks/useVoiceRecording'
 import { useConversationVoiceRecording } from '../../hooks/useConversationVoiceRecording'
-import { speakReplacing, startDictation, endDictation, isVoiceModeActive } from '../../state/voice'
+import { speakReplacing, startDictation, endDictation, isVoiceModeActive, voice } from '../../state/voice'
 import { settings, updateSetting } from '../../state/settings'
 import { initQueue } from '../../state/messageQueue'
 import type {
@@ -31,14 +31,14 @@ export default function ChatPage(props: {
   conversation: Session | null
 }) {
   const [messagesContainerRef, setMessagesContainerRef] = createSignal<HTMLDivElement | null>(null)
-  const [localIsDictating, setLocalIsDictating] = createSignal(false)
+  const [dictation, setDictation] = createSignal<{ text: string; seq: number }>({ text: '', seq: 0 })
   const [maxIntelligence, setMaxIntelligence] = createSignal(false)
   const [pendingSearchConsent, setPendingSearchConsent] = createSignal<{
     message: string
     attachedFiles: AttachedFile[] | undefined
     searchInfo: SearchInfo
   } | null>(null)
-  
+
   const isSending = isTurnActive
 
   // Get the current conversation's turnId
@@ -279,9 +279,12 @@ export default function ChatPage(props: {
   // Dictation mode (one-shot mic button) - uses original hook
   useVoiceRecording({
     isVoiceMode: () => false, // Dictation doesn't use voice mode
-    isDictationMode: () => localIsDictating(),
+    isDictationMode: () => voice.isDictating,
     isTurnActive: () => isTurnActive(),
-    onTranscription: handleSendMessage,
+    // Fill the message box so the user can review and send. Sending straight
+    // from dictation (the old behaviour) also started continuous voice mode,
+    // because dictation reuses the 'listening' status.
+    onTranscription: (text) => setDictation(d => ({ text, seq: d.seq + 1 })),
   })
 
   // Conversation mode (continuous voice) - uses new queue-based hook
@@ -295,12 +298,10 @@ export default function ChatPage(props: {
   }
 
   const handleDictationStart = () => {
-    setLocalIsDictating(true)
     startDictation()
   }
 
   const handleDictationStop = () => {
-    setLocalIsDictating(false)
     endDictation()
   }
 
@@ -308,42 +309,50 @@ export default function ChatPage(props: {
     <div id="main">
       <div id="chat-area" class="chat-area">
         <div id="messages" ref={setMessagesContainerRef}>
-          <MessageList messages={messages} />
-          
-          <StatusWrapper turnId={currentConvTurnId} />
-          
-          {/* Queue Panel - shows queued messages during processing */}
-          <Show when={getQueueLength() > 0}>
-            <div class="queue-panel" id="queue-panel">
-              <div class="queue-panel-content">
-                <For each={getQueue()}>
-                  {(queuedMsg) => (
-                    <div class="msg msg-user msg-queued" id={queuedMsg.id}>
-                      <div class="queued-content">
-                        <span class="queued-text">{queuedMsg.content}</span>
-                      </div>
-                      <button 
-                        class="queued-remove"
-                        onClick={() => handleRemoveQueued(queuedMsg.id)}
-                        title="Remove queued message"
-                      >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
-                          <path d="M18 6 6 18M6 6l12 12"/>
-                        </svg>
-                      </button>
-                    </div>
-                  )}
-                </For>
-              </div>
-            </div>
-          </Show>
+          {/* Keyed on the session so switching or first-loading a conversation
+              remounts the transcript and replays the enter animation. */}
+          <Show when={sessionId() ?? '__none__'} keyed>
+            {(_sid) => (
+              <div class="chat-transcript">
+                <MessageList messages={messages} />
 
-          <Show when={messages().length === 0 && getQueueLength() === 0}>
-            <div class="welcome-message" id="welcome">
-              <div class="welcome-icon"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
-              <h2>{props.conversation?.title ? `Conversation: ${props.conversation.title}` : 'Ready to chat'}</h2>
-              <p>Type a message below or click Voice to start hands-free.</p>
-            </div>
+                <StatusWrapper turnId={currentConvTurnId} />
+
+                {/* Queue Panel - shows queued messages during processing */}
+                <Show when={getQueueLength() > 0}>
+                  <div class="queue-panel" id="queue-panel">
+                    <div class="queue-panel-content">
+                      <For each={getQueue()}>
+                        {(queuedMsg) => (
+                          <div class="msg msg-user msg-queued" id={queuedMsg.id}>
+                            <div class="queued-content">
+                              <span class="queued-text">{queuedMsg.content}</span>
+                            </div>
+                            <button 
+                              class="queued-remove"
+                              onClick={() => handleRemoveQueued(queuedMsg.id)}
+                              title="Remove queued message"
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+                                <path d="M18 6 6 18M6 6l12 12"/>
+                              </svg>
+                            </button>
+                          </div>
+                        )}
+                      </For>
+                    </div>
+                  </div>
+                </Show>
+
+                <Show when={messages().length === 0 && getQueueLength() === 0}>
+                  <div class="welcome-message" id="welcome">
+                    <div class="welcome-icon"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
+                    <h2>{props.conversation?.title ? `Conversation: ${props.conversation.title}` : 'Ready to chat'}</h2>
+                    <p>Type a message below or click Voice to start hands-free.</p>
+                  </div>
+                </Show>
+              </div>
+            )}
           </Show>
         </div>
 
@@ -352,9 +361,11 @@ export default function ChatPage(props: {
             onSend={handleSendMessage} 
             isSending={isSending()}
             isStreaming={isStreaming()}
-            isDictating={localIsDictating()}
+            isDictating={voice.isDictating}
             onDictationStart={handleDictationStart}
             onDictationStop={handleDictationStop}
+            dictatedText={dictation().text}
+            dictatedSeq={dictation().seq}
             maxEnabled={maxIntelligence()}
             onToggleMax={() => setMaxIntelligence((v) => !v)}
           />

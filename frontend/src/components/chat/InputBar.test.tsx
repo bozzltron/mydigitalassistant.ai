@@ -1,5 +1,6 @@
 import { render, screen, fireEvent } from '@solidjs/testing-library'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { createSignal } from 'solid-js'
 import InputBar from './InputBar'
 
 describe('InputBar', () => {
@@ -178,5 +179,21 @@ describe('InputBar', () => {
     
     const maxBtn = screen.getByRole('button', { name: /max intelligence/i })
     expect(maxBtn).toHaveClass('active')
+  })
+
+  it('drops dictated text into the box without sending it (regression: dictation auto-sent and started conversation mode)', () => {
+    const [seq, setSeq] = createSignal(0)
+    render(() => (
+      <InputBar
+        onSend={defaultProps.onSend}
+        dictatedText="hello from voice"
+        dictatedSeq={seq()}
+      />
+    ))
+
+    setSeq(1)
+
+    expect(screen.getByPlaceholderText('Type a message...')).toHaveValue('hello from voice')
+    expect(defaultProps.onSend).not.toHaveBeenCalled()
   })
 })

@@ -28,6 +28,22 @@ function toSession(summary: SessionSummary): Session {
   }
 }
 
+/**
+ * Most recently active first (ISO timestamps sort lexicographically). A brand
+ * new conversation has no activity yet, so it sorts last rather than floating to
+ * the top with a stale/absent value.
+ */
+export function sortByRecentActivity(sessions: Session[]): Session[] {
+  return [...sessions].sort((a, b) => {
+    const av = a.last_activity ?? ''
+    const bv = b.last_activity ?? ''
+    if (av === bv) return 0
+    if (av === '') return 1
+    if (bv === '') return -1
+    return av < bv ? 1 : -1
+  })
+}
+
 // Create signal for session state
 export const [session, setSession] = createSignal<Session | null>(null)
 export const [isSessionLoading, setIsSessionLoading] = createSignal(false)
@@ -37,7 +53,7 @@ export const fetchSessions = async (userId: number): Promise<Session[]> => {
   setIsSessionLoading(true)
   try {
     const summaries = await getUserSessions(userId)
-    return summaries.map(toSession)
+    return sortByRecentActivity(summaries.map(toSession))
   } catch (error) {
     console.error('Failed to fetch sessions:', error)
     return []

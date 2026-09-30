@@ -15,6 +15,7 @@ export default function App() {
   const {
     activeConversation,
     handleConversationChange,
+    setActiveConversation,
     initializeFromSavedSession,
   } = useActiveConversation(conversations)
   const { initialized } = useAppInit([assistantName, setAssistantName])
@@ -25,9 +26,19 @@ export default function App() {
   }
 
   const handleNewConversation = async () => {
-    const sessionId = await createNewConversation(newConvTitle().trim() || undefined)
+    const title = newConvTitle().trim()
+    const sessionId = await createNewConversation(title || undefined)
     if (sessionId) {
       localStorage.setItem('session_id', sessionId)
+      // Select the conversation we just created, falling back to a placeholder
+      // if the refreshed list has not caught up yet, so the new chat is active.
+      const created = conversations().find((c) => c.id === sessionId) ?? {
+        id: sessionId,
+        title: title || 'New Conversation',
+        episode_count: 0,
+        last_activity: null,
+      }
+      setActiveConversation(created)
       setShowNewConvModal(false)
       setNewConvTitle('')
     }

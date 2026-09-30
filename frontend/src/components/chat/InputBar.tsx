@@ -1,4 +1,4 @@
-import { createSignal, onCleanup, onMount, For } from 'solid-js'
+import { createSignal, createEffect, onCleanup, onMount, For } from 'solid-js'
 
 interface InputBarProps {
   onSend: (message: string, attachedFiles?: File[]) => void
@@ -10,6 +10,9 @@ interface InputBarProps {
   onDictationStop?: () => void
   maxEnabled?: boolean
   onToggleMax?: () => void
+  /** Transcribed dictation to drop into the box; `dictatedSeq` bumps per capture. */
+  dictatedText?: string
+  dictatedSeq?: number
 }
 
 export default function InputBar(props: InputBarProps) {
@@ -64,6 +67,27 @@ export default function InputBar(props: InputBarProps) {
   const removeFile = (index: number) => {
     setAttachedFiles(prev => prev.filter((_, i) => i !== index))
   }
+
+  const resizeTextarea = () => {
+    const textarea = textareaRef()
+    if (!textarea) return
+    textarea.style.height = 'auto'
+    textarea.style.height = Math.min(textarea.scrollHeight, 140) + 'px'
+  }
+
+  // Dictation fills the message box (the mic's whole point) instead of sending.
+  // `dictatedSeq` is the trigger: it changes once per transcription, so an
+  // unchanged `dictatedText` does not re-append.
+  createEffect(() => {
+    const seq = props.dictatedSeq
+    const text = props.dictatedText?.trim()
+    if (!seq || !text) return
+    setMessage(prev => (prev.trim() ? `${prev.trimEnd()} ${text}` : text))
+    requestAnimationFrame(() => {
+      resizeTextarea()
+      textareaRef()?.focus()
+    })
+  })
 
   onMount(() => {
     const textarea = textareaRef() as HTMLTextAreaElement | null

@@ -27,6 +27,11 @@ describe('voice state helpers', () => {
       expect(isVoiceModeActive()).toBe(false)
     })
 
+    it('returns false while dictating (regression: dictation reuses the listening status, so the continuous-voice hook opened the mic)', () => {
+      setVoice({ ...voice, status: 'listening', isDictating: true })
+      expect(isVoiceModeActive()).toBe(false)
+    })
+
     it('returns false for speaking status', () => {
       setVoice({ ...voice, status: 'speaking' })
       expect(isVoiceModeActive()).toBe(false)

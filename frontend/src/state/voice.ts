@@ -85,10 +85,13 @@ export const isIdle = () => voice.status === 'idle'
 export const isError = () => voice.status === 'error'
 export const isTtsSpeaking = () => voice.isTtsSpeaking
 
-// Voice mode is active during listening AND processing (transcription)
-// This ensures auto-restart logic works during the transcription phase
-export const isVoiceModeActive = () => 
-  voice.status === 'listening' || voice.status === 'processing'
+// Voice mode is active during listening AND processing (transcription), but NOT
+// during one-shot dictation. Dictation reuses the 'listening' status, so without
+// excluding it the continuous-capture hook treated a dictation press as voice
+// mode and opened the mic for hands-free conversation.
+export const isVoiceModeActive = () =>
+  !voice.isDictating &&
+  (voice.status === 'listening' || voice.status === 'processing')
 
 // TTS speaking state setters
 export const setTtsSpeaking = (speaking: boolean) => {

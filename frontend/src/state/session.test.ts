@@ -7,7 +7,7 @@ vi.mock('../services/api', () => ({
   getUsers: vi.fn(),
 }))
 
-import { fetchSessions, sessionTitle } from './session'
+import { fetchSessions, sessionTitle, sortByRecentActivity } from './session'
 import * as api from '../services/api'
 
 describe('sessionTitle', () => {
@@ -40,5 +40,24 @@ describe('fetchSessions', () => {
     expect(sessions).toEqual([
       { id: 'conv_1', title: 'Hello there', episode_count: 2, last_activity: '2026-01-01' },
     ])
+  })
+})
+
+describe('sortByRecentActivity', () => {
+  const s = (id: string, last_activity: string | null) => ({
+    id,
+    title: id,
+    episode_count: 1,
+    last_activity,
+  })
+
+  it('orders most recently active first and pushes never-used conversations last', () => {
+    const sorted = sortByRecentActivity([
+      s('old', '2026-01-01T00:00:00'),
+      s('new', '2026-03-01T00:00:00'),
+      s('empty', null),
+      s('mid', '2026-02-01T00:00:00'),
+    ])
+    expect(sorted.map((x) => x.id)).toEqual(['new', 'mid', 'old', 'empty'])
   })
 })

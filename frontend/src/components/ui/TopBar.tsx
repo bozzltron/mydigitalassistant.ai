@@ -169,6 +169,20 @@ export default function TopBar(props: TopBarProps) {
   // Custom dropdown for conversation selection
   const [showConversationDropdown, setShowConversationDropdown] = createSignal(false)
 
+  // Keep the trigger in sync with the conversation the app has active (e.g. a
+  // conversation created from the New dialog), not only the last user click.
+  createEffect(() => {
+    const id = props.activeConversation?.id
+    if (id) setSelectedSessionId(id)
+  })
+
+  const toggleConversationDropdown = () => {
+    const next = !showConversationDropdown()
+    setShowConversationDropdown(next)
+    // Refresh on open so the list order reflects the latest activity.
+    if (next) void props.onRefreshConversations?.()
+  }
+
   // Use selectedSessionId (from localStorage) to find title in conversations list,
   // fallback to activeConversation from props, then default
   const currentTitle = createMemo(() => 
@@ -186,7 +200,7 @@ export default function TopBar(props: TopBarProps) {
             <button
               id="conversation-trigger"
               class={styles.conversationTrigger}
-              onClick={() => setShowConversationDropdown(!showConversationDropdown())}
+              onClick={() => toggleConversationDropdown()}
               disabled={props.isLoading}
               aria-haspopup="listbox"
               aria-expanded={showConversationDropdown()}
