@@ -86,9 +86,19 @@ rewrite), that content is the subject. Search enriches it; it never replaces it.
 5. **Encode the authority rule where the model can act on it.** `build_system_prompt`
    gets a stable section stating the AGENTS.md rule. Stable placement keeps the prompt
    cache intact — the rule sits in the prefix that already reuses KV across turns.
-6. **Stop search pre-empting a transform request.** In `orchestrator.chat`, when the
-   intent class is transform-the-user's-content and registered user content exists,
-   search is enrichment, not the primary path — it must not become the answer's subject.
+6. **Do not let search replace the content.** The model keeps `web_search` — research
+   is legitimately what the user may be asking for ("let's search about them if we need
+   to") — but the supplied content must remain the subject of the answer rather than
+   being substituted by search prose. Enforced by the prompt rule above and by the
+   output invariant in Phase 3, **not** by withholding the tool.
+
+   History, kept because the mistake is instructive: three attempts were made to reach
+   this with a static rule — a router flag, a prompt line, and finally removing
+   `web_search` from the tool list. The third worked on its own test and broke the
+   real use case: the user pasted bare URLs *precisely so the agent would research
+   them*, and withholding search produced a correctly-ranked list with no research at
+   all. AGENTS.md: route ambiguous inputs via the model rather than heuristic
+   classifiers. See `assistant/tests/test_model_chooses_tools.py`.
 7. **Make the way back visible.** Add "use when the user refers to something earlier in
    this conversation" to the `recall` and `search_episodes` tool descriptions. At 09:13
    the list *was* inside the 6-turn verbatim history window (`limit=7`,
@@ -108,6 +118,34 @@ rewrite), that content is the subject. Search enriches it; it never replaces it.
 - Plan D is where conflicts are reasoned about. Adding a detector here would mean two
   systems answering the same question.
 
+- **No transform subsystem.** An interim design proposed an action type for
+  sort/rank/enrich, a per-item decomposition pipeline, and a `transform_decomposition`
+  experiment to justify it. All dropped: the 45-URL failure was not a missing
+  subsystem, it was the agent discarding its input. Adding a vocabulary for operations
+  the model can already express in prose is mechanism where none was needed. What
+  remains is the invariant below — verification of the output, not a new component.
+
+- **No tool withholding.** `web_search` is available on every turn. Whether a transform
+  turn wants research is the model's per-turn judgement, not a rule.
+
+### Phase 3 — the output invariant (the general fix)
+
+**Every item the user supplied must survive into the answer; anything added must be
+labelled as an addition rather than silently substituted for an item.**
+
+This is the half that is model-first: it constrains the *result*, not the model's
+choices, so the model keeps its freedom where judgement belongs and the system
+guarantees the thing that is mechanically checkable. It is the same posture as the
+frame-aware prompt fit (drop whole frames, never slice one) and `fetch_url` (strip
+HTML, don't trust the model to).
+
+Deliberately small: a check on the assembled answer, not a subsystem. Violations are
+recorded as ordinary memory — a fact the agent can retrieve — not a parallel learning
+mechanism.
+
+**Acceptance:** a transform answer containing none of the supplied items, or
+substituting invented items for them, is detected.
+
 **No retrieval re-tuning.** The `daily_run_*` frames acting as a retrieval magnet is a
 real observation but it is a *measurement question*, not a plan phase. It moves to
 `assistant/experiments/daily_run_retrieval_magnet` (appendix below).
@@ -124,8 +162,9 @@ real observation but it is a *measurement question*, not a plan phase. It moves 
 | R4 | If detection fires and extraction produced nothing, the artifact is written anyway (durability fallback). | 1 |
 | R5 | Registered content renders at full length, never as a 240-char episode digest. | 1 |
 | R6 | The system prompt carries the authority rule: when a request transforms user-supplied content, that content is the subject; search enriches, never replaces. | 2 |
-| R7 | A transform-intent turn with registered user content does not let search become the answer's subject. | 2 |
+| R7 | `web_search` remains available on every turn; whether a transform turn wants research is the model's judgement, not a rule. | 2 |
 | R8 | `recall` and `search_episodes` tool descriptions state they are to be used when the user refers to something earlier in the conversation. | 2 |
+| R9 | Every item the user supplied survives into the answer; inventions and substitutions are detectable. | 3 |
 
 **Non-functional**
 
@@ -134,8 +173,9 @@ real observation but it is a *measurement question*, not a plan phase. It moves 
 | N1 | No new sequential LLM call on the hot path. Phase 1 hangs off the existing concurrent extraction slot. |
 | N2 | The authority rule sits in the stable prompt prefix, so the prompt cache is not invalidated. |
 | N3 | No templated user-facing response. The model writes every answer; the plan only guarantees the source data exists. |
-| N4 | User content stays local. The authority rule must *reduce* searches, not increase them. |
+| N4 | User content stays local. Nothing about this plan requires an external call, and the model decides when search is warranted. |
 | N5 | No cloud LLM; all inference local. |
+| N6 | **No new subsystem.** Phase 3 is a check on output, not an action vocabulary, a decomposition pipeline, or a second learning mechanism. |
 
 **Constraints**
 
@@ -153,16 +193,18 @@ real observation but it is a *measurement question*, not a plan phase. It moves 
 
 ## Test strategy
 
-Regression tests, each named for the bug it prevents:
+Regression tests, each named for the bug it prevents. Where a name differs from what
+an earlier draft of this plan proposed, the shipped name is used — the plan follows
+the code, not the reverse.
 
-- `test_user_supplied_content_registered.py` — a paste produces a frame with
+- `test_user_content_registration.py` — a paste produces a frame with
   `source_type="user_supplied"`, provenance to the supplying episode, order preserved,
-  `frame_ids` non-empty.
-- `test_paste_fallback_write.py` — with a stubbed extractor returning nothing, the
-  durability fallback still stores the artefact (the "small model had a bad day" path).
-- `test_user_content_is_subject_not_search.py` — transform intent + registered user
-  content: the prompt carries the authority rule and search does not become the answer's
-  subject.
+  and the episode linked (`frame_ids` non-empty).
+- `test_supplied_content_reaches_prompt.py` — the supplied content is in the assembled
+  prompt, in order, on both orchestrator paths.
+- `test_model_chooses_tools.py` — `web_search` is available on a paste turn and a plain
+  turn alike, so no content-based rule can creep back; Phase 1 is not undone by a
+  Phase 2 revert.
 
 Gates: `pytest assistant/tests/test_daily_schedule.py assistant/tests/test_review_fixes.py`,
 then the full suite, then `ruff check .`.
