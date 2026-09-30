@@ -79,9 +79,17 @@ services:
       - "127.0.0.1:8081:8080"
     environment:
       - SEARXNG_BASE_URL=http://localhost:8081
-      - SEARXNG_SECRET=${SEARXNG_SECRET:-$(head -c 32 /dev/urandom | base64)}
+      # REQUIRED (see docker-compose.yml): never a shell-generated secret.
+      - "SEARXNG_SECRET=${SEARXNG_SECRET:?SEARXNG_SECRET is required; generate with: openssl rand -base64 32}"
+      - FORCE_OWNERSHIP=false
     volumes:
       - ./searxng:/etc/searxng
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:8080/healthz || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
     restart: unless-stopped
     networks:
       - appnet

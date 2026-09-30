@@ -90,6 +90,7 @@ docker compose exec assistant python -m assistant.scripts.verify_security
    ```bash
    cp .env.example .env
    # edit .env: set TZ=America/Chicago (or your zone)
+   # required: set SEARXNG_SECRET=$(openssl rand -base64 32)
    # optional: set DB_KEY=$(openssl rand -hex 32) to encrypt the brain at rest
    ```
 

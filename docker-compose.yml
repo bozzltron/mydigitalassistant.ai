@@ -99,9 +99,24 @@ services:
       - "127.0.0.1:8080:8080"
     environment:
       - SEARXNG_BASE_URL=http://localhost:8080
-      - SEARXNG_SECRET=${SEARXNG_SECRET:-$(head -c 32 /dev/urandom | base64)}
+      # REQUIRED. Compose does not run a shell, so the old
+      # `:-$(head -c 32 /dev/urandom | base64)` passed that literal string as
+      # the secret -- it was never generated, and never random. Fail fast
+      # instead: generate once with `openssl rand -base64 32` into .env.
+      - "SEARXNG_SECRET=${SEARXNG_SECRET:?SEARXNG_SECRET is required; generate with: openssl rand -base64 32}"
+      # The image runs as root and by default chowns the bind-mounted config
+      # directory on the host to searxng:searxng. The shipped settings.yml and
+      # limiter.toml need no writes, so leave the host directory untouched.
+      - FORCE_OWNERSHIP=false
     volumes:
+      # settings.yml + limiter.toml are provided, so SearXNG only reads here.
       - ./searxng:/etc/searxng
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:8080/healthz || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
     restart: unless-stopped
     networks:
       - appnet
