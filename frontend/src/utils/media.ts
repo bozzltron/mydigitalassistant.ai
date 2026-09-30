@@ -59,6 +59,11 @@ export function pathnameOf(url: string | undefined | null, maxLength = 50): stri
   }
 }
 
+// Only surface video results when the query actually asks for video. Brave
+// attaches a `videos` section to many web responses (no extra request), but
+// showing it for "pics of Nick Cage" is noise.
+const VIDEO_INTENT = /\b(videos?|watch|clips?|trailers?|youtube|vlogs?|music)\b/i
+
 /**
  * Media for a message, drawn ONLY from its search results.
  *
@@ -93,18 +98,20 @@ export function searchMedia(message: ChatMessage): MediaContent[] {
     })
   }
 
-  for (const video of info.video_results ?? []) {
-    const direct = asStr(video.url)
-    const videoId = asStr(video.video_id)
-    const url = direct ?? (videoId ? `https://www.youtube.com/watch?v=${videoId}` : undefined)
-    if (!url) continue
-    media.push({
-      type: 'youtube',
-      url,
-      thumbnail: asStr(video.thumbnail_url),
-      title: asStr(video.title),
-      description: asStr(video.channel_title),
-    })
+  if (VIDEO_INTENT.test(info.query || '')) {
+    for (const video of info.video_results ?? []) {
+      const direct = asStr(video.url)
+      const videoId = asStr(video.video_id)
+      const url = direct ?? (videoId ? `https://www.youtube.com/watch?v=${videoId}` : undefined)
+      if (!url) continue
+      media.push({
+        type: 'youtube',
+        url,
+        thumbnail: asStr(video.thumbnail_url),
+        title: asStr(video.title),
+        description: asStr(video.channel_title),
+      })
+    }
   }
 
   const seen = new Set<string>()

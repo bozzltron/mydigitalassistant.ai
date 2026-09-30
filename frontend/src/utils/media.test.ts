@@ -56,7 +56,7 @@ describe('searchMedia', () => {
     const m = msg({
       search_info: {
         backend: 'brave',
-        query: 'q',
+        query: 'nick cage video',
         results: [],
         video_results: [
           {
@@ -76,6 +76,18 @@ describe('searchMedia', () => {
       title: 'V',
       description: 'Chan',
     })
+  })
+
+  it('does not surface videos for an image-only query', () => {
+    const m = msg({
+      search_info: {
+        backend: 'brave',
+        query: 'pics of nick cage',
+        results: [],
+        video_results: [{ video_id: 'abcdefghijk', title: 'V', thumbnail_url: 'https://img/v.png' }],
+      },
+    })
+    expect(searchMedia(m).some((x) => x.type === 'youtube')).toBe(false)
   })
 
   it('dedupes by url', () => {
@@ -122,7 +134,7 @@ describe('composition', () => {
     const m = msg({
       search_info: {
         backend: 'brave',
-        query: 'q',
+        query: 'machu picchu video',
         results: [
           { title: 'A', url: 'https://page/a', snippet: '', engine: 'brave', thumbnail: 'https://img/a.png' },
           { title: 'B', url: 'https://page/b', snippet: '', engine: 'brave', thumbnail: 'https://img/b.png' },
@@ -142,7 +154,7 @@ describe('composition', () => {
     const m = msg({
       search_info: {
         backend: 'brave',
-        query: 'q',
+        query: 'nick cage video',
         results: [],
         video_results: [{ video_id: 'abcdefghijk', title: 'V', thumbnail_url: 'https://img/v.png' }],
       },
