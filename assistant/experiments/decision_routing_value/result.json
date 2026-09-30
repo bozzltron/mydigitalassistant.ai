@@ -1,0 +1,1182 @@
+{
+  "ollama_version": {
+    "version": "0.35.0"
+  },
+  "chat_model": "qwen3.5:9b",
+  "decision_models": [
+    "tev1:0.8b",
+    "tev1:latest",
+    "nimble:latest"
+  ],
+  "routes": [
+    "answer_from_content",
+    "search_to_enrich",
+    "search_instead"
+  ],
+  "turns": [
+    {
+      "id": 1,
+      "message": "Here are all my manual submission links.  Let's search about them if we need to and rank them by which would be most impactful to mozworth.\n\nhttps://wprb.com/contact/executive-director/\nhttps://wprb.com/contact/music-submissions/\nhttps://docs.google.com/forms/d/e/1FAIpQLSc6n_slllmbuRNsBfInZjC5hwsZa4BTSYP3OjC1xfY_xpNvLA/formResponse\nhttps://www.reddit.com/r/WeAreTheMusicMakers/comments/fsglwm/458_us_college_radio_contacts_their_submission/\nhttps://wkdu.org/contact\nhttps://bookingagentinfo.com/indie-music-blogs-contact-list/\nhttps://atxlibrary.musicat.co/submit\nhttps://www.rockrageradio.com/\nhttps://help.kcrw.com/hc/en-us/requests/new\nhttps://www.kgpc969.org/music-submission\nhttps://www.kcss.net/music-submissions\nhttps://www.wildcat919.com/contact\nhttps://www.austinchronicle.com/contact/\nhttps://www.blakmarigold.com/playlist-submission\nhttps://austinmusiclove.com/\nhttps://app.discovrradio.com/create-account\nhttps://kxt.org/submissions/\nhttps://cjsw.com/music/submit/\nhttps://cjsw.fillout.com/t/nayVJqR423us\nhttps://wfuv.org/user/121/contact\nhttps://amazingradio.com/connect/signup\nhttps://www.bbc.co.uk/introducing\nhttps://www.austintexas.org/events/festivals/\nhttps://www.revolution.fm/\nhttps://magicnothing.xyz/\nhttps://unheard.online/submit\nhttps://submit.happymag.tv/\nhttps://www.vibe971.com/contact-us/\nhttps://www.wfmu.org/email.php?id=447\nhttps://stereogum.com/contact\nhttps://avenuear.com/2023/12/19/submit-music-to-blogs/\nhttps://bandcamp.com/guide\nhttps://www.wxut.com/music-submission\nhttps://kboo.fm/submit-your-music\nhttps://www.indiemusicdiscovery.com/submit-music/\nhttps://twostorymelody.com/contact/\nhttps://madindiemedia.com/playlist-submissions/",
+      "label": "answer_from_content",
+      "note": "the real failure"
+    },
+    {
+      "id": 2,
+      "message": "Sort these in order of impact.\n\nhttps://wprb.com/contact/executive-director/\nhttps://wprb.com/contact/music-submissions/\nhttps://wkdu.org/contact\nhttps://bookingagentinfo.com/indie-music-blogs-contact-list/\nhttps://atxlibrary.musicat.co/submit\nhttps://www.rockrageradio.com/\nhttps://www.kgpc969.org/music-submission",
+      "label": "answer_from_content",
+      "note": ""
+    },
+    {
+      "id": 3,
+      "message": "Summarise these links for me.\n\nhttps://wprb.com/contact/executive-director/\nhttps://wprb.com/contact/music-submissions/\nhttps://wkdu.org/contact\nhttps://bookingagentinfo.com/indie-music-blogs-contact-list/\nhttps://atxlibrary.musicat.co/submit\nhttps://www.rockrageradio.com/\nhttps://www.kgpc969.org/music-submission",
+      "label": "answer_from_content",
+      "note": ""
+    },
+    {
+      "id": 4,
+      "message": "Which of these accept physical submissions?\n\nhttps://wprb.com/contact/executive-director/\nhttps://wprb.com/contact/music-submissions/\nhttps://wkdu.org/contact\nhttps://bookingagentinfo.com/indie-music-blogs-contact-list/\nhttps://atxlibrary.musicat.co/submit\nhttps://www.rockrageradio.com/\nhttps://www.kgpc969.org/music-submission",
+      "label": "search_to_enrich",
+      "note": "needs page facts to add to the list"
+    },
+    {
+      "id": 5,
+      "message": "what is the capital of France?",
+      "label": "search_instead",
+      "note": ""
+    },
+    {
+      "id": 6,
+      "message": "search for austin music festivals",
+      "label": "search_instead",
+      "note": ""
+    },
+    {
+      "id": 7,
+      "message": "Rank these, and tell me anything notable about them.\n\nhttps://wprb.com/contact/executive-director/\nhttps://wkdu.org/contact\nhttps://atxlibrary.musicat.co/submit\nhttps://www.rockrageradio.com/\nhttps://kboo.fm/submit-your-music",
+      "label": "search_to_enrich",
+      "note": "tempting: enrich after ranking"
+    },
+    {
+      "id": 8,
+      "message": "what do you remember about my guitar?",
+      "label": "out_of_scope",
+      "note": "negative control"
+    },
+    {
+      "id": 9,
+      "message": "Here are my links:\n\nhttps://wprb.com/contact/music-submissions/\nhttps://wkdu.org/contact\nhttps://bookingagentinfo.com/indie-music-blogs-contact-list/\nhttps://www.rockrageradio.com/\nhttps://www.kgpc969.org/music-submission\nhttps://kboo.fm/submit-your-music\n\nnow sort them",
+      "label": "answer_from_content",
+      "note": ""
+    },
+    {
+      "id": 10,
+      "message": "how are you today?",
+      "label": "out_of_scope",
+      "note": "negative control"
+    }
+  ],
+  "summaries": [
+    {
+      "condition": "A_chat_model",
+      "model": "qwen3.5:9b",
+      "correct": 4,
+      "total": 10,
+      "searched": 5,
+      "out_of_scope_wrong": 0,
+      "latency_p50_ms": 5545.8,
+      "latency_p95_ms": 17590.7,
+      "confidence_min": null,
+      "confidence_mean": null,
+      "per_turn": [
+        {
+          "turn_id": 1,
+          "label": "answer_from_content",
+          "expected": "answer_from_content",
+          "route": "search_to_enrich",
+          "correct": false,
+          "confidence": null,
+          "elapsed_ms": 16011.4,
+          "error": null
+        },
+        {
+          "turn_id": 2,
+          "label": "answer_from_content",
+          "expected": "answer_from_content",
+          "route": "search_to_enrich",
+          "correct": false,
+          "confidence": null,
+          "elapsed_ms": 13630.1,
+          "error": null
+        },
+        {
+          "turn_id": 3,
+          "label": "answer_from_content",
+          "expected": "answer_from_content",
+          "route": "search_to_enrich",
+          "correct": false,
+          "confidence": null,
+          "elapsed_ms": 18890.0,
+          "error": null
+        },
+        {
+          "turn_id": 4,
+          "label": "search_to_enrich",
+          "expected": "search_to_enrich",
+          "route": "search_to_enrich",
+          "correct": true,
+          "confidence": null,
+          "elapsed_ms": 4776.2,
+          "error": null
+        },
+        {
+          "turn_id": 5,
+          "label": "search_instead",
+          "expected": "search_instead",
+          "route": "no_search",
+          "correct": false,
+          "confidence": null,
+          "elapsed_ms": 4005.6,
+          "error": null
+        },
+        {
+          "turn_id": 6,
+          "label": "search_instead",
+          "expected": "search_instead",
+          "route": "search_instead",
+          "correct": true,
+          "confidence": null,
+          "elapsed_ms": 2980.8,
+          "error": null
+        },
+        {
+          "turn_id": 7,
+          "label": "search_to_enrich",
+          "expected": "search_to_enrich",
+          "route": "answer_from_content",
+          "correct": false,
+          "confidence": null,
+          "elapsed_ms": 17590.7,
+          "error": null
+        },
+        {
+          "turn_id": 8,
+          "label": "out_of_scope",
+          "expected": "no_search",
+          "route": "no_search",
+          "correct": true,
+          "confidence": null,
+          "elapsed_ms": 6149.2,
+          "error": null
+        },
+        {
+          "turn_id": 9,
+          "label": "answer_from_content",
+          "expected": "answer_from_content",
+          "route": "no_search",
+          "correct": false,
+          "confidence": null,
+          "elapsed_ms": 4942.4,
+          "error": null
+        },
+        {
+          "turn_id": 10,
+          "label": "out_of_scope",
+          "expected": "no_search",
+          "route": "no_search",
+          "correct": true,
+          "confidence": null,
+          "elapsed_ms": 2609.9,
+          "error": null
+        }
+      ]
+    },
+    {
+      "condition": "decision_tev1:0.8b",
+      "model": "tev1:0.8b",
+      "correct": 4,
+      "total": 10,
+      "searched": 0,
+      "out_of_scope_wrong": 2,
+      "latency_p50_ms": 102.5,
+      "latency_p95_ms": 109.5,
+      "confidence_min": 0.165,
+      "confidence_mean": 0.569,
+      "per_turn": [
+        {
+          "turn_id": 1,
+          "label": "answer_from_content",
+          "expected": "answer_from_content",
+          "route": "answer_from_content",
+          "correct": true,
+          "confidence": 0.8587927363964627,
+          "elapsed_ms": 354.9,
+          "error": null
+        },
+        {
+          "turn_id": 2,
+          "label": "answer_from_content",
+          "expected": "answer_from_content",
+          "route": "answer_from_content",
+          "correct": true,
+          "confidence": 0.8991444661645457,
+          "elapsed_ms": 109.5,
+          "error": null
+        },
+        {
+          "turn_id": 3,
+          "label": "answer_from_content",
+          "expected": "answer_from_content",
+          "route": "answer_from_content",
+          "correct": true,
+          "confidence": 0.6829176776728472,
+          "elapsed_ms": 102.4,
+          "error": null
+        },
+        {
+          "turn_id": 4,
+          "label": "search_to_enrich",
+          "expected": "search_to_enrich",
+          "route": "answer_from_content",
+          "correct": false,
+          "confidence": 0.35348712936179616,
+          "elapsed_ms": 107.7,
+          "error": null
+        },
+        {
+          "turn_id": 5,
+          "label": "search_instead",
+          "expected": "search_instead",
+          "route": "answer_from_content",
+          "correct": false,
+          "confidence": 0.16457186823547632,
+          "elapsed_ms": 84.8,
+          "error": null
+        },
+        {
+          "turn_id": 6,
+          "label": "search_instead",
+          "expected": "search_instead",
+          "route": "answer_from_content",
+          "correct": false,
+          "confidence": 0.28590757194479544,
+          "elapsed_ms": 86.4,
+          "error": null
+        },
+        {
+          "turn_id": 7,
+          "label": "search_to_enrich",
+          "expected": "search_to_enrich",
+          "route": "answer_from_content",
+          "correct": false,
+          "confidence": 0.7695779665567619,
+          "elapsed_ms": 106.6,
+          "error": null
+        },
+        {
+          "turn_id": 8,
+          "label": "out_of_scope",
+          "expected": "no_search",
+          "route": "answer_from_content",
+          "correct": false,
+          "confidence": 0.5406047929949729,
+          "elapsed_ms": 88.0,
+          "error": null
+        },
+        {
+          "turn_id": 9,
+          "label": "answer_from_content",
+          "expected": "answer_from_content",
+          "route": "answer_from_content",
+          "correct": true,
+          "confidence": 0.9299068659373348,
+          "elapsed_ms": 102.6,
+          "error": null
+        },
+        {
+          "turn_id": 10,
+          "label": "out_of_scope",
+          "expected": "no_search",
+          "route": "answer_from_content",
+          "correct": false,
+          "confidence": 0.20268682932336157,
+          "elapsed_ms": 85.5,
+          "error": null
+        }
+      ]
+    },
+    {
+      "condition": "decision_tev1:latest",
+      "model": "tev1:latest",
+      "correct": 7,
+      "total": 10,
+      "searched": 3,
+      "out_of_scope_wrong": 0,
+      "latency_p50_ms": 470.9,
+      "latency_p95_ms": 507.5,
+      "confidence_min": 0.184,
+      "confidence_mean": 0.47,
+      "per_turn": [
+        {
+          "turn_id": 1,
+          "label": "answer_from_content",
+          "expected": "answer_from_content",
+          "route": "answer_from_content",
+          "correct": true,
+          "confidence": 0.40205818886649436,
+          "elapsed_ms": 1098.8,
+          "error": null
+        },
+        {
+          "turn_id": 2,
+          "label": "answer_from_content",
+          "expected": "answer_from_content",
+          "route": "search_to_enrich",
+          "correct": false,
+          "confidence": 0.18421517075507976,
+          "elapsed_ms": 507.5,
+          "error": null
+        },
+        {
+          "turn_id": 3,
+          "label": "answer_from_content",
+          "expected": "answer_from_content",
+          "route": "answer_from_content",
+          "correct": true,
+          "confidence": 0.6268769876173738,
+          "elapsed_ms": 498.8,
+          "error": null
+        },
+        {
+          "turn_id": 4,
+          "label": "search_to_enrich",
+          "expected": "search_to_enrich",
+          "route": "search_to_enrich",
+          "correct": true,
+          "confidence": 0.24536389432262495,
+          "elapsed_ms": 499.6,
+          "error": null
+        },
+        {
+          "turn_id": 5,
+          "label": "search_instead",
+          "expected": "search_instead",
+          "route": "no_search",
+          "correct": false,
+          "confidence": 0.7087275350696229,
+          "elapsed_ms": 381.6,
+          "error": null
+        },
+        {
+          "turn_id": 6,
+          "label": "search_instead",
+          "expected": "search_instead",
+          "route": "search_instead",
+          "correct": true,
+          "confidence": 0.7005674730551145,
+          "elapsed_ms": 378.2,
+          "error": null
+        },
+        {
+          "turn_id": 7,
+          "label": "search_to_enrich",
+          "expected": "search_to_enrich",
+          "route": "answer_from_content",
+          "correct": false,
+          "confidence": 0.23427827672216528,
+          "elapsed_ms": 463.0,
+          "error": null
+        },
+        {
+          "turn_id": 8,
+          "label": "out_of_scope",
+          "expected": "no_search",
+          "route": "no_search",
+          "correct": true,
+          "confidence": 0.5479560754765577,
+          "elapsed_ms": 386.0,
+          "error": null
+        },
+        {
+          "turn_id": 9,
+          "label": "answer_from_content",
+          "expected": "answer_from_content",
+          "route": "answer_from_content",
+          "correct": true,
+          "confidence": 0.3011550720466102,
+          "elapsed_ms": 478.8,
+          "error": null
+        },
+        {
+          "turn_id": 10,
+          "label": "out_of_scope",
+          "expected": "no_search",
+          "route": "no_search",
+          "correct": true,
+          "confidence": 0.7518352238281325,
+          "elapsed_ms": 389.3,
+          "error": null
+        }
+      ]
+    },
+    {
+      "condition": "decision_nimble:latest",
+      "model": "nimble:latest",
+      "correct": 7,
+      "total": 10,
+      "searched": 1,
+      "out_of_scope_wrong": 0,
+      "latency_p50_ms": 966.4,
+      "latency_p95_ms": 1105.2,
+      "confidence_min": 0.281,
+      "confidence_mean": 0.687,
+      "per_turn": [
+        {
+          "turn_id": 1,
+          "label": "answer_from_content",
+          "expected": "answer_from_content",
+          "route": "answer_from_content",
+          "correct": true,
+          "confidence": 0.4614531575904557,
+          "elapsed_ms": 2097.2,
+          "error": null
+        },
+        {
+          "turn_id": 2,
+          "label": "answer_from_content",
+          "expected": "answer_from_content",
+          "route": "answer_from_content",
+          "correct": true,
+          "confidence": 0.49202128428804826,
+          "elapsed_ms": 1033.4,
+          "error": null
+        },
+        {
+          "turn_id": 3,
+          "label": "answer_from_content",
+          "expected": "answer_from_content",
+          "route": "answer_from_content",
+          "correct": true,
+          "confidence": 0.8005383500725765,
+          "elapsed_ms": 984.5,
+          "error": null
+        },
+        {
+          "turn_id": 4,
+          "label": "search_to_enrich",
+          "expected": "search_to_enrich",
+          "route": "no_search",
+          "correct": false,
+          "confidence": 0.4227952195104796,
+          "elapsed_ms": 979.7,
+          "error": null
+        },
+        {
+          "turn_id": 5,
+          "label": "search_instead",
+          "expected": "search_instead",
+          "route": "no_search",
+          "correct": false,
+          "confidence": 0.8507023633079314,
+          "elapsed_ms": 760.3,
+          "error": null
+        },
+        {
+          "turn_id": 6,
+          "label": "search_instead",
+          "expected": "search_instead",
+          "route": "search_instead",
+          "correct": true,
+          "confidence": 0.9838710232859864,
+          "elapsed_ms": 753.9,
+          "error": null
+        },
+        {
+          "turn_id": 7,
+          "label": "search_to_enrich",
+          "expected": "search_to_enrich",
+          "route": "answer_from_content",
+          "correct": false,
+          "confidence": 0.28064598691894227,
+          "elapsed_ms": 953.2,
+          "error": null
+        },
+        {
+          "turn_id": 8,
+          "label": "out_of_scope",
+          "expected": "no_search",
+          "route": "no_search",
+          "correct": true,
+          "confidence": 0.9169979442486026,
+          "elapsed_ms": 847.6,
+          "error": null
+        },
+        {
+          "turn_id": 9,
+          "label": "answer_from_content",
+          "expected": "answer_from_content",
+          "route": "answer_from_content",
+          "correct": true,
+          "confidence": 0.697525397738535,
+          "elapsed_ms": 1105.2,
+          "error": null
+        },
+        {
+          "turn_id": 10,
+          "label": "out_of_scope",
+          "expected": "no_search",
+          "route": "no_search",
+          "correct": true,
+          "confidence": 0.9643298504598053,
+          "elapsed_ms": 862.7,
+          "error": null
+        }
+      ]
+    }
+  ],
+  "raw": [
+    {
+      "condition": "A_chat_model",
+      "model": "qwen3.5:9b",
+      "results": [
+        {
+          "turn_id": 1,
+          "label": "answer_from_content",
+          "route": "search_to_enrich",
+          "raw": "{\"route\": \"search_to_enrich\"}",
+          "elapsed_ms": 16011.422424111515,
+          "error": null
+        },
+        {
+          "turn_id": 2,
+          "label": "answer_from_content",
+          "route": "search_to_enrich",
+          "raw": "{\"route\": \"search_to_enrich\"}",
+          "elapsed_ms": 13630.052880966105,
+          "error": null
+        },
+        {
+          "turn_id": 3,
+          "label": "answer_from_content",
+          "route": "search_to_enrich",
+          "raw": "{\"route\": \"search_to_enrich\"}",
+          "elapsed_ms": 18889.955759048462,
+          "error": null
+        },
+        {
+          "turn_id": 4,
+          "label": "search_to_enrich",
+          "route": "search_to_enrich",
+          "raw": "{\"route\": \"search_to_enrich\"}",
+          "elapsed_ms": 4776.165626943111,
+          "error": null
+        },
+        {
+          "turn_id": 5,
+          "label": "search_instead",
+          "route": "no_search",
+          "raw": "{\"route\": \"no_search\"}",
+          "elapsed_ms": 4005.604126956314,
+          "error": null
+        },
+        {
+          "turn_id": 6,
+          "label": "search_instead",
+          "route": "search_instead",
+          "raw": "{\"route\": \"search_instead\"}",
+          "elapsed_ms": 2980.782500002533,
+          "error": null
+        },
+        {
+          "turn_id": 7,
+          "label": "search_to_enrich",
+          "route": "answer_from_content",
+          "raw": "{\"route\": \"answer_from_content\"}",
+          "elapsed_ms": 17590.697300969623,
+          "error": null
+        },
+        {
+          "turn_id": 8,
+          "label": "out_of_scope",
+          "route": "no_search",
+          "raw": "{\"route\": \"no_search\"}",
+          "elapsed_ms": 6149.239169084467,
+          "error": null
+        },
+        {
+          "turn_id": 9,
+          "label": "answer_from_content",
+          "route": "no_search",
+          "raw": "{\"route\": \"no_search\"}",
+          "elapsed_ms": 4942.379210027866,
+          "error": null
+        },
+        {
+          "turn_id": 10,
+          "label": "out_of_scope",
+          "route": "no_search",
+          "raw": "{\"route\": \"no_search\"}",
+          "elapsed_ms": 2609.920708928257,
+          "error": null
+        }
+      ]
+    },
+    {
+      "condition": "decision_tev1:0.8b",
+      "model": "tev1:0.8b",
+      "results": [
+        {
+          "turn_id": 1,
+          "label": "answer_from_content",
+          "route": "answer_from_content",
+          "confidence": 0.8587927363964627,
+          "probabilities": {
+            "answer_from_content": 0.9583997673594056,
+            "search_to_enrich": 0.03500545764203797,
+            "search_instead": 0.0032245193323644046,
+            "no_search": 0.0033702556661919948
+          },
+          "elapsed_ms": 354.94925000239164,
+          "usage": {
+            "input_tokens": 801,
+            "output_tokens": 1
+          },
+          "error": null
+        },
+        {
+          "turn_id": 2,
+          "label": "answer_from_content",
+          "route": "answer_from_content",
+          "confidence": 0.8991444661645457,
+          "probabilities": {
+            "answer_from_content": 0.9729650930743519,
+            "search_to_enrich": 0.022395412488184552,
+            "search_instead": 0.0027305451553169065,
+            "no_search": 0.0019089492821467173
+          },
+          "elapsed_ms": 109.4547079410404,
+          "usage": {
+            "input_tokens": 333,
+            "output_tokens": 1
+          },
+          "error": null
+        },
+        {
+          "turn_id": 3,
+          "label": "answer_from_content",
+          "route": "answer_from_content",
+          "confidence": 0.6829176776728472,
+          "probabilities": {
+            "answer_from_content": 0.8903930900228247,
+            "search_to_enrich": 0.07250863263553266,
+            "search_instead": 0.01253194677677831,
+            "no_search": 0.024566330564864396
+          },
+          "elapsed_ms": 102.42812498472631,
+          "usage": {
+            "input_tokens": 334,
+            "output_tokens": 1
+          },
+          "error": null
+        },
+        {
+          "turn_id": 4,
+          "label": "search_to_enrich",
+          "route": "answer_from_content",
+          "confidence": 0.35348712936179616,
+          "probabilities": {
+            "answer_from_content": 0.6794667232631589,
+            "search_to_enrich": 0.21739438984258833,
+            "search_instead": 0.03754474712586782,
+            "no_search": 0.06559413976838503
+          },
+          "elapsed_ms": 107.69691702444106,
+          "usage": {
+            "input_tokens": 333,
+            "output_tokens": 1
+          },
+          "error": null
+        },
+        {
+          "turn_id": 5,
+          "label": "search_instead",
+          "route": "answer_from_content",
+          "confidence": 0.16457186823547632,
+          "probabilities": {
+            "answer_from_content": 0.5592396372306837,
+            "search_to_enrich": 0.14789011726042947,
+            "search_instead": 0.10449361646026457,
+            "no_search": 0.18837662904862232
+          },
+          "elapsed_ms": 84.79545800946653,
+          "usage": {
+            "input_tokens": 239,
+            "output_tokens": 1
+          },
+          "error": null
+        },
+        {
+          "turn_id": 6,
+          "label": "search_instead",
+          "route": "answer_from_content",
+          "confidence": 0.28590757194479544,
+          "probabilities": {
+            "answer_from_content": 0.6331996550032419,
+            "search_to_enrich": 0.2315272451250944,
+            "search_instead": 0.05461956414283627,
+            "no_search": 0.08065353572882741
+          },
+          "elapsed_ms": 86.38633298687637,
+          "usage": {
+            "input_tokens": 238,
+            "output_tokens": 1
+          },
+          "error": null
+        },
+        {
+          "turn_id": 7,
+          "label": "search_to_enrich",
+          "route": "answer_from_content",
+          "confidence": 0.7695779665567619,
+          "probabilities": {
+            "answer_from_content": 0.9198710806423207,
+            "search_to_enrich": 0.06876934538496822,
+            "search_instead": 0.00681979722941351,
+            "no_search": 0.004539776743297399
+          },
+          "elapsed_ms": 106.60966695286334,
+          "usage": {
+            "input_tokens": 303,
+            "output_tokens": 1
+          },
+          "error": null
+        },
+        {
+          "turn_id": 8,
+          "label": "out_of_scope",
+          "route": "answer_from_content",
+          "confidence": 0.5406047929949729,
+          "probabilities": {
+            "answer_from_content": 0.8149761045642848,
+            "search_to_enrich": 0.12063366277486384,
+            "search_instead": 0.01822825032369832,
+            "no_search": 0.046161982337152976
+          },
+          "elapsed_ms": 88.03475007880479,
+          "usage": {
+            "input_tokens": 240,
+            "output_tokens": 1
+          },
+          "error": null
+        },
+        {
+          "turn_id": 9,
+          "label": "answer_from_content",
+          "route": "answer_from_content",
+          "confidence": 0.9299068659373348,
+          "probabilities": {
+            "answer_from_content": 0.981919286118582,
+            "search_to_enrich": 0.016415582335340198,
+            "search_instead": 0.0009412405775476169,
+            "no_search": 0.0007238909685300073
+          },
+          "elapsed_ms": 102.62033401522785,
+          "usage": {
+            "input_tokens": 323,
+            "output_tokens": 1
+          },
+          "error": null
+        },
+        {
+          "turn_id": 10,
+          "label": "out_of_scope",
+          "route": "answer_from_content",
+          "confidence": 0.20268682932336157,
+          "probabilities": {
+            "answer_from_content": 0.5780896601265518,
+            "search_to_enrich": 0.12926606993321416,
+            "search_instead": 0.07304696381021186,
+            "no_search": 0.21959730613002204
+          },
+          "elapsed_ms": 85.47008293680847,
+          "usage": {
+            "input_tokens": 237,
+            "output_tokens": 1
+          },
+          "error": null
+        }
+      ]
+    },
+    {
+      "condition": "decision_tev1:latest",
+      "model": "tev1:latest",
+      "results": [
+        {
+          "turn_id": 1,
+          "label": "answer_from_content",
+          "route": "answer_from_content",
+          "confidence": 0.40205818886649436,
+          "probabilities": {
+            "answer_from_content": 0.6825811704008009,
+            "search_to_enrich": 0.22186725134773044,
+            "search_instead": 0.0020332803175412816,
+            "no_search": 0.09351829793392742
+          },
+          "elapsed_ms": 1098.7940010381863,
+          "usage": {
+            "input_tokens": 801,
+            "output_tokens": 1
+          },
+          "error": null
+        },
+        {
+          "turn_id": 2,
+          "label": "answer_from_content",
+          "route": "search_to_enrich",
+          "confidence": 0.18421517075507976,
+          "probabilities": {
+            "answer_from_content": 0.3146056850908585,
+            "search_to_enrich": 0.4542418162859004,
+            "search_instead": 0.020867181596790994,
+            "no_search": 0.2102853170264502
+          },
+          "elapsed_ms": 507.5064590200782,
+          "usage": {
+            "input_tokens": 333,
+            "output_tokens": 1
+          },
+          "error": null
+        },
+        {
+          "turn_id": 3,
+          "label": "answer_from_content",
+          "route": "answer_from_content",
+          "confidence": 0.6268769876173738,
+          "probabilities": {
+            "answer_from_content": 0.8580498519981832,
+            "search_to_enrich": 0.06074439350242433,
+            "search_instead": 0.0027039487017953903,
+            "no_search": 0.07850180579759708
+          },
+          "elapsed_ms": 498.7635419238359,
+          "usage": {
+            "input_tokens": 334,
+            "output_tokens": 1
+          },
+          "error": null
+        },
+        {
+          "turn_id": 4,
+          "label": "search_to_enrich",
+          "route": "search_to_enrich",
+          "confidence": 0.24536389432262495,
+          "probabilities": {
+            "answer_from_content": 0.38085341495904446,
+            "search_to_enrich": 0.4666100259913789,
+            "search_instead": 0.009656294622282803,
+            "no_search": 0.14288026442729387
+          },
+          "elapsed_ms": 499.6000420069322,
+          "usage": {
+            "input_tokens": 333,
+            "output_tokens": 1
+          },
+          "error": null
+        },
+        {
+          "turn_id": 5,
+          "label": "search_instead",
+          "route": "no_search",
+          "confidence": 0.7087275350696229,
+          "probabilities": {
+            "answer_from_content": 0.011975356407191029,
+            "search_to_enrich": 0.004530687398458137,
+            "search_instead": 0.0939673748706803,
+            "no_search": 0.8895265813236706
+          },
+          "elapsed_ms": 381.59758399706334,
+          "usage": {
+            "input_tokens": 239,
+            "output_tokens": 1
+          },
+          "error": null
+        },
+        {
+          "turn_id": 6,
+          "label": "search_instead",
+          "route": "search_instead",
+          "confidence": 0.7005674730551145,
+          "probabilities": {
+            "answer_from_content": 0.007880234628677906,
+            "search_to_enrich": 0.04523566185321805,
+            "search_instead": 0.9004738451444109,
+            "no_search": 0.04641025837369327
+          },
+          "elapsed_ms": 378.1834590481594,
+          "usage": {
+            "input_tokens": 238,
+            "output_tokens": 1
+          },
+          "error": null
+        },
+        {
+          "turn_id": 7,
+          "label": "search_to_enrich",
+          "route": "answer_from_content",
+          "confidence": 0.23427827672216528,
+          "probabilities": {
+            "answer_from_content": 0.4847599596639155,
+            "search_to_enrich": 0.3391225900573976,
+            "search_instead": 0.009834261387482163,
+            "no_search": 0.1662831888912047
+          },
+          "elapsed_ms": 462.9811249906197,
+          "usage": {
+            "input_tokens": 303,
+            "output_tokens": 1
+          },
+          "error": null
+        },
+        {
+          "turn_id": 8,
+          "label": "out_of_scope",
+          "route": "no_search",
+          "confidence": 0.5479560754765577,
+          "probabilities": {
+            "answer_from_content": 0.0627471459766776,
+            "search_to_enrich": 0.043531044996325666,
+            "search_instead": 0.058518461259884094,
+            "no_search": 0.8352033477671127
+          },
+          "elapsed_ms": 386.0087089706212,
+          "usage": {
+            "input_tokens": 240,
+            "output_tokens": 1
+          },
+          "error": null
+        },
+        {
+          "turn_id": 9,
+          "label": "answer_from_content",
+          "route": "answer_from_content",
+          "confidence": 0.3011550720466102,
+          "probabilities": {
+            "answer_from_content": 0.5307247846084702,
+            "search_to_enrich": 0.09543288431420331,
+            "search_instead": 0.008495975537556403,
+            "no_search": 0.3653463555397702
+          },
+          "elapsed_ms": 478.84995804633945,
+          "usage": {
+            "input_tokens": 323,
+            "output_tokens": 1
+          },
+          "error": null
+        },
+        {
+          "turn_id": 10,
+          "label": "out_of_scope",
+          "route": "no_search",
+          "confidence": 0.7518352238281325,
+          "probabilities": {
+            "answer_from_content": 0.015446513038683607,
+            "search_to_enrich": 0.015918617755437302,
+            "search_instead": 0.04525942740196436,
+            "no_search": 0.9233754418039147
+          },
+          "elapsed_ms": 389.34141700156033,
+          "usage": {
+            "input_tokens": 237,
+            "output_tokens": 1
+          },
+          "error": null
+        }
+      ]
+    },
+    {
+      "condition": "decision_nimble:latest",
+      "model": "nimble:latest",
+      "results": [
+        {
+          "turn_id": 1,
+          "label": "answer_from_content",
+          "route": "answer_from_content",
+          "confidence": 0.4614531575904557,
+          "probabilities": {
+            "answer_from_content": 0.7405260129640151,
+            "search_to_enrich": 0.08909949044130684,
+            "search_instead": 0.0012056320855280225,
+            "no_search": 0.16916886450914995
+          },
+          "elapsed_ms": 2097.1990840043873,
+          "usage": {
+            "input_tokens": 839,
+            "output_tokens": 1
+          },
+          "error": null
+        },
+        {
+          "turn_id": 2,
+          "label": "answer_from_content",
+          "route": "answer_from_content",
+          "confidence": 0.49202128428804826,
+          "probabilities": {
+            "answer_from_content": 0.7197268933984576,
+            "search_to_enrich": 0.02660655441275936,
+            "search_instead": 0.004610880689551162,
+            "no_search": 0.2490556714992318
+          },
+          "elapsed_ms": 1033.388959011063,
+          "usage": {
+            "input_tokens": 371,
+            "output_tokens": 1
+          },
+          "error": null
+        },
+        {
+          "turn_id": 3,
+          "label": "answer_from_content",
+          "route": "answer_from_content",
+          "confidence": 0.8005383500725765,
+          "probabilities": {
+            "answer_from_content": 0.9385879160553633,
+            "search_to_enrich": 0.012471118932319426,
+            "search_instead": 0.00435302865544487,
+            "no_search": 0.04458793635687235
+          },
+          "elapsed_ms": 984.5110418973491,
+          "usage": {
+            "input_tokens": 372,
+            "output_tokens": 1
+          },
+          "error": null
+        },
+        {
+          "turn_id": 4,
+          "label": "search_to_enrich",
+          "route": "no_search",
+          "confidence": 0.4227952195104796,
+          "probabilities": {
+            "answer_from_content": 0.15266976371427993,
+            "search_to_enrich": 0.06773541878354697,
+            "search_instead": 0.03304234768012259,
+            "no_search": 0.7465524698220505
+          },
+          "elapsed_ms": 979.7124169999734,
+          "usage": {
+            "input_tokens": 371,
+            "output_tokens": 1
+          },
+          "error": null
+        },
+        {
+          "turn_id": 5,
+          "label": "search_instead",
+          "route": "no_search",
+          "confidence": 0.8507023633079314,
+          "probabilities": {
+            "answer_from_content": 0.00016041425276215441,
+            "search_to_enrich": 0.00011588900750012112,
+            "search_instead": 0.05196365323907746,
+            "no_search": 0.9477600435006602
+          },
+          "elapsed_ms": 760.3045420255512,
+          "usage": {
+            "input_tokens": 277,
+            "output_tokens": 1
+          },
+          "error": null
+        },
+        {
+          "turn_id": 6,
+          "label": "search_instead",
+          "route": "search_instead",
+          "confidence": 0.9838710232859864,
+          "probabilities": {
+            "answer_from_content": 0.00028959228325363867,
+            "search_to_enrich": 0.00045988084971857694,
+            "search_instead": 0.9970409357322806,
+            "no_search": 0.0022095911347472207
+          },
+          "elapsed_ms": 753.9340839721262,
+          "usage": {
+            "input_tokens": 276,
+            "output_tokens": 1
+          },
+          "error": null
+        },
+        {
+          "turn_id": 7,
+          "label": "search_to_enrich",
+          "route": "answer_from_content",
+          "confidence": 0.28064598691894227,
+          "probabilities": {
+            "answer_from_content": 0.6689283771056437,
+            "search_to_enrich": 0.12487355076478958,
+            "search_instead": 0.10431187915014241,
+            "no_search": 0.10188619297942428
+          },
+          "elapsed_ms": 953.164792037569,
+          "usage": {
+            "input_tokens": 341,
+            "output_tokens": 1
+          },
+          "error": null
+        },
+        {
+          "turn_id": 8,
+          "label": "out_of_scope",
+          "route": "no_search",
+          "confidence": 0.9169979442486026,
+          "probabilities": {
+            "answer_from_content": 0.001466179212868401,
+            "search_to_enrich": 0.0019857808222116476,
+            "search_instead": 0.017902511873253802,
+            "no_search": 0.9786455280916662
+          },
+          "elapsed_ms": 847.6493749767542,
+          "usage": {
+            "input_tokens": 278,
+            "output_tokens": 1
+          },
+          "error": null
+        },
+        {
+          "turn_id": 9,
+          "label": "answer_from_content",
+          "route": "answer_from_content",
+          "confidence": 0.697525397738535,
+          "probabilities": {
+            "answer_from_content": 0.8599358864319003,
+            "search_to_enrich": 0.002417502956919143,
+            "search_instead": 0.00028224146431228374,
+            "no_search": 0.13736436914686825
+          },
+          "elapsed_ms": 1105.2406670060009,
+          "usage": {
+            "input_tokens": 361,
+            "output_tokens": 1
+          },
+          "error": null
+        },
+        {
+          "turn_id": 10,
+          "label": "out_of_scope",
+          "route": "no_search",
+          "confidence": 0.9643298504598053,
+          "probabilities": {
+            "answer_from_content": 0.0005788714604029356,
+            "search_to_enrich": 0.0002992466051241865,
+            "search_instead": 0.00702546209355702,
+            "no_search": 0.9920964198409158
+          },
+          "elapsed_ms": 862.7403759164736,
+          "usage": {
+            "input_tokens": 275,
+            "output_tokens": 1
+          },
+          "error": null
+        }
+      ]
+    }
+  ]
+}

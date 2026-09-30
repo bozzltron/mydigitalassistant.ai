@@ -34,7 +34,7 @@ from pathlib import Path
 import httpx
 
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434")
-MODELS = [m for m in os.environ.get("DRV_MODELS", "tev1:0.8b,tev1,nimble").split(",") if m]
+MODELS = [m for m in os.environ.get("DRV_MODELS", "tev1:0.8b,tev1:latest,nimble:latest").split(",") if m]
 REPEATS = int(os.environ.get("DRV_REPEATS", "1"))
 OUT = Path(os.environ.get("DRV_OUT", "result.json"))
 
