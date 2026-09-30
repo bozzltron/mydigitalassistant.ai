@@ -32,6 +32,37 @@ logger = logging.getLogger(__name__)
 
 SHUTDOWN = False
 
+# Set by /tasks/run-due (or anything else wanting the loop to look now) to cut a
+# poll wait short. Without it the manual endpoint had to run tasks itself, inside
+# the request: a full daily list is 11 tasks through the LLM, which outlasts
+# Caddy's response_header_timeout of 300s and returned 504 while the work still
+# completed. The endpoint now asks the loop to wake and returns immediately, so
+# there is one execution path for due tasks instead of two.
+#
+# A plain flag rather than an asyncio.Event, deliberately: an Event binds to the
+# first event loop that awaits it and raises if another loop touches it, which
+# both tests and a backend restart would hit. The loop polls this flag every
+# `_POLL_SLICE` seconds, so a wake is noticed within that slice -- well under the
+# 20s interval, and without binding the module to a loop's lifetime.
+_WAKE = False
+_LOOP_RUNNING = False
+
+# How often the loop checks the wake flag while waiting out its poll interval.
+_POLL_SLICE = 0.1
+
+
+def wake_scheduler() -> bool:
+    """Ask the scheduler loop to run its due check now.
+
+    Returns False when no loop is running, so a caller can tell "handed off" from
+    "nothing will happen" rather than silently doing nothing.
+    """
+    global _WAKE
+    if not _LOOP_RUNNING:
+        return False
+    _WAKE = True
+    return True
+
 POLL_SECONDS = 20
 HEARTBEAT_INTERVAL_S = 30 * 60
 CONSOLIDATION_BACKUPS_TO_KEEP = 5
@@ -437,6 +468,8 @@ async def _run_backup_snapshot(store: MemoryStore) -> bool:
 
 async def _scheduler_loop(store: MemoryStore, orchestrator: Orchestrator) -> None:
     """Main scheduler loop: poll for due tasks + housekeeping timers."""
+    global _LOOP_RUNNING
+    _LOOP_RUNNING = True
     logger.info("Scheduler loop started (daily tick at %s %s)",
                 settings.daily_tasks_time, settings.daily_tasks_tz or "local")
 
@@ -525,13 +558,33 @@ async def _scheduler_loop(store: MemoryStore, orchestrator: Orchestrator) -> Non
                         owner_user_id=task["owner_user_id"] or 1,
                     )
 
-            await asyncio.sleep(POLL_SECONDS)
+            await _wait_for_poll()
 
         except asyncio.CancelledError:
             raise
         except Exception as exc:
             logger.exception("Scheduler loop error: %s", exc)
             await asyncio.sleep(30)
+    _LOOP_RUNNING = False
+
+
+async def _wait_for_poll(seconds: float = POLL_SECONDS) -> None:
+    """Wait out the poll interval, returning early when a wake was requested.
+
+    Waits on a flag in short slices rather than an asyncio.Event: an Event binds
+    to one event loop, and the scheduler module outlives any single loop (tests
+    build several; a restart builds another). Slicing costs a wake of at most
+    `_POLL_SLICE` seconds, which is imperceptible beside the work a task does.
+    """
+    global _WAKE
+    waited = 0.0
+    while waited < seconds:
+        if _WAKE:
+            _WAKE = False
+            return
+        await asyncio.sleep(_POLL_SLICE)
+        waited += _POLL_SLICE
+    _WAKE = False
 
 
 async def start_scheduler(store: MemoryStore, orchestrator: Orchestrator) -> None:

@@ -1737,63 +1737,54 @@ async def get_task_result(
 
 @app.post("/tasks/run-due")
 async def run_due_tasks(
-    orchestrator: Orchestrator = _Depends(get_orchestrator),
     store: MemoryStore = _Depends(get_store),
 ):
-    """Manually trigger execution of all due scheduled tasks.
+    """Trigger execution of all due scheduled tasks.
 
-    Bypasses the scheduler's poll loop for testing and on-demand runs.
-    Returns a summary of each task executed.
+    Returns immediately. The scheduler loop does the work, so a full daily list
+    -- eleven tasks through the LLM -- no longer runs inside the request and no
+    longer outlives Caddy's 300s response_header_timeout. Before this the endpoint
+    executed every task serially and returned 504 at 300s while the tasks
+    completed anyway, which made the response misleading in both directions.
+
+    This is the same execution path as the automatic tick: `_execute_task`
+    records last_run/next_run, the daily-run frame, the output episode and any
+    agent alert. There is no second implementation to drift.
     """
-    from assistant.backend.scheduler import execute_and_record_task
+    from assistant.backend.scheduler.runner import wake_scheduler
 
     due = await store.get_due_scheduled_tasks()
     if not due:
-        return {"tasks_run": [], "message": "No due tasks found"}
+        return {
+            "status": "nothing_due",
+            "tasks_queued": [],
+            "message": "No due tasks found",
+        }
 
-    results = []
-    for task in due:
-        task_name = task["name"]
-        task_prompt = task.get("prompt", "")
-        frame_id = task["id"]
-        owner_user_id = task.get("owner_user_id") or 1
+    names = [t["name"] for t in due]
+    if not wake_scheduler():
+        # The loop is off (SCHEDULER_ENABLED=false) or not yet started. Say so
+        # rather than reporting a hand-off that will not happen.
+        return {
+            "status": "scheduler_not_running",
+            "tasks_queued": [],
+            "tasks_due": names,
+            "message": (
+                f"{len(names)} task(s) are due but the scheduler loop is not "
+                "running, so nothing was queued. Set SCHEDULER_ENABLED=true or "
+                "use POST /tasks/run-now/{task_name} to run one directly."
+            ),
+        }
 
-        if not task_prompt:
-            results.append({
-                "name": task_name,
-                "success": False,
-                "result_summary": "Task has no prompt",
-            })
-            continue
-
-        try:
-            success, result = await execute_and_record_task(
-                store=store,
-                orchestrator=orchestrator,
-                task_frame_id=frame_id,
-                task_name=task_name,
-                task_prompt=task_prompt,
-                owner_user_id=owner_user_id,
-            )
-
-            summary = result[:2000] if result else ""
-
-            results.append({
-                "name": task_name,
-                "success": success,
-                "result_summary": summary,
-            })
-            logger.info("Manual run: task '%s' completed (success=%s)", task_name, success)
-
-        except Exception as exc:
-            logger.exception("Manual run: task '%s' failed: %s", task_name, exc)
-            results.append({
-                "name": task_name,
-                "success": False,
-                "result_summary": f"failed: {exc}",
-            })
-
-    return {"tasks_run": results}
+    logger.info("Manual run requested: %d due task(s) queued", len(names))
+    return {
+        "status": "queued",
+        "tasks_queued": names,
+        "message": (
+            f"{len(names)} task(s) queued; the scheduler loop will run them "
+            "shortly. Results land as episodes and alerts."
+        ),
+    }
 
 
 @app.post("/tasks/run-now/{task_name}")
