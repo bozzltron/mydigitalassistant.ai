@@ -71,12 +71,11 @@
   animation: voice-status-in var(--transition-base) ease-out;
 }
 
-/* Named for this component rather than reusing `fadeIn`. `fadeIn` is defined in
-   both chat.css and components.css for elements that are not horizontally
-   centred, and VoiceStatusIndicator previously shipped a third copy from inside
-   a JSX <style> block. A runtime-injected stylesheet is appended after the
-   linked ones, so that copy won the cascade and gave .modal-overlay's fadeIn a
-   translateX(-50%) on every frame. */
+/* Named for this component rather than reusing `fadeIn`. VoiceStatusIndicator
+   previously shipped its own copy from inside a JSX <style> block; a
+   runtime-injected stylesheet is appended after the linked ones, so that copy
+   won the cascade and gave .modal-overlay's fadeIn a translateX(-50%) on every
+   frame. */
 @keyframes voice-status-in {
   from { opacity: 0; transform: translateX(-50%) translateY(10px); }
   to { opacity: 1; transform: translateX(-50%) translateY(0); }

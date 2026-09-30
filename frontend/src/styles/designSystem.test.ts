@@ -76,9 +76,9 @@ describe('design-system guards', () => {
     // TrashCan wrote their CSS into <style> blocks in JSX against the larger
     // vocabulary, so those declarations were invalid at computed-value time.
     // Both blocks are now stylesheets with the real tokens.
-    const KNOWN_UNDEFINED: Record<string, string> = {
-      '--surface3': 'chat.css trace panel background -- the declaration is dead, so that background is transparent',
-    }
+    const KNOWN_UNDEFINED: Record<string, string> = {}
+    // Empty: the last entry (--surface3) lived only in the orphan stylesheet
+    // chat.css, which has been removed. Any new undefined var() now fails here.
 
     const offenders: string[] = []
     for (const [token, files] of used) {
