@@ -522,12 +522,19 @@ def builtin_tools(
         _make_def(
             "recall",
             "Semantic memory lookup. Returns frames/slots matching "
-            "query via embedding similarity + graph walk.",
+            "query via embedding similarity + graph walk. "
+            "Use this when the user refers to something from earlier — 'the list', "
+            "'those links', 'what I gave you', 'the document' — to find the content "
+            "they supplied or that you stored. Prefer it over web_search for "
+            "anything that came from the user or from this conversation.",
             RecallArgs,
         ),
         _make_def(
             "search_episodes",
-            "Search past conversation turns semantically (episode_embeddings).",
+            "Search past conversation turns semantically (episode_embeddings). "
+            "Use this when the user refers back to something said or given earlier "
+            "in the conversation — it finds the actual turns, including content the "
+            "user pasted. Prefer it over web_search for anything the user supplied.",
             SearchEpisodesArgs,
         ),
         _make_def(

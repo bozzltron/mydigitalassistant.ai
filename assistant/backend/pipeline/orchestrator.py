@@ -1005,8 +1005,6 @@ class Orchestrator:
         # 5a. Storage statements must not trigger external search: the user is
         # giving information, not requesting a lookup. The router's wants_search
         # judgment vetoes the reasoner's memory-sufficiency heuristic here.
-        # giving information, not requesting a lookup. The router's wants_search
-        # judgment vetoes the reasoner's memory-sufficiency heuristic here.
         if (
             plan.search_needed
             and task_type != TaskType.SEARCH
@@ -1016,6 +1014,27 @@ class Orchestrator:
         ):
             logger.info("Search vetoed by router for storage-style turn")
             plan.action = Action.ANSWER
+            plan.search_needed = False
+
+        # 5a-bis. A turn that supplies content the user wants transformed (ranked,
+        # sorted, summarised) must not have search become the subject of the
+        # answer. This is the failure Plan A exists for: the user pasted 45 URLs
+        # and asked for them ranked, the router read "search about them if we need
+        # to" as an intent to search, and the answer became a web essay about
+        # submission platforms rather than a ranking of the user's own list.
+        #
+        # Search is not forbidden here -- enriching the content with context is
+        # legitimate. But it must not pre-empt the content, so the turn answers
+        # from what the user supplied and the prompt's authority rule governs what
+        # search may add.
+        supplied_content = extraction_summary.get("user_content")
+        if plan.search_needed and supplied_content:
+            logger.info(
+                "Search de-prioritised: turn transforms user-supplied content "
+                "(frame=%s, %s items)",
+                supplied_content.get("frame_name"),
+                supplied_content.get("item_count"),
+            )
             plan.search_needed = False
 
         # 5b. Handle correction intent: extract + validate + apply
@@ -2016,6 +2035,19 @@ class Orchestrator:
             plan.action = Action.ANSWER
             plan.search_needed = False
 
+        # 5a-bis. A turn transforming user-supplied content answers from that
+        # content; search must not become the subject (see chat() for the full
+        # note, and Plan A for the failure this prevents).
+        supplied_content = extraction_summary.get("user_content")
+        if plan.search_needed and supplied_content:
+            logger.info(
+                "Search de-prioritised: turn transforms user-supplied content "
+                "(frame=%s, %s items)",
+                supplied_content.get("frame_name"),
+                supplied_content.get("item_count"),
+            )
+            plan.search_needed = False
+
         # 5b. Handle correction intent
         if plan.action == Action.CORRECT:
             # Same handler as chat() -- previously this re-entered chat(), which
@@ -2561,8 +2593,20 @@ async def store_turn_memory(
     acknowledge what was actually stored. Returns the extraction summary
     ({}, e.g. slots_applied/frame_ids); empty dict if extraction failed
     or found nothing.
+
+    Also registers any body of content the user *supplied* (Plan A). That is a
+    separate concern from fact extraction: a pasted list is not a fact about an
+    entity, so extraction stores nothing for it and the content would otherwise be
+    unreachable on the next turn. Detection is model-free and this runs inside the
+    task the orchestrator already dispatches, so the registration costs no extra
+    call on the hot path.
     """
     from assistant.backend.pipeline.extractor import extract_and_apply
+    from assistant.backend.pipeline.user_content import (
+        detect_user_content,
+        register_user_content,
+        user_content_enabled,
+    )
 
     result = await extract_and_apply(
         user_message,
@@ -2571,6 +2615,30 @@ async def store_turn_memory(
         llm_client,
         source_episode_id=source_episode_id,
     )
-    if result.get("frame_ids"):
-        await store.update_episode_frame_ids(source_episode_id, result["frame_ids"])
+
+    supplied = None
+    if user_content_enabled():
+        detected = detect_user_content(user_message)
+        if detected is not None:
+            try:
+                supplied = await register_user_content(
+                    detected,
+                    store,
+                    source_episode_id=source_episode_id,
+                    embed_fn=llm_client.embed,
+                    embedding_model=llm_client.embedding_model,
+                )
+            except Exception as exc:  # registration must not break the turn
+                logger.warning("Registering user-supplied content failed: %s", exc)
+
+    frame_ids = list(result.get("frame_ids") or [])
+    if supplied and supplied.get("frame_id"):
+        frame_ids.append(supplied["frame_id"])
+    if frame_ids:
+        await store.update_episode_frame_ids(source_episode_id, frame_ids)
+
+    if supplied:
+        # Surfaced in the same summary shape the UI already reads, so the trace
+        # panel can show "registered your list" without a second vocabulary.
+        result = {**result, "user_content": supplied}
     return result

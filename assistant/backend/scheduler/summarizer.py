@@ -176,50 +176,52 @@ Produce a JSON object with these fields:
     ) -> bool:
         """Upsert the summary frame. Returns True if created, False if updated.
 
-        Content slots (the summary prose, entities, questions) are beliefs and go
-        through ``upsert_slot``. Bookkeeping slots (counters, timestamps, session
-        id) are written directly: they change on every run by design, so routing
-        them through conflict detection recorded a disagreement with the previous
-        run each time. That produced 1,172 conflict rows on zero disagreements.
+        Every slot on a summary frame is **derived**, not asserted. The frame is a
+        view of the session's episodes: its prose, entities, and questions are
+        regenerated from the conversation on each run, so comparing this run's
+        output to the last run's output is the summarizer disagreeing with itself,
+        not a conflict between sources.
+
+        The first attempt at this split the slots into "bookkeeping" (counters and
+        timestamps) and "content" (prose, entities, questions), and put content
+        through `upsert_slot` on the reasoning that prose is a belief. That was the
+        wrong line: a belief is *asserted by a source*, and a summary is *computed
+        from* episodes. Live behaviour settled it -- the first summarization pass
+        after the scheduler was re-enabled produced exactly one conflict per
+        content slot per session (`summary`, `key_entities`, `open_questions`),
+        which is the signature of regeneration, not disagreement.
+
+        So every slot here is written directly. Values still update and `updated_at`
+        still records when, but a regenerated summary stops claiming to be a
+        disputed fact. The conflicts ledger is left for genuine disagreements.
         """
         frame_name = f"conversation_summary_{session_id}"
 
         # Check if frame exists
         existing = await self.store.get_frame_by_name(frame_name)
 
-        # Content: real beliefs, so they bump confidence and participate in
-        # conflict detection like any other fact.
-        content_slots = {
+        derived_slots = {
             "summary": summary,
         }
         if key_entities:
-            content_slots["key_entities"] = ", ".join(key_entities)
+            derived_slots["key_entities"] = ", ".join(key_entities)
         if open_questions:
-            content_slots["open_questions"] = ", ".join(open_questions)
+            derived_slots["open_questions"] = ", ".join(open_questions)
 
-        # Bookkeeping: not beliefs. Written directly, never through revise().
-        bookkeeping_slots = {
-            "session_id": session_id,
-            "turn_count": str(turn_count),
-            "date_start": date_range[0],
-            "date_end": date_range[1],
-        }
+        derived_slots.update(
+            {
+                "session_id": session_id,
+                "turn_count": str(turn_count),
+                "date_start": date_range[0],
+                "date_end": date_range[1],
+            }
+        )
 
         if existing:
             # Update existing frame
             frame_id = existing.id
-            for key, value in content_slots.items():
-                await self.store.upsert_slot(
-                    frame_id=frame_id,
-                    key=key,
-                    value=value,
-                    essential=0,
-                    priority=0.5,
-                    source_type="summarization",
-                    source_reliability=0.8,
-                )
-            for key, value in bookkeeping_slots.items():
-                await self.store.set_bookkeeping_slot(
+            for key, value in derived_slots.items():
+                await self.store.set_derived_slot(
                     frame_id=frame_id,
                     key=key,
                     value=value,
@@ -241,18 +243,8 @@ Produce a JSON object with these fields:
                 source_type="summarization",
                 source_reliability=0.8,
             )
-            for key, value in content_slots.items():
-                await self.store.upsert_slot(
-                    frame_id=frame.id,
-                    key=key,
-                    value=value,
-                    essential=0,
-                    priority=0.5,
-                    source_type="summarization",
-                    source_reliability=0.8,
-                )
-            for key, value in bookkeeping_slots.items():
-                await self.store.set_bookkeeping_slot(
+            for key, value in derived_slots.items():
+                await self.store.set_derived_slot(
                     frame_id=frame.id,
                     key=key,
                     value=value,

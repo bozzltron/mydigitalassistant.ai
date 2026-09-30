@@ -15,6 +15,13 @@ class Settings(BaseSettings):
     # Reserved role (Phase 6 M5). Empty = use chat_model for codegen.
     coder_model: str = ""
 
+    # Register content the user supplies as memory (Plan A). A pasted list, email,
+    # or table is not a fact about an entity, so conversational extraction stores
+    # nothing and the content is unreachable on the next turn -- which is how the
+    # 45-URL submission list was lost. Detection is model-free; registration hangs
+    # off the turn's existing extraction slot, so this adds no hot-path call.
+    register_user_content: bool = True
+
     # Math/computation model (Phase: Math Model Integration). Empty = math
     # computation disabled (compute tool is dropped from the tool loop).
     # NOTE: a large model here (e.g. qwen3-coder:30b) competes with chat +

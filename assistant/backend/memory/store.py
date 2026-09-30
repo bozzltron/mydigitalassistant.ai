@@ -1228,25 +1228,26 @@ class MemoryStore:
             await db.commit()
 
     # Slots
-    async def set_bookkeeping_slot(
+    async def set_derived_slot(
         self,
         frame_id: int,
         key: str,
         value: str,
         source_type: str | None = None,
     ) -> None:
-        """Write a slot that is bookkeeping, not a belief about the world.
+        """Write a slot whose value is *derived*, not asserted by a source.
 
-        Counters and timestamps change on a schedule, so routing them through
-        ``upsert_slot`` means every rewrite "conflicts" with the previous value
-        and lands in the conflicts ledger. The summarizer did exactly that:
-        ``turn_count`` and ``date_end`` produced 1,172 conflict rows on 0
-        disagreements, and 2,054 more came from the summary prose being
-        re-upserted each run.
+        A belief enters memory because something claims it: the user said it, a
+        page said it. A derived value is computed from other memory -- a summary's
+        prose, its entity list, a turn counter. Recomputing it and comparing to the
+        last computation is not a disagreement, so routing these through
+        ``upsert_slot`` recorded thousands of conflicts on zero disputes: the
+        summarizer produced 1,172 rows from counters and timestamps alone, and one
+        more per content slot per run until summaries were moved here too.
 
-        A counter rewritten every run is not a belief, so it must not travel the
-        belief-revision path. This writes the value and nothing else -- no
-        conflict, no slot_history, no confidence change.
+        Writes the value and nothing else -- no conflict, no slot_history, no
+        confidence change. ``updated_at`` still moves, so the fact that a derived
+        value changed remains visible.
         """
         async with self._connect() as db:
             await db.execute(

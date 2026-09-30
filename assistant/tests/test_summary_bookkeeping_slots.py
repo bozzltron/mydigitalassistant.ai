@@ -17,7 +17,7 @@ The fix splits the two kinds of slot:
 - **Content** (summary prose, key_entities, open_questions) are beliefs, so they
   keep going through `upsert_slot` and keep participating in conflict detection.
 - **Bookkeeping** (session_id, turn_count, date_start, date_end) is written
-  directly via `set_bookkeeping_slot`, which bypasses belief revision entirely.
+  directly via `set_derived_slot`, which bypasses belief revision entirely.
 
 Also pinned: empty `key_entities` / `open_questions` now write **no slot** rather
 than an empty string (the source of the blank slot values in the live brain).
@@ -141,42 +141,82 @@ class TestEmptyListsWriteNoSlot:
         assert all(v.strip() for v in slots.values()), slots
 
 
-class TestContentStillBehavesLikeABelief:
-    """The split must not weaken genuine content revisions."""
+class TestContentSlotsAreAlsoDerived:
+    """The second-pass correction: a summary's prose is derived too.
+
+    The first fix split slots into bookkeeping (counters, timestamps) and content
+    (prose, entities, questions), and sent content through `upsert_slot` on the
+    reasoning that prose is a belief. Live behaviour disproved it: the first
+    summarization pass after the scheduler was re-enabled produced exactly one
+    conflict per content slot per session -- the signature of regeneration, not
+    disagreement.
+
+    A belief is asserted by a source. A summary is computed from episodes. So every
+    slot on a summary frame is written directly.
+    """
 
     @pytest.mark.asyncio
-    async def test_content_slots_go_through_upsert(self, store):
+    async def test_regenerated_summary_creates_no_conflicts(self, store):
+        """Re-running summarization with different prose must not record a
+        conflict, because the prose was recomputed rather than disputed."""
         user = await store.create_user("alice")
         s = _summarizer(store)
 
         await s._upsert_summary_frame(
-            session_id="conv_d",
+            session_id="conv_e",
             user_id=user.id,
-            summary="Original.",
-            key_entities=["a"],
-            open_questions=[],
-            turn_count=3,
+            summary="First pass.",
+            key_entities=["mozworth"],
+            open_questions=["what next?"],
+            turn_count=10,
             date_range=("2026-01-01", "2026-01-02"),
         )
-        frame = await _summary_frame(store, "conv_d")
-        before = {
-            sl.key: sl.confidence
-            for sl in await store.get_slots_for_frame(frame.id)
-        }
+        await s._upsert_summary_frame(
+            session_id="conv_e",
+            user_id=user.id,
+            summary="Second pass, different wording entirely.",
+            key_entities=["mozworth", "echo"],
+            open_questions=["what next?", "when?"],
+            turn_count=12,
+            date_range=("2026-01-01", "2026-01-04"),
+        )
+
+        frame = await _summary_frame(store, "conv_e")
+        conflicts = await store.get_conflicts_for_frame(frame.id)
+        assert conflicts == [], (
+            f"regeneration created conflicts: "
+            f"{[(c.slot_key, c.status) for c in conflicts]}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_all_summary_slots_present_and_current(self, store):
+        """Writing directly must not lose the values."""
+        user = await store.create_user("alice")
+        s = _summarizer(store)
 
         await s._upsert_summary_frame(
-            session_id="conv_d",
+            session_id="conv_f",
             user_id=user.id,
             summary="Original.",
             key_entities=["a"],
-            open_questions=[],
+            open_questions=["q1"],
             turn_count=3,
             date_range=("2026-01-01", "2026-01-02"),
         )
-        after = {
-            sl.key: sl.confidence
-            for sl in await store.get_slots_for_frame(frame.id)
-        }
+        await s._upsert_summary_frame(
+            session_id="conv_f",
+            user_id=user.id,
+            summary="Rewritten.",
+            key_entities=["a", "b"],
+            open_questions=["q2"],
+            turn_count=9,
+            date_range=("2026-01-01", "2026-01-05"),
+        )
 
-        # Re-summarizing identical content reinforces it, as for any belief.
-        assert after["summary"] > before["summary"]
+        frame = await _summary_frame(store, "conv_f")
+        slots = {sl.key: sl.value for sl in await store.get_slots_for_frame(frame.id)}
+        assert slots["summary"] == "Rewritten."
+        assert slots["key_entities"] == "a, b"
+        assert slots["open_questions"] == "q2"
+        assert slots["turn_count"] == "9"
+        assert slots["date_end"] == "2026-01-05"

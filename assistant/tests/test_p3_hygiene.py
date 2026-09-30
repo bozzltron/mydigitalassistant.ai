@@ -315,7 +315,13 @@ def test_search_still_accepts_min_similarity(api_client, store, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_list_frames_filters_by_owner(api_client, store):
-    """The frontend sends `?user_id=`; the endpoint used to ignore it."""
+    """The frontend sends `?user_id=`; the endpoint used to ignore it.
+
+    Asserts the property rather than an exact set: the endpoint intentionally also
+    returns shared (owner-less) frames such as system state, so exact equality would
+    fail whenever the scheduler has written one — which it does routinely once
+    enabled. What must hold is that another member's frames are absent.
+    """
     alice = await store.create_user("alice")
     bob = await store.create_user("bob")
     await store.create_frame("alice_thing", "entity", owner_user_id=alice.id)
@@ -324,7 +330,8 @@ async def test_list_frames_filters_by_owner(api_client, store):
     r = api_client.get("/memory/frames", params={"user_id": alice.id})
     assert r.status_code == 200
     names = {f["name"] for f in r.json()}
-    assert names == {"alice_thing"}
+    assert "alice_thing" in names, "the owner's own frame was not returned"
+    assert "bob_thing" not in names, "another member's frame leaked into the listing"
 
 
 def test_feedback_kind_is_validated_as_an_enum(api_client):
