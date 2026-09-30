@@ -14,6 +14,7 @@ vi.mock('../../services/api', () => ({
   createTurnId: vi.fn(() => 'test-turn-id-123'),
   getSessionMessages: vi.fn(),
   postFeedback: vi.fn(),
+  getUsers: vi.fn(),
 }))
 
 vi.mock('../../services/status', () => ({

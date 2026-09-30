@@ -1,6 +1,7 @@
 import { createSignal, createMemo } from 'solid-js'
 import { createStore } from 'solid-js/store'
 import { postChatStream, createTurnId } from '../services/api'
+import { user } from './user'
 import { beginTurnStatus, endTurnStatus, setStreamStage } from '../services/status'
 import { getSessionMessages } from '../services/api'
 import {
@@ -223,7 +224,8 @@ export async function postChatMessageStream(
             setStreamingMessageContent(session_id, assistantMessageId, 'Error: ' + event.error, false)
           }
         }
-      }
+      },
+      user()?.id
     )
 
     return {

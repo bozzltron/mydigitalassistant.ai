@@ -189,10 +189,11 @@ export async function postChatStream(
   turn_id?: string,
   search_consent?: boolean,
   max_intelligence?: boolean,
-  onEvent?: (event: StreamEvent) => void
+  onEvent?: (event: StreamEvent) => void,
+  user_id: number = 1
 ): Promise<ChatResponse> {
   const requestBody = {
-    user_id: 1,
+    user_id,
     message,
     session_id,
     attached_files,

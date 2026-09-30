@@ -38,6 +38,7 @@ beforeEach(async () => {
   vi.mock('../services/api', () => ({
     createTurnId: vi.fn(() => 'test-turn-id-123'),
     getSessionMessages: vi.fn(),
+    getUsers: vi.fn(),
   }))
 
   chatModule = await import('../state/chat')

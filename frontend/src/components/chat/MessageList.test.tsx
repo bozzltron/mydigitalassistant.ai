@@ -11,6 +11,7 @@ vi.mock('../../services/api', () => ({
   getSessionMessages: vi.fn(),
   postFeedback: vi.fn(),
   postCorrection: vi.fn(),
+  getUsers: vi.fn(),
 }))
 
 vi.mock('../../services/status', () => ({

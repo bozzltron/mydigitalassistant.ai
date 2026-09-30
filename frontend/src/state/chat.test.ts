@@ -8,6 +8,7 @@ vi.mock('../services/api', () => ({
   postChatStream: vi.fn(),
   createTurnId: vi.fn(() => 'test-turn-id-123'),
   getSessionMessages: vi.fn(),
+  getUsers: vi.fn(),
 }))
 vi.mock('../services/status')
 

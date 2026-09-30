@@ -4,6 +4,7 @@ vi.mock('../services/api', () => ({
   getUserSessions: vi.fn(),
   createNewConversation: vi.fn(),
   updateConversationTitle: vi.fn(),
+  getUsers: vi.fn(),
 }))
 
 import { fetchSessions, sessionTitle } from './session'

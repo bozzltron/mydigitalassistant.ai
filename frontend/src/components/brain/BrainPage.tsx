@@ -12,6 +12,7 @@ import type {
 } from '../../types'
 import { TYPE_COLORS } from './brainLib'
 import { getFrames } from '../../services/api'
+import { user } from '../../state/user'
 
 function initialViewMode(): '2d' | '3d' {
   try {
@@ -66,7 +67,7 @@ export default function BrainPage() {
     setError(null)
     try {
       const [framesData, assocRes, conflictsRes] = await Promise.all([
-        getFrames(1),
+        getFrames(user()?.id ?? 1),
         fetch('/memory/associations'),
         fetch('/memory/conflicts'),
       ])
