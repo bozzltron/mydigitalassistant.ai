@@ -32,6 +32,56 @@ IDENTITY_NAME_SLOT = "full_name"
 RESERVED_SLOT_PREFIXES: tuple[str, ...] = ("file_",)
 
 
+def _is_blank(value: str | None) -> bool:
+    """True when a model-supplied string carries no content.
+
+    Frame 4387 was created with an empty name and zero slots from a single paste
+    turn, and blank slot values have been written by the summarizer's empty
+    list-joins. A record with no content is not memory; it is pollution that
+    later reads have to reason around.
+    """
+    return not (value or "").strip()
+
+
+def _drop_degenerate(
+    slots: list["ExtractedSlot"], associations: list["ExtractedAssociation"]
+) -> tuple[list["ExtractedSlot"], list["ExtractedAssociation"], int]:
+    """Drop records that cannot express a fact, returning (slots, assocs, dropped).
+
+    Enforced at the write path because the model is untrusted input: a name or key
+    of `""` is not a bad value to be corrected later, it is an object with no
+    identity. Surfaced via the caller's summary rather than dropped silently, so a
+    model that keeps emitting blanks is visible instead of looking like a quiet
+    turn.
+    """
+    kept_slots: list[ExtractedSlot] = []
+    dropped = 0
+    for slot in slots:
+        if _is_blank(slot.frame_name) or _is_blank(slot.key):
+            logger.warning(
+                "Dropped degenerate extracted slot (frame_name=%r key=%r)",
+                slot.frame_name,
+                slot.key,
+            )
+            dropped += 1
+            continue
+        kept_slots.append(slot)
+
+    kept_assocs: list[ExtractedAssociation] = []
+    for assoc in associations:
+        if _is_blank(assoc.from_frame) or _is_blank(assoc.to_frame):
+            logger.warning(
+                "Dropped degenerate extracted association (from=%r to=%r)",
+                assoc.from_frame,
+                assoc.to_frame,
+            )
+            dropped += 1
+            continue
+        kept_assocs.append(assoc)
+
+    return kept_slots, kept_assocs, dropped
+
+
 class ExtractedSlot(BaseModel):
     frame_name: str = Field(max_length=200)
     frame_type: str = Field(default="entity", max_length=50)  # entity|concept|event|household
@@ -273,7 +323,18 @@ async def resolve_or_create_frame(
          embedder is available or the normalized name is under
          MIN_FUZZY_NAME_LENGTH chars;
       5. create a new frame (registering it in ``known`` for later lookups).
+
+    Refuses a blank name outright. Callers filter degenerate records before
+    reaching here (see ``_drop_degenerate``); this is the last line of defence at
+    the point where a nameless frame would otherwise be created — which is how
+    frame 4387, an empty-named entity with zero slots, came to exist.
     """
+    if _is_blank(name):
+        raise ValueError(
+            "resolve_or_create_frame requires a non-blank frame name; "
+            "callers must filter degenerate records before resolving"
+        )
+
     existing = await store.get_frame_by_name(name)
     if existing:
         return existing.id
@@ -542,6 +603,12 @@ async def apply_extraction(
     """
     frame_ids: dict[str, int] = {}
 
+    # Degenerate records are dropped before any frame is resolved, so a blank
+    # frame name can never reach resolve_or_create_frame (frame 4387's origin).
+    extraction.slots, extraction.associations, degenerate_dropped = _drop_degenerate(
+        extraction.slots, extraction.associations
+    )
+
     all_frame_names = {slot.frame_name for slot in extraction.slots}
     for assoc in extraction.associations:
         all_frame_names.add(assoc.from_frame)
@@ -571,6 +638,16 @@ async def apply_extraction(
     applied_slots: list[dict] = []
     for slot in extraction.slots:
         if slot.value is None:
+            continue
+        # A blank value is not a fact. Guarded here as well as at the model's
+        # output shape because this is the last point before the write.
+        if _is_blank(slot.value):
+            degenerate_dropped += 1
+            logger.warning(
+                "Dropped extracted slot with blank value (frame=%r key=%r)",
+                slot.frame_name,
+                slot.key,
+            )
             continue
         # Model output is untrusted input. `ExtractedSlot.key` is a free-form
         # string with no allowlist, and the `file_*` namespace is consumed as a
@@ -640,6 +717,9 @@ async def apply_extraction(
         # `file_*` keys is misbehaving, and that should be visible in the
         # extraction summary instead of looking like "nothing was learned".
         "reserved_keys_skipped": skipped_reserved,
+        # Same reasoning for blank names/keys/values: a model emitting degenerate
+        # records should be visible in the summary, not look like a quiet turn.
+        "degenerate_dropped": degenerate_dropped,
     }
 
 
@@ -781,6 +861,12 @@ async def apply_search_extraction(
             seen.add(key)
             deduped_slots.append(slot)
 
+    # Same degenerate-record guard as apply_extraction: search extraction is model
+    # output over fetched pages, both untrusted.
+    deduped_slots, extraction.associations, degenerate_dropped = _drop_degenerate(
+        deduped_slots, extraction.associations
+    )
+
     # Populate per-slot source URLs and domains from corroboration matching
     for slot in deduped_slots:
         fact_key = (slot.frame_name, slot.key, slot.value)
@@ -815,6 +901,14 @@ async def apply_search_extraction(
     applied_slots: list[dict] = []
     for slot in deduped_slots:
         if slot.value is None:
+            continue
+        if _is_blank(slot.value):
+            degenerate_dropped += 1
+            logger.warning(
+                "Dropped search-extracted slot with blank value (frame=%r key=%r)",
+                slot.frame_name,
+                slot.key,
+            )
             continue
         # Same reserved-namespace guard as apply_extraction: search-derived facts
         # are model output too, and a fetched page is untrusted input.
@@ -901,6 +995,7 @@ async def apply_search_extraction(
         "frame_ids": list(frame_ids.values()),
         "slots": applied_slots,
         "reserved_keys_skipped": skipped_reserved,
+        "degenerate_dropped": degenerate_dropped,
         "corroboration_status": {
             "high_stakes_checked": sum(1 for s in applied_slots if s.get("needs_corroboration")),
             "flagged_for_review": sum(1 for s in applied_slots if s.get("needs_corroboration")),
@@ -1265,7 +1360,11 @@ async def apply_correction(
     search keeps surfacing it by that rejected value. Both are required together:
     a vector written under an unverified model label is worse than none.
     """
-    if not correction.frame_name or not correction.slot_key or not correction.new_value:
+    if (
+        _is_blank(correction.frame_name)
+        or _is_blank(correction.slot_key)
+        or _is_blank(correction.new_value)
+    ):
         return {"slots_corrected": 0}
 
     frame = await store.get_frame_by_name(correction.frame_name)

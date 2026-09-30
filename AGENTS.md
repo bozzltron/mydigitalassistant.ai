@@ -8,6 +8,71 @@ retrieval-only information gathering; an optional Brave Search API backend is
 available for higher-quality results. Runs locally via Ollama. Safe for household
 use incl. kids.
 
+## Project goal
+The assistant's job is to construct an accurate model of the user's world by
+triangulating **the user and the internet as sources**, and to use that model to
+give the most useful possible help — without the user having to repeat themselves.
+Every interaction is a learning opportunity; every stored belief is revisable.
+
+The user and the internet are the two *sources*. Memory is not a third peer source:
+it is the accumulating model those sources are reconciled into, and the thing that
+gets corrected when it is wrong.
+
+Triangulation is not averaging. It is knowing which source is authoritative for a
+given claim, and when they disagree, recording both with their provenance rather
+than silently discarding one:
+
+- **The user is authoritative about their own world** — their intent, preferences,
+  possessions, plans, and any content they supply.
+- **The internet is authoritative about the external world** — facts the user
+  cannot know first-hand.
+- **Neither is authoritative about the other's domain.** A user can be wrong about
+  the external world; a search result cannot tell you what the user meant. A
+  conflicting claim is stored with provenance and resolved by the confidence ladder
+  in `assistant/backend/memory/confidence.py`, never overwritten by default.
+- **When the request is to transform user-supplied content** — sort, rank,
+  summarise, compare, rewrite — that content is the *subject* of the request.
+  Search may enrich it, never replace it.
+
+Help is judged by whether it reflects what the assistant already knows and has been
+told. The user should never have to re-supply what they already gave.
+
+## Value: be data driven
+
+**When we don't know, and the answer is non-trivial, we run an experiment to find out.**
+The system is built on beliefs about how memory, retrieval, and reasoning actually behave,
+and a belief that has not been measured is a guess wearing a design document's clothes.
+
+Concretely:
+
+- **Measure before building on it.** If a plan rests on "the model can reason about
+  conflicts", "the walk recovers useful memory", or "the ladder changes decisions", that
+  claim gets an experiment before the work is built on top of it.
+- **Pre-register.** Write the question, hypotheses, variables, and **falsification
+  conditions** before collecting data. A hypothesis that cannot be falsified is not a
+  hypothesis.
+- **State the bar in advance.** "If walk-sourced frames are under ~20% of the final
+  context, the fix did not deliver and I will say so." Decide what would count as
+  disproof *before* seeing the numbers.
+- **Name the threats upfront**, including the ones that remain after the run — not only
+  the checks that passed.
+- **A negative result is a result.** A measurement that kills a proposed feature is a
+  success: it saved the work. `max_graph_frames=20` being no better than 7 was worth more
+  than a yield number that looked good.
+- **Read-only against a brain copy.** `assistant/experiments/preflight.py` gates every
+  experiment that opens a brain: the experiment DB must not be the live DB, the live volume
+  must not be mounted, a restorable backup must exist, and the copy's SHA-256 is recorded.
+  Table digests prove non-mutation rather than asserting it.
+
+The pattern lives in `assistant/experiments/` — see `graph_walk_yield` (pre-registration +
+falsification conditions) and `frame_budget` (deriving a constant by measurement). An
+experiment's `plan.md` is committed **before** data is collected, and `result.md` is written
+only after `verification.md`.
+
+This value is not ceremony. It is how the project avoids the failure mode of building
+sophisticated machinery that does nothing, and then reading its own code as evidence that
+it works.
+
 ## Repository layout
 - `/assistant/` — the cognitive assistant. See `/assistant/AGENTS.md` for the cognitive architecture and memory model.
 - `/plans/` — **transient** working plans, one per active task (see `RUNBOOK.md`).
