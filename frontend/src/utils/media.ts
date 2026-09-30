@@ -5,7 +5,15 @@ const YOUTUBE_URL_PATTERNS = [
   /youtube\.com\/watch\?.*v=([a-zA-Z0-9_-]{11})/,
 ]
 
+/** Coerce a wire value that should be a URL/string to a safe string. */
+function asStr(value: unknown): string | undefined {
+  return typeof value === 'string' && value ? value : undefined
+}
+
 export function extractYouTubeId(url: string): string | null {
+  // Defensive: a search backend may hand us a non-string (e.g. Brave returns
+  // `thumbnail`/`image` as objects), and `url.match` would throw.
+  if (typeof url !== 'string' || !url) return null
   for (const pattern of YOUTUBE_URL_PATTERNS) {
     const match = url.match(pattern)
     if (match && match[1]) {
@@ -21,7 +29,7 @@ export function extractYouTubeId(url: string): string | null {
  * URLs are returned unchanged.
  */
 export function imageSrc(url: string | undefined | null): string {
-  if (!url) return ''
+  if (typeof url !== 'string' || !url) return ''
   if (!/^https?:\/\//i.test(url)) return url
   return `/image-proxy?url=${encodeURIComponent(url)}`
 }
@@ -67,29 +75,31 @@ export function searchMedia(message: ChatMessage): MediaContent[] {
   const media: MediaContent[] = []
 
   for (const result of info.results ?? []) {
-    const preview = result.thumbnail
-    const full = result.image || result.thumbnail
+    // Coerce: a result's thumbnail/image may arrive as an object
+    // ({src, original}) from a backend that has not normalised it yet.
+    const preview = asStr(result.thumbnail)
+    const full = asStr(result.image) ?? preview
     if (!preview && !full) continue
     media.push({
       type: 'image',
       url: full ?? '',
-      thumbnail: preview ?? undefined,
-      title: result.title,
-      sourceUrl: result.url,
+      thumbnail: preview,
+      title: asStr(result.title),
+      sourceUrl: asStr(result.url),
     })
   }
 
   for (const video of info.video_results ?? []) {
-    const url =
-      video.url ||
-      (video.video_id ? `https://www.youtube.com/watch?v=${video.video_id}` : '')
+    const direct = asStr(video.url)
+    const videoId = asStr(video.video_id)
+    const url = direct ?? (videoId ? `https://www.youtube.com/watch?v=${videoId}` : undefined)
     if (!url) continue
     media.push({
       type: 'youtube',
       url,
-      thumbnail: video.thumbnail_url ?? undefined,
-      title: video.title,
-      description: video.channel_title ?? undefined,
+      thumbnail: asStr(video.thumbnail_url),
+      title: asStr(video.title),
+      description: asStr(video.channel_title),
     })
   }
 

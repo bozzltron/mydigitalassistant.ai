@@ -6,6 +6,7 @@ import {
   getExtraVideos,
   getSourceResults,
   imageSrc,
+  extractYouTubeId,
 } from './media'
 import type { ChatMessage } from '../types/chat'
 
@@ -86,6 +87,31 @@ describe('searchMedia', () => {
     }
     const m = msg({ search_info: { backend: 'brave', query: 'q', results: [r, { ...r, title: 'B' }] } })
     expect(searchMedia(m)).toHaveLength(1)
+  })
+
+  it('ignores non-string thumbnail/image (regression: an object thumbnail crashed extractYouTubeId)', () => {
+    const m = msg({
+      search_info: {
+        backend: 'brave',
+        query: 'q',
+        results: [
+          // Pre-normalisation Brave shape.
+          { title: 'A', url: 'https://page/a', snippet: '', engine: 'brave', thumbnail: { src: 's', original: 'o' } as unknown as string },
+          { title: 'B', url: 'https://page/b', snippet: '', engine: 'brave', thumbnail: 'https://img/b.png' },
+        ],
+      },
+    })
+    const media = searchMedia(m)
+    expect(media).toHaveLength(1)
+    expect(media[0].url).toBe('https://img/b.png')
+  })
+})
+
+describe('extractYouTubeId', () => {
+  it('tolerates non-string input', () => {
+    expect(extractYouTubeId(undefined as unknown as string)).toBeNull()
+    expect(extractYouTubeId({} as unknown as string)).toBeNull()
+    expect(extractYouTubeId('')).toBeNull()
   })
 })
 
