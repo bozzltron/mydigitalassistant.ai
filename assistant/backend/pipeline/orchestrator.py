@@ -37,6 +37,7 @@ from assistant.backend.pipeline.reasoner import (
 from assistant.backend.pipeline.search import SearchInfo, SearchResult, WebSearchTool
 from assistant.backend.pipeline.task_router import TaskType, route
 from assistant.backend.pipeline.tools import builtin_tools, run_tool_loop
+from assistant.backend.pipeline.user_content import CONTENT_SLOT_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -713,6 +714,52 @@ class Orchestrator:
         )
         return system_prompt, plan_instructions, self_context
 
+    async def _render_supplied_content(
+        self, system_prompt: str, extraction_summary: dict
+    ) -> str:
+        """Append content the user supplied this turn, in full, in order.
+
+        Retrieval and extraction run concurrently, so a frame written *during* this
+        turn is never among the frames retrieval returns. Without this the model
+        holds the user's list in memory and still has nothing to answer from.
+
+        Measured on the Plan A live test (2026-09-30): the 7-URL paste registered
+        as frame 4546 and `context_stats` reported the 10 frames retrieval found --
+        4546 was not one of them. The answer was then built from search results
+        about the links, which is the exact failure Plan A exists to fix.
+
+        Injected whole, for the same reason a file frame renders a content hint
+        rather than a preview: a transform request (rank, sort, summarise, compare)
+        operates on the sequence, and a truncated view would silently change the
+        answer rather than merely shorten it.
+        """
+        supplied = extraction_summary.get("user_content")
+        if not supplied:
+            return system_prompt
+        frame_id = supplied.get("frame_id")
+        if not frame_id:
+            return system_prompt
+
+        frame = await self.store.get_frame(frame_id)
+        if frame is None:
+            return system_prompt
+        slots = await self.store.get_slots_for_frame(frame.id)
+        content_slot = next((s for s in slots if s.key == CONTENT_SLOT_KEY), None)
+        if content_slot is None or not (content_slot.value or "").strip():
+            return system_prompt
+
+        item_count = supplied.get("item_count")
+        item_note = f" ({item_count} items)" if item_count else ""
+        return (
+            system_prompt
+            + f"\n\n**Content the user supplied this turn{item_note}:**\n"
+            + content_slot.value
+            + "\nThis content is the subject of the request. Work from it directly "
+            "— if the user asked you to rank, sort, summarise, or compare, do that "
+            "to THIS content, in the order given. Use search only to add context, "
+            "never to replace it."
+        )
+
     def _fit_prompt_to_cap(
         self,
         prompt_with_memory: str,
@@ -1064,6 +1111,10 @@ class Orchestrator:
                 + "\nAcknowledge these naturally, in your own words."
             )
 
+        system_prompt = await self._render_supplied_content(
+            system_prompt, extraction_summary
+        )
+
         # Math computation path
         computation_result = None
         if await self._detect_math_intent(request.message):
@@ -1414,6 +1465,20 @@ class Orchestrator:
                     llm_client=self.llm_client,
                     embed_fn=self.embed_fn(),
                 )
+                # Same reason as the streaming path: a turn transforming
+                # user-supplied content answers from that content, and web_search
+                # is the tool that pre-empts it.
+                if extraction_summary.get("user_content"):
+                    tools = [
+                        t for t in tools if t["function"]["name"] != "web_search"
+                    ]
+                    logger.info(
+                        "web_search withheld: turn transforms user-supplied "
+                        "content (frame=%s)",
+                        (extraction_summary.get("user_content") or {}).get(
+                            "frame_name"
+                        ),
+                    )
                 tool_names = [t["function"]["name"] for t in tools]
                 logger.info("DEBUG: Available tools: %s", tool_names)
                 llm_response = await run_tool_loop(
@@ -2079,6 +2144,10 @@ class Orchestrator:
                 + "\nAcknowledge these naturally, in your own words."
             )
 
+        system_prompt = await self._render_supplied_content(
+            system_prompt, extraction_summary
+        )
+
         # Math computation path
         computation_result = None
         if await self._detect_math_intent(request.message):
@@ -2401,6 +2470,27 @@ class Orchestrator:
                 llm_client=self.llm_client,
                 embed_fn=self.embed_fn(),
             )
+
+            # A turn that transforms content the user supplied must answer from
+            # that content, and `web_search` is the tool that pre-empts it. Routed
+            # the way it was, the model asked to rank a supplied list calls
+            # web_search per link and answers about the links instead of the list
+            # (measured 2026-09-30; see experiments/decision_routing_value).
+            #
+            # Withholding the tool is a routing decision the system is entitled to
+            # make: it already knows the turn supplied content and that the request
+            # is to transform it. `fetch_url` stays -- fetching a link the user
+            # actually handed over is working from their content, not replacing it.
+            if extraction_summary.get("user_content"):
+                tools = [
+                    t for t in tools if t["function"]["name"] != "web_search"
+                ]
+                logger.info(
+                    "web_search withheld: turn transforms user-supplied content "
+                    "(frame=%s)",
+                    (extraction_summary.get("user_content") or {}).get("frame_name"),
+                )
+
             tool_names = [t["function"]["name"] for t in tools]
             logger.info("DEBUG: Available tools for streaming: %s", tool_names)
 
