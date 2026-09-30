@@ -48,8 +48,14 @@ docker run -it --rm -v $(pwd):/app -w /app assistant pytest assistant/tests/
 
 # Frontend
 docker run -it --rm -v $(pwd)/frontend:/app -w /app assistant npm run lint
+docker run -it --rm -v $(pwd)/frontend:/app -w /app assistant npm run typecheck
 docker run -it --rm -v $(pwd)/frontend:/app -w /app assistant npm run test
 ```
+
+`npm run check` runs lint + typecheck + tests in one pass. The typecheck gate is
+`tsconfig.typecheck.json` (strict, source-only). It exists because `vite build` and
+`vitest` both transpile without type-checking, so without it a type error can ship
+silently.
 
 ## Code style
 - Python 3.11+. Type hints required on all public functions.
