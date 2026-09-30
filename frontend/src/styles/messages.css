@@ -70,7 +70,7 @@
 
 .msg:hover .msg-actions { opacity: 1; }
 
-/* Footer row: reactions on the left, confidence on the right. */
+/* Footer row for message actions (copy, react, correct). */
 .msg-footer {
   display: flex;
   align-items: center;
@@ -293,10 +293,12 @@
 
 .file-icon { width: 12px; height: 12px; }
 
-/* Confidence tooltip */
+/* Confidence tooltip: a dotted underline over a statement grounded in memory,
+   revealing the source frame/slot and its confidence on hover. */
 .confidence-tooltip {
   position: relative;
   text-decoration: underline dotted;
+  text-decoration-color: var(--accent);
   text-underline-offset: 3px;
   cursor: help;
 }
@@ -393,44 +395,3 @@
   padding-left: var(--space-lg);
 }
 
-/* Answer confidence: a small chip with a band colour (memory-grounded). */
-.msg-confidence {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-xs);
-  width: fit-content;
-  margin: 0;
-  padding: 0.2rem 0.55rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-full);
-  background: var(--surface2);
-  color: var(--text-dim);
-  font-size: 0.72rem;
-  font-weight: 500;
-}
-
-.msg-confidence .confidence-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--text-dim);
-  flex-shrink: 0;
-}
-
-.msg-confidence.confidence-high {
-  color: var(--accent2);
-  border-color: rgba(78, 201, 160, 0.4);
-}
-.msg-confidence.confidence-high .confidence-dot { background: var(--accent2); }
-
-.msg-confidence.confidence-medium {
-  color: var(--warning);
-  border-color: rgba(240, 185, 124, 0.4);
-}
-.msg-confidence.confidence-medium .confidence-dot { background: var(--warning); }
-
-.msg-confidence.confidence-low {
-  color: var(--error);
-  border-color: rgba(244, 112, 112, 0.35);
-}
-.msg-confidence.confidence-low .confidence-dot { background: var(--error); }

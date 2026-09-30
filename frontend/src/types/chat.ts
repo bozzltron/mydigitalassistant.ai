@@ -20,9 +20,6 @@ export interface MessageMeta {
   isQueued?: boolean
   /** Entry point that produced the message. */
   source?: 'voice' | 'text'
-  /** 0-1 answer confidence (memory-grounded) and what it is based on. */
-  confidence?: number
-  confidence_basis?: string
 }
 
 export interface ExtractionSummary {
@@ -38,6 +35,8 @@ export interface Slot {
   key: string
   value: string
   conflict?: boolean
+  /** Confidence the stored slot carries (0-1), used for inline grounding. */
+  confidence?: number
 }
 
 export interface SearchInfo {

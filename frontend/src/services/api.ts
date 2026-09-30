@@ -180,8 +180,6 @@ export interface StreamEvent {
   extraction_summary?: ExtractionSummary
   search_extraction_summary?: ExtractionSummary
   search_info?: SearchInfo
-  confidence?: number
-  confidence_basis?: string
 }
 
 export async function postChatStream(

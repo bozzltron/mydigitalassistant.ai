@@ -68,8 +68,6 @@ describe('MessageList streamed bubble', () => {
         slots: [{ frame_name: 'web', key: 'fact', value: 'found it' }],
       },
       search_info: { backend: 'brave', query: 'search this', engines: ['brave'] },
-      confidence: 0.7,
-      confidence_basis: 'search',
     })
 
     // The stream ends after the meta event rides in.
@@ -86,8 +84,6 @@ describe('MessageList streamed bubble', () => {
     expect(document.querySelector('.msg-markdown')?.textContent).toContain('Here is the answer')
     expect(document.querySelector('.learned-indicator summary')?.textContent).toContain('Found from search')
     expect(document.querySelector('.badge-brave')?.textContent).toContain('Searched via Brave')
-    // The streamed meta event carries confidence; it must reach the chip.
-    expect(document.querySelector('.msg-confidence')?.textContent).toContain('Confidence 70%')
   })
 })
 
@@ -174,8 +170,8 @@ describe('MessageList source ordering', () => {
             backend: 'brave',
             query: 'q',
             results: [
-              { title: 'A', url: 'https://a.example', snippet: '', engine: 'brave', thumbnail: 'https://img/a.png' },
-              { title: 'B', url: 'https://b.example', snippet: '', engine: 'brave', thumbnail: 'https://img/b.png' },
+              { title: 'A', url: 'https://a.example/story-a', snippet: '', engine: 'brave', thumbnail: 'https://img/a.png' },
+              { title: 'B', url: 'https://b.example/story-b', snippet: '', engine: 'brave', thumbnail: 'https://img/b.png' },
             ],
           },
         },
@@ -191,5 +187,42 @@ describe('MessageList source ordering', () => {
     expect(
       grid!.compareDocumentPosition(sources!) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
+  })
+})
+
+describe('MessageList grounding', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    localStorage.clear()
+    setSessionId('session-ground-1')
+  })
+
+  it('underlines a learned value in the answer with a confidence tooltip', () => {
+    const grounded = () => [
+      {
+        id: 'a1',
+        role: 'assistant' as const,
+        content: 'Machu Picchu sits in Peru.',
+        meta: {
+          extraction_summary: {
+            slots_applied: 1,
+            associations_created: 0,
+            conflicts_created: 0,
+            frame_ids: [1],
+            slots: [
+              { frame_name: 'machu_picchu', key: 'country', value: 'Peru', confidence: 0.9 },
+            ],
+          },
+        },
+      },
+    ]
+
+    render(() => <MessageList messages={grounded} />)
+
+    const tip = document.querySelector('.confidence-tooltip')
+    expect(tip, 'no grounded annotation rendered').not.toBeNull()
+    expect(tip!.textContent).toBe('Peru')
+    expect(tip!.getAttribute('data-confidence')).toContain('machu_picchu.country')
+    expect(tip!.getAttribute('data-confidence')).toContain('90%')
   })
 })

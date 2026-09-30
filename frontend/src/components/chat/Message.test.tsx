@@ -25,22 +25,3 @@ describe('Message error boundary', () => {
   })
 })
 
-describe('Message confidence', () => {
-  it('renders a confidence chip from meta', () => {
-    render(() => (
-      <Message
-        message={{
-          id: 'm1',
-          role: 'assistant',
-          content: 'hi',
-          meta: { confidence: 0.82, confidence_basis: 'memory' },
-        }}
-        onReact={vi.fn()}
-        onCopy={vi.fn()}
-        onCorrect={vi.fn()}
-      />
-    ))
-
-    expect(screen.getByText(/Confidence 82%/)).toBeInTheDocument()
-  })
-})

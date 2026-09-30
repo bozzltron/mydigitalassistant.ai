@@ -2,6 +2,7 @@ import { createMemo, For, Show } from 'solid-js'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { searchMedia, getHeroMedia, getGridMedia, getExtraVideos } from '../../utils/media'
+import { collectGroundingSlots, applyGrounding } from '../../utils/grounding'
 import MediaCard from './MediaCard'
 import MediaGrid from './MediaGrid'
 import type { ChatMessage, MediaContent } from '../../types/chat'
@@ -38,7 +39,14 @@ export default function MessageContent(props: {
     return { body: content.slice(0, idx), sources: content.slice(idx).trim() }
   })
 
-  const bodyHtml = createMemo(() => marked.parse(parts().body) as string)
+  const bodyHtml = createMemo(() =>
+    // Sanitize first, then annotate: `applyGrounding` only ever adds our own
+    // spans (with a controlled `data-confidence` tooltip) to the safe markup.
+    applyGrounding(
+      DOMPurify.sanitize(marked.parse(parts().body) as string),
+      collectGroundingSlots(props.message())
+    )
+  )
   const sourcesHtml = createMemo(() =>
     parts().sources ? (marked.parse(parts().sources) as string) : ''
   )
@@ -49,8 +57,8 @@ export default function MessageContent(props: {
         <MediaCard media={heroMedia()!} onOpenLightbox={props.onOpenLightbox} />
       </Show>
 
-      {/* eslint-disable-next-line solid/no-innerhtml -- content sanitized by DOMPurify */}
-      <div class="msg-markdown" innerHTML={DOMPurify.sanitize(bodyHtml())} />
+      {/* eslint-disable-next-line solid/no-innerhtml -- sanitized by DOMPurify, then annotated */}
+      <div class="msg-markdown" innerHTML={bodyHtml()} />
 
       <Show when={gridMedia().length > 0}>
         <MediaGrid media={gridMedia()} onOpenLightbox={props.onOpenLightbox} />
