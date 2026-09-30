@@ -1,6 +1,8 @@
 import json
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
 from assistant.backend.pipeline.extractor import (
     CorrectionResult,
     ExtractedAssociation,
@@ -210,6 +212,9 @@ async def test_extract_and_apply_full_pipeline(store):
 
     summary = await extract_and_apply("I love spaghetti", "That's great!", store, mock_llm)
     assert summary["slots_applied"] == 1
+    # The UI annotates statements with the stored slot's confidence, so the
+    # summary must carry it (it was previously omitted).
+    assert summary["slots"][0]["confidence"] == pytest.approx(0.5)
 
     frame = await store.get_frame_by_name("pasta")
     assert frame is not None
