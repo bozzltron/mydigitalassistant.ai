@@ -141,7 +141,7 @@ export interface Association {
   source_url: string | null
   source_reliability: number | null
   embedding_model: string | null
-  created_at: string
+  created_at: string | null
 }
 
 export interface Conflict {
@@ -168,7 +168,7 @@ export interface FileEntry {
 export interface User {
   id: number
   name: string
-  created_at: string
+  created_at: string | null
 }
 
 /** Raw item from `GET /users/{id}/sessions`. */

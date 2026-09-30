@@ -108,11 +108,35 @@ describe('api service', () => {
       expect(mockFetch).toHaveBeenCalledWith('/memory/frames?user_id=1', expect.any(Object))
       expect(result).toEqual(mockFrames)
     })
+
+    it('throws loudly when the response shape is wrong', async () => {
+      // The schemas exist to turn a backend field rename into a real error
+      // instead of `undefined` flowing through the UI.
+      mockFetch.mockResolvedValue({
+        ok: true,
+        text: () => Promise.resolve(JSON.stringify([{ nope: true }])),
+      })
+
+      await expect(getFrames(1)).rejects.toThrow(/Unexpected API response shape/)
+    })
   })
 
   describe('getAssociations', () => {
     it('fetches associations for frame', async () => {
-      const mockAssociations = [{ id: 1, from_frame_id: 1, to_frame_id: 2 }]
+      const mockAssociations = [{
+        id: 1,
+        from_frame_id: 1,
+        to_frame_id: 2,
+        relation_type: 'related_to',
+        confidence: 0.5,
+        essential: 0,
+        priority: 0.5,
+        source_type: null,
+        source_url: null,
+        source_reliability: null,
+        embedding_model: null,
+        created_at: '2026-01-01T00:00:00',
+      }]
       mockFetch.mockResolvedValue({
         ok: true,
         text: () => Promise.resolve(JSON.stringify(mockAssociations)),
@@ -177,15 +201,18 @@ describe('api service', () => {
 
   describe('getUserSessions', () => {
     it('fetches user sessions', async () => {
+      const mockSessions = [
+        { id: 'conv_1', episode_count: 2, last_activity: '2026-01-01T00:00:00', last_message: 'Hello there' },
+      ]
       mockFetch.mockResolvedValue({
         ok: true,
-        text: () => Promise.resolve(JSON.stringify([{ id: '1', title: 'Session 1' }])),
+        text: () => Promise.resolve(JSON.stringify(mockSessions)),
       })
 
       const result = await getUserSessions(1)
 
       expect(mockFetch).toHaveBeenCalledWith('/users/1/sessions', expect.any(Object))
-      expect(result).toEqual([{ id: '1', title: 'Session 1' }])
+      expect(result).toEqual(mockSessions)
     })
   })
 

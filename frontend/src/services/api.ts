@@ -22,37 +22,9 @@ import type {
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
 
-// Define Zod schemas for API responses (simplified versions)
-export const ExtractionSummarySchema = z.object({
-  slots_applied: z.number(),
-  associations_created: z.number(),
-  conflicts_created: z.number(),
-  frame_ids: z.array(z.number()),
-  slots: z.array(z.object({
-    frame_name: z.string(),
-    key: z.string(),
-    value: z.string(),
-    conflict: z.boolean().optional(),
-  })),
-})
-
-export const SearchInfoSchema = z.object({
-  backend: z.string(),
-  query: z.string(),
-  engines: z.array(z.string()),
-})
-
-export const ChatResponseSchema = z.object({
-  session_id: z.string().uuid(),
-  response: z.string(),
-  task_type: z.enum(['functional', 'introspective', 'search', 'scheduled', 'correction']),
-  memory_context: z.string().optional(),
-  citations: z.array(z.string()).optional(),
-  extraction_summary: ExtractionSummarySchema.optional(),
-  search_extraction_summary: ExtractionSummarySchema.optional(),
-  search_info: SearchInfoSchema.optional(),
-})
-
+// Zod schemas for validated endpoints only: a schema with no `validate()`
+// caller is a false promise that the response was checked, so dead ones are
+// removed rather than left lying around.
 export const FrameSchema = z.object({
   id: z.number().int(),
   name: z.string(),
@@ -75,28 +47,19 @@ export const AssociationSchema = z.object({
   to_frame_id: z.number().int(),
   relation_type: z.string(),
   confidence: z.number(),
-  essential: z.boolean(),
+  essential: z.number(),
   priority: z.number(),
   source_type: z.string().nullable(),
   source_url: z.string().nullable(),
   source_reliability: z.number().nullable(),
   embedding_model: z.string().nullable(),
-  created_at: z.string(),
-})
-
-export const FileEntrySchema = z.object({
-  id: z.string().uuid(),
-  name: z.string(),
-  size: z.number(),
-  type: z.string(),
-  created_at: z.string(),
-  updated_at: z.string(),
+  created_at: z.string().nullable(),
 })
 
 export const UserSchema = z.object({
   id: z.number().int(),
   name: z.string(),
-  created_at: z.string(),
+  created_at: z.string().nullable(),
 })
 
 export const SessionSummarySchema = z.object({
@@ -110,6 +73,15 @@ export const SessionMessageSchema = z.object({
   role: z.string(),
   content: z.string(),
   timestamp: z.string().optional(),
+})
+
+export const AssistantNameSchema = z.object({
+  name: z.string(),
+})
+
+export const SettingsSchema = z.object({
+  brave_enabled: z.boolean(),
+  brave_configured: z.boolean(),
 })
 
 // Re-export types from shared types
@@ -355,7 +327,8 @@ export async function getFrames(user_id: number): Promise<Frame[]> {
 
 export async function getAssociations(frame_id: number): Promise<Association[]> {
   debug('Fetching associations for frame:', frame_id)
-  return api<Association[]>(`/memory/frames/${frame_id}/associations`)
+  const data = await api<unknown>(`/memory/frames/${frame_id}/associations`)
+  return validate(z.array(AssociationSchema), data)
 }
 
 export async function listFiles(): Promise<FileEntry[]> {
@@ -399,7 +372,13 @@ export async function deleteFile(file_id: string): Promise<{ success: boolean }>
 
 export async function getUserSessions(user_id: number): Promise<SessionSummary[]> {
   debug('Fetching sessions for user:', user_id)
-  return api<SessionSummary[]>(`/users/${user_id}/sessions`)
+  const data = await api<unknown>(`/users/${user_id}/sessions`)
+  return validate(z.array(SessionSummarySchema), data)
+}
+
+export async function getUsers(): Promise<User[]> {
+  const data = await api<unknown>('/users')
+  return validate(z.array(UserSchema), data)
 }
 
 export async function createNewConversation(user_id: number): Promise<{ session_id: string; message: string }> {
@@ -430,17 +409,20 @@ export async function getSessionMessages(
   limit: number = 50
 ): Promise<SessionMessage[]> {
   debug('Fetching session messages:', { session_id, user_id, limit })
-  return api<SessionMessage[]>(
+  const data = await api<unknown>(
     `/chat/session/${encodeURIComponent(session_id)}/messages?user_id=${user_id}&limit=${limit}`
   )
+  return validate(z.array(SessionMessageSchema), data)
 }
 
 export async function getAssistantName(): Promise<{ name: string }> {
-  return api<{ name: string }>('/assistant/name')
+  const data = await api<unknown>('/assistant/name')
+  return validate(AssistantNameSchema, data)
 }
 
 export async function getSettings(): Promise<{ brave_enabled: boolean; brave_configured: boolean }> {
-  return api<{ brave_enabled: boolean; brave_configured: boolean }>('/settings')
+  const data = await api<unknown>('/settings')
+  return validate(SettingsSchema, data)
 }
 
 /**
