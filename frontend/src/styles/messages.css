@@ -111,22 +111,21 @@
   font-size: 0.65rem;
 }
 
-/* Reaction buttons. The base state needs a visible chip: a transparent button
-   with a white glyph disappears against the bubble until hovered. The resting
-   tint is a darker version of the hover tint. */
+/* Reaction buttons: same treatment as the copy button (.msg-action-btn) --
+   transparent at rest, subtle light wash on hover. */
 .reaction-btn {
-  background: rgba(0, 0, 0, 0.22);
+  background: transparent;
   border: none;
   cursor: pointer;
   font-size: 0.9rem;
   padding: var(--space-xs);
   border-radius: var(--radius-sm);
-  color: var(--text-dim);
+  color: #fff;
   transition: background var(--transition-fast), color var(--transition-fast);
 }
 
 .reaction-btn:hover {
-  background: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.08);
   color: var(--text);
 }
 

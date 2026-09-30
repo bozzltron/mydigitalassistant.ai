@@ -68,6 +68,8 @@ describe('MessageList streamed bubble', () => {
         slots: [{ frame_name: 'web', key: 'fact', value: 'found it' }],
       },
       search_info: { backend: 'brave', query: 'search this', engines: ['brave'] },
+      confidence: 0.7,
+      confidence_basis: 'search',
     })
 
     // The stream ends after the meta event rides in.
@@ -84,6 +86,8 @@ describe('MessageList streamed bubble', () => {
     expect(document.querySelector('.msg-markdown')?.textContent).toContain('Here is the answer')
     expect(document.querySelector('.learned-indicator summary')?.textContent).toContain('Found from search')
     expect(document.querySelector('.badge-brave')?.textContent).toContain('Searched via Brave')
+    // The streamed meta event carries confidence; it must reach the chip.
+    expect(document.querySelector('.msg-confidence')?.textContent).toContain('Confidence 70%')
   })
 })
 
