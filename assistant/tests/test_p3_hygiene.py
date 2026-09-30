@@ -44,6 +44,22 @@ async def _apply(store, slots, results):
 
 @pytest.mark.asyncio
 async def test_empty_slot_key_does_not_corroborate_every_snippet(store):
+    """An empty key must not make a fact look corroborated by every source.
+
+    Two layers guard this, and the original fix was the first:
+
+    1. Corroboration matches on the *value*, not the key, so an empty key cannot
+       be a substring of every snippet. Before that, `""` matched `"" in snippet`
+       for all three results and a fact present in none of them was scored as
+       corroborated by three independent domains, clearing the high-stakes gate.
+    2. The write path now drops a blank-keyed slot outright, so it never reaches
+       the corroboration pass at all.
+
+    This asserts the stronger layer-2 guarantee. Layer 1 is still pinned by
+    `test_blank_key_never_reaches_corroboration` below, which drives a slot whose
+    key is blank but whose value is real -- the case where a value-only match
+    would otherwise still corroborate.
+    """
     slot = ExtractedSlot(frame_name="thing", key="", value="zzz-not-in-any-snippet")
     results = [
         _result("https://a.example/1", "totally unrelated text"),
@@ -53,10 +69,26 @@ async def test_empty_slot_key_does_not_corroborate_every_snippet(store):
 
     out = await _apply(store, [slot], results)
 
-    applied = out["slots"][0]
-    # Pre-fix, "" was a substring of every snippet, so all three domains
-    # "corroborated" a fact that appears in none of them.
-    assert applied["corroboration_domains"] == 0
+    # Dropped at the write path, so nothing was applied and nothing could be
+    # scored as corroborated.
+    assert out["slots_applied"] == 0
+    assert out["slots"] == []
+    assert out["degenerate_dropped"] == 1
+
+
+@pytest.mark.asyncio
+async def test_blank_key_never_reaches_corroboration(store):
+    """Layer 1 stated directly: with a real value in real snippets, a blank key
+    still yields no applied fact, so no corroboration count can be attributed."""
+    slot = ExtractedSlot(
+        frame_name="thing", key="   ", value="a real value in the snippet"
+    )
+    results = [_result("https://a.example/1", "a real value in the snippet")]
+
+    out = await _apply(store, [slot], results)
+
+    assert out["slots_applied"] == 0
+    assert out["degenerate_dropped"] == 1
 
 
 # --- keyword categorisation must respect token boundaries ---------------------
