@@ -11,7 +11,7 @@ https://localhost {
     reverse_proxy @static assistant:8000
     
     # Route API requests to backend
-    @api path /api/* /health /chat* /users* /memory* /brain* /files* /settings* /tasks* /db* /feedback* /correction* /conversations* /assistant* /search* /og-preview /transcribe* /uploads* /embeddings* /show* /tags* /chat-ui /brain-ui /summarize
+    @api path /api/* /health /chat* /users* /memory* /brain* /files* /settings* /tasks* /db* /feedback* /correction* /conversations* /assistant* /search* /og-preview /image-proxy* /transcribe* /uploads* /embeddings* /show* /tags* /chat-ui /brain-ui /summarize
     reverse_proxy @api assistant:8000 {
         transport http {
             response_header_timeout 300s

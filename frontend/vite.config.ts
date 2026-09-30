@@ -78,6 +78,10 @@ export default defineConfig({
         target: 'http://assistant:8000',
         changeOrigin: true,
       },
+      '/image-proxy': {
+        target: 'http://assistant:8000',
+        changeOrigin: true,
+      },
       '/transcribe': {
         target: 'http://assistant:8000',
         changeOrigin: true,
