@@ -193,6 +193,7 @@ async def test_importing_a_portable_brain_drops_the_log_of_the_brain_it_replaces
     assert names == {"guitar"}, f"the replaced brain came back: {names}"
 
 
+@requires_db_key
 async def test_a_bundle_restore_drops_the_log_of_the_brain_it_replaces(
     store: MemoryStore, tmp_path
 ):
