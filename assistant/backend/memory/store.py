@@ -3072,19 +3072,38 @@ class MemoryStore:
         return len(await self.get_alerts(user_id, unread_only=True, limit=1000))
 
     async def mark_alert_read(self, alert_id: int, user_id: int) -> bool:
-        """Resolve an alert.
+        """Resolve an alert, scoped to its owner.
 
         Kept under its old name because the API route uses it, but it now performs
         the real transition: `status = resolved`. There is no "seen but open" state,
         because an alert the user looked at and did not answer is still a thing the
         agent is waiting on.
-        """
-        return await self.resolve_alert(alert_id)
 
-    async def resolve_alert(self, alert_id: int) -> bool:
-        """Mark an alert resolved. Writes `slot_history` like any belief change."""
+        The owner check is not optional: the table version scoped this in SQL, and
+        dropping that would let one household member resolve another's alert by
+        guessing an id. Sessions are owner-scoped everywhere else for the same
+        reason -- a session id is not a capability.
+        """
+        return await self.resolve_alert(alert_id, user_id=user_id)
+
+    async def resolve_alert(self, alert_id: int, user_id: int | None = None) -> bool:
+        """Mark an alert resolved. Writes `slot_history` like any belief change.
+
+        `user_id` scopes the operation to the alert's owner when given. The
+        deterministic backstop (`resolve_alerts_for_session`) omits it because it
+        has already selected alerts by session, and a session is itself owner-scoped
+        -- but any user-facing path must pass it.
+        """
         frame = await self.get_frame(alert_id)
         if frame is None or frame.type != ALERT_FRAME_TYPE:
+            return False
+        if user_id is not None and frame.owner_user_id != user_id:
+            logger.warning(
+                "Refused to resolve alert %d for user %s (owned by %s)",
+                alert_id,
+                user_id,
+                frame.owner_user_id,
+            )
             return False
         await self.set_derived_slot(alert_id, "status", "resolved", source_type="alert")
         logger.info("Alert resolved: frame=%d", alert_id)

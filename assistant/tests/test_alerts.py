@@ -77,35 +77,53 @@ async def test_get_unread_alert_count(store: MemoryStore):
 
 @pytest.mark.asyncio
 async def test_mark_alert_read(store: MemoryStore):
-    """Test marking an alert as read."""
+    """Resolving an alert removes it from the open set.
+
+    The old table model kept a resolved row and flipped `is_read`. Under the memory
+    model a resolved alert leaves the open set instead, because the set the bell
+    shows is "things the agent is waiting on" — an alert that has been dealt with is
+    not one of them. The record is not lost: the frame and its slots remain.
+    """
     alert = await store.create_alert(user_id=1, type="learning", title="Alert 1", message="Msg 1")
     
-    # Mark as read
+    # Resolve
     success = await store.mark_alert_read(alert.id, 1)
     assert success is True
     
-    # Verify
+    # It is no longer open.
     alerts = await store.get_alerts(user_id=1)
-    assert len(alerts) == 1
-    assert alerts[0].is_read is True
-    assert alerts[0].read_at is not None
+    assert alerts == []
     
     # Count should be 0
     count = await store.get_unread_alert_count(user_id=1)
     assert count == 0
 
+    # But the record survives — resolved, not deleted.
+    from assistant.backend.memory.store import ALERT_FRAME_TYPE
+    frame = await store.get_frame(alert.id)
+    assert frame is not None and frame.type == ALERT_FRAME_TYPE
+    slots = {s.key: s.value for s in await store.get_slots_for_frame(alert.id)}
+    assert slots["status"] == "resolved"
+    assert slots["title"] == "Alert 1"
+
 
 @pytest.mark.asyncio
 async def test_mark_alert_read_wrong_user(store: MemoryStore):
-    """Test that marking alert read fails for wrong user."""
+    """One member cannot resolve another's alert by guessing an id.
+
+    The table version scoped this in SQL; the memory version has to check
+    explicitly, so this is pinned rather than assumed. A session id or frame id is
+    not a capability.
+    """
     alert = await store.create_alert(user_id=1, type="learning", title="Alert 1", message="Msg 1")
     
-    # Try to mark as read by different user
+    # Try to resolve by a different user
     success = await store.mark_alert_read(alert.id, 2)
     assert success is False
     
-    # Alert should still be unread
+    # Alert should still be open, for its owner.
     alerts = await store.get_alerts(user_id=1)
+    assert len(alerts) == 1
     assert alerts[0].is_read is False
 
 
