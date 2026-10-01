@@ -24,6 +24,12 @@ RUN pip install --no-cache-dir --upgrade pip \
         "python-docx>=1.1" \
         "openpyxl>=3.1" \
         "python-pptx>=0.6.23" \
+        "icalendar>=6.0" \
+        "striprtf>=0.0.26" \
+        "odfpy>=1.4" \
+        "xlrd>=2.0" \
+        "defusedxml>=0.7" \
+        "xlwt>=1.3" \
         "sqlalchemy>=2.0" \
         "faster-whisper>=1.0" \
         "croniter>=2.0" \
@@ -70,6 +76,12 @@ RUN pip install --no-cache-dir --no-index --find-links /wheels \
         python-docx \
         openpyxl \
         python-pptx \
+        icalendar \
+        striprtf \
+        odfpy \
+        xlrd \
+        defusedxml \
+        xlwt \
         faster-whisper \
         croniter \
         python-multipart \

@@ -1,8 +1,9 @@
 """File processing pipeline for the cognitive assistant.
 
-Handles extraction of content from user-supplied files — text and structured
-formats (.txt, .csv, .json, .xml, .html, .ics) plus binary documents
-(.pdf, .docx, .xlsx, .pptx) — and integrates with the memory system.
+Handles extraction of content from user-supplied business files: text and
+structured formats (.txt, .csv, .tsv, .json, .xml, .html, .ics, .eml) plus binary
+documents (.pdf, .docx, .xlsx, .pptx, .xls, .rtf, .odt/.ods/.odp) — and integrates
+with the memory system.
 """
 
 import asyncio
@@ -14,10 +15,14 @@ logger = logging.getLogger(__name__)
 
 # Formats the upload paths accept. Reading is handled by `extract_file_content`;
 # this is the single source of truth for the three call sites in `main.py`.
-# Legacy binaries (.doc/.xls/.ppt) are deliberately absent: there is no good
-# offline pure-Python reader, so the user is told to re-save as .docx/.pdf.
+# Legacy Word/PowerPoint binaries (.doc/.ppt) are deliberately absent: there is
+# no good offline pure-Python reader, so the user is told to re-save as .docx/.pdf.
+# Legacy Excel (.xls) is supported, via xlrd.
 SUPPORTED_UPLOAD_EXTS = frozenset(
-    {"txt", "csv", "json", "xml", "html", "ics", "pdf", "docx", "xlsx", "pptx"}
+    {
+        "txt", "csv", "tsv", "json", "xml", "html", "ics", "eml",
+        "pdf", "docx", "xlsx", "pptx", "xls", "rtf", "odt", "ods", "odp",
+    }
 )
 
 
@@ -137,7 +142,7 @@ def extract_text_from_json(content: bytes) -> tuple[str, list[str], list[str]]:
         plain_text = json.dumps(data, indent=2)[:5000]
         return plain_text, key_entities, open_questions
     except Exception:
-        return ""
+        return "", [], []
 
 
 def extract_text_from_xml(content: bytes) -> tuple[str, list[str], list[str]]:
@@ -146,9 +151,11 @@ def extract_text_from_xml(content: bytes) -> tuple[str, list[str], list[str]]:
     Returns: (plain_text, key_entities, open_questions)
     """
     try:
-        import xml.etree.ElementTree as ET
+        # defusedxml, not the stdlib: these are user-supplied files, and the
+        # stdlib parser expands entities (XXE / billion laughs) by default.
+        from defusedxml.ElementTree import fromstring, tostring
 
-        tree = ET.fromstring(content.decode("utf-8", errors="replace"))
+        tree = fromstring(content.decode("utf-8", errors="replace"))
 
         key_entities = []
         open_questions = []
@@ -177,7 +184,7 @@ def extract_text_from_xml(content: bytes) -> tuple[str, list[str], list[str]]:
         extract_entities_from_element(tree)
 
         # Plain text - extract all text content
-        plain_text = ET.tostring(tree, encoding="unicode", method="text")
+        plain_text = tostring(tree, encoding="unicode", method="text")
 
         # Open questions
         if tree is not None:
@@ -185,7 +192,7 @@ def extract_text_from_xml(content: bytes) -> tuple[str, list[str], list[str]]:
 
         return plain_text, key_entities, open_questions
     except Exception:
-        return ""
+        return "", [], []
 
 
 def extract_text_from_html(content: bytes) -> tuple[str, list[str], list[str]]:
@@ -220,77 +227,44 @@ def extract_text_from_html(content: bytes) -> tuple[str, list[str], list[str]]:
 
         return plain_text, key_entities, open_questions
     except Exception:
-        return []
+        return "", [], []
 
 
 def extract_text_from_ics(content: bytes) -> tuple[str, list[str], list[str]]:
-    """Extract text from a .ics (iCalendar) file.
+    """Extract text from a .ics (iCalendar) file via the `icalendar` parser.
 
-    Returns: (plain_text, key_entities, open_questions)
+    Replaces a hand-rolled regex that missed line folding, escaped separators,
+    and TZID/date handling.
     """
     try:
-        import re
+        from icalendar import Calendar
 
-        text = content.decode("utf-8", errors="replace")
+        cal = Calendar.from_ical(content)
+        summaries: list[str] = []
+        key_entities: list[str] = []
+        open_questions: list[str] = []
 
-        # Extract VEVENT components
-        events = re.findall(
-            r"BEGIN:VEVENT(.*?)END:VEVENT",
-            text,
-            re.DOTALL,
-        )
-
-        event_summaries = []
-        key_entities = []
-        open_questions = []
-
-        for event in events:
-            # Extract summary/title
-            summary_match = re.search(r"SUMMARY:(.+?)\n", event)
-            summary = summary_match.group(1).strip() if summary_match else "Untitled event"
-
-            # Extract date/time
-            dtstart_match = re.search(r"DTSTART:(.+?)\n", event)
-            dtend_match = re.search(r"DTEND:(.+?)\n", event)
-
-            event_info = f"Event: {summary}"
-            if dtstart_match:
-                event_info += f" on {dtstart_match.group(1).strip()}"
-            if dtend_match:
-                event_info += f" to {dtend_match.group(1).strip()}"
-
-            event_summaries.append(event_info)
-
-            # Extract summary as key entity
+        for component in cal.walk("VEVENT"):
+            summary = str(component.get("SUMMARY", "Untitled event"))
+            when = ""
+            dtstart = component.get("DTSTART")
+            dtend = component.get("DTEND")
+            if dtstart is not None:
+                when += f" on {dtstart.dt}"
+            if dtend is not None:
+                when += f" to {dtend.dt}"
+            summaries.append(f"Event: {summary}{when}")
             if summary and summary != "Untitled event":
-                entity_key = f"event_{summary[:50]}"
-                if entity_key not in key_entities:
-                    key_entities.append(entity_key)
-
-            # Extract open questions about the event
+                key_entities.append(f"event_{summary[:50]}")
             open_questions.append(f"Review event: {summary[:50]}")
 
-        # Plain text representation - first few events
-        if event_summaries:
-            plain_text = "\n\n".join(event_summaries[:5])
-        else:
-            plain_text = "No iCalendar events found"
-
-        # If no events found, try to extract any meaningful text
-        if not event_summaries:
-            # Look for other common iCalendar components
-            other_lines = [
-                line for line in text.split("\n") 
-                if not line.strip().startswith(("BEGIN:", "END:"))
-            ]
-            if other_lines:
-                plain_text = " ".join(other_lines[:200])
-            else:
-                plain_text = "No iCalendar events found"
-
+        plain_text = (
+            "\n\n".join(summaries[:5]) if summaries else "No iCalendar events found"
+        )
         return plain_text, key_entities, open_questions
-    except Exception:
-        return "Error parsing iCalendar file", [], []
+    except Exception as e:
+        logger.warning(f"iCalendar extraction failed: {e}")
+        return "", [], []
 
 
 # A long document is not worth reading past its first pages for the assistant's
@@ -377,6 +351,91 @@ def extract_text_from_pptx(content: bytes) -> tuple[str, list[str], list[str]]:
         return "", [], []
 
 
+def extract_text_from_rtf(content: bytes) -> tuple[str, list[str], list[str]]:
+    """Extract text from a .rtf (Rich Text Format) file."""
+    try:
+        from striprtf.striprtf import rtf_to_text
+
+        text = rtf_to_text(content.decode("utf-8", errors="replace"))
+        return text, [], ["Review the document for key points"]
+    except Exception as e:
+        logger.warning(f"RTF extraction failed: {e}")
+        return "", [], []
+
+
+def extract_text_from_odf(content: bytes) -> tuple[str, list[str], list[str]]:
+    """Extract text from an OpenDocument file (.odt/.ods/.odp) via odfpy."""
+    try:
+        from io import BytesIO
+
+        from odf import teletype, text
+        from odf.opendocument import load
+
+        doc = load(BytesIO(content))
+        parts: list[str] = []
+        for para in doc.getElementsByType(text.P):
+            value = teletype.extractText(para).strip()
+            if value:
+                parts.append(value)
+        return "\n".join(parts), [], ["Review the document for key points"]
+    except Exception as e:
+        logger.warning(f"ODF extraction failed: {e}")
+        return "", [], []
+
+
+def extract_text_from_xls(content: bytes) -> tuple[str, list[str], list[str]]:
+    """Extract text from a legacy .xls (Excel 97-2003) workbook via xlrd."""
+    try:
+        import xlrd
+
+        wb = xlrd.open_workbook(file_contents=content)
+        lines: list[str] = []
+        for sheet in wb.sheets():
+            lines.append(f"# {sheet.name}")
+            for row_idx in range(sheet.nrows):
+                lines.append(" | ".join(str(v) for v in sheet.row_values(row_idx)))
+        return "\n".join(lines), [], ["Review the workbook for key figures"]
+    except Exception as e:
+        logger.warning(f"XLS extraction failed: {e}")
+        return "", [], []
+
+
+def extract_text_from_eml(content: bytes) -> tuple[str, list[str], list[str]]:
+    """Extract headers and the plain-text body from a .eml (RFC 822) message."""
+    try:
+        import email
+        from email import policy
+
+        msg = email.message_from_bytes(content, policy=policy.default)
+        parts: list[str] = []
+        for header in ("From", "To", "Cc", "Subject", "Date"):
+            if msg[header]:
+                parts.append(f"{header}: {msg[header]}")
+        body = msg.get_body(preferencelist=("plain",))
+        if body is not None:
+            parts.append(body.get_content())
+        return "\n".join(parts), [], ["Review the message for key points"]
+    except Exception as e:
+        logger.warning(f"EML extraction failed: {e}")
+        return "", [], []
+
+
+def extract_text_from_tsv(content: bytes) -> tuple[str, list[str], list[str]]:
+    """Extract text from a tab-separated values (.tsv) file."""
+    import csv
+    from io import StringIO
+
+    try:
+        reader = csv.reader(
+            StringIO(content.decode("utf-8", errors="replace")), delimiter="\t"
+        )
+        lines = [" | ".join(row) for row in reader if row]
+        return "\n".join(lines), [], ["Review the table for patterns"]
+    except Exception as e:
+        logger.warning(f"TSV extraction failed: {e}")
+        return "", [], []
+
+
 async def extract_file_content(
     file_path: str,
     ext: str,
@@ -396,14 +455,21 @@ async def extract_file_content(
     extractors = {
         "txt": extract_text_from_txt,
         "csv": extract_text_from_csv,
+        "tsv": extract_text_from_tsv,
         "json": extract_text_from_json,
         "xml": extract_text_from_xml,
         "html": extract_text_from_html,
         "ics": extract_text_from_ics,
+        "eml": extract_text_from_eml,
         "pdf": extract_text_from_pdf,
         "docx": extract_text_from_docx,
         "xlsx": extract_text_from_xlsx,
         "pptx": extract_text_from_pptx,
+        "xls": extract_text_from_xls,
+        "rtf": extract_text_from_rtf,
+        "odt": extract_text_from_odf,
+        "ods": extract_text_from_odf,
+        "odp": extract_text_from_odf,
     }
 
     extractor = extractors.get(ext)

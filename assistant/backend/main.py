@@ -2357,9 +2357,9 @@ async def upload_file(
 ):
     """Upload and process a file.
 
-    Supported formats: .txt, .csv, .json, .xml, .html, .ics, .pdf, .docx, .xlsx,
-    .pptx. Legacy binaries (.doc/.xls/.ppt) are rejected — re-save as .docx/.pdf.
-    Returns file metadata and extracted content.
+    Supported formats: .txt, .csv, .tsv, .json, .xml, .html, .ics, .eml, .pdf,
+    .docx, .xlsx, .pptx, .xls, .rtf, .odt/.ods/.odp. Legacy .doc/.ppt are rejected
+    — re-save as .docx/.pdf. Returns file metadata and extracted content.
     """
     # Validate file type
     filename = file.filename or "unknown"
@@ -2370,9 +2370,9 @@ async def upload_file(
         raise HTTPException(
             status_code=400,
             detail=(
-                f"Unsupported file type: .{ext}. Allowed: .txt, .csv, .json, .xml, "
-                ".html, .ics, .pdf, .docx, .xlsx, .pptx. For legacy .doc/.xls/.ppt, "
-                "re-save as .docx/.xlsx/.pptx or .pdf."
+                f"Unsupported file type: .{ext}. Allowed: .txt, .csv, .tsv, .json, "
+                ".xml, .html, .ics, .eml, .pdf, .docx, .xlsx, .pptx, .xls, .rtf, "
+                ".odt, .ods, .odp. For legacy .doc/.ppt, re-save as .docx/.pdf."
             ),
         )
     

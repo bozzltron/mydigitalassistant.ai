@@ -1,8 +1,9 @@
-"""Read support for user-supplied documents (Phase 4 R11).
+"""Read support for user-supplied business documents (Phase 4 R11).
 
 Each extractor runs against a document generated in-memory by the same library
-family, so the test carries no binary fixtures. Legacy binaries (.doc/.xls/.ppt)
-have no good offline reader and are excluded from the upload allowlist.
+family, so the test carries no binary fixtures. Legacy Word/PowerPoint binaries
+(.doc/.ppt) have no good offline reader and are excluded from the allowlist;
+legacy Excel (.xls) is supported via xlrd.
 """
 
 import pytest
@@ -11,8 +12,14 @@ from assistant.backend.pipeline.files import (
     SUPPORTED_UPLOAD_EXTS,
     extract_file_content,
     extract_text_from_docx,
+    extract_text_from_eml,
+    extract_text_from_ics,
+    extract_text_from_odf,
     extract_text_from_pdf,
     extract_text_from_pptx,
+    extract_text_from_rtf,
+    extract_text_from_tsv,
+    extract_text_from_xls,
     extract_text_from_xlsx,
 )
 
@@ -80,6 +87,63 @@ def _make_pptx(text: str) -> bytes:
     return buf.getvalue()
 
 
+def _make_ics(summary: str) -> bytes:
+    from datetime import date
+
+    from icalendar import Calendar, Event
+
+    cal = Calendar()
+    event = Event()
+    event.add("summary", summary)
+    event.add("dtstart", date(2026, 10, 1))
+    cal.add_component(event)
+    return cal.to_ical()
+
+
+def _make_rtf(text: str) -> bytes:
+    return rb"{\rtf1\ansi\deff0 " + text.encode() + rb"}"
+
+
+def _make_odt(text: str) -> bytes:
+    from io import BytesIO
+
+    from odf.opendocument import OpenDocumentText
+    from odf.text import P
+
+    doc = OpenDocumentText()
+    doc.text.addElement(P(text=text))
+    buf = BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
+
+
+def _make_xls(cell: str) -> bytes:
+    from io import BytesIO
+
+    import xlwt
+
+    wb = xlwt.Workbook()
+    wb.add_sheet("Sheet1").write(0, 0, cell)
+    buf = BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def _make_eml(subject: str, body: str) -> bytes:
+    from email.message import EmailMessage
+
+    msg = EmailMessage()
+    msg["From"] = "alice@example.com"
+    msg["To"] = "bob@example.com"
+    msg["Subject"] = subject
+    msg.set_content(body)
+    return msg.as_bytes()
+
+
+def _make_tsv() -> bytes:
+    return b"name\tqty\nwidget\t3\n"
+
+
 def test_pdf_extracts_text():
     text, _, _ = extract_text_from_pdf(_make_pdf("Hello PDF"))
     assert "Hello PDF" in text
@@ -100,13 +164,52 @@ def test_pptx_extracts_text():
     assert "Hello Slides" in text
 
 
+def test_ics_extracts_event():
+    text, entities, _ = extract_text_from_ics(_make_ics("Team sync"))
+    assert "Team sync" in text
+    assert any("Team sync" in e for e in entities)
+
+
+def test_rtf_extracts_text():
+    text, _, _ = extract_text_from_rtf(_make_rtf("Hello RTF"))
+    assert "Hello RTF" in text
+
+
+def test_odt_extracts_text():
+    text, _, _ = extract_text_from_odf(_make_odt("Hello OpenDocument"))
+    assert "Hello OpenDocument" in text
+
+
+def test_xls_extracts_text():
+    text, _, _ = extract_text_from_xls(_make_xls("Hello Legacy Excel"))
+    assert "Hello Legacy Excel" in text
+
+
+def test_eml_extracts_subject_and_body():
+    text, _, _ = extract_text_from_eml(_make_eml("Quarterly report", "Numbers attached."))
+    assert "Quarterly report" in text
+    assert "Numbers attached." in text
+
+
+def test_tsv_extracts_text():
+    text, _, _ = extract_text_from_tsv(_make_tsv())
+    assert "name | qty" in text
+    assert "widget | 3" in text
+
+
 @pytest.mark.asyncio
-async def test_extract_file_content_routes_new_formats(tmp_path):
+async def test_extract_file_content_routes_every_supported_format(tmp_path):
     cases = [
         ("pdf", _make_pdf("routed pdf"), "routed pdf"),
         ("docx", _make_docx("routed docx"), "routed docx"),
         ("xlsx", _make_xlsx("routed xlsx"), "routed xlsx"),
         ("pptx", _make_pptx("routed pptx"), "routed pptx"),
+        ("ics", _make_ics("routed ics"), "routed ics"),
+        ("rtf", _make_rtf("routed rtf"), "routed rtf"),
+        ("odt", _make_odt("routed odt"), "routed odt"),
+        ("xls", _make_xls("routed xls"), "routed xls"),
+        ("eml", _make_eml("routed eml", "body"), "routed eml"),
+        ("tsv", _make_tsv(), "widget"),
     ]
     for ext, data, needle in cases:
         result = await extract_file_content(str(tmp_path / f"f.{ext}"), ext, data)
@@ -121,8 +224,20 @@ async def test_corrupt_binary_degrades_without_raising(tmp_path):
     assert result.text == ""
 
 
-def test_legacy_binaries_are_not_accepted():
-    for ext in ("doc", "xls", "ppt"):
+@pytest.mark.asyncio
+async def test_malformed_structured_files_degrade(tmp_path):
+    # Regression: the JSON/XML error paths returned a bare "" (and HTML a bare
+    # []), which crashed the dispatch unpacking instead of degrading.
+    for ext, bad in [("xml", b"<not xml"), ("json", b"{not json")]:
+        result = await extract_file_content(str(tmp_path / f"f.{ext}"), ext, bad)
+        assert result.text == ""
+
+
+def test_legacy_word_and_powerpoint_are_not_accepted():
+    for ext in ("doc", "ppt"):
         assert ext not in SUPPORTED_UPLOAD_EXTS
-    for ext in ("pdf", "docx", "xlsx", "pptx"):
+    for ext in (
+        "txt", "csv", "tsv", "json", "xml", "html", "ics", "eml",
+        "pdf", "docx", "xlsx", "pptx", "xls", "rtf", "odt", "ods", "odp",
+    ):
         assert ext in SUPPORTED_UPLOAD_EXTS

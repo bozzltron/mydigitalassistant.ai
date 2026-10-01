@@ -100,7 +100,7 @@ export const UploadZone = () => {
           multiple
           onChange={handleFileInput}
           class="file-input"
-          accept=".txt,.csv,.json,.xml,.html,.ics,.pdf,.docx,.xlsx,.pptx"
+          accept=".txt,.csv,.tsv,.json,.xml,.html,.ics,.eml,.pdf,.docx,.xlsx,.pptx,.xls,.rtf,.odt,.ods,.odp"
         />
       </div>
 
