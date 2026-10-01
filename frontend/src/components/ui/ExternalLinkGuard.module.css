@@ -1,0 +1,11 @@
+.host {
+  font-weight: 600;
+  color: var(--text);
+  word-break: break-all;
+}
+
+.url {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  word-break: break-all;
+}

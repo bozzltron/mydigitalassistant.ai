@@ -4,6 +4,7 @@ import { render } from 'solid-js/web'
 import { MetaProvider } from '@solidjs/meta'
 import { Router } from '@solidjs/router'
 import { routes } from './routes'
+import ExternalLinkGuard from './components/ui/ExternalLinkGuard'
 import './styles/index.css'
 
 render(() => (
@@ -17,6 +18,7 @@ render(() => (
         </div>
       )}
     >
+      <ExternalLinkGuard />
       <Router base="/">
         {routes}
       </Router>
