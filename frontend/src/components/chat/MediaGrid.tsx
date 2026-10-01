@@ -110,6 +110,28 @@ export default function MediaGrid(props: MediaGridProps) {
     setFailedImages((prev) => new Set(prev).add(index))
   }
 
+  // Tiles prefer the full-resolution image; the thumbnail is visibly grainy.
+  // Hosts that block hotlinking, or images over the proxy's 5 MB cap, fall back
+  // to the thumbnail once, then to the placeholder.
+  const [thumbFallback, setThumbFallback] = createSignal<Set<number>>(new Set())
+
+  const tileSrc = (item: MediaContent, index: number) => {
+    const full = item.fullUrl ?? item.url
+    if (thumbFallback().has(index) && item.thumbnail && item.thumbnail !== full) {
+      return imageSrc(item.thumbnail)
+    }
+    return imageSrc(full)
+  }
+
+  const handleTileError = (item: MediaContent, index: number) => {
+    const full = item.fullUrl ?? item.url
+    if (!thumbFallback().has(index) && item.thumbnail && item.thumbnail !== full) {
+      setThumbFallback((prev) => new Set(prev).add(index))
+      return
+    }
+    markFailed(index)
+  }
+
   const handleGridItemClick = (index: number, e: Event) => {
     const media = imageMedia()
     const item = media[index]
@@ -156,28 +178,14 @@ export default function MediaGrid(props: MediaGridProps) {
                 fallback={<div class="msg-media-grid-placeholder" aria-hidden="true" />}
               >
                 <img
-                  src={imageSrc(item.thumbnail ?? item.url)}
+                  src={tileSrc(item, index())}
                   alt={item.title || ''}
                   loading="lazy"
                   onLoad={() => markLoaded(index())}
-                  onError={() => markFailed(index())}
+                  onError={() => handleTileError(item, index())}
                   classList={{ 'is-loaded': loadedImages().has(index()) }}
                 />
               </Show>
-              <div class="grid-item-overlay">
-                {item.title && <div class="grid-item-title">{item.title}</div>}
-                {item.sourceUrl && (
-                  <a
-                    class="grid-item-source"
-                    href={item.sourceUrl}
-                    target="_blank"
-                    rel="noopener"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    {hostnameOf(item.sourceUrl)}
-                  </a>
-                )}
-              </div>
               <button
                 class="grid-item-expand"
                 aria-label="View full size"

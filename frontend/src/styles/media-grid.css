@@ -72,9 +72,10 @@
    ========================================================================== */
 
 .msg-video-embed {
-  /* Inset left/right, with vertical space above and below so stacked videos
-     never touch. No bleed: the embed sits inside the bubble's padding. */
-  margin: var(--space-md);
+  /* Aligned with the image hero — full width inside the bubble's padding — so a
+     video-led answer and an image-led one share the same left edge. Only one
+     video is ever embedded (see VideoGallery), so there is nothing to stack. */
+  margin: 0 0 var(--space-md);
   border-radius: var(--radius-md);
   overflow: hidden;
   background: #000;
@@ -92,6 +93,67 @@
   max-height: var(--hero-image-max-height);
   display: block;
   border: none;
+}
+
+
+/* ==========================================================================
+   VIDEO GALLERY THUMBNAILS (the non-embedded videos)
+   ========================================================================== */
+
+.msg-video-thumbs {
+  margin-top: var(--space-md);
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--masonry-column-width), 1fr));
+  gap: var(--masonry-gap);
+}
+
+.msg-video-thumb {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  padding: 0;
+  border: none;
+  border-radius: var(--media-radius);
+  overflow: hidden;
+  background: #000;
+  cursor: pointer;
+}
+
+.msg-video-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform var(--transition-slow);
+}
+
+.msg-video-thumb:hover img {
+  transform: scale(1.03);
+}
+
+.msg-video-thumb-play {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+}
+
+.msg-video-thumb-play svg {
+  width: 40px;
+  height: 40px;
+  opacity: 0.9;
+  filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.8));
+  transition: transform var(--transition-fast);
+}
+
+.msg-video-thumb:hover .msg-video-thumb-play svg {
+  transform: scale(1.1);
+}
+
+.msg-video-thumb:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 
@@ -152,41 +214,6 @@
 
 .msg-media-grid-item:hover img {
   transform: scale(1.03);
-}
-
-.msg-media-grid-item .grid-item-overlay {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(transparent, rgba(0, 0, 0, 0.7));
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  padding: var(--space-sm);
-  opacity: 0;
-  transition: opacity var(--transition-base);
-}
-
-.msg-media-grid-item:hover .grid-item-overlay {
-  opacity: 1;
-}
-
-.msg-media-grid-item .grid-item-title {
-  color: #fff;
-  font-size: 0.75rem;
-  font-weight: 500;
-  line-height: 1.3;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-  margin-bottom: 2px;
-}
-
-.msg-media-grid-item .grid-item-source {
-  color: var(--accent2);
-  font-size: 0.65rem;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
 }
 
 .msg-media-grid-item .grid-item-expand {
@@ -539,6 +566,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   .msg-media-grid-item img,
+  .msg-video-thumb img,
+  .msg-video-thumb-play svg,
   .media-lightbox,
   .media-lightbox-close,
   .media-lightbox-nav,

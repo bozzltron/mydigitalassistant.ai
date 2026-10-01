@@ -1,10 +1,11 @@
-import { createMemo, For, Show } from 'solid-js'
+import { createMemo, Show } from 'solid-js'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { searchMedia, getHeroMedia, getGridMedia, getExtraVideos } from '../../utils/media'
 import { collectGroundingSlots, applyGrounding } from '../../utils/grounding'
 import MediaCard from './MediaCard'
 import MediaGrid from './MediaGrid'
+import VideoGallery from './VideoGallery'
 import type { ChatMessage, MediaContent } from '../../types/chat'
 
 marked.use({
@@ -29,8 +30,18 @@ export default function MessageContent(props: {
   // Media comes only from the message's search results (see `searchMedia`).
   const media = createMemo(() => searchMedia(props.message()))
   const heroMedia = createMemo(() => getHeroMedia(media()))
+  const heroIsVideo = createMemo(() => {
+    const hero = heroMedia()
+    return hero?.type === 'youtube' || hero?.type === 'video'
+  })
   const gridMedia = createMemo(() => getGridMedia(media(), heroMedia()))
-  const extraVideos = createMemo(() => getExtraVideos(media(), heroMedia()))
+  // The gallery gets every video: the hero when the hero is a video (so the
+  // first is embedded and the rest are thumbnails), otherwise just the extras.
+  const videos = createMemo(() => {
+    const hero = heroMedia()
+    const extras = getExtraVideos(media(), hero)
+    return hero && (hero.type === 'youtube' || hero.type === 'video') ? [hero, ...extras] : extras
+  })
 
   const parts = createMemo(() => {
     const content = props.message().content || ''
@@ -53,8 +64,17 @@ export default function MessageContent(props: {
 
   return (
     <div class="message-content">
+      {/* Dynamic content assembles in one order: the hero block — the video
+          gallery (player plus its thumbnails) when the query asked for video,
+          else the lead image — then the body, then the image grid, then the
+          sources. Each block owns its own top margin. */}
       <Show when={heroMedia()}>
-        <MediaCard media={heroMedia()!} onOpenLightbox={props.onOpenLightbox} />
+        <Show
+          when={heroIsVideo()}
+          fallback={<MediaCard media={heroMedia()!} onOpenLightbox={props.onOpenLightbox} />}
+        >
+          <VideoGallery videos={videos()} />
+        </Show>
       </Show>
 
       {/* eslint-disable-next-line solid/no-innerhtml -- sanitized by DOMPurify, then annotated */}
@@ -63,10 +83,6 @@ export default function MessageContent(props: {
       <Show when={gridMedia().length > 0}>
         <MediaGrid media={gridMedia()} onOpenLightbox={props.onOpenLightbox} />
       </Show>
-
-      <For each={extraVideos()}>
-        {(video) => <MediaCard media={video} onOpenLightbox={props.onOpenLightbox} />}
-      </For>
 
       <Show when={parts().sources}>
         {/* eslint-disable-next-line solid/no-innerhtml -- content sanitized by DOMPurify */}

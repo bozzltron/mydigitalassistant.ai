@@ -192,7 +192,7 @@ describe('extractYouTubeId', () => {
 })
 
 describe('composition', () => {
-  it('hero is the first image; grid holds the rest; videos are extra; sources have no media', () => {
+  it('a video query heroes the video; the grid holds the images; the rest are extra videos', () => {
     const m = msg({
       search_info: {
         backend: 'brave',
@@ -202,26 +202,34 @@ describe('composition', () => {
           { title: 'B', url: 'https://page/b', snippet: '', engine: 'brave', thumbnail: 'https://img/b.png' },
           { title: 'C', url: 'https://page/c', snippet: '', engine: 'brave' },
         ],
+        video_results: [
+          { video_id: 'abcdefghijk', title: 'V', thumbnail_url: 'https://img/v.png' },
+          { video_id: 'lmnopqrstuv', title: 'W', thumbnail_url: 'https://img/w.png' },
+        ],
+      },
+    })
+    const media = searchMedia(m)
+    const hero = getHeroMedia(media)
+    expect(hero?.type).toBe('youtube')
+    expect(getGridMedia(media, hero)).toHaveLength(2)
+    expect(getExtraVideos(media, hero)).toHaveLength(1)
+  })
+
+  it('an image query heroes the image and surfaces no videos', () => {
+    const m = msg({
+      search_info: {
+        backend: 'brave',
+        query: 'machu picchu',
+        results: [
+          { title: 'A', url: 'https://page/a', snippet: '', engine: 'brave', thumbnail: 'https://img/a.png' },
+        ],
         video_results: [{ video_id: 'abcdefghijk', title: 'V', thumbnail_url: 'https://img/v.png' }],
       },
     })
     const media = searchMedia(m)
     const hero = getHeroMedia(media)
     expect(hero?.type).toBe('image')
-    expect(getGridMedia(media, hero)).toHaveLength(1)
-    expect(getExtraVideos(media, hero)).toHaveLength(1)
-  })
-
-  it('falls back to a video hero when there are no images', () => {
-    const m = msg({
-      search_info: {
-        backend: 'brave',
-        query: 'nick cage video',
-        results: [],
-        video_results: [{ video_id: 'abcdefghijk', title: 'V', thumbnail_url: 'https://img/v.png' }],
-      },
-    })
-    expect(getHeroMedia(searchMedia(m))?.type).toBe('youtube')
+    expect(getExtraVideos(media, hero)).toHaveLength(0)
   })
 })
 

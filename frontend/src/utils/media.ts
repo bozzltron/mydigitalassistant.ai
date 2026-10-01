@@ -119,9 +119,11 @@ export function searchMedia(message: ChatMessage): MediaContent[] {
   const info = message.meta?.search_info
   if (!info) return []
 
-  const media: MediaContent[] = []
-  const wantsBrand = WANTS_BRAND_IMAGE.test(info.query || '')
+  const query = info.query || ''
+  const wantsBrand = WANTS_BRAND_IMAGE.test(query)
+  const wantsVideo = VIDEO_INTENT.test(query)
 
+  const images: MediaContent[] = []
   for (const result of info.results ?? []) {
     // Coerce: a result's thumbnail/image may arrive as an object
     // ({src, original}) from a backend that has not normalised it yet.
@@ -133,7 +135,7 @@ export function searchMedia(message: ChatMessage): MediaContent[] {
     if (!display) continue
     // Skip logos, icons and ad imagery unless the query is about branding.
     if (!wantsBrand && isJunkImage(full ?? preview, asStr(result.url))) continue
-    media.push({
+    images.push({
       type: 'image',
       url: display,
       fullUrl: full && full !== display ? full : undefined,
@@ -143,13 +145,14 @@ export function searchMedia(message: ChatMessage): MediaContent[] {
     })
   }
 
-  if (VIDEO_INTENT.test(info.query || '')) {
+  const videos: MediaContent[] = []
+  if (wantsVideo) {
     for (const video of info.video_results ?? []) {
       const direct = asStr(video.url)
       const videoId = asStr(video.video_id)
       const url = direct ?? (videoId ? `https://www.youtube.com/watch?v=${videoId}` : undefined)
       if (!url) continue
-      media.push({
+      videos.push({
         type: 'youtube',
         url,
         thumbnail: asStr(video.thumbnail_url),
@@ -158,6 +161,10 @@ export function searchMedia(message: ChatMessage): MediaContent[] {
       })
     }
   }
+
+  // A video query leads with the video — the video *is* the answer, and the
+  // stills are supporting material. Everything else leads with the image.
+  const media = wantsVideo ? [...videos, ...images] : [...images, ...videos]
 
   const seen = new Set<string>()
   return media.filter((m) => {
@@ -168,8 +175,8 @@ export function searchMedia(message: ChatMessage): MediaContent[] {
 }
 
 /**
- * The card at the top: the first image (images are pushed before videos in
- * `searchMedia`), else the first video when there are no images.
+ * The card at the top: for a video query the first video (a video result is
+ * the answer), otherwise the first image.
  */
 export function getHeroMedia(media: MediaContent[]): MediaContent | null {
   if (media.length === 0) return null
