@@ -9,6 +9,7 @@ import {
 } from '../../services/api'
 import { user } from '../../state/user'
 import { Modal } from './Modal'
+import { BellIcon } from './TopBarIcons'
 import styles from './AlertsPanel.module.css'
 
 /**
@@ -199,7 +200,8 @@ export function AlertsPanel() {
   return (
     <>
       <button
-        class={`${styles.alertsTrigger} ${unreadCount() > 0 ? styles.hasAlerts : ''}`}
+        class="topbar-btn"
+        classList={{ 'has-alerts': unreadCount() > 0 }}
         onClick={() => setIsOpen(true)}
         aria-label={
           unreadCount() > 0
@@ -207,14 +209,7 @@ export function AlertsPanel() {
             : 'Open alerts'
         }
       >
-        <span class={styles.alertIcon} aria-hidden="true">
-          <svg viewBox="0 0 24 24" width="16" height="16">
-            <path
-              d="M12 22a2.5 2.5 0 0 0 2.45-2h-4.9A2.5 2.5 0 0 0 12 22Zm7-5-1.6-1.9V10a5.4 5.4 0 0 0-4.2-5.3V4a1.2 1.2 0 0 0-2.4 0v.7A5.4 5.4 0 0 0 6.6 10v5.1L5 17a1 1 0 0 0 .8 1.6h12.4A1 1 0 0 0 19 17Z"
-              fill="currentColor"
-            />
-          </svg>
-        </span>
+        <BellIcon />
         <Show when={unreadCount() > 0}>
           <span class={styles.unreadBadge}>{unreadCount()}</span>
         </Show>

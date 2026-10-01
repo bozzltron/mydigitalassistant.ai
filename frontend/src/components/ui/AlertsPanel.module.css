@@ -17,41 +17,8 @@
  * rgba(20, 184, 166, ...) values already used in files.css and messages.css.
  */
 
-.alertsTrigger {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  border: 1px solid var(--border);
-  border-radius: 20px;
-  background: var(--surface);
-  color: var(--text);
-  cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
-}
-
-.alertsTrigger:hover {
-  background: var(--border);
-  border-color: var(--accent);
-}
-
-/* The colour change is the "there is something waiting" signal; the badge carries
-   the count. Both are needed: the badge alone is easy to miss in a busy top bar. */
-.alertsTrigger.hasAlerts {
-  border-color: var(--error);
-  color: var(--error);
-}
-
-.alertsTrigger.hasAlerts:hover {
-  background: var(--error);
-  color: #fff;
-  border-color: var(--error);
-}
-
-.alertIcon {
-  display: flex;
-  align-items: center;
-}
+/* The trigger itself now uses the shared `.topbar-btn` style (components.css);
+   the alert-specific signal lives there as `.topbar-btn.has-alerts`. */
 
 .typeIcon {
   width: 14px;

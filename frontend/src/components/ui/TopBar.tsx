@@ -10,6 +10,7 @@ import { AlertsPanel } from './AlertsPanel'
 import { EditModal } from './EditModal'
 import { Modal } from './Modal'
 import styles from './TopBar.module.css'
+import { PlusIcon, MicIcon, FolderIcon, BrainIcon, GearIcon } from './TopBarIcons'
 
 interface TopBarProps {
   conversations: Session[]
@@ -158,9 +159,9 @@ export default function TopBar(props: TopBarProps) {
 
   const voiceStatusActive = createMemo(() => !isIdle())
 
-  const stopBtnText = createMemo(() => 
-    isListening() || isProcessing() || isSpeaking() || isTtsSpeaking() 
-      ? "I'm done talking" 
+  const stopBtnText = createMemo(() =>
+    isListening() || isProcessing() || isSpeaking() || isTtsSpeaking()
+      ? "I'm done talking"
       : 'Start'
   )
 
@@ -185,7 +186,7 @@ export default function TopBar(props: TopBarProps) {
 
   // Use selectedSessionId (from localStorage) to find title in conversations list,
   // fallback to activeConversation from props, then default
-  const currentTitle = createMemo(() => 
+  const currentTitle = createMemo(() =>
     props.conversations.find(c => c.id === selectedSessionId())?.title
       ?? props.activeConversation?.title
       ?? '-- New Conversation --'
@@ -269,26 +270,28 @@ export default function TopBar(props: TopBarProps) {
           </div>
           <button
             id="new-conversation-btn"
-            class={styles.newConversationBtn}
+            class="topbar-btn"
             onClick={() => props.onNewConversationClick?.()}
-          >New</button>
+          >
+            <PlusIcon />
+            New
+          </button>
         </div>
         <div class="header-right">
           <AlertsPanel />
-          <TrashCan />
           <span class="voice-status-bar" id="voice-status-bar" classList={{ active: voiceStatusActive() }}>
             <span class="voice-dot" id="voice-status-dot" classList={{ [voiceStatusClass()]: true }} />
             <span id="voice-status-text">{voiceStatusText()}</span>
-            <button 
-              class="voice-btn-small" 
+            <button
+              class="voice-btn-small"
               id="voice-stop-inline"
               onClick={() => stopRecording()}
               title="Stop recording and transcribe (I'm done talking)"
             >
               {stopBtnText()}
             </button>
-            <button 
-              class="voice-btn-small danger" 
+            <button
+              class="voice-btn-small danger"
               id="voice-cancel-inline"
               onClick={() => {
                 exitVoiceMode()
@@ -299,10 +302,10 @@ export default function TopBar(props: TopBarProps) {
               Cancel
             </button>
           </span>
-          <button 
-            id="voice-mode-btn" 
-            class="voice-btn" 
-            title="Voice conversation mode" 
+          <button
+            id="voice-mode-btn"
+            class="topbar-btn"
+            title="Voice conversation mode"
             onClick={() => {
               if (voice.status !== 'idle') {
                 exitVoiceMode()
@@ -312,15 +315,35 @@ export default function TopBar(props: TopBarProps) {
                 updateSetting('voiceMode', true)
               }
             }}
-            classList={{ active: voice.status !== 'idle' }}
+            classList={{ 'is-active': voice.status !== 'idle' }}
           >
+            <MicIcon />
             {voice.status !== 'idle' ? 'Stop Conversation' : "Let's talk"}
           </button>
+          <a href="/files" class="topbar-btn" title="File Browser">
+            <FolderIcon />
+            Files
+          </a>
+          <a href="/brain" class="topbar-btn" title="Brain Observatory">
+            <BrainIcon />
+            Brain
+          </a>
+          <button
+            class="topbar-btn topbar-btn--icon"
+            id="settings-toggle"
+            title="Settings"
+            aria-label="Settings"
+            onClick={() => setShowSettings(true)}
+          >
+            <GearIcon />
+          </button>
+          <TrashCan />
+          {/* Transient voice/TTS controls, kept out of the six-button order. */}
           <Show when={showStopSpeakingBtn()}>
-            <button 
-              id="stop-speaking-btn" 
-              class="voice-btn" 
-              title="Stop speaking" 
+            <button
+              id="stop-speaking-btn"
+              class="topbar-btn"
+              title="Stop speaking"
               onClick={() => {
                 // cancelSpeech, not a bare speechSynthesis.cancel(): the gate has
                 // to stay shut for the reverb tail, and a raw cancel left it open
@@ -332,11 +355,6 @@ export default function TopBar(props: TopBarProps) {
               Stop
             </button>
           </Show>
-          <button class="settings-btn" id="settings-toggle" title="Settings" onClick={() => setShowSettings(true)}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 1-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-          </button>
-          <a href="/brain" class="nav-link" title="Brain Observatory">Brain</a>
-          <a href="/files" class="nav-link" title="File Browser">Files</a>
         </div>
       </header>
 

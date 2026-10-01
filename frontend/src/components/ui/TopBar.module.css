@@ -35,25 +35,6 @@
   cursor: not-allowed;
 }
 
-.newConversationBtn {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  color: var(--text);
-  border-radius: 6px;
-  font-size: 0.8rem;
-  padding: 0.35rem 0.75rem;
-  cursor: pointer;
-  transition: background 0.15s;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-width: auto;
-}
-
-.newConversationBtn:hover {
-  background: var(--border);
-}
-
 .conversationTriggerTitle {
   overflow: hidden;
   text-overflow: ellipsis;
