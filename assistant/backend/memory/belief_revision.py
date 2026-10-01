@@ -58,15 +58,6 @@ class RevisionResult:
     resolution: ConflictResolution | None  # NEW_WINS, EXISTING_WINS, MERGE
 
 
-def entrenchment_key(slot_dict: dict) -> tuple[float, float]:
-    """Entrenchment ordering key: (source_reliability, confidence).
-    Higher values = more entrenched = less willing to give up.
-    """
-    reliability = slot_dict.get("source_reliability") or 0.5
-    confidence = slot_dict.get("confidence") or initial_confidence()
-    return (reliability, confidence)
-
-
 def expand(
     existing_slot: dict | None,
     new_value: str,

@@ -268,58 +268,6 @@ async def _export_tables_unencrypted(db_path: str) -> dict:
     return tables
 
 
-async def migrate_from_encrypted(encrypted_src: str | Path, *, db_path: str | None = None) -> dict:
-    """Migrate an encrypted SQLite database to a new encrypted database.
-
-    Reads all data from an encrypted source (using the current DB_KEY),
-    then creates a fresh encrypted database at ``db_path`` (or
-    ``settings.database_path`` if not specified) and imports all data.
-    The source file is moved to <db_path>.encrypted.backup.
-
-    Use this when migrating between encryption keys or when the source
-    encrypted DB cannot be read as unencrypted.
-
-    Args:
-        encrypted_src: Path to the existing encrypted SQLite file.
-        db_path: Target database path. Defaults to ``settings.database_path``.
-
-    Returns:
-        dict with migration stats.
-    """
-    if not settings.db_key:
-        raise ValueError("DB_KEY is not set. Set it in .env first.")
-
-    src_path = Path(encrypted_src)
-    if not src_path.exists():
-        raise FileNotFoundError(f"Source database not found: {src_path}")
-
-    db_path = db_path or settings.database_path
-    backup_path = db_path + ".encrypted.backup"
-
-    if Path(db_path).exists():
-        Path(db_path).rename(backup_path)
-
-    try:
-        from assistant.backend.db.schema import init_db
-
-        await init_db(db_path)
-        async with _export_tables_encrypted(str(src_path)) as tables:
-            _import_tables_sync(db_path, tables)
-    except Exception:
-        if Path(backup_path).exists():
-            if Path(db_path).exists():
-                Path(db_path).unlink()
-            Path(backup_path).rename(db_path)
-        raise
-
-    return {
-        "source": str(src_path),
-        "new_encrypted_db": db_path,
-        "source_moved_to": backup_path,
-        "tables_migrated": len(tables),
-    }
-
-
 async def migrate_to_encrypted(unencrypted_src: str | Path, *, db_path: str | None = None) -> dict:
     """Migrate an unencrypted SQLite database to a new encrypted one.
 

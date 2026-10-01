@@ -13,16 +13,19 @@ the `alerts` table is gone. The bell is a view over memory, which means retrieva
 raise an alert *when it is contextually relevant* — not only when the user opens it.
 
 - **The presence rule.** An alert is warranted when the agent learned something and
-  the user **was not there to hear it**. Measured before this: of 111 alert rows, 103
-  were mechanism — 54 "Task completed: …", 24 search notices fired mid-conversation,
-  25 auto-resolved conflicts announced to the user watching them resolve.
-- **An alert closes by being answered, not by being read.** There is no read flag —
-  which is why 103 rows previously sat unread. Resolution happens in a conversation
-  the user picks; the alert closes when they reply there. A new thread per alert is
-  the fallback, not the default, so alert threads do not accumulate.
+  the user **was not there to hear it**. In practice that means a task completion is
+  not an alert (its output is already an episode), a search result learned mid-turn is
+  not an alert (the user was watching), and a task **failure** is — the user asked for
+  a recurring task and it is silently broken. Before this rule was enforced the bell
+  was dominated by mechanism: task-completion notices, search notices fired during the
+  conversation, and auto-resolved conflicts announced to the user watching them resolve.
+- **An alert closes by being answered, not by being read.** There is no read flag, and
+  none is coming back — a read flag is a status that changes nothing, which is why the
+  old notification rows accumulated unread. Resolution happens in a conversation the
+  user picks; the alert closes when they reply there. A new thread per alert is the
+  fallback, not the default, so alert threads do not accumulate.
 - **A task failure still alerts** (`task_failure`), and a task *completion* does not.
-  The user asked for a recurring task and it is silently broken; that is the presence
-  rule applied, not an exception to it.
+  That is the presence rule applied, not an exception to it.
 - **The bell resolves rather than dismisses.** Open it, pick the conversation to
   settle an alert in, and go there. Inline SVG icons and a colour change on the trigger
   replace the emoji and the read badge.
@@ -40,55 +43,60 @@ if not content:
     content = slots_dict.get("file_content_preview") or ""
 ```
 
-A missing file returned a stale 200-character copy and the model answered believing it
-had read the file. Content keys are now **refused at write time** by `upsert_slot`
-(`FileContentInMemoryError`), the stat is now reported as missing, and 10 existing
-preview rows were removed.
+A missing file returned a stale truncated copy and the model answered believing it had
+read the file. Content keys are now **refused at write time** by `upsert_slot`
+(`FileContentInMemoryError`), a missing file is reported as missing, and existing
+preview rows are removed.
 
 ### Write-path hygiene
 
 - **No blank records.** Frame names, slot keys, and slot values are validated at every
-  write path. Frame 4387 — an empty-named frame created from a single paste turn — is
-  gone, and its origin is closed.
-- **A blank value is refused at the store, not just at extraction.** The extraction
-  guard was not enough: CSV row ingestion writes one slot per column, including empty
-  cells, which produced 65 blank-value slots in a single day. The refusal now sits in
-  `upsert_slot`, where every writer funnels, and CSV ingestion skips empty cells. An
-  empty cell is an absent fact, not a fact with an empty value.
+  write path, so a frame with no name and a slot with no key or value cannot be
+  created. The extraction paths had a guard already; it was not enough, because CSV row
+  ingestion writes one slot per column — including empty cells — and three other
+  writers bypassed it. The refusal now sits in `upsert_slot`, where every writer
+  funnels. An empty cell is an **absent** fact, so not writing a slot for it is the
+  accurate representation, not a loss.
 - **The summarizer stopped arguing with itself.** Counters (`turn_count`, `date_end`)
-  were written as beliefs and "conflicted" with every run: 3,307 conflict rows, 86% of
-  the ledger, on zero disagreements. They are written directly now.
+  were written as beliefs and "conflicted" with the previous run every time, making the
+  summarizer the largest single source of conflict rows in the ledger — on zero
+  disagreements. Counters are now written directly rather than through the belief path.
 - **`POST /tasks/run-due` returns immediately** instead of timing out at Caddy's 300s
   while its work completed. It hands off to the scheduler loop — one execution path
   instead of two.
-- **Scheduler re-enabled and verified**, embeddings migrated to a single model, 92
-  unverifiable frames re-indexed.
+- **Embeddings migrated to a single model**, with frames that had none under the
+  configured model re-indexed so they are retrievable again.
 
 ### Conflicts: measured, and the ladder works
 
 A long-held belief that the confidence ladder never discriminated was **wrong**, and
 the correction is the point of this release.
 
-- **The ladder fires.** A user-stated fact (reliability 0.99) against a search attempt
-  (0.5) resolves to the user's value. The `grok` near-rename was not luck — it was
-  rung 1 working, and it *read* as luck only because the record said `pending`.
+- **The ladder fires.** A user-stated fact (source reliability 0.99) against a search
+  attempt (0.5) resolves to the user's value. A long-standing reading that the ladder
+  never discriminated was wrong: the appearance of recency-always-winning came from
+  *ties* resolving by recency, which is what a tiebreak is for, and the `grok`
+  near-rename was rung 1 working — it read as luck only because the record called
+  itself undecided.
 - **`EXISTING_WINS` is recorded as decided**, not deferred: `auto_resolved` with
-  `resolved_value` set. 252 of 279 "pending" rows were decided-and-applied, which
-  inflated the apparent backlog 10×.
+  `resolved_value` set. It previously wrote `pending`, which made a decision
+  indistinguishable from a deferral and inflated the apparent review queue roughly
+  tenfold.
 - **Every conflict records its decision inputs** — source reliability, confidence, and
-  priority for both sides. `slot_history` keeps values but no provenance, so before
-  these columns a past decision could not be audited at all: the gating experiment was
-  inconclusive for 100% of its sample.
+  priority for both sides. `slot_history` keeps a conflict's values but no provenance,
+  so before these columns a past decision could not be audited at all.
 - **Plan D closed.** A model that reasons over conflicts would duplicate a working
   comparator. The gate was met in the negative.
 
 ### Web search and content the user supplies
 
 - Supplied content (a pasted list, and the class generally) is registered as memory —
-  it previously produced nothing at all, so a 45-URL list survived one turn and was
+  it previously produced nothing at all, so a pasted list survived one turn and was
   unreachable after. It reaches the prompt on both orchestrator paths.
-- `web_search` stays available on every turn. Three attempts were made to fix the
-  follow-up failure with a static rule; all three were reverted. The model decides.
+- `web_search` stays available on every turn, including when the user supplies content
+  and asks for it to be researched. Three attempts were made to fix a follow-up failure
+  with a static rule (a router flag, a prompt line, and withholding the tool); all
+  three were reverted. The model decides.
 
 ### Process
 
@@ -98,14 +106,25 @@ the correction is the point of this release.
   and read-only against a brain copy. Two this cycle were disproved rather than
   confirmed, and both are written up as such.
 
+### Clean ship
+
+Dead code removed, verified by deletion rather than by inspection: eleven public
+functions had no caller outside their own definition, and the full suite passed after
+each removal — which is what proves they were dead. Eight were pre-existing (an AGM
+entrenchment helper the ladder never used, unused store readers, abandoned file
+generators writing to a hardcoded temp path, an encryption-migration function the CLI
+does not call). One was introduced and removed in the same cycle.
+
 ### Known gaps
 
 - The **journal** (Plan E phase 3) is not started — alerts may already cover the need.
-- **~27 conflicts** are genuinely open, now distinguishable from the 252 mislabelled.
+- **Conflicts the ladder declines to settle** remain in `pending`, now distinguishable
+  from the ones it decided (those record `auto_resolved` with a `resolved_value`).
+  Reviewing the genuinely open set is a review, not a subsystem.
 - **Portable brains are implemented but not wired.** `export_portable_brain` /
-  `import_portable_brain` exist in `backend/memory/backup.py` with 12 tests, but no API
-  endpoint and no CLI command reach them. `AGENTS.md` used to describe them as
-  available; it now says so accurately. Small to wire.
+  `import_portable_brain` exist in `backend/memory/backup.py` with tests, but no API
+  endpoint and no CLI command reach them. `AGENTS.md` now says so accurately rather
+  than describing them as available.
 
 ## v0.1.1-alpha
 

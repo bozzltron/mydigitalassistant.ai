@@ -7,7 +7,6 @@ and integrates with the memory system.
 import json
 import logging
 from dataclasses import dataclass
-from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -20,25 +19,6 @@ class FileExtractionResult:
     open_questions: list[str]  # Potential open questions from the content
     structure_info: dict  # Information about the file structure
     row_data: list[dict] | None = None  # Parsed CSV rows: [{col: value}, ...]
-
-    # Additional: query-aware extraction
-    def query_content(self, query: str) -> str:
-        """Extract relevant content based on a natural language query."""
-        query_lower = query.lower()
-        text_lower = self.text.lower()
-        
-        # Simple keyword-based extraction
-        if query_lower in text_lower:
-            # Find the sentence containing the query
-            sentences = self.text.split('.')
-            for sentence in sentences:
-                if query_lower in sentence.lower():
-                    return sentence.strip() + '.'
-            
-            # Return first 200 chars if no match
-            return self.text[:200]
-        
-        return self.text
 
 
 def extract_text_from_txt(content: bytes) -> tuple[str, list[str], list[str]]:
@@ -360,47 +340,3 @@ async def extract_file_content(
         structure_info=structure_info,
         row_data=row_data,
     )
-
-def generate_file(content: str, file_type: str, query: str = None) -> str:
-    """Generate a file of the specified type with optional query-based filtering.
-    
-    Args:
-        content: The content to write
-        file_type: Target file type (.txt, .csv, .json, .xml, .html, .ics)
-        query: Optional query to filter/relevant content
-    
-    Returns:
-        Path to the generated file
-    """
-    from pathlib import Path
-    
-    output_path = Path("/tmp/generated.file")
-    with open(output_path, "w") as f:
-        f.write(content)
-    
-    return str(output_path)
-
-
-def generate_ical_content(summary: str, desc: str = "", start: str = "", end: str = "") -> str:
-    """Generate iCalendar content."""
-    ical = []
-    ical.append("BEGIN:VCALENDAR")
-    ical.append("VERSION:2.0")
-    ical.append("PRODID:-//MyDigitalAssistant//EN//EN")
-    ical.append("CALSCALE:GREGORIAN")
-    ical.append("METHOD:PUBLISH")
-    ical.append("")
-    ical.append("BEGIN:VEVENT")
-    ical.append(f"UID:{datetime.now().strftime('%Y%m%dT%H%M%S')}-assistant@example.com")
-    ical.append(f"DTSTAMP:{datetime.now().strftime('%Y%m%dT%H%M%S')}")
-    if start:
-        ical.append(f"DTSTART:{start}")
-    if end:
-        ical.append(f"DTEND:{end}")
-    ical.append(f"SUMMARY:{summary}")
-    if desc:
-        ical.append(f"DESCRIPTION:{desc}")
-    ical.append("END:VEVENT")
-    ical.append("END:VCALENDAR")
-    return "\r\n".join(ical)
-

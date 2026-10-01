@@ -280,8 +280,8 @@ recording because the opposite was long believed:
   tie and recency decides, which is what a tiebreak is for.
 - **`EXISTING_WINS` is recorded as decided.** It sets `status='auto_resolved'` with
   `resolved_value` = the existing value. It previously wrote `status='pending'`, which
-  made a decision indistinguishable from a deferral — 252 of 279 "pending" rows were
-  decided-and-applied. The slot is deliberately **not** updated: existing standing is
+  made a decision indistinguishable from a deferral and inflated the apparent review
+  queue roughly tenfold. The slot is deliberately **not** updated: existing standing is
   the outcome, not an omission.
 - **Every conflict records its decision inputs** — `existing_/new_source_reliability`,
   `_confidence`, `_priority` on the `conflicts` row. `slot_history` keeps old and new
@@ -356,12 +356,13 @@ contextually relevant* rather than only when the user opens a bell.
 | A task completes | **Not an alert.** The output is already an episode. |
 | A task **fails** | **Alert** (`task_failure`). The user asked for a recurring task and it is silently broken. |
 
-Measured before this was enforced: of 111 alert rows, 103 were mechanism — 54 "Task
-completed: …", 24 search notices fired mid-conversation, 25 auto-resolved conflicts
-announced to the user watching them resolve. Removing those writers left 8 real ones.
+Measured before this was enforced, the bell was dominated by mechanism: task-completion
+notices, search notices fired during the conversation, and auto-resolved conflicts
+announced to the user watching them resolve. Removing those writers from both
+orchestrator paths left only the alerts the presence rule allows.
 
-**An alert closes by being answered, not by being read.** There is no read flag —
-which is why 103 rows previously sat unread: reading one accomplished nothing.
+**An alert closes by being answered, not by being read.** There is no read flag — a
+status that changes nothing is why notification rows accumulate unread.
 `mark_alert_read` performs the real transition (`status = resolved`) and is named for
 the API route that calls it.
 

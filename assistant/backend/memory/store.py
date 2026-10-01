@@ -2092,12 +2092,6 @@ class MemoryStore:
                 )
             return [Conflict(**self._conflict_dict(row)) for row in rows]
 
-    async def count_conflicts(self) -> int:
-        """Total conflict rows. Used by tests and the hygiene audit."""
-        async with self._connect() as db:
-            rows = await db.execute_fetchall("SELECT COUNT(*) FROM conflicts")
-            return rows[0][0] if rows else 0
-
     async def get_conflicts_for_frame(self, frame_id: int) -> list[Conflict]:
         async with self._connect() as db:
             rows = await db.execute_fetchall(
@@ -2918,17 +2912,6 @@ class MemoryStore:
                 (frame_id, key, value),
             )
             await db.commit()
-
-    async def get_scheduled_task_slot(
-        self, frame_id: int, key: str
-    ) -> str | None:
-        """Read a single slot value from a scheduled_task frame."""
-        async with self._connect() as db:
-            rows = await db.execute_fetchall(
-                "SELECT value FROM slots WHERE frame_id = ? AND key = ?",
-                (frame_id, key),
-            )
-            return rows[0][0] if rows else None
 
     async def get_last_assistant_episode(
         self, user_id: int, session_id: str
