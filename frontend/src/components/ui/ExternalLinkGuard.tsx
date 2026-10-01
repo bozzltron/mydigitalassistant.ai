@@ -18,6 +18,8 @@ export default function ExternalLinkGuard() {
     if (e.defaultPrevented || e.button !== 0) return
     const anchor = (e.target as Element | null)?.closest?.('a')
     if (!anchor) return
+    // A `download` link is meant to save a file, not open a tab.
+    if (anchor.hasAttribute('download')) return
     const href = anchor.getAttribute('href')
     if (!isExternalHttpUrl(href)) return
     e.preventDefault()

@@ -32,7 +32,6 @@ RUN pip install --no-cache-dir --upgrade pip \
         "xlwt>=1.3" \
         "sqlalchemy>=2.0" \
         "faster-whisper>=1.0" \
-        "croniter>=2.0" \
         "python-multipart>=0.0.9" \
         "ruff>=0.7.0" \
         "pytest>=8.0" \
@@ -83,7 +82,6 @@ RUN pip install --no-cache-dir --no-index --find-links /wheels \
         defusedxml \
         xlwt \
         faster-whisper \
-        croniter \
         python-multipart \
         ruff \
         pytest \

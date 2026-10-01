@@ -24,7 +24,9 @@ export const Modal = (props: ModalProps) => {
   // gap that kept every modal here mouse-only.
   onMount(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && props.isOpen) handleClose();
+      // Ignore a repeat Escape mid-close, or `handleClose`'s timer would fire
+      // `onClose` once per press.
+      if (e.key === 'Escape' && props.isOpen && !isAnimating()) handleClose();
     };
     document.addEventListener('keydown', onKey);
     onCleanup(() => document.removeEventListener('keydown', onKey));

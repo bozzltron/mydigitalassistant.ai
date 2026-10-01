@@ -69,4 +69,21 @@ describe('ExternalLinkGuard', () => {
     expect(open).not.toHaveBeenCalled()
     open.mockRestore()
   })
+
+  it('leaves download links alone (they save a file, not open a tab)', () => {
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null)
+    render(() => <ExternalLinkGuard />)
+
+    const a = document.createElement('a')
+    a.setAttribute('href', 'https://example.com/file.pdf')
+    a.setAttribute('download', '')
+    a.textContent = 'file'
+    document.body.appendChild(a)
+    added.push(a)
+    fireEvent.click(a)
+
+    expect(document.querySelector('.modal-overlay')).toBeNull()
+    expect(open).not.toHaveBeenCalled()
+    open.mockRestore()
+  })
 })
