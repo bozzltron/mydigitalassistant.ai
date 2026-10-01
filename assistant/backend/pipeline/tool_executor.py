@@ -1059,6 +1059,13 @@ async def execute_write_file(args: dict, user_id: str, session_id: str) -> ToolR
                                     )
                                     if not slot_key:
                                         slot_key = f"col_{col_idx}"
+                                    # A padded or empty cell is an ABSENT fact. Skip it:
+                                    # the store refuses blank values, and letting that
+                                    # raise here would abort the whole row — which is
+                                    # precisely the ragged-row failure this padding
+                                    # exists to tolerate.
+                                    if val is None or not str(val).strip():
+                                        continue
                                     await _store.upsert_slot(
                                         row_frame.id, slot_key, val, source_type="csv_row"
                                     )
@@ -1486,7 +1493,14 @@ async def execute_tool(
 
     logger.debug("execute_tool: tool=%s arg_keys=%s", tool_name, sorted(raw_args))
 
-    # 1. Look up executor
+    # 1. Look up executor. The registry is seeded on demand rather than only by
+    # `init_store`, because it is module-level global state: a caller that runs a tool
+    # before any store is wired got "Unknown tool: write_file" for a tool that plainly
+    # exists. That made the builtin set depend on whether some earlier caller happened
+    # to initialise a store -- an ordering dependency between tests, and a latent
+    # version of the same problem in production startup paths.
+    if not TOOL_REGISTRY:
+        _register_builtin_tools()
     if tool_name not in TOOL_REGISTRY:
         return ToolResult(success=False, error=f"Unknown tool: {tool_name}")
 

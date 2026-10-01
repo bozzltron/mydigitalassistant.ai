@@ -352,9 +352,15 @@ class TestRaggedCsvIngestion:
             s.key: s.value
             for s in await store.get_slots_for_frame(rows["file_ragged.csv_row_2"].id)
         }
-        # Short row padded with "", long row's extra cell ignored.
-        assert first == {"name": "alice", "age": "30", "city": ""}
+        # A short row's missing cells and a long row's extra cells are simply absent.
+        # They used to be padded with "" and stored as empty-valued slots, which is a
+        # fact that says nothing; the store now refuses blank values and this writer
+        # skips them. The row is still stored, which is what this test is about.
+        assert first == {"name": "alice", "age": "30"}
         assert second == {"name": "bob", "age": "40", "city": "london"}
+        # And the ragged row kept its frame — the failure this padding exists to avoid
+        # is the whole row being aborted, not the empty cell being omitted.
+        assert rows["file_ragged.csv_row_1"].id is not None
 
     @pytest.mark.asyncio
     async def test_blank_header_column_gets_a_positional_key(

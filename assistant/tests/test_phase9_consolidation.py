@@ -6,6 +6,7 @@ redirect the graph, record aliases, and tombstone losers — without touching
 frames owned by other users.
 """
 
+import pytest
 
 from assistant.backend.memory.consolidate import run_consolidation
 from assistant.backend.pipeline.extractor import (
@@ -182,17 +183,29 @@ async def test_resurrection_never_crosses_owners(store):
 
 
 async def test_pass2_ignores_empty_identity_slots(store):
-    """M1 regression: two frames sharing only empty/garbage identity-slot
-    values (url='', title='') are not merged on that evidence."""
+    """M1 regression, now with defence in depth.
+
+    Originally: two frames sharing only empty/garbage identity-slot values
+    (url='', title='') were merged on that evidence. The fix was in the pass-2 query,
+    which requires `trim(s1.value) != ''`.
+
+    The store now refuses a blank value outright, so the rows this test used to create
+    can no longer exist — the scenario is unreachable rather than merely handled. Both
+    layers are pinned here: the write refusal (which makes the setup impossible) and
+    the query guard (which still holds for any row written before it).
+    """
     a = await store.create_frame("empty_slot_frame_one", "entity")
     b = await store.create_frame("empty_slot_frame_two", "entity")
-    await store.upsert_slot(a.id, "url", "")
-    await store.upsert_slot(b.id, "url", "")
-    await store.upsert_slot(a.id, "title", "")
-    await store.upsert_slot(b.id, "title", "")
 
+    # Layer 1: the write is refused, so the shared-empty-value evidence cannot exist.
+    with pytest.raises(ValueError, match="non-blank value"):
+        await store.upsert_slot(a.id, "url", "")
+    with pytest.raises(ValueError, match="non-blank value"):
+        await store.upsert_slot(b.id, "url", "")
+
+    # Layer 2: with real values that happen to be equal, the frames are still not
+    # merged on that alone — the guard is about blanks, not about equality.
     report = await run_consolidation(str(store.db_path), dry_run=False)
-
     ids_in_merges = {m.loser_id for m in report.planned_merges} | {
         m.survivor_id for m in report.planned_merges
     }
