@@ -2177,24 +2177,20 @@ async def upload_file_to_memory(
         if stale_rows:
             await store.prune_frames(stale_rows)
     
-    # Store file content as a slot
+    # Memory records what the file *is*; the content stays on disk and is read
+    # verbatim. The preview used to be stored here and excluded at render time,
+    # which left a stale copy that could be served in place of the real file when
+    # a disk read failed. See plans/2026-10-01-file-support-diagnosis.md.
+    #
+    # This preview is for the upload *response* only — so the UI can show what was
+    # received — and is never written to a slot.
     content_text = extraction_result.text
     content_preview = content_text[:200] + ("..." if len(content_text) > 200 else "")
-    
+
     await store.upsert_slot(
         frame_id=frame.id,
         key="file_name",
         value=filename,
-        essential=0,
-        priority=0.5,
-        source_type="file_upload",
-        source_reliability=0.8,
-    )
-    
-    await store.upsert_slot(
-        frame_id=frame.id,
-        key="file_content_preview",
-        value=content_preview,
         essential=0,
         priority=0.5,
         source_type="file_upload",

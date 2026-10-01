@@ -669,9 +669,6 @@ async def execute_fetch_url(args: dict, user_id: str, session_id: str = "") -> T
 # rather than in slots: user uploads and tool-created sandbox files.
 FILE_FRAME_SOURCE_TYPES = ("file_upload", "file_create")
 
-# Content slots on file frames are truncated hints, not the file itself.
-FILE_CONTENT_HINT_SLOTS = ("file_content", "file_content_preview")
-
 
 def _strip_frame_prefix(name: str) -> str:
     """Strip a leading ``file_`` frame-name prefix from a file reference.
@@ -847,11 +844,20 @@ async def execute_read_file(args: dict, user_id: str, session_id: str) -> ToolRe
                 except Exception as e:
                     logger.warning(f"Failed to read sandbox file {file_safe_name}: {e}")
 
+            # A missing file reports missing. This used to fall back to
+            # `file_content_preview` from memory, which meant a disk failure
+            # silently served a stale 200-character copy and the model answered
+            # believing it had read the file. Memory holds what a file *is*, not
+            # what it contains — see plans/2026-10-01-file-support-diagnosis.md.
             if not content:
-                content = (
-                    slots_dict.get("file_content")
-                    or slots_dict.get("file_content_preview")
-                    or ""
+                return ToolResult(
+                    success=False,
+                    error=(
+                        f"File '{file_name}' is recorded in memory but is not "
+                        f"readable in the sandbox"
+                        + (f" at {file_safe_name}" if file_safe_name else "")
+                        + ". It may have been moved or deleted outside the assistant."
+                    ),
                 )
 
             return ToolResult(
@@ -947,14 +953,11 @@ async def execute_read_file(args: dict, user_id: str, session_id: str) -> ToolRe
         if resolved_frame is not None:
             data["frame_id"] = resolved_frame.id
             data["frame_name"] = resolved_frame.name
-            if _store is not None:
-                # Refresh the content hint with the freshly read content.
-                await _store.upsert_slot(
-                    resolved_frame.id,
-                    "file_content_preview",
-                    content[:200],
-                    source_type="file_read",
-                )
+            # No content hint is refreshed here. This used to write the first 200
+            # characters into the frame on every read — the fourth such write site,
+            # after create, edit, and upload — which put content into memory as a
+            # side effect of reading it and left a copy that went stale immediately.
+            # The bytes are on disk; reading them is the whole job.
         elif resolved_path != requested:
             data["resolved_from"] = requested
         return ToolResult(success=True, data=data)
@@ -1021,9 +1024,12 @@ async def execute_write_file(args: dict, user_id: str, session_id: str) -> ToolR
                 str(written_path.relative_to(get_sandbox_root())),
                 source_type="file_create",
             )
-            await _store.upsert_slot(
-                frame.id, "file_content_preview", content[:200], source_type="file_create"
-            )
+            # No content slot. Memory holds what a file *is*, never what it
+            # *contains*: the bytes are on disk and read verbatim via read_file.
+            # The preview used to be written here and excluded at render time
+            # (retrieval.py FILE_CONTENT_HINT_SLOTS), which left a stale copy that
+            # the read_file disk-failure fallback could serve in place of the real
+            # file. See plans/2026-10-01-file-support-diagnosis.md.
 
             # CSV special handling: create row frames (capped — past
             # CSV_MAX_ROW_FRAMES only row_count/columns metadata is stored;
@@ -1134,9 +1140,9 @@ async def execute_edit_file(args: dict, user_id: str, session_id: str) -> ToolRe
             frame_name = f"file_{Path(path).name}"
             frame = await _store.get_frame_by_name(frame_name)
             if frame:
-                await _store.upsert_slot(
-                    frame.id, "file_content_preview", new_content[:200], source_type="file_edit"
-                )
+                # Only identity changes here. The content is on disk and is read
+                # verbatim; a preview copy would go stale the moment this edit
+                # landed, which is precisely the drift the boundary exists to stop.
                 await _store.upsert_slot(
                     frame.id, "file_size", str(len(new_content)), source_type="file_edit"
                 )

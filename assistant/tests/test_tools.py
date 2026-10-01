@@ -426,15 +426,6 @@ async def test_list_files_tool(store):
     )
     await store.upsert_slot(
         frame_id=frame.id,
-        key="file_content_preview",
-        value="Hello world",
-        essential=0,
-        priority=0.5,
-        source_type="file_upload",
-        source_reliability=0.8,
-    )
-    await store.upsert_slot(
-        frame_id=frame.id,
         key="file_size",
         value="11",
         essential=0,
@@ -485,8 +476,6 @@ async def test_list_files_filters_by_user(store):
     )
     await store.upsert_slot(frame_id=frame1.id, key="file_name", value="user1.txt",
         essential=0, priority=0.5, source_type="file_upload", source_reliability=0.8)
-    await store.upsert_slot(frame_id=frame1.id, key="file_content_preview", value="User 1 file",
-        essential=0, priority=0.5, source_type="file_upload", source_reliability=0.8)
     await store.upsert_slot(frame_id=frame1.id, key="file_size", value="11",
         essential=0, priority=0.5, source_type="file_upload", source_reliability=0.8)
     await store.upsert_slot(frame_id=frame1.id, key="file_ext", value="txt",
@@ -503,8 +492,6 @@ async def test_list_files_filters_by_user(store):
         source_reliability=0.7,
     )
     await store.upsert_slot(frame_id=frame2.id, key="file_name", value="user2.txt",
-        essential=0, priority=0.5, source_type="file_upload", source_reliability=0.8)
-    await store.upsert_slot(frame_id=frame2.id, key="file_content_preview", value="User 2 file",
         essential=0, priority=0.5, source_type="file_upload", source_reliability=0.8)
     await store.upsert_slot(frame_id=frame2.id, key="file_size", value="11",
         essential=0, priority=0.5, source_type="file_upload", source_reliability=0.8)
@@ -542,8 +529,6 @@ async def test_list_files_excludes_soft_deleted(store):
     )
     await store.upsert_slot(frame_id=frame1.id, key="file_name", value="active.txt",
         essential=0, priority=0.5, source_type="file_upload", source_reliability=0.8)
-    await store.upsert_slot(frame_id=frame1.id, key="file_content_preview", value="Active file",
-        essential=0, priority=0.5, source_type="file_upload", source_reliability=0.8)
     await store.upsert_slot(frame_id=frame1.id, key="file_size", value="11",
         essential=0, priority=0.5, source_type="file_upload", source_reliability=0.8)
     await store.upsert_slot(frame_id=frame1.id, key="file_ext", value="txt",
@@ -561,8 +546,6 @@ async def test_list_files_excludes_soft_deleted(store):
         priority=0.0,  # Frame-level soft delete
     )
     await store.upsert_slot(frame_id=frame2.id, key="file_name", value="deleted.txt",
-        essential=0, priority=0.5, source_type="file_upload", source_reliability=0.8)
-    await store.upsert_slot(frame_id=frame2.id, key="file_content_preview", value="Deleted file",
         essential=0, priority=0.5, source_type="file_upload", source_reliability=0.8)
     await store.upsert_slot(frame_id=frame2.id, key="file_size", value="11",
         essential=0, priority=0.5, source_type="file_upload", source_reliability=0.8)
@@ -604,15 +587,6 @@ async def test_read_file_after_list_files(store):
         )
         await store.upsert_slot(frame_id=frame.id, key="file_name", value="test.csv",
             essential=0, priority=0.5, source_type="file_upload", source_reliability=0.8)
-        await store.upsert_slot(
-            frame_id=frame.id,
-            key="file_content_preview",
-            value="name,email...",
-            essential=0,
-            priority=0.5,
-            source_type="file_upload",
-            source_reliability=0.8,
-        )
         await store.upsert_slot(frame_id=frame.id, key="file_size", value="30",
             essential=0, priority=0.5, source_type="file_upload", source_reliability=0.8)
         await store.upsert_slot(frame_id=frame.id, key="file_ext", value="csv",

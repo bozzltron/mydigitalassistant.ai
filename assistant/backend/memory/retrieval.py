@@ -17,7 +17,13 @@ logger = logging.getLogger(__name__)
 FILE_FRAME_SOURCE_TYPES = ("file_upload", "file_create")
 
 # Content slots on file frames are truncated hints, not the file itself.
-FILE_CONTENT_HINT_SLOTS = ("file_content", "file_content_preview")
+#
+# Retained as a re-export because `retrieval` historically owned this list; the one
+# definition now lives in `memory.store`, where the write-time refusal uses it, so the
+# rule has a single home rather than two that can drift.
+from assistant.backend.memory.store import (  # noqa: E402, F401
+    FILE_CONTENT_HINT_SLOTS,
+)
 
 # Minimum association confidence for the graph walk to *follow* an edge.
 #

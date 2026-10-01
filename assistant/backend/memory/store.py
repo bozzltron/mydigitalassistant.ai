@@ -45,6 +45,26 @@ CHUNK_MIN_SLOTS = 6
 # plans/2026-09-30-alerts-as-memory.md.
 ALERT_FRAME_TYPE = "alert"
 
+# Slot keys that hold file *content* rather than facts about the file.
+#
+# Memory holds what a file **is**, never what it **contains**: the bytes live in the
+# sandbox and are read verbatim. These keys were previously written on every file
+# frame and merely hidden at render time, which left a stale copy that the `read_file`
+# disk-failure fallback could serve in place of the real file — the model answered
+# from a truncated preview believing it had read the file. Refused at write time here
+# so no future writer can reintroduce it; see
+# plans/2026-10-01-file-support-diagnosis.md.
+FILE_CONTENT_HINT_SLOTS: tuple[str, ...] = ("file_content", "file_content_preview")
+
+
+class FileContentInMemoryError(ValueError):
+    """Raised when a write tries to put file content into a slot.
+
+    File content belongs on disk. This is raised rather than logged so a caller that
+    reintroduces the duplication fails loudly at the point of the mistake, instead of
+    quietly recreating a copy that goes stale.
+    """
+
 # Max ids per batched IN (...) lookup. SQLite's default bound-parameter ceiling
 # is 999, so stay well under it; get_all_associations_for_frames binds each id
 # twice (from_ and to_), which is why this is not simply 999.
@@ -1280,6 +1300,16 @@ class MemoryStore:
         source_url: str | None = None,
         source_reliability: float | None = None,
     ) -> tuple[Slot, Conflict | None]:
+        if key in FILE_CONTENT_HINT_SLOTS:
+            # File content belongs on disk, read verbatim. Refused here because the
+            # store is where every writer funnels, so this cannot be sidestepped by
+            # a new call site the way a per-writer fix could.
+            raise FileContentInMemoryError(
+                f"slot key {key!r} holds file content, which belongs in the sandbox, "
+                "not in memory. Store what the file IS (name, path, size); read what "
+                "it CONTAINS with read_file. See "
+                "plans/2026-10-01-file-support-diagnosis.md"
+            )
         async with self._connect() as db:
             existing = await db.execute_fetchall(
                 "SELECT id, value, confidence, essential, source_reliability, priority FROM slots "

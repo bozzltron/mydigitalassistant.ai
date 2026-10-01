@@ -167,11 +167,15 @@ class TestFileViewerBackend:
         assert frame is not None
         assert frame.name == data["frame_name"]
 
-        # Verify slots were created
+        # Verify the identity slots were created.
         slots = await store.get_slots_for_frame(frame_id)
         slot_keys = [s.key for s in slots]
         assert "file_name" in slot_keys
-        assert "file_content_preview" in slot_keys
+        assert "file_size" in slot_keys
+        # And that no content slot was: memory holds what a file IS, not what it
+        # CONTAINS. The bytes are on disk and read verbatim.
+        assert "file_content_preview" not in slot_keys
+        assert "file_content" not in slot_keys
 
     @pytest.mark.asyncio
     async def test_upload_csv_file_creates_parent_and_row_frames(self, client, store, tmp_path):
@@ -364,12 +368,14 @@ class TestFileViewerBackend:
         entity_count = sum(1 for s in slots if s.key.startswith("entity_"))
         assert entity_count == 50, f"expected 50 entity slots, got {entity_count}"
 
-        # File metadata slots survive untouched
+        # File identity slots survive untouched. No content slot appears: content
+        # lives on disk, never in memory.
         keys = {s.key for s in slots}
         assert {
-            "file_name", "file_content_preview", "file_size", "file_ext",
+            "file_name", "file_size", "file_ext",
             "file_safe_name", "row_count", "columns",
         } <= keys
+        assert "file_content_preview" not in keys
 
     @pytest.mark.asyncio
     async def test_delete_file_cascades(self, client, store, tmp_path):
@@ -598,7 +604,9 @@ class TestFileSandboxTools:
         frame = await store.get_frame_by_name("file_test_agent.txt")
         assert frame is not None
         slots = await store.get_slots_for_frame(frame.id)
-        assert any(s.key == "file_content_preview" and "Hello" in s.value for s in slots)
+        # The content is on disk and read verbatim; memory records identity only.
+        assert not any(s.key == "file_content_preview" for s in slots)
+        assert Path("/app/data/test_agent.txt").read_text() == "Hello from agent"
 
     @pytest.mark.asyncio
     async def test_write_file_rejects_traversal(self, store, stub_llm):
