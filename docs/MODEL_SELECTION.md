@@ -95,8 +95,8 @@ new model. Scheduler is off in this deployment, so the CLI is the only top-up.
 
 | Role | Model | Size | keep_alive | num_ctx |
 |------|-------|------|------------|---------|
-| Chat | `qwen3.5:9b` | 6.6GB | global (30m) | 8192 |
-| Tools | `qwen3.5:9b` | — shares chat | `-1` | 4096 |
+| Chat | `qwen3.5:9b` | 6.6GB | global (30m) | 16384 |
+| Tools | `qwen3.5:9b` | — shares chat | `-1` | shares chat (16384) |
 | Utility | `qwen3.5:4b` | 3.4GB | global | 4096 |
 | Embedding | `qwen3-embedding:0.6b` | 0.6GB | — | — |
 | Max | `qwen3.8:27b` | 17GB | `10m` | 16384 |
@@ -106,7 +106,11 @@ new model. Scheduler is off in this deployment, so the CLI is the only top-up.
 Rationale highlights:
 
 - **9b as both chat and tools** — one brain, shared hot KV cache, tool loop stays
-  warm and fast.
+  warm and fast. Because they are the same loaded runner they share one context
+  window: `CHAT_NUM_CTX` (16384), not the smaller `TOOLS_NUM_CTX`, which applies
+  only to a *distinct* tools model. The tool loop sends the system prompt + every
+  tool schema + history — the largest prompt in the system — so 8192 left no room
+  to generate and the turn finalized empty (incident 2026-10-01).
 - **4b utility** — cheap extraction/routing fallback that never slows the hot path.
 - **27b shared by max + math** — a single on-demand load serves both escalation
   and exact computation; compute adds zero extra resident RAM.

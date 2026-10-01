@@ -24,8 +24,15 @@ services:
       # Tools model: same brain as chat so tool calls + final answer share the
       # hot KV cache (Phase 6 M5 + fleet redesign).
       - TOOLS_MODEL=${TOOLS_MODEL:-qwen3.5:9b}
-      - TOOLS_NUM_CTX=${TOOLS_NUM_CTX:-4096}
+      # Only used when TOOLS_MODEL differs from CHAT_MODEL; they share one
+      # context window otherwise. Kept >= CHAT_NUM_CTX so the tool loop (system
+      # prompt + tool schemas + history) always has generation headroom.
+      - TOOLS_NUM_CTX=${TOOLS_NUM_CTX:-16384}
       - TOOLS_KEEP_ALIVE=${TOOLS_KEEP_ALIVE:--1}
+      # Context window for the chat/tools model. The tool loop carries the
+      # system prompt + every tool schema + history, so this must leave room to
+      # generate. Passed through so the .env knob is not inert in Docker.
+      - CHAT_NUM_CTX=${CHAT_NUM_CTX:-16384}
       # Max-intelligence escalation tier (Phase 6 M6). On-demand with a short
       # keep_alive — never resident next to the warm set. Empty = fall back to
       # thinking-mode on the chat model.

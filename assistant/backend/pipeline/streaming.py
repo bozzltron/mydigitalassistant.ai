@@ -168,7 +168,11 @@ async def stream_tool_loop(
     import logging
 
     from assistant.backend.pipeline.async_tools import format_tool_result
-    from assistant.backend.pipeline.llm_client import ChatMessage
+    from assistant.backend.pipeline.llm_client import (
+        EMPTY_GENERATION_FALLBACK,
+        ChatMessage,
+        compact_messages,
+    )
     from assistant.backend.pipeline.tool_executor import ToolResult, execute_tool
     from assistant.backend.pipeline.tools import MAX_TOOL_ROUNDS
 
@@ -181,6 +185,7 @@ async def stream_tool_loop(
 
     turn = 0
     reasoning_trace: list[str] = []
+    empty_retried = False
 
     while turn < max_turns:
         turn += 1
@@ -200,6 +205,39 @@ async def stream_tool_loop(
             think=think,
             num_predict=num_predict,
         )
+
+        # An empty generation with no tool call means the model emitted nothing:
+        # on this stack that is almost always context exhaustion. The prompt —
+        # system prompt + every tool schema + history — filled the window and
+        # left no room for the answer (llama-server logs truncated=1; Ollama
+        # reports done_reason="length"), so the output was cut off to empty.
+        # Retry once with history and prior tool chatter dropped, which is the
+        # only part of the prompt we can give back. Without this the turn
+        # finalized with a comprehension-sounding fallback that hid the cause.
+        if (
+            not response.tool_calls
+            and not (response.content or "").strip()
+            and not empty_retried
+        ):
+            empty_retried = True
+            compacted = compact_messages(chat_messages)
+            logger.warning(
+                "Empty generation (done_reason=%r); retrying with %d of %d "
+                "messages after dropping history",
+                response.done_reason,
+                len(compacted),
+                len(chat_messages),
+            )
+            chat_messages = compacted
+            response = await llm_client.chat(
+                messages=chat_messages,
+                tools=tools,
+                tool_choice="auto",
+                model=loop_model,
+                temperature=0.3,
+                think=think,
+                num_predict=num_predict,
+            )
 
         if response.tool_calls:
             # Yield tool call events
@@ -260,7 +298,7 @@ async def stream_tool_loop(
                 )
         else:
             # No tool calls = direct answer
-            answer = response.content or "I'm not sure how to respond."
+            answer = (response.content or "").strip() or EMPTY_GENERATION_FALLBACK
             event = FinalizeEvent(
                 answer,
                 "\n\n".join(reasoning_trace) if reasoning_trace else None

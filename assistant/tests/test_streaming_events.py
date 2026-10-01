@@ -243,3 +243,105 @@ async def test_stream_tool_loop_max_turns_wraps_up_not_metadata(tmp_path):
     assert any(
         '"type": "tool_result"' in ev and "File not found" in ev for ev in events
     )
+
+
+async def test_stream_tool_loop_retries_empty_generation_with_compacted_history(
+    tmp_path,
+):
+    """Regression: an empty generation is retried without history, not surfaced
+    as the old comprehension fallback.
+
+    Root cause (live incident 2026-10-01): the tool-loop prompt (system prompt +
+    16 tool schemas + 6 turns of history) reached 8169 tokens against an
+    8192-token context. The model emitted 23 tokens, was cut off, and returned
+    neither content nor a tool call — so the loop finalized with
+    "I'm not sure how to respond." Dropping history gives the model room.
+    """
+    from assistant.backend.pipeline.llm_client import ChatResponse
+    from assistant.backend.pipeline.streaming import stream_tool_loop
+    from assistant.backend.pipeline.tool_executor import init_store
+
+    init_store(str(tmp_path / "stream.db"))
+
+    class StubLLM:
+        def __init__(self, responses):
+            self.responses = list(responses)
+            self.tools_model = "test-model"
+            self.calls = []
+
+        async def chat(self, messages, **kwargs):
+            self.calls.append({"messages": messages, **kwargs})
+            return self.responses.pop(0)
+
+    empty = ChatResponse(content="", model="m", done=True, done_reason="length")
+    answer = ChatResponse(content="Here is the strategy.", model="m", done=True)
+    llm = StubLLM([empty, answer])
+
+    messages = [
+        {"role": "system", "content": "sys"},
+        {"role": "user", "content": "earlier question"},
+        {"role": "assistant", "content": "earlier answer"},
+        {"role": "user", "content": "the complex question"},
+    ]
+    events = [
+        ev
+        async for ev in stream_tool_loop(
+            llm,
+            messages=messages,
+            tools=[],
+            model="test-model",
+            user_id="1",
+            session_id="s-1",
+        )
+    ]
+
+    # Exactly one retry, and the user sees the model's answer.
+    assert len(llm.calls) == 2
+    stream = "".join(events)
+    assert "I'm not sure how to respond" not in stream
+    finalize = [ev for ev in events if '"type": "finalize"' in ev]
+    assert finalize and "Here is the strategy." in finalize[-1]
+
+    # The retry dropped history: system + most recent user turn only.
+    retry = llm.calls[1]["messages"]
+    assert [m.role for m in retry] == ["system", "user"]
+    assert retry[-1].content == "the complex question"
+
+
+async def test_stream_tool_loop_empty_generation_fallback_is_honest(tmp_path):
+    """If even the compacted retry is empty, say the context filled — don't
+    blame the question."""
+    from assistant.backend.pipeline.llm_client import ChatResponse
+    from assistant.backend.pipeline.streaming import stream_tool_loop
+    from assistant.backend.pipeline.tool_executor import init_store
+
+    init_store(str(tmp_path / "stream.db"))
+
+    class StubLLM:
+        def __init__(self):
+            self.tools_model = "test-model"
+            self.calls = 0
+
+        async def chat(self, messages, **kwargs):
+            self.calls += 1
+            return ChatResponse(
+                content="", model="m", done=True, done_reason="length"
+            )
+
+    llm = StubLLM()
+    events = [
+        ev
+        async for ev in stream_tool_loop(
+            llm,
+            messages=[{"role": "user", "content": "q"}],
+            tools=[],
+            model="test-model",
+            user_id="1",
+            session_id="s-1",
+        )
+    ]
+
+    assert llm.calls == 2  # one original + one compacted retry
+    stream = "".join(events)
+    assert "I'm not sure how to respond" not in stream
+    assert "my working context filled up" in stream

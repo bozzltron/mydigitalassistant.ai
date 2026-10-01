@@ -23,6 +23,7 @@ from assistant.backend.memory.retrieval import (
 )
 from assistant.backend.memory.store import MemoryStore
 from assistant.backend.pipeline.llm_client import (
+    EMPTY_GENERATION_FALLBACK,
     ChatMessage,
     OllamaClient,
     build_system_prompt,
@@ -38,6 +39,7 @@ from assistant.backend.pipeline.search import SearchInfo, SearchResult, WebSearc
 from assistant.backend.pipeline.task_router import TaskType, route
 from assistant.backend.pipeline.tools import builtin_tools, run_tool_loop
 from assistant.backend.pipeline.user_content import CONTENT_SLOT_KEY
+from assistant.backend.retry import retry_transient
 
 logger = logging.getLogger(__name__)
 
@@ -121,13 +123,14 @@ async def _fetch_url_body(url: str) -> str | None:
     except Exception:
         return None
 
-    try:
+    async def _do_fetch() -> str | None:
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(FETCH_TIMEOUT_SECONDS, read=8.0),
             follow_redirects=True,
             headers={"User-Agent": "Mozilla/5.0 (compatible; AssistantBot/1.0)"},
         ) as client:
             r = await client.get(url)
+            r.raise_for_status()
             content_type = r.headers.get("content-type", "")
             if "text/html" not in content_type and "text/plain" not in content_type:
                 return r.text[:2000]
@@ -142,6 +145,9 @@ async def _fetch_url_body(url: str) -> str | None:
             if not text.strip():
                 return None
             return text[:8000]
+
+    try:
+        return await retry_transient(_do_fetch, label=f"fetch_url {url[:80]}")
     except Exception as e:
         logger.warning("Failed to fetch %s: %s", url[:80], e)
         return None
@@ -878,7 +884,7 @@ class Orchestrator:
         """
         response_text = answer
         if not response_text:
-            response_text = "I'm not sure how to respond to that."
+            response_text = EMPTY_GENERATION_FALLBACK
             logger.warning("Empty LLM response")
         # Sources only for informational/search tasks, never for a chat reply
         # that merely happened to run a search.

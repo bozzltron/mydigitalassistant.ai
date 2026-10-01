@@ -20,8 +20,14 @@ from pydantic import BaseModel, Field
 
 from assistant.backend.config import settings
 from assistant.backend.memory.store import MemoryStore
-from assistant.backend.pipeline.llm_client import ChatMessage, OllamaClient
+from assistant.backend.pipeline.llm_client import (
+    EMPTY_GENERATION_FALLBACK,
+    ChatMessage,
+    OllamaClient,
+    compact_messages,
+)
 from assistant.backend.pipeline.url_safety import UnsafeURLError, assert_public_url, safe_stream
+from assistant.backend.retry import retry_transient
 
 logger = logging.getLogger(__name__)
 
@@ -135,7 +141,7 @@ async def _fetch_single_url(url: str) -> str:
     except UnsafeURLError as e:
         return f"Error: {e}"
 
-    try:
+    async def _do_fetch() -> str:
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(FETCH_TIMEOUT_SECONDS, read=20.0),
             follow_redirects=False,
@@ -172,6 +178,9 @@ async def _fetch_single_url(url: str) -> str:
                 snippet += f"\n... [{len(text):,} total characters, truncated to first 3000]"
             return snippet
 
+    try:
+        # A GET is idempotent, so a transient network blip is retried.
+        return await retry_transient(_do_fetch, label=f"fetch_url {url}")
     except httpx.TimeoutException:
         return f"Error: timeout fetching {url} ({FETCH_TIMEOUT_SECONDS}s)"
     except Exception as e:
@@ -671,6 +680,7 @@ async def run_tool_loop(
     turn = 0
     tool_results: list[dict] = []
     reasoning_trace: list[str] = []
+    empty_retried = False
 
     # Use tools_model (1.5B) by default for faster tool calling
     # Fall back to utility_model if tools_model is not available (e.g., in tests)
@@ -701,6 +711,37 @@ async def run_tool_loop(
 
         logger.info("DEBUG run_tool_loop: LLM response: tool_calls=%s, content=%s", 
             bool(response.tool_calls), response.content[:100] if response.content else "None")
+
+        # Empty generation with no tool call: on this stack that is context
+        # exhaustion (the prompt filled the window and left no room to answer;
+        # llama-server logs truncated=1, Ollama reports done_reason="length").
+        # Retry once with history and prior tool chatter dropped. Without this
+        # the loop returned the old comprehension-sounding fallback that hid
+        # the cause.
+        if (
+            not response.tool_calls
+            and not (response.content or "").strip()
+            and not empty_retried
+        ):
+            empty_retried = True
+            compacted = compact_messages(messages)
+            logger.warning(
+                "Empty generation (done_reason=%r); retrying with %d of %d "
+                "messages after dropping history",
+                response.done_reason,
+                len(compacted),
+                len(messages),
+            )
+            messages = compacted
+            response = await llm_client.chat(
+                messages=messages,
+                tools=tools,
+                tool_choice="auto",
+                model=loop_model,
+                temperature=temperature,
+                think=think,
+                num_predict=num_predict,
+            )
 
         # Check for tool calls
         if response.tool_calls:
@@ -774,7 +815,7 @@ async def run_tool_loop(
                 )
         else:
             # No tool calls = direct answer (finalize)
-            answer = response.content or "I'm not sure how to respond."
+            answer = (response.content or "").strip() or EMPTY_GENERATION_FALLBACK
             return {
                 "answer": answer,
                 "loop_terminated": "finalize",

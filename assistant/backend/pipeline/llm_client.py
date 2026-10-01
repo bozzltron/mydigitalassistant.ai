@@ -6,7 +6,20 @@ from typing import Literal
 import httpx
 from pydantic import BaseModel
 
+from assistant.backend.retry import retry_transient
+
 logger = logging.getLogger(__name__)
+
+
+async def _post_json(client: httpx.AsyncClient, path: str, payload: dict) -> dict:
+    """POST JSON and return the parsed body, raising on a non-2xx status.
+
+    Kept as a named function so ``retry_transient`` can call it again from
+    scratch on a transient failure.
+    """
+    response = await client.post(path, json=payload)
+    response.raise_for_status()
+    return response.json()
 
 _THINK_BLOCK_RE = re.compile(r"<think>(.*?)</think>", re.DOTALL)
 _THINK_OPEN_RE = re.compile(r"<think>(.*)$", re.DOTALL)
@@ -57,6 +70,31 @@ class ChatMessage(BaseModel):
         return getattr(self, key, default)
 
 
+# Emitted when a tool-loop generation produces neither text nor a tool call,
+# even after a compacted retry. The old wording ("I'm not sure how to respond.")
+# described the symptom as a comprehension failure; the real cause is a context
+# window that filled with prompt and left no room for the answer.
+EMPTY_GENERATION_FALLBACK = (
+    "I wasn't able to finish that answer — my working context filled up before "
+    "I could respond. Try asking again, or break the request into smaller parts."
+)
+
+
+def compact_messages(messages: list[ChatMessage]) -> list[ChatMessage]:
+    """Drop history and prior tool chatter, keeping the system prompt and the
+    most recent user turn.
+
+    Used only when a generation came back empty, which on this stack means the
+    prompt filled the model's context window (llama-server reports truncated=1,
+    Ollama reports done_reason="length"). The system prompt and tool schemas are
+    the fixed cost; history is the only part we can give back.
+    """
+    system = [m for m in messages if m.role == "system"][:1]
+    user = [m for m in messages if m.role == "user"][-1:]
+    compact = system + user
+    return compact or messages[-1:]
+
+
 class ToolCall(BaseModel):
     """A tool invocation requested by the model (Ollama native tools API)."""
     name: str
@@ -69,6 +107,11 @@ class ChatResponse(BaseModel):
     done: bool
     thinking: str = ""
     tool_calls: list[ToolCall] = []
+    # Ollama's stop reason: "stop" (natural end), "length" (hit the generation
+    # or context ceiling), "load". Empty on servers that omit it. "length" with
+    # empty content is the signature of a prompt that filled the context window
+    # and left no room to answer.
+    done_reason: str = ""
 
 
 class ChatChunk(BaseModel):
@@ -111,11 +154,11 @@ class OllamaClient:
         math_keep_alive: str = "10m",
         timeout: float = 120.0,
         verify_tls: bool | str = True,
-        chat_num_ctx: int = 8192,
+        chat_num_ctx: int = 16384,
         utility_num_ctx: int = 4096,
         keep_alive: str = "30m",
         tools_model: str = "qwen3.5:9b",
-        tools_num_ctx: int = 4096,
+        tools_num_ctx: int = 16384,
         tools_keep_alive: str = "-1",
         max_model: str = "",
         max_num_ctx: int = 16384,
@@ -164,6 +207,27 @@ class OllamaClient:
         if model == self.tools_model and self.tools_model:
             return self._normalize_keep_alive(self.tools_keep_alive)
         return self._normalize_keep_alive(self.keep_alive)
+
+    def _num_ctx_for(self, model: str) -> int:
+        """Resolve the context window that applies to a specific model.
+
+        A model is one loaded runner, so roles that share a model must share a
+        context window. ``tools_model`` defaults to ``chat_model``, and the tool
+        loop carries the system prompt + every tool schema + history — the
+        largest prompt in the system — so when the two are the same model the
+        tool loop uses the chat window, not ``tools_num_ctx``. ``tools_num_ctx``
+        applies only to a *distinct* tools model; otherwise the same model would
+        be loaded twice at two different context sizes.
+        """
+        if model == self.utility_model:
+            return self.utility_num_ctx
+        if self.math_model and model == self.math_model:
+            return self.math_num_ctx
+        if self.max_model and model == self.max_model:
+            return self.max_num_ctx
+        if model == self.tools_model and self.tools_model != self.chat_model:
+            return self.tools_num_ctx
+        return self.chat_num_ctx
 
     @staticmethod
     def _normalize_keep_alive(value: str | int) -> str | int:
@@ -467,9 +531,9 @@ except: pass
         tools: Ollama native tools API — list of {"type": "function",
         "function": {name, description, parameters}} defs. Requested calls come
         back on ChatResponse.tool_calls.
-        num_ctx: context window override. None auto-selects by role — the
-        utility model gets utility_num_ctx, everything else chat_num_ctx
-        (plan §4.4: never let Ollama's 32K default inflate KV allocation).
+        num_ctx: context window override. None auto-selects by role via
+        _num_ctx_for (plan §4.4: never let Ollama's 32K default inflate KV
+        allocation). Roles that share a model share its window.
         """
         model = model or self.chat_model
         client = await self._get_client()
@@ -499,26 +563,20 @@ except: pass
         if num_predict is not None:
             payload["options"]["num_predict"] = num_predict
         if num_ctx is None:
-            if model == self.utility_model:
-                num_ctx = self.utility_num_ctx
-            elif model == self.math_model:
-                num_ctx = self.math_num_ctx
-            elif model == self.max_model:
-                num_ctx = self.max_num_ctx
-            else:
-                num_ctx = self.chat_num_ctx
+            num_ctx = self._num_ctx_for(model)
         if num_ctx:
             payload["options"]["num_ctx"] = num_ctx
         if tools:
             payload["tools"] = tools
             if tool_choice:
                 payload["tool_choice"] = tool_choice
-        r = await client.post("/api/chat", json=payload)
-        r.raise_for_status()
-        data = r.json()
-        content = data["message"]["content"]
+        r = await retry_transient(
+            lambda: _post_json(client, "/api/chat", payload),
+            label=f"ollama chat ({model})",
+        )
+        content = r["message"]["content"]
         # Structured field when available; otherwise parse inline <think> tags.
-        thinking = data["message"].get("thinking") or ""
+        thinking = r["message"].get("thinking") or ""
         if not thinking:
             content, thinking = split_thinking(content)
         tool_calls = [
@@ -526,14 +584,15 @@ except: pass
                 name=tc.get("function", {}).get("name", ""),
                 arguments=tc.get("function", {}).get("arguments") or {},
             )
-            for tc in data["message"].get("tool_calls") or []
+            for tc in r["message"].get("tool_calls") or []
         ]
         return ChatResponse(
             content=content,
-            model=data["model"],
-            done=data.get("done", True),
+            model=r["model"],
+            done=r.get("done", True),
             thinking=thinking,
             tool_calls=tool_calls,
+            done_reason=r.get("done_reason") or "",
         )
 
     async def chat_stream(
@@ -575,14 +634,7 @@ except: pass
         if num_predict is not None:
             payload["options"]["num_predict"] = num_predict
         if num_ctx is None:
-            if model == self.utility_model:
-                num_ctx = self.utility_num_ctx
-            elif model == self.math_model:
-                num_ctx = self.math_num_ctx
-            elif model == self.max_model:
-                num_ctx = self.max_num_ctx
-            else:
-                num_ctx = self.chat_num_ctx
+            num_ctx = self._num_ctx_for(model)
         if num_ctx:
             payload["options"]["num_ctx"] = num_ctx
         if tools:
@@ -657,9 +709,10 @@ except: pass
 
         client = await self._get_client()
         payload = {"model": model, "prompt": text, "keep_alive": self._keep_alive_param()}
-        r = await client.post("/api/embeddings", json=payload)
-        r.raise_for_status()
-        data = r.json()
+        data = await retry_transient(
+            lambda: _post_json(client, "/api/embeddings", payload),
+            label=f"ollama embed ({model})",
+        )
         embedding = data["embedding"]
         # Cache the result (evict if needed)
         self._embed_cache[cache_key] = embedding
@@ -700,9 +753,10 @@ except: pass
         
         for idx, text in zip(uncached_indices, uncached_texts, strict=True):
             payload = {"model": model, "prompt": text, "keep_alive": self._keep_alive_param()}
-            r = await client.post("/api/embeddings", json=payload)
-            r.raise_for_status()
-            data = r.json()
+            data = await retry_transient(
+                lambda p=payload: _post_json(client, "/api/embeddings", p),
+                label=f"ollama embed ({model})",
+            )
             embedding = data["embedding"]
             self._embed_cache[cache_keys[idx]] = embedding
             results[idx] = EmbeddingResponse(embedding=embedding, model=model)

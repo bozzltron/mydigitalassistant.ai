@@ -53,6 +53,22 @@ headers arrive in tens of milliseconds regardless of how long generation takes.
 timeouts as a cause of user-visible latency without measuring headers-vs-body
 first.
 
+### The tool loop's context window is the whole turn's budget
+
+The tool loop sends the system prompt **plus every tool schema** (~11.5k chars /
+~3k tokens for the builtin set) **plus history** in one prompt, so it is the
+largest prompt in the system and the one that overflows first. At
+`CHAT_NUM_CTX=8192` a live turn reached 8169 prompt tokens, generated 23, and was
+cut off — `llama-server` logged `n_tokens = 8191, truncated = 1`, Ollama returned
+`done_reason="length"`, and the loop finalized empty (the old
+`"I'm not sure how to respond."`). `CHAT_NUM_CTX` is now 16384.
+
+Because `tools_model` defaults to `chat_model`, **one loaded runner serves both
+roles, so they share one context window** — the tool loop gets the chat window,
+not the smaller `tools_num_ctx`. `tools_num_ctx` applies only to a *distinct*
+tools model. `_num_ctx_for()` in `llm_client.py` is the single place this is
+decided; do not reintroduce per-call-site `num_ctx` branches.
+
 ### Known characteristic: the answer arrives whole, not token by token
 
 `/chat/stream` streams *events* — `stage` progress, then `finalize` with the
@@ -191,6 +207,35 @@ something that still matters. Before shipping a change:
   than deleting blind.
 - A periodic "dead code audit" is fine; a blanket "delete unused code" without tooling
   verification is not. The goal is a codebase where nothing exists without purpose.
+
+### Resilience: retry idempotent hops, not side effects
+
+The assistant is multi-model and tool-heavy, so a blip on any hop is normal, not
+exceptional. `assistant/backend/retry.py` is the one place that decides what gets
+retried:
+
+- **Retry only idempotent work** — Ollama `chat`/`embeddings`, web search,
+  `fetch_url`, the DB connection open, and the read-only tools (`list_files`,
+  `read_file`, `glob`, `recall`, `search_episodes`).
+- **Never retry a side effect.** `write_file`, `edit_file`, `delete_file`,
+  `upsert_slot`, `upsert_association`, `mark_essential`, and `compute` get a
+  single attempt. Repeating a write/delete can double-apply it; `compute`
+  executes arbitrary Python. The tool loop already hands a failure to the model,
+  which can see the result and decide whether to repeat — that judgment is better
+  than a blind retry.
+- **Retry the transient class only**: transport errors and `429/502/503/504`,
+  never `4xx`. Per-retry logging is at WARNING so a flapping dependency stays
+  visible instead of being silently absorbed.
+- **Do not nest retries.** `web_search`/`fetch_url` retry inside their HTTP layer
+  and are excluded from the tool-level retry.
+
+The same argument applies to the encrypted DB. A fresh SQLCipher connection
+derives its key lazily from page 1; under I/O contention that read can
+transiently fail (`hmac check failed for pgno=1` → `disk I/O error`) and succeed
+on the next connection. `aiosqlite_connect_checked` forces the derivation at open
+and retries on a *fresh* connection. This is a retry, not corruption handling —
+`PRAGMA cipher_integrity_check` was clean throughout, and a persistent failure
+still raises.
 
 ### Stability: no regressions while adding features
 Every non-trivial change should be accompanied by a regression test — a test that would

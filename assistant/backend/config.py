@@ -66,7 +66,13 @@ class Settings(BaseSettings):
     # Context windows per call class (Phase 6 plan §4.4). Without these,
     # Ollama defaults to 32K context on large-RAM hosts and allocates a
     # proportionally huge KV cache on every request.
-    chat_num_ctx: int = 8192
+    # 8192 was too small for the tool loop: the system prompt + 16-17 tool
+    # schemas + 6 turns of history reached ~8.2k tokens and left no room to
+    # answer, so the model was cut off mid-output and the turn finalized empty
+    # (live incident 2026-10-01, llama-server n_tokens=8191 truncated=1).
+    # 16384 gives the tool loop real generation headroom. Raise further for
+    # very long conversations; the 9B model itself supports far more.
+    chat_num_ctx: int = 16384
     utility_num_ctx: int = 4096
 
     backend_host: str = "127.0.0.1"
@@ -111,7 +117,11 @@ class Settings(BaseSettings):
     # qwen3.5:9b matches the chat model so the whole turn (tool calls + final
     # answer) runs on the same brain with hot KV cache reuse.
     tools_model: str = "qwen3.5:9b"
-    tools_num_ctx: int = 4096
+    # Only used when tools_model differs from chat_model. When they are the same
+    # model (the default), they share one loaded runner and therefore one context
+    # window — the chat_num_ctx — so the tool loop gets the larger chat window
+    # rather than a smaller, overflow-prone one.
+    tools_num_ctx: int = 16384
     tools_keep_alive: str = "-1"
 
     # Max-intelligence escalation tier (Phase 6 M6). The largest local model the

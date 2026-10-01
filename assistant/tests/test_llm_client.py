@@ -202,6 +202,73 @@ async def test_chat_num_ctx_auto_by_role():
     await client.close()
 
 
+async def test_chat_num_ctx_tools_shares_chat_window_when_same_model():
+    """The tool loop uses the chat context when both roles are one model.
+
+    Regression: ``tools_num_ctx`` was never applied, so the tool loop ran at
+    ``chat_num_ctx`` (8192) — and an ~8.2k-token tool prompt (system prompt + 16
+    tool schemas + history) left no room to answer, producing an empty turn that
+    the UI showed as "I'm not sure how to respond." One model means one loaded
+    runner, so the tool loop must get the larger chat window.
+    """
+    captured: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(json.loads(request.content)["options"]["num_ctx"])
+        return httpx.Response(200, json={
+            "model": "m", "done": True,
+            "message": {"role": "assistant", "content": "ok"},
+        })
+
+    client = OllamaClient(
+        chat_model="shared", tools_model="shared",
+        chat_num_ctx=16384, tools_num_ctx=4096,
+    )
+    client._client = httpx.AsyncClient(
+        transport=httpx.MockTransport(handler), base_url=client.base_url
+    )
+    await client.chat([ChatMessage(role="user", content="hi")], model="shared")
+    assert captured == [16384]
+    await client.close()
+
+
+async def test_chat_num_ctx_tools_uses_own_window_when_distinct_model():
+    """A distinct tools model gets its own tools_num_ctx."""
+    captured: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(json.loads(request.content)["options"]["num_ctx"])
+        return httpx.Response(200, json={
+            "model": "m", "done": True,
+            "message": {"role": "assistant", "content": "ok"},
+        })
+
+    client = OllamaClient(
+        chat_model="chat-m", tools_model="tools-m",
+        chat_num_ctx=16384, tools_num_ctx=8192,
+    )
+    client._client = httpx.AsyncClient(
+        transport=httpx.MockTransport(handler), base_url=client.base_url
+    )
+    await client.chat([ChatMessage(role="user", content="hi")], model="tools-m")
+    assert captured == [8192]
+    await client.close()
+
+
+async def test_chat_captures_done_reason():
+    """done_reason rides on ChatResponse so truncation is diagnosable."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={
+            "model": "m", "done": True, "done_reason": "length",
+            "message": {"role": "assistant", "content": ""},
+        })
+
+    client = _client_with_transport(handler)
+    resp = await client.chat([ChatMessage(role="user", content="hi")])
+    assert resp.done_reason == "length"
+    await client.close()
+
+
 async def test_chat_num_ctx_explicit_overrides_and_zero_disables():
     captured: dict = {}
 
