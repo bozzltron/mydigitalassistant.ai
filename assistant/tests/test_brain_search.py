@@ -10,46 +10,36 @@ Locks:
   exact topic hit outranks the flat ~0.55 fuzzy band.
 """
 
-import asyncio
-
 import pytest
 
 from assistant.backend.memory.store import MemoryStore
 
 
 @pytest.fixture
-def store(tmp_path):
+async def store(tmp_path):
     from assistant.backend.db.schema import init_db
 
     db_path = str(tmp_path / "brain.db")
-
-    async def seed():
-        await init_db(db_path)
-        s = MemoryStore(db_path)
-        user = await s.create_user("alice")
-        album = await s.create_frame("mountain_in_the_wolf", "entity")
-        await s.create_frame("The Mountain & The Wolf", "concept")  # variant name
-        await s.create_frame("germany", "entity")
-        await s.upsert_slot(album.id, "title", "The Mountain & The Wolf")
-        return s, user.id, album.id, db_path
-
-    return asyncio.run(seed())
+    await init_db(db_path)
+    s = MemoryStore(db_path)
+    user = await s.create_user("alice")
+    album = await s.create_frame("mountain_in_the_wolf", "entity")
+    await s.create_frame("The Mountain & The Wolf", "concept")  # variant name
+    await s.create_frame("germany", "entity")
+    await s.upsert_slot(album.id, "title", "The Mountain & The Wolf")
+    return s, user.id, album.id, db_path
 
 
-def _run(coro):
-    return asyncio.run(coro)
-
-
-def test_multiword_query_finds_partial_names(store):
+async def test_multiword_query_finds_partial_names(store):
     s, _uid, album_id, _db = store
-    results = _run(s.search_frames_lexical("mountain wolf", limit=10))
+    results = await s.search_frames_lexical("mountain wolf", limit=10)
     ids = [f.id for f, _ in results]
     assert album_id in ids
 
 
-def test_coverage_ranks_full_matches_first(store):
+async def test_coverage_ranks_full_matches_first(store):
     s, _uid, album_id, _db = store
-    results = _run(s.search_frames_lexical("mountain wolf", limit=10))
+    results = await s.search_frames_lexical("mountain wolf", limit=10)
     # Album (name has both tokens) must rank first; germany-like zero hits
     # must not appear at all.
     names = [f.name for f, _strength in results]
@@ -82,20 +72,20 @@ async def _tombstone(db_path, frame_id):
         await db.commit()
 
 
-def test_tombstoned_frames_excluded(store):
+async def test_tombstoned_frames_excluded(store):
     s, _uid, album_id, db_path = store
-    _run(_tombstone(db_path, album_id))
-    results = _run(s.search_frames_lexical("mountain wolf", limit=10))
+    await _tombstone(db_path, album_id)
+    results = await s.search_frames_lexical("mountain wolf", limit=10)
     assert all(f.id != album_id for f, _ in results)
 
 
-def test_single_token_query_still_works(store):
+async def test_single_token_query_still_works(store):
     s, _uid, _album, _db = store
-    results = _run(s.search_frames_lexical("germany", limit=5))
+    results = await s.search_frames_lexical("germany", limit=5)
     assert any(f.name == "germany" for f, _ in results)
 
     # Legacy wrapper still returns plain frames.
-    frames = _run(s.search_frames_keyword("germany", limit=5))
+    frames = await s.search_frames_keyword("germany", limit=5)
     assert any(f.name == "germany" for f in frames)
 
 
