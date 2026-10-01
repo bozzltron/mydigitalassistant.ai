@@ -100,3 +100,28 @@ Live DB digest `217f9a94816dd202599e4f6a8a23e57020f15c09f89089659cd68ca001b23acc
 before and after: identical. The copy was not re-digested after the run; the module
 performs no writes, which is structurally verifiable from its imports and body, and
 the live DB check is the one that matters.
+
+---
+
+## Addendum: the audit run (2026-10-01, after provenance recording)
+
+The replay was inconclusive (§4), so a second run audits *live* decisions instead of
+replaying historical ones. Recorded here because it is a different method and needs
+its own checks.
+
+| Check | How established | Result |
+|---|---|---|
+| No user data touched | Writes go to a `tempfile.mkdtemp()` database created in-process; `init_db` on that path. The brain is never opened. | **PASS** |
+| The manipulation is real | Each case writes a controlled existing value, then a controlled new value, and reads back the conflict row the store recorded. | **PASS** |
+| The audit reads what was recorded | `existing_source_reliability` and `new_source_reliability` come off the returned `Conflict` model, not from the case definition — so a write that dropped them would show as `None`, not as a pass. | **PASS** |
+| Scoring is stated in the script | `correct()` is defined in `audit.py`: a tie may resolve to new (recency) or stay pending; a non-tie must match the higher-reliability side. | **PASS** |
+
+**The two "failures" are not measurement failures.** Both are the higher-reliability
+existing side staying in place with `status='pending'`. The value was preserved, so the
+decision was made; the status is what misrepresents it. That distinction is the
+finding, and it is corroborated independently by the live count (256 of 279 pending
+rows still hold the existing value).
+
+**Threat not resolved:** the case set is six hand-built shapes, not observed traffic.
+The live 92% figure is independent evidence that agrees with it, but neither alone
+establishes the behaviour across the real distribution.

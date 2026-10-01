@@ -1,0 +1,86 @@
+{
+  "cases": [
+    {
+      "name": "user_statement_vs_search",
+      "existing_reliability": 0.95,
+      "new_reliability": 0.5,
+      "existing_confidence": 0.5,
+      "new_confidence": 0.5,
+      "existing_priority": 0.5,
+      "new_priority": 0.5,
+      "status": "pending",
+      "winner": "pending",
+      "rung": "1",
+      "expected_rung1": "existing"
+    },
+    {
+      "name": "search_vs_user_statement",
+      "existing_reliability": 0.5,
+      "new_reliability": 0.95,
+      "existing_confidence": 0.5,
+      "new_confidence": 0.5,
+      "existing_priority": 0.5,
+      "new_priority": 0.5,
+      "status": "auto_resolved",
+      "winner": "new",
+      "rung": "1",
+      "expected_rung1": "new"
+    },
+    {
+      "name": "equal_reliability_recency",
+      "existing_reliability": 0.5,
+      "new_reliability": 0.5,
+      "existing_confidence": 0.5,
+      "new_confidence": 0.5,
+      "existing_priority": 0.5,
+      "new_priority": 0.5,
+      "status": "auto_resolved",
+      "winner": "new",
+      "rung": "4-recency",
+      "expected_rung1": "tie"
+    },
+    {
+      "name": "no_provenance_at_all",
+      "existing_reliability": null,
+      "new_reliability": null,
+      "existing_confidence": 0.5,
+      "new_confidence": 0.5,
+      "existing_priority": 0.5,
+      "new_priority": 0.5,
+      "status": "auto_resolved",
+      "winner": "new",
+      "rung": "4-recency",
+      "expected_rung1": "tie"
+    },
+    {
+      "name": "existing_higher_by_a_little",
+      "existing_reliability": 0.65,
+      "new_reliability": 0.6,
+      "existing_confidence": 0.5,
+      "new_confidence": 0.5,
+      "existing_priority": 0.5,
+      "new_priority": 0.5,
+      "status": "pending",
+      "winner": "pending",
+      "rung": "1",
+      "expected_rung1": "existing"
+    },
+    {
+      "name": "search_vs_web_fetch",
+      "existing_reliability": 0.5,
+      "new_reliability": 0.7,
+      "existing_confidence": 0.5,
+      "new_confidence": 0.5,
+      "existing_priority": 0.5,
+      "new_priority": 0.5,
+      "status": "auto_resolved",
+      "winner": "new",
+      "rung": "1",
+      "expected_rung1": "new"
+    }
+  ],
+  "correct": 4,
+  "total": 6,
+  "rung1_fired": 2,
+  "completion_recorded": true
+}
