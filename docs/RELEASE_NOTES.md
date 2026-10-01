@@ -1,5 +1,78 @@
 # MyDigitalAssistant.ai — release notes
 
+## v0.3.0-alpha
+
+**It reads your documents, and it remembers what it showed you.** This release
+opens the assistant to the files a household actually has — PDFs, Word, Excel,
+PowerPoint, and the legacy formats around them — and stops the chat losing its
+imagery on reload. Along the way it fixes a summary frame that was never indexed,
+the alerts that flickered, and a conversation that hid below the fold.
+
+### It reads documents
+
+The upload path accepted text and structured files and nothing else; a PDF or a
+`.docx` was either rejected or decoded as UTF-8 noise. It now reads:
+
+- **PDF** (`pypdf`, first 50 pages), **Word** (`.docx`), **Excel** (`.xlsx`) and
+  **PowerPoint** (`.pptx`) — the modern Office set.
+- **The business long tail:** `.rtf`, OpenDocument (`.odt`/`.ods`/`.odp`), legacy
+  Excel (`.xls`), saved email (`.eml`) and tab-separated data (`.tsv`).
+- **iCal via `icalendar`**, replacing a regex that missed line folding and TZIDs.
+
+Every reader is offline and pure-Python (no system binaries), extraction runs off
+the event loop so a large document cannot stall a request, and XML is parsed with
+`defusedxml` so a hostile file cannot expand entities. Legacy `.doc`/`.ppt` have
+no good offline reader and say so, pointing at `.docx`/`.pdf`.
+
+### The chat remembers its media
+
+Message imagery came only from a live search turn, so a refresh dropped every
+image and video. A search turn now stores a compact projection of its results on
+the assistant episode — titles, URLs, thumbnails and video fields, never page
+bodies — and reload restores it.
+
+- **Image-only grid tiles.** The small images dropped their hover caption; the
+  details live in the lightbox, while the response hero keeps its overlay.
+- **The hero follows the query.** A video query leads with the video.
+- **One embed, the rest thumbnails.** A multi-video answer loads a single iframe
+  and swaps the clicked thumbnail into it.
+- **Full-resolution tiles**, falling back to the thumbnail when a host blocks
+  hotlinking or the image exceeds the proxy's 5 MB cap.
+
+### Links ask first
+
+Clicking a link that leaves the assistant now names the host and asks before
+opening a new tab — including the links markdown renders inside an answer, which
+a per-link handler could never reach. Modals also close on Escape.
+
+### Two UI defects from the manual pass
+
+- **Alerts stopped flickering.** The 30s poll toggled a loading state, swapping
+  the list for a spinner every half minute, and the initial fetch ran before the
+  user was known and never retried — so a refresh showed an empty bell. Both fixed.
+- **A new conversation is no longer buried.** The switcher sorted every never-used
+  conversation last, so a just-created one sat below the fold; it is now ordered by
+  creation time. ("Corrections" moved from 31st of 32 to 7th.)
+
+### Accuracy and resilience
+
+- **The summary frame was never indexed.** The summarizer handed `embed_frames` an
+  `EmbeddingResponse` instead of a bare vector; `json.dumps` rejected it for every
+  frame and the failure was swallowed. Summary frames are now embedded.
+- **Idempotent hops retry; side effects do not.** Ollama, search, `fetch_url` and
+  the read-only tools retry the transient class; writes, deletes and `compute` get
+  a single attempt.
+- **The encrypted DB retries the transient key-derivation read** that could fail a
+  turn under I/O contention.
+
+### Housekeeping
+
+- **Dev and prod are separate Compose projects** — distinct container names,
+  networks and databases — so both can run at once and dev no longer writes to the
+  production brain.
+- Two long-standing test defects are fixed: a missing `DB_KEY` marker on an
+  encrypted-only test, and a store reused across event loops.
+
 ## v0.2.0-alpha
 
 **The brain stops lying to itself.** This release is about accuracy: memory that
