@@ -518,6 +518,28 @@ export interface AlertsListResponse {
   unread_count: number
 }
 
+/** One conversation an alert can be resolved in, for the selector. */
+export interface AlertConversationOption {
+  session_id: string
+  name: string
+  last_activity: string | null
+  message_count: number
+}
+
+export interface AlertConversationOptionsResponse {
+  alert_id: number
+  conversations: AlertConversationOption[]
+}
+
+export interface OpenAlertConversationResponse {
+  status: string
+  alert_id: number
+  session_id: string
+  /** null when the alert was attached to a conversation with existing history. */
+  episode_id: number | null
+  seeded: boolean
+}
+
 export async function getAlerts(user_id: number, limit: number = 50): Promise<AlertsListResponse> {
   debug('Fetching alerts for user:', user_id)
   return api<AlertsListResponse>(`/alerts?user_id=${user_id}&limit=${limit}`)
@@ -527,6 +549,39 @@ export async function markAlertAsRead(alert_id: number, user_id: number): Promis
   debug('Marking alert as read:', alert_id)
   return api<{ status: string }>(
     `/alerts/${encodeURIComponent(String(alert_id))}/read?user_id=${user_id}`,
+    { method: 'POST' }
+  )
+}
+
+/** Conversations an alert could be resolved in. Always includes the option list —
+ * the backend excludes other alerts' own threads, because resolving one alert
+ * inside another's thread entangles two questions. */
+export async function getAlertConversationOptions(
+  alert_id: number,
+  user_id: number,
+  limit: number = 20
+): Promise<AlertConversationOptionsResponse> {
+  debug('Fetching conversation options for alert:', alert_id)
+  return api<AlertConversationOptionsResponse>(
+    `/alerts/${encodeURIComponent(String(alert_id))}/conversations?user_id=${user_id}&limit=${limit}`
+  )
+}
+
+/** Attach an alert to a conversation so it can be resolved there.
+ *
+ * `session_id` is the selector's answer. Omit it and the alert falls back to its
+ * own thread — which exists so the call is idempotent, not as the intended path.
+ */
+export async function openAlertConversation(
+  alert_id: number,
+  user_id: number,
+  session_id?: string
+): Promise<OpenAlertConversationResponse> {
+  debug('Opening conversation for alert:', alert_id, session_id)
+  const query = new URLSearchParams({ user_id: String(user_id) })
+  if (session_id) query.set('session_id', session_id)
+  return api<OpenAlertConversationResponse>(
+    `/alerts/${encodeURIComponent(String(alert_id))}/open?${query.toString()}`,
     { method: 'POST' }
   )
 }

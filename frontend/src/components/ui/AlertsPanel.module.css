@@ -27,7 +27,7 @@
   background: var(--surface);
   color: var(--text);
   cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
 
 .alertsTrigger:hover {
@@ -35,8 +35,28 @@
   border-color: var(--accent);
 }
 
+/* The colour change is the "there is something waiting" signal; the badge carries
+   the count. Both are needed: the badge alone is easy to miss in a busy top bar. */
+.alertsTrigger.hasAlerts {
+  border-color: var(--error);
+  color: var(--error);
+}
+
+.alertsTrigger.hasAlerts:hover {
+  background: var(--error);
+  color: #fff;
+  border-color: var(--error);
+}
+
 .alertIcon {
-  font-size: 1.1em;
+  display: flex;
+  align-items: center;
+}
+
+.typeIcon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
 }
 
 .unreadBadge {
@@ -198,6 +218,11 @@
   opacity: 0.9;
 }
 
+.readBtn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .readBadge {
   padding: 6px 12px;
   background: rgba(20, 184, 166, 0.15);
@@ -205,4 +230,77 @@
   border-radius: 6px;
   font-size: 0.875rem;
   font-weight: 500;
+}
+
+/* --- Conversation picker ---------------------------------------------------
+ * Resolving means choosing where to talk about it. The list defaults to
+ * conversations the user already has; "New conversation" is last because
+ * spawning a thread per alert is what fills the conversation list with one-off
+ * threads.
+ */
+
+.picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.pickerHint {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.optionsList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.optionItem {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-start;
+  width: 100%;
+  padding: var(--space-md);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+
+.optionItem:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--surface2);
+}
+
+.optionItem:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Visually separated: it is the exception, not the default. */
+.optionNew {
+  border-style: dashed;
+}
+
+.optionName {
+  font-weight: 600;
+  font-size: 0.9375rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.optionMeta {
+  font-size: 0.8125rem;
+  color: var(--text-dim);
 }

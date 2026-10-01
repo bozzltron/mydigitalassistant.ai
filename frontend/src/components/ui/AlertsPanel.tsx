@@ -1,14 +1,44 @@
-import { createSignal, onMount, onCleanup, For, Show } from 'solid-js'
-import { getAlerts, markAlertAsRead, markAllAlertsAsRead, type Alert } from '../../services/api'
+import { createSignal, onMount, onCleanup, For, Show, createMemo } from 'solid-js'
+import {
+  getAlerts,
+  getAlertConversationOptions,
+  openAlertConversation,
+  markAllAlertsAsRead,
+  type Alert,
+  type AlertConversationOption,
+} from '../../services/api'
 import { user } from '../../state/user'
 import { Modal } from './Modal'
 import styles from './AlertsPanel.module.css'
+
+/**
+ * The agent's channel to the user.
+ *
+ * Alerts are memory of a type, so the set shown here is "things the agent is
+ * waiting on" — not a notification log. An alert closes by being *answered*, not
+ * by being read, which is why there is no read/unread state: the previous model
+ * accumulated 103 unread rows precisely because reading one accomplished nothing.
+ *
+ * Resolving therefore means choosing where to talk about it. The picker defaults to
+ * a conversation the user already has; spawning a thread per alert would fill the
+ * conversation list with one-off threads, which is the inbox problem again.
+ */
+
+/** The modal is a two-step flow: pick a conversation, then go there. */
+type PickerState = {
+  alertId: number
+  alertTitle: string
+} | null
 
 export function AlertsPanel() {
   const [alerts, setAlerts] = createSignal<Alert[]>([])
   const [unreadCount, setUnreadCount] = createSignal(0)
   const [isOpen, setIsOpen] = createSignal(false)
   const [isLoading, setIsLoading] = createSignal(false)
+  const [picker, setPicker] = createSignal<PickerState>(null)
+  const [options, setOptions] = createSignal<AlertConversationOption[]>([])
+  const [optionsLoading, setOptionsLoading] = createSignal(false)
+  const [resolvingId, setResolvingId] = createSignal<number | null>(null)
 
   // Per-component interval ID (not module-level)
   let intervalId: number | null = null
@@ -16,7 +46,7 @@ export function AlertsPanel() {
   const fetchAlerts = async () => {
     const u = user()
     if (!u) return
-    
+
     setIsLoading(true)
     try {
       const response = await getAlerts(u.id, 50)
@@ -31,7 +61,6 @@ export function AlertsPanel() {
     }
   }
 
-  // Start interval on mount, stop on unmount
   onMount(() => {
     fetchAlerts() // Initial fetch
     intervalId = window.setInterval(fetchAlerts, 30000)
@@ -44,29 +73,70 @@ export function AlertsPanel() {
     }
   })
 
-  const markAsRead = async (alertId: number) => {
+  /** Open the picker for an alert and load the conversations it could go in. */
+  const chooseConversation = async (alert: Alert) => {
     const u = user()
     if (!u) return
-    
+
+    setPicker({ alertId: alert.id, alertTitle: alert.title })
+    setOptionsLoading(true)
+    setOptions([])
     try {
-      await markAlertAsRead(alertId, u.id)
-      setAlerts(prev => prev.map(a => a.id === alertId ? { ...a, is_read: true } : a))
-      setUnreadCount(prev => Math.max(0, prev - 1))
+      const response = await getAlertConversationOptions(alert.id, u.id)
+      setOptions(response.conversations)
     } catch (error) {
-      console.error('Failed to mark alert as read:', error)
+      console.error('Failed to load conversations:', error)
+    } finally {
+      setOptionsLoading(false)
     }
   }
 
-  const markAllAsRead = async () => {
+  /**
+   * Attach the alert to a conversation and go there.
+   *
+   * Optimistically removes it from the list: attaching is what resolves it, and the
+   * backstop closes the alert as soon as the user replies there. Refetching would
+   * also work, but the list is a view of an open set and the item has left it.
+   */
+  const resolveIn = async (sessionId: string | null) => {
+    const u = user()
+    const current = picker()
+    if (!u || !current) return
+
+    setResolvingId(current.alertId)
+    try {
+      const result = await openAlertConversation(
+        current.alertId,
+        u.id,
+        sessionId ?? undefined
+      )
+      setAlerts((prev) => prev.filter((a) => a.id !== current.alertId))
+      setUnreadCount((prev) => Math.max(0, prev - 1))
+      setPicker(null)
+      // Hand the chosen conversation to the chat. The message is the alert being
+      // raised where the user can answer it; nothing is sent automatically.
+      window.dispatchEvent(
+        new CustomEvent('open-conversation', {
+          detail: { sessionId: result.session_id, seeded: result.seeded },
+        })
+      )
+    } catch (error) {
+      console.error('Failed to resolve alert:', error)
+    } finally {
+      setResolvingId(null)
+    }
+  }
+
+  const resolveAll = async () => {
     const u = user()
     if (!u) return
-    
+
     try {
       await markAllAlertsAsRead(u.id)
-      setAlerts(prev => prev.map(a => ({ ...a, is_read: true })))
+      setAlerts([])
       setUnreadCount(0)
     } catch (error) {
-      console.error('Failed to mark all alerts as read:', error)
+      console.error('Failed to resolve all alerts:', error)
     }
   }
 
@@ -92,47 +162,70 @@ export function AlertsPanel() {
     }
   }
 
-  const getTypeIcon = (type: string) => {
-    switch (type) {
-      case 'task_result': return '📋'
-      case 'task_alert': return '🚨'
-      case 'search_result': return '🔍'
-      case 'conflict': return '⚠️'
-      case 'correction': return '✏️'
-      case 'learning': return '🧠'
-      default: return '🔔'
-    }
+  /**
+   * Icons are inline SVG, not emoji — the project's UI standard. Emoji render
+   * differently per platform and cannot inherit `currentColor`.
+   */
+  const TypeIcon = (props: { type: string }) => {
+    const path = createMemo(() => {
+      switch (props.type) {
+        case 'task_alert':
+          // bell-alert
+          return 'M12 2a7 7 0 0 0-7 7v4l-1.5 3h17L19 13V9a7 7 0 0 0-7-7Zm0 20a3 3 0 0 0 3-3H9a3 3 0 0 0 3 3Z'
+        case 'correction':
+          // pencil
+          return 'M3 17.25V21h3.75L17.8 9.94l-3.75-3.75L3 17.25ZM20.7 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83Z'
+        default:
+          // circle-info
+          return 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm1 15h-2v-6h2v6Zm0-8h-2V7h2v2Z'
+      }
+    })
+    return (
+      <svg class={styles.typeIcon} viewBox="0 0 24 24" aria-hidden="true">
+        <path d={path()} fill="currentColor" />
+      </svg>
+    )
   }
+
+  const humanType = (type: string) => type.replace(/_/g, ' ')
 
   return (
     <>
-      {unreadCount() > 0 && (
-        <button
-          class={styles.alertsTrigger}
-          onClick={() => setIsOpen(true)}
-          aria-label={`Open alerts (${unreadCount()} unread)`}
-        >
-          <span class={styles.alertIcon}>🔔</span>
+      <button
+        class={`${styles.alertsTrigger} ${unreadCount() > 0 ? styles.hasAlerts : ''}`}
+        onClick={() => setIsOpen(true)}
+        aria-label={
+          unreadCount() > 0
+            ? `Open alerts (${unreadCount()} waiting)`
+            : 'Open alerts'
+        }
+      >
+        <span class={styles.alertIcon} aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="16" height="16">
+            <path
+              d="M12 22a2.5 2.5 0 0 0 2.45-2h-4.9A2.5 2.5 0 0 0 12 22Zm7-5-1.6-1.9V10a5.4 5.4 0 0 0-4.2-5.3V4a1.2 1.2 0 0 0-2.4 0v.7A5.4 5.4 0 0 0 6.6 10v5.1L5 17a1 1 0 0 0 .8 1.6h12.4A1 1 0 0 0 19 17Z"
+              fill="currentColor"
+            />
+          </svg>
+        </span>
+        <Show when={unreadCount() > 0}>
           <span class={styles.unreadBadge}>{unreadCount()}</span>
-          <span class={styles.alertsLabel}>Alerts</span>
-        </button>
-      )}
+        </Show>
+        <span class={styles.alertsLabel}>Alerts</span>
+      </button>
 
       <Modal
         isOpen={isOpen()}
         onClose={() => setIsOpen(false)}
-        title="Learning Monitor"
+        title="Alerts"
         size="large"
       >
         <div class={styles.alertsPanel}>
           <div class={styles.alertsHeader}>
-            <h3>Learning Monitor</h3>
+            <h3>Things I want to tell you</h3>
             <Show when={unreadCount() > 0}>
-              <button
-                class={styles.markAllReadBtn}
-                onClick={markAllAsRead}
-              >
-                Mark all as read
+              <button class={styles.markAllReadBtn} onClick={resolveAll}>
+                Resolve all
               </button>
             </Show>
           </div>
@@ -143,8 +236,10 @@ export function AlertsPanel() {
 
           <Show when={!isLoading() && alerts().length === 0}>
             <div class={styles.empty}>
-              <p>No alerts yet</p>
-              <p class={styles.emptyHint}>Alerts appear when the agent learns something new</p>
+              <p>Nothing waiting</p>
+              <p class={styles.emptyHint}>
+                Alerts appear when I learn something while you are away
+              </p>
             </div>
           </Show>
 
@@ -152,32 +247,89 @@ export function AlertsPanel() {
             <div class={styles.alertsList}>
               <For each={alerts()}>
                 {(alert: Alert) => (
-                  <div class={`${styles.alertItem} ${getSeverityClass(alert.severity)} ${alert.is_read ? styles.read : ''}`}>
+                  <div
+                    class={`${styles.alertItem} ${getSeverityClass(alert.severity)}`}
+                  >
                     <div class={styles.alertContent}>
                       <div class={styles.alertHeader}>
-                        <span class={styles.alertType}>{getTypeIcon(alert.type)} {alert.type.replace('_', ' ')}</span>
-                        <span class={styles.alertTime}>{formatDate(alert.created_at)}</span>
+                        <span class={styles.alertType}>
+                          <TypeIcon type={alert.type} />
+                          {humanType(alert.type)}
+                        </span>
+                        <span class={styles.alertTime}>
+                          {formatDate(alert.created_at)}
+                        </span>
                       </div>
                       <div class={styles.alertTitle}>{alert.title}</div>
                       <div class={styles.alertMessage}>{alert.message}</div>
                     </div>
                     <div class={styles.alertActions}>
-                      <Show when={!alert.is_read}>
-                        <button
-                          class={styles.readBtn}
-                          onClick={() => markAsRead(alert.id)}
-                          aria-label="Mark as read"
-                        >
-                          Mark read
-                        </button>
-                      </Show>
-                      <Show when={alert.is_read}>
-                        <span class={styles.readBadge}>Read</span>
-                      </Show>
+                      <button
+                        class={styles.readBtn}
+                        onClick={() => chooseConversation(alert)}
+                        disabled={resolvingId() === alert.id}
+                      >
+                        Resolve…
+                      </button>
                     </div>
                   </div>
                 )}
               </For>
+            </div>
+          </Show>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={picker() !== null}
+        onClose={() => setPicker(null)}
+        title="Resolve this where?"
+        size="medium"
+      >
+        <div class={styles.picker}>
+          <p class={styles.pickerHint}>
+            {picker()?.alertTitle} — pick the conversation you want to settle it in.
+            <Show when={options().length === 0 && !optionsLoading()}>
+              {' '}
+              You have no other conversations, so this will start one.
+            </Show>
+          </p>
+
+          <Show when={optionsLoading()}>
+            <div class={styles.loading}>Loading conversations...</div>
+          </Show>
+
+          <Show when={!optionsLoading()}>
+            <div class={styles.optionsList}>
+              <For each={options()}>
+                {(option) => (
+                  <button
+                    class={styles.optionItem}
+                    onClick={() => resolveIn(option.session_id)}
+                    disabled={resolvingId() !== null}
+                  >
+                    <span class={styles.optionName}>{option.name}</span>
+                    <span class={styles.optionMeta}>
+                      {option.message_count} message
+                      {option.message_count === 1 ? '' : 's'}
+                      <Show when={option.last_activity}>
+                        {' · '}
+                        {formatDate(option.last_activity)}
+                      </Show>
+                    </span>
+                  </button>
+                )}
+              </For>
+              <button
+                class={`${styles.optionItem} ${styles.optionNew}`}
+                onClick={() => resolveIn(null)}
+                disabled={resolvingId() !== null}
+              >
+                <span class={styles.optionName}>New conversation</span>
+                <span class={styles.optionMeta}>
+                  Starts a thread just for this alert
+                </span>
+              </button>
             </div>
           </Show>
         </div>

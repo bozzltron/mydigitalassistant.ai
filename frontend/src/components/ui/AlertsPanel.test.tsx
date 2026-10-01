@@ -1,67 +1,190 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render } from '@solidjs/testing-library'
+import { render, fireEvent, screen, waitFor } from '@solidjs/testing-library'
 import { AlertsPanel } from './AlertsPanel'
 import { setUser } from '../../state/user'
-import { getAlerts, type Alert } from '../../services/api'
+import {
+  getAlerts,
+  getAlertConversationOptions,
+  openAlertConversation,
+  markAllAlertsAsRead,
+  type Alert,
+} from '../../services/api'
 
 vi.mock('../../services/api')
 
-// Mock setInterval/clearInterval globally to avoid fake timer issues
+/**
+ * Real timers throughout. The component polls on a 30s interval, and the previous
+ * version of this file stubbed that away with fake timers — which then stalled the
+ * promise queue every interaction test depends on. Stubbing `window.setInterval`
+ * is enough to keep the poll from firing during a test, and it leaves the event
+ * loop alone so `await` works normally.
+ */
 describe('AlertsPanel', () => {
   const mockAlerts: Alert[] = [
-    { id: 1, user_id: 1, type: 'learning', title: 'Test Alert', message: 'Test message', source_frame_id: null, source_episode_id: null, severity: 'info', is_read: false, created_at: '2024-01-01T00:00:00Z', read_at: null },
+    { id: 1, user_id: 1, type: 'task_alert', title: 'Test Alert', message: 'Test message', source_frame_id: null, source_episode_id: null, severity: 'important', is_read: false, created_at: '2024-01-01T00:00:00Z', read_at: null },
   ]
 
+  let intervalCalls: Array<[() => void, number]>
+
   beforeEach(() => {
-    vi.useFakeTimers()
     vi.clearAllMocks()
     setUser({ id: 1, name: 'Test User' })
     vi.mocked(getAlerts).mockResolvedValue({ alerts: mockAlerts, unread_count: 1 })
+    vi.mocked(markAllAlertsAsRead).mockResolvedValue({ status: 'ok' })
 
-    // Mock setInterval to store callbacks without actually scheduling
-    vi.spyOn(window, 'setInterval').mockImplementation((_callback: () => void, _delay: number) => {
-      return 123 as unknown as number // Fixed ID for testing
-    })
+    intervalCalls = []
+    vi.spyOn(window, 'setInterval').mockImplementation(
+      (callback: () => void, delay: number) => {
+        intervalCalls.push([callback, delay])
+        return 123 as unknown as number
+      }
+    )
     vi.spyOn(window, 'clearInterval').mockImplementation(() => {})
   })
 
   afterEach(() => {
-    vi.useRealTimers()
     vi.restoreAllMocks()
   })
 
   it('fetches alerts on mount', async () => {
     render(() => <AlertsPanel />)
-    
-    // Wait for the async fetch to complete
-    await vi.runAllTimersAsync()
-    
-    expect(getAlerts).toHaveBeenCalledWith(1, 50)
+    await waitFor(() => expect(getAlerts).toHaveBeenCalledWith(1, 50))
   })
 
-  it('sets up interval on mount and clears on unmount', async () => {
+  it('polls at the expected interval and clears it on unmount', async () => {
     const { unmount } = render(() => <AlertsPanel />)
-    
-    await vi.runAllTimersAsync()
-    
-    // Should have set up interval with 30000ms
-    expect(window.setInterval).toHaveBeenCalled()
-    const intervalCall = (window.setInterval as unknown as ReturnType<typeof vi.fn>).mock.calls[0]
-    expect(intervalCall[1]).toBe(30000)
-    
+
+    // onMount runs during render, so the interval is registered synchronously.
+    expect(intervalCalls.length).toBe(1)
+    expect(intervalCalls[0][1]).toBe(30000)
+
     unmount()
-    
-    // Should clear the interval on unmount
     expect(window.clearInterval).toHaveBeenCalledWith(123)
   })
 
   it('does not fetch if no user', async () => {
     setUser(null)
     render(() => <AlertsPanel />)
-    
-    await vi.advanceTimersByTimeAsync(100)
-    await vi.runAllTimersAsync()
-    
+    // One macrotask turn: if the fetch were going to happen it would have by now.
+    await new Promise((resolve) => setTimeout(resolve, 0))
     expect(getAlerts).not.toHaveBeenCalled()
+  })
+
+  it('shows the count of waiting alerts on the trigger', async () => {
+    render(() => <AlertsPanel />)
+    expect(await screen.findByText('1')).toBeTruthy()
+  })
+
+  describe('resolving by conversation', () => {
+    beforeEach(() => {
+      vi.mocked(getAlertConversationOptions).mockResolvedValue({
+        alert_id: 1,
+        conversations: [
+          {
+            session_id: 'conv_recent',
+            name: 'Friend Music Records',
+            last_activity: '2026-10-01T02:00:00Z',
+            message_count: 42,
+          },
+        ],
+      })
+      vi.mocked(openAlertConversation).mockResolvedValue({
+        status: 'ok',
+        alert_id: 1,
+        session_id: 'conv_recent',
+        episode_id: null,
+        seeded: false,
+      })
+    })
+
+    it('offers conversations to resolve into', async () => {
+      render(() => <AlertsPanel />)
+      fireEvent.click(await screen.findByText('Alerts'))
+      fireEvent.click(await screen.findByText('Resolve…'))
+
+      await waitFor(() => expect(getAlertConversationOptions).toHaveBeenCalledWith(1, 1))
+      expect(await screen.findByText('Friend Music Records')).toBeTruthy()
+      // The escape hatch exists but reads as the exception.
+      expect(screen.getByText('New conversation')).toBeTruthy()
+    })
+
+    it('attaches the alert to the chosen conversation, not a new one', async () => {
+      render(() => <AlertsPanel />)
+      fireEvent.click(await screen.findByText('Alerts'))
+      fireEvent.click(await screen.findByText('Resolve…'))
+      fireEvent.click(await screen.findByText('Friend Music Records'))
+
+      await waitFor(() =>
+        expect(openAlertConversation).toHaveBeenCalledWith(1, 1, 'conv_recent')
+      )
+    })
+
+    it('removes the alert from the list once attached', async () => {
+      render(() => <AlertsPanel />)
+      fireEvent.click(await screen.findByText('Alerts'))
+      fireEvent.click(await screen.findByText('Resolve…'))
+      fireEvent.click(await screen.findByText('Friend Music Records'))
+
+      // The list is a view of the open set, and this alert has left it.
+      await waitFor(() => expect(screen.queryByText('Test Alert')).toBeNull())
+    })
+
+    it('starts a new conversation only when explicitly asked', async () => {
+      vi.mocked(openAlertConversation).mockResolvedValue({
+        status: 'ok',
+        alert_id: 1,
+        session_id: 'conv_alert_1',
+        episode_id: 9,
+        seeded: true,
+      })
+      render(() => <AlertsPanel />)
+      fireEvent.click(await screen.findByText('Alerts'))
+      fireEvent.click(await screen.findByText('Resolve…'))
+      fireEvent.click(await screen.findByText('New conversation'))
+
+      await waitFor(() =>
+        expect(openAlertConversation).toHaveBeenCalledWith(1, 1, undefined)
+      )
+    })
+
+    it('broadcasts the chosen conversation so the chat can open it', async () => {
+      const heard: Array<{ sessionId: string; seeded: boolean }> = []
+      const listener = (e: Event) => heard.push((e as CustomEvent).detail)
+      window.addEventListener('open-conversation', listener)
+      try {
+        render(() => <AlertsPanel />)
+        fireEvent.click(await screen.findByText('Alerts'))
+        fireEvent.click(await screen.findByText('Resolve…'))
+        fireEvent.click(await screen.findByText('Friend Music Records'))
+
+        await waitFor(() =>
+          expect(heard).toEqual([{ sessionId: 'conv_recent', seeded: false }])
+        )
+      } finally {
+        window.removeEventListener('open-conversation', listener)
+      }
+    })
+
+    it('offers a new thread when the user has no other conversations', async () => {
+      vi.mocked(getAlertConversationOptions).mockResolvedValue({
+        alert_id: 1,
+        conversations: [],
+      })
+      render(() => <AlertsPanel />)
+      fireEvent.click(await screen.findByText('Alerts'))
+      fireEvent.click(await screen.findByText('Resolve…'))
+
+      await waitFor(() =>
+        expect(screen.getByText(/will start one/)).toBeTruthy()
+      )
+    })
+  })
+
+  it('resolves everything on request', async () => {
+    render(() => <AlertsPanel />)
+    fireEvent.click(await screen.findByText('Alerts'))
+    fireEvent.click(await screen.findByText('Resolve all'))
+
+    await waitFor(() => expect(markAllAlertsAsRead).toHaveBeenCalledWith(1))
   })
 })
