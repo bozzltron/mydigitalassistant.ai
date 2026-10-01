@@ -104,7 +104,11 @@ class TestAlertStartsTheConversation:
         )
 
         assert first_session == second_session
-        assert first_episode == second_episode
+        # The first call seeded the opening message; the second found the session
+        # already had turns and wrote nothing, so it reports no episode. That is the
+        # guarantee: reopening does not add a second opening.
+        assert first_episode is not None
+        assert second_episode is None
         episodes = await store.get_episodes_for_session(first_session, user_id=user.id)
         assert len(episodes) == 1, "reopening wrote a second opening message"
 
@@ -173,6 +177,129 @@ class TestResolutionClosesIt:
         slots = await store.get_slots_for_frame(alert.id)
         status_slot = next(s for s in slots if s.key == "status")
         assert status_slot.value == "resolved"
+
+
+class TestAttachToAnExistingConversation:
+    """The selector's server side, and the reason it exists: conversations must not
+    build up one per alert."""
+
+    @pytest.mark.asyncio
+    async def test_attaching_to_an_existing_session_writes_no_message(self, store):
+        """The user is mid-conversation; the alert is raised in flow, not as a
+        discontinuity in their thread."""
+        user = await store.create_user("alice")
+        await store.create_session("conv_talking", user.id)
+        await store.create_episode(
+            user_id=user.id,
+            session_id="conv_talking",
+            role="user",
+            content="I was thinking about my release plan.",
+        )
+        alert = await _an_alert(store, user.id)
+
+        session_id, episode_id = await store.attach_alert_to_conversation(
+            alert.id, user.id, "conv_talking"
+        )
+
+        assert session_id == "conv_talking"
+        assert episode_id is None, "a message was injected mid-conversation"
+        episodes = await store.get_episodes_for_session(
+            "conv_talking", user_id=user.id
+        )
+        assert len(episodes) == 1, "the alert added a turn to a live conversation"
+
+    @pytest.mark.asyncio
+    async def test_attached_alert_closes_when_the_user_replies(self, store):
+        """The point of attaching: resolution happens where the user already is."""
+        user = await store.create_user("alice")
+        await store.create_session("conv_talking", user.id)
+        await store.create_episode(
+            user_id=user.id,
+            session_id="conv_talking",
+            role="user",
+            content="Let's talk about my city.",
+        )
+        alert = await _an_alert(store, user.id)
+        await store.attach_alert_to_conversation(alert.id, user.id, "conv_talking")
+        assert await store.get_unread_alert_count(user.id) == 1
+
+        # The user keeps talking in the same conversation.
+        await store.create_episode(
+            user_id=user.id,
+            session_id="conv_talking",
+            role="user",
+            content="Austin, TX is the right one.",
+        )
+        resolved = await store.resolve_alerts_for_session("conv_talking")
+        assert resolved == 1
+        assert await store.get_unread_alert_count(user.id) == 0
+
+    @pytest.mark.asyncio
+    async def test_attaching_to_an_empty_session_seeds_the_alert(self, store):
+        """A session with no turns has nothing to resolve *in*, so the alert opens
+        it — the agent speaks first, as in Phase 2."""
+        user = await store.create_user("alice")
+        await store.create_session("conv_fresh", user.id)
+        alert = await _an_alert(store, user.id)
+
+        _, episode_id = await store.attach_alert_to_conversation(
+            alert.id, user.id, "conv_fresh"
+        )
+        assert episode_id is not None
+        episodes = await store.get_episodes_for_session("conv_fresh", user_id=user.id)
+        assert episodes[0].role == "assistant"
+
+    @pytest.mark.asyncio
+    async def test_another_users_alert_is_refused(self, store):
+        user = await store.create_user("alice")
+        other = await store.create_user("bob")
+        await store.create_session("conv_bob", other.id)
+        alert = await _an_alert(store, user.id)
+
+        with pytest.raises(ValueError):
+            await store.attach_alert_to_conversation(alert.id, other.id, "conv_bob")
+
+    @pytest.mark.asyncio
+    async def test_reattaching_moves_the_alert_not_duplicates_it(self, store):
+        """Picking a different venue must not leave two sessions both owning it."""
+        user = await store.create_user("alice")
+        await store.create_session("conv_a", user.id)
+        await store.create_session("conv_b", user.id)
+        alert = await _an_alert(store, user.id)
+
+        await store.attach_alert_to_conversation(alert.id, user.id, "conv_a")
+        await store.attach_alert_to_conversation(alert.id, user.id, "conv_b")
+
+        slots = {s.key: s.value for s in await store.get_slots_for_frame(alert.id)}
+        assert slots["session_id"] == "conv_b"
+
+        # And replying in the old venue no longer closes it.
+        assert await store.resolve_alerts_for_session("conv_a") == 0
+        assert await store.resolve_alerts_for_session("conv_b") == 1
+
+    @pytest.mark.asyncio
+    async def test_alert_threads_are_excluded_from_the_selector(self, store):
+        """Offering to resolve one alert inside another alert's thread is not a
+        choice — it entangles two questions."""
+        user = await store.create_user("alice")
+        await store.create_session("conv_real", user.id)
+        await store.create_episode(
+            user_id=user.id,
+            session_id="conv_real",
+            role="user",
+            content="a real conversation",
+        )
+        # An alert's own thread, which the selector must not offer.
+        alert_one = await _an_alert(store, user.id)
+        await store.open_alert_conversation(alert_one.id, user.id)
+
+        sessions = await store.get_sessions_for_user(user.id)
+        offered = [
+            s["id"] for s in sessions if not str(s["id"]).startswith("conv_alert_")
+        ]
+        assert "conv_real" in offered
+        assert not any(str(s["id"]).startswith("conv_alert_") for s in sessions
+                       if s["id"] in offered)
 
 
 class TestAFullAlertLifecycle:

@@ -3109,78 +3109,106 @@ class MemoryStore:
         logger.info("Alert resolved: frame=%d", alert_id)
         return True
 
+    async def attach_alert_to_conversation(
+        self,
+        alert_id: int,
+        user_id: int,
+        session_id: str,
+        *,
+        seed_if_empty: bool = True,
+    ) -> tuple[str, int | None]:
+        """Attach an alert to a conversation, so it can be resolved there.
+
+        The selector's server side. The default is **an existing conversation**:
+        giving every alert its own thread solves one problem (nothing to choose) and
+        creates another, because the conversation list then fills with one-off alert
+        threads -- the inbox problem in different clothes. Attaching to a conversation
+        the user already has means nothing new accumulates.
+
+        `seed_if_empty` writes the alert as the opening assistant message when the
+        session has no turns yet. On a session that already has history no message is
+        written: the user is mid-conversation, and the agent raises the alert in flow
+        rather than as a discontinuity. Either way the alert is linked to the session,
+        so the backstop closes it when the user replies.
+
+        Returns `(session_id, episode_id or None)`.
+        """
+        frame = await self.get_frame(alert_id)
+        if frame is None or frame.type != ALERT_FRAME_TYPE:
+            raise ValueError(f"frame {alert_id} is not an alert")
+        if frame.owner_user_id != user_id:
+            raise ValueError(f"alert {alert_id} is not owned by user {user_id}")
+
+        slots = {s.key: s.value for s in await self.get_slots_for_frame(alert_id)}
+        episodes = await self.get_episodes_for_session(
+            session_id, user_id=user_id, limit=1
+        )
+        episode_id: int | None = None
+
+        if not episodes and seed_if_empty:
+            about = slots.get("about")
+            target_note = (
+                f"\n\nWhat this concerns: {about}. "
+                "When we settle it, update that and mark this alert resolved."
+                if about
+                else "\n\nWhen we settle this, mark the alert resolved."
+            )
+            opening = (
+                f"{slots.get('message', '')}"
+                f"\n\n{slots.get('title', '')}"
+                f"{target_note}"
+            ).strip()
+            episode = await self.create_episode(
+                user_id=user_id,
+                session_id=session_id,
+                role="assistant",
+                content=opening,
+                frame_ids=[alert_id],
+            )
+            episode_id = episode.id
+
+        await self.set_derived_slot(
+            alert_id, "session_id", session_id, source_type="alert"
+        )
+        logger.info(
+            "Alert %d attached to conversation %s (seeded=%s)",
+            alert_id,
+            session_id,
+            episode_id is not None,
+        )
+        return session_id, episode_id
+
     async def open_alert_conversation(
         self,
         alert_id: int,
         user_id: int,
         session_id: str | None = None,
-    ) -> tuple[str, int]:
-        """Open a conversation *for* an alert, and make the alert its first message.
+    ) -> tuple[str, int | None]:
+        """Attach an alert to a conversation, creating one only if necessary.
 
-        The normal flow is user-initiated: the user speaks, the agent answers. An
-        alert inverts it — the agent opens with the problem, and the user replies.
-        So this writes an assistant episode as the session's first turn.
-
-        The alert carries its own resolution instructions. That is not decoration: it
-        is the agent's message to itself, and it is how the agent knows what
-        "resolved" means for this particular alert when it comes back later with the
-        user's reply in hand.
-
-        Returns `(session_id, episode_id)`. Idempotent per alert: reopening returns
-        the existing conversation rather than creating a second one, so a user
-        clicking twice does not fork the thread.
+        A thin wrapper over `attach_alert_to_conversation` for callers that have not
+        chosen a venue: it reuses the session the alert already owns, or falls back
+        to the alert's own `conv_alert_<id>` so the operation is idempotent.
         """
         frame = await self.get_frame(alert_id)
         if frame is None or frame.type != ALERT_FRAME_TYPE:
             raise ValueError(f"frame {alert_id} is not an alert")
 
         slots = {s.key: s.value for s in await self.get_slots_for_frame(alert_id)}
+        target = session_id or slots.get("session_id") or f"conv_alert_{alert_id}"
+        await self.create_session_if_missing(target, user_id)
+        return await self.attach_alert_to_conversation(alert_id, user_id, target)
 
-        # Already open? Reuse it. Two conversations for one alert would mean two
-        # places to resolve the same thing.
-        existing_session = slots.get("session_id")
-        if existing_session:
-            episodes = await self.get_episodes_for_session(
-                existing_session, user_id=user_id, limit=1
+    async def create_session_if_missing(self, session_id: str, user_id: int) -> None:
+        """Create a session row unless one exists. The attach path may target a
+        conversation the user already has, which is not an error."""
+        async with self._connect() as db:
+            rows = await db.execute_fetchall(
+                "SELECT 1 FROM sessions WHERE id = ?", (session_id,)
             )
-            first = episodes[0].id if episodes else 0
-            return existing_session, first
-
-        if session_id is None:
-            session_id = f"conv_alert_{alert_id}"
+            if rows:
+                return
         await self.create_session(session_id, user_id)
-
-        about = slots.get("about")
-        target_note = (
-            f"\n\nWhat this concerns: {about}. "
-            "When we settle it, update that and mark this alert resolved."
-            if about
-            else "\n\nWhen we settle this, mark the alert resolved."
-        )
-        opening = (
-            f"{slots.get('message', '')}"
-            f"\n\n{slots.get('title', '')}"
-            f"{target_note}"
-        ).strip()
-
-        episode = await self.create_episode(
-            user_id=user_id,
-            session_id=session_id,
-            role="assistant",
-            content=opening,
-            frame_ids=[alert_id],
-        )
-
-        # Link the alert to its conversation so resolution can find it and so the
-        # backstop knows which session to watch. Derived: it is routing state, not
-        # a claim about the world.
-        await self.set_derived_slot(
-            alert_id, "session_id", session_id, source_type="alert"
-        )
-        logger.info(
-            "Alert %d opened conversation %s (episode %d)", alert_id, session_id, episode.id
-        )
-        return session_id, episode.id
 
     async def resolve_alerts_for_session(self, session_id: str) -> int:
         """Resolve alerts whose conversation this is.

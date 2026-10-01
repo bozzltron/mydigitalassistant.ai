@@ -1670,27 +1670,75 @@ async def open_alert_conversation(
     session_id: str | None = None,
     store: MemoryStore = _Depends(get_store),
 ):
-    """Open a conversation for an alert, with the alert as its first message.
+    """Attach an alert to a conversation so it can be resolved there.
 
-    Normal conversations are user-initiated. This inverts that: the agent opens
-    with the problem and the user replies. The alert carries its own resolution
-    instructions, so the conversation that answers it is the agent working its own
-    queue with the user as the tiebreaker.
+    `session_id` is the selector's answer: resolve this in a conversation the user
+    already has. Omit it and the alert falls back to its own thread, which exists
+    only so the operation is idempotent — the default path is an existing
+    conversation, because a thread per alert fills the list with one-off threads.
 
-    Idempotent per alert — reopening returns the existing conversation rather than
-    forking a second thread for the same question.
+    On an empty session the alert is written as the opening assistant message; on one
+    with history, no message is written and the alert is simply linked, so it closes
+    when the user replies.
     """
-    try:
-        opened_session, episode_id = await store.open_alert_conversation(
-            alert_id, user_id, session_id=session_id
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    if session_id:
+        try:
+            opened_session, episode_id = await store.attach_alert_to_conversation(
+                alert_id, user_id, session_id
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+    else:
+        try:
+            opened_session, episode_id = await store.open_alert_conversation(
+                alert_id, user_id
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
     return {
         "status": "ok",
         "alert_id": alert_id,
         "session_id": opened_session,
         "episode_id": episode_id,
+        "seeded": episode_id is not None,
+    }
+
+
+@app.get("/alerts/{alert_id}/conversations")
+async def alert_conversation_options(
+    alert_id: int,
+    user_id: int = 1,
+    limit: int = Query(default=20, ge=1, le=100),
+    store: MemoryStore = _Depends(get_store),
+):
+    """Conversations an alert could be resolved in, for the selector.
+
+    Most-recent-first, because the conversation the user is most likely to mean is
+    the one they were last in. Excludes sessions that are themselves alert threads —
+    offering "resolve this alert in another alert's thread" is not a choice, it is a
+    way to entangle two questions.
+    """
+    frame = await store.get_frame(alert_id)
+    if frame is None or frame.type != "alert":
+        raise HTTPException(status_code=404, detail="Alert not found")
+
+    sessions = await store.get_sessions_for_user(user_id)
+    options = [
+        s for s in sessions
+        if not str(s.get("id", "")).startswith("conv_alert_")
+    ]
+    options = options[:limit]
+    return {
+        "alert_id": alert_id,
+        "conversations": [
+            {
+                "session_id": s.get("id"),
+                "name": s.get("last_message") or "Untitled",
+                "last_activity": s.get("last_activity"),
+                "message_count": s.get("episode_count") or 0,
+            }
+            for s in options
+        ],
     }
 
 
