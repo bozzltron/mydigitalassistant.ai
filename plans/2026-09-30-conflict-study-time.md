@@ -1,20 +1,115 @@
 ---
 date: 2026-09-30
-status: active
+status: closed
 estimated_hours: 10
 ---
 
-# Plan D — Conflict study time: the agent reasons about its own disagreements
+# Plan D — Conflict study time: CLOSED, not built
 
-## Objective
+## Why this plan was closed
 
-Give the agent scheduled time to review its own conflicting beliefs, reason about which is
-true using its own memory, and adopt the answer. What it cannot settle from memory alone it
-escalates to the user as an alert (Plan C) — it does not search on its own.
+**The gate was met in the negative.** The plan was written on a reading of the
+conflict data that measurement has since disproven. It would duplicate a mechanism that
+already works, which is the principle this project has spent its effort removing
+rather than adding.
 
-This is the agent *studying*, and it is the same shape as the other scheduled tasks:
-read memory → run it through the prompt/response pipeline → store the result as memory. The
-difference is only that the output is a **decision**, not prose.
+### The premise was wrong
+
+The plan's justification began:
+
+> *"Measured: of 2,377 auto-resolved conflicts, 2,377 (100%) resolved to `new_value` —
+> the last rung (recency) decides every case, because extraction writes everything at
+> `source_reliability=null` → 0.5, so the first rung never discriminates."*
+
+Both halves of that are false, and both were checked against the live brain:
+
+1. **The 100% was ties, not a broken ladder.** `revise()` passes
+   `new_source_reliability=None`, which defaults to 0.5 — a fact about the *write path*,
+   not evidence that stored slots lack provenance. Measured: `search` slots carry
+   provenance on 2197 of 2197 rows.
+2. **The ladder discriminates when the sides differ.** A user-stated fact (0.99) against
+   a search attempt (0.5) produced `auto_resolved` with `resolved_value` = the user's
+   value. The first rung fires.
+
+See `experiments/conflict_ladder_value/result.md` and `result_audit.md`.
+
+### The `grok` case was not a comparator failure
+
+The plan argued a comparator *"cannot tell that `Echo`/`grok` is a naming mistake
+(conflict 3835)"*, citing the near-rename as evidence for a reasoning pass.
+
+That exact shape was tested. The ladder held the user's value. **The near-rename was
+not luck** — it was the first rung working. It *read* as luck only because
+`EXISTING_WINS` recorded itself as `pending` instead of `resolved`, which is now fixed
+(see the status fix in `2026-10-01`).
+
+### It would have duplicated a mechanism
+
+Adding a model that reasons about conflicts, on top of a comparator that already
+decides them correctly, is a second mechanism for one job — the same defect this
+session removed four times: the `alerts` table duplicating frames, four sites writing
+file content into memory, `FILE_CONTENT_HINT_SLOTS` defined twice, and (earlier) the
+static rules that stood in for the model's judgement.
+
+AGENTS.md: *lean on the model* does not mean *add a model* where the existing mechanism
+is measurably sound. It means prefer the model's judgement over scripted logic when a
+judgement is what is needed. Here the judgement is not needed — the comparison is.
+
+### The backlog it targeted was largely an artifact
+
+Plan D was written to work a queue of 279 "pending" conflicts. Measured:
+
+```
+279 pending
+  252 (90%)  the slot still holds the existing value — the decision was made and applied
+   27        genuinely open
+```
+
+The ladder had already decided 90% of them; the label said otherwise. A study task
+would have spent its budget re-deciding decisions, on hand-labelled ground truth the
+gating experiment's own plan admitted was not ground truth.
+
+## What was kept from the plan
+
+Two ideas in the plan are sound and survive independently of it:
+
+- **A conflict is a fact-level disagreement; an alert is a communication event.** A
+  conflict exists whether or not anyone is told; an alert exists because the agent
+  decided to tell the user. A conflict escalated to an alert **links** to it via
+  `about` and never duplicates it. This distinction is now in the code comments.
+- **A conflict's decision inputs belong on the row.** The plan assumed this would be
+  needed for its own reasoning; it turned out to be needed to audit the *existing*
+  mechanism, and was added for that. See the provenance columns in `memory.store`.
+
+## What replaced it
+
+**The provenance columns** (`existing_source_reliability`, `new_source_reliability`,
+`existing_confidence`, `new_confidence`, `existing_priority`, `new_priority` on
+`conflicts`) and **the status fix**, which together make a conflict's decision
+inspectable after the fact.
+
+The remaining work, if it is ever wanted, is much smaller than this plan: **~27 rows**
+that are genuinely open, now distinguishable from the 252 that were mislabelled. That
+is a review, not a subsystem.
+
+## The orphaned experiment
+
+`experiments/conflict_reasoning_accuracy` was written solely to gate this plan. With the
+plan closed it has no purpose and is deleted with it.
+
+`experiments/conflict_ladder_value` is retained: it is what disproved this plan, its
+audit harness is reusable, and its `result.md` documents the instrumentation gap that
+the provenance columns closed.
+
+---
+
+## Original plan text (kept for the reasoning it records, superseded above)
+
+The sections below are the plan as written on 2026-09-30. They are retained because the
+*thinking* is worth keeping even though the conclusion was wrong — specifically the
+distinction between a conflict and an alert, and the insistence that the agent should
+not search on its own during study time without telling the user.
+
 
 ## Important: conflicts are kept
 
