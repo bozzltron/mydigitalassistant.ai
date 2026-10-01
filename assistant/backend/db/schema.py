@@ -473,6 +473,22 @@ async def _migrate_add_reasoning_trace(db) -> None:
         logger.debug("Migration: reasoning_trace column added to episodes")
 
 
+async def _migrate_add_search_info(db) -> None:
+    """Add the persisted search/media payload column to episodes.
+
+    Search results are the only source of message imagery, so without this the
+    media is lost on reload and only the text survives. The column holds a
+    compact JSON projection (see `search_info_payload`); existing rows keep NULL
+    and render text-only, which is the previous behaviour.
+    """
+    episodes_info = await db.execute_fetchall("PRAGMA table_info(episodes)")
+    episode_cols = {r[1] for r in episodes_info}
+    if "search_info" not in episode_cols:
+        await db.execute("ALTER TABLE episodes ADD COLUMN search_info TEXT")
+        await db.commit()
+        logger.debug("Migration: search_info column added to episodes")
+
+
 async def _migrate_add_conflict_provenance(db) -> None:
     """Add the decision-input columns to `conflicts` if they are missing.
 
@@ -552,5 +568,6 @@ async def init_db(db_path: str) -> None:
         await _migrate_add_sessions_table(db)
         await _migrate_add_deleted_at_to_sessions(db)
         await _migrate_add_reasoning_trace(db)
+        await _migrate_add_search_info(db)
         await _migrate_add_conflict_provenance(db)
         await _migrate_drop_alerts_table(db)

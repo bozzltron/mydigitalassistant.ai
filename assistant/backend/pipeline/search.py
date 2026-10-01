@@ -280,6 +280,42 @@ class SearchInfo:
     video_results: list[YouTubeVideo] | None = None
 
 
+def search_info_payload(search_info: "SearchInfo | None", max_results: int = 20) -> str | None:
+    """A compact JSON projection of a search, for episode persistence.
+
+    Only what the UI renders is kept — result title/url/thumbnail/image and the
+    video fields — so the episode row stays small. Page snippets and engine
+    scores are dropped: the UI never shows them and they are the bulk of the
+    payload.
+    """
+    if search_info is None:
+        return None
+    payload = {
+        "backend": search_info.backend,
+        "query": search_info.query,
+        "results": [
+            {
+                "title": r.title,
+                "url": r.url,
+                "thumbnail": r.thumbnail,
+                "image": r.image,
+            }
+            for r in (search_info.results or [])[:max_results]
+        ],
+        "video_results": [
+            {
+                "video_id": v.video_id,
+                "title": v.title,
+                "channel_title": v.channel_title,
+                "thumbnail_url": v.thumbnail_url,
+                "url": v.url,
+            }
+            for v in (search_info.video_results or [])
+        ],
+    }
+    return json.dumps(payload)
+
+
 def sanitize_query(query: str) -> str:
     """Reduce conversational text to a search-engine-friendly query.
 

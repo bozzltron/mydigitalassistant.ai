@@ -1757,19 +1757,28 @@ class MemoryStore:
         content: str,
         frame_ids: list[int] | None = None,
         reasoning_trace: str | None = None,
+        search_info: str | None = None,
     ) -> Episode:
         frame_ids = frame_ids or []
         async with self._connect() as db:
             cursor = await db.execute(
                 "INSERT INTO episodes (user_id, session_id, role, content, "
-                "frame_ids, reasoning_trace) VALUES (?, ?, ?, ?, ?, ?)",
-                (user_id, session_id, role, content, json.dumps(frame_ids), reasoning_trace),
+                "frame_ids, reasoning_trace, search_info) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    user_id,
+                    session_id,
+                    role,
+                    content,
+                    json.dumps(frame_ids),
+                    reasoning_trace,
+                    search_info,
+                ),
             )
             await db.commit()
             # Fetch the inserted row directly using the lastrowid
             row = await db.execute_fetchall(
                 "SELECT id, user_id, session_id, role, content, frame_ids, "
-                "timestamp, reasoning_trace FROM episodes WHERE id = ?",
+                "timestamp, reasoning_trace, search_info FROM episodes WHERE id = ?",
                 (cursor.lastrowid,),
             )
             if not row:
@@ -1954,8 +1963,8 @@ class MemoryStore:
             limit = None
 
         sql = (
-            "SELECT id, user_id, session_id, role, content, frame_ids, timestamp "
-            "FROM episodes WHERE session_id = ?"
+            "SELECT id, user_id, session_id, role, content, frame_ids, timestamp, "
+            "reasoning_trace, search_info FROM episodes WHERE session_id = ?"
         )
         params: list = [session_id]
         if user_id is not None:
@@ -2397,6 +2406,7 @@ class MemoryStore:
             "frame_ids": json.loads(row[5]),
             "timestamp": row[6],
             "reasoning_trace": row[7] if len(row) > 7 else None,
+            "search_info": row[8] if len(row) > 8 else None,
         }
 
     async def _get_conflict_row(self, db: aiosqlite.Connection, conflict_id: int) -> Conflict:

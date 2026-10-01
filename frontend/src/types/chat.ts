@@ -215,6 +215,8 @@ export interface SessionMessage {
   role: string
   content: string
   timestamp?: string
+  /** Persisted search/media payload for a search turn (see `search_info`). */
+  search_info?: SearchInfo
 }
 
 export interface AttachedFile {

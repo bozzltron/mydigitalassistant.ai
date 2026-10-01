@@ -1228,6 +1228,9 @@ class SessionMessage(BaseModel):
     role: str
     content: str
     timestamp: str | None = None
+    # The persisted search/media payload for a search turn, so images and video
+    # thumbnails survive a reload. None for non-search turns and old rows.
+    search_info: dict | None = None
 
 
 @app.get("/chat/session/{session_id}/messages", response_model=list[SessionMessage])
@@ -1248,7 +1251,12 @@ async def get_session_messages(
         session_id, user_id=user_id, limit=limit
     )
     return [
-        SessionMessage(role=e.role, content=e.content, timestamp=e.timestamp)
+        SessionMessage(
+            role=e.role,
+            content=e.content,
+            timestamp=e.timestamp,
+            search_info=json.loads(e.search_info) if e.search_info else None,
+        )
         for e in episodes
     ]
 

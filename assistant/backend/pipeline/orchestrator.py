@@ -35,7 +35,12 @@ from assistant.backend.pipeline.reasoner import (
     classify_intent,
     format_plan_for_prompt,
 )
-from assistant.backend.pipeline.search import SearchInfo, SearchResult, WebSearchTool
+from assistant.backend.pipeline.search import (
+    SearchInfo,
+    SearchResult,
+    WebSearchTool,
+    search_info_payload,
+)
 from assistant.backend.pipeline.task_router import TaskType, route
 from assistant.backend.pipeline.tools import builtin_tools, run_tool_loop
 from assistant.backend.pipeline.user_content import CONTENT_SLOT_KEY
@@ -320,6 +325,7 @@ class Orchestrator:
         content: str,
         frame_ids: list[int] | None = None,
         reasoning_trace: str | None = None,
+        search_info: str | None = None,
     ):
         """Persist a conversation turn and index it for semantic recall.
 
@@ -333,6 +339,7 @@ class Orchestrator:
             content=content,
             frame_ids=frame_ids or [],
             reasoning_trace=reasoning_trace,
+            search_info=search_info,
         )
         try:
             embedding = await self.embed_fn()(
@@ -1518,6 +1525,7 @@ class Orchestrator:
             role="assistant",
             content=answer,
             reasoning_trace=reasoning_trace,
+            search_info=search_info_payload(search_info),
         )
 
         # 9. Append sources / memory provenance to the response
@@ -2574,6 +2582,7 @@ class Orchestrator:
                     session_id,
                     role="assistant",
                     content=final_answer,
+                    search_info=search_info_payload(search_info),
                 )
             except Exception as e:
                 logger.warning("Failed to log assistant episode: %s", e)

@@ -57,6 +57,9 @@ class Episode(BaseModel):
     content: str
     frame_ids: list[int] = Field(default_factory=list)
     timestamp: str | None = None
+    # Raw JSON of the search/media payload for a search turn (see
+    # `search_info_payload`). Stored so media survives a reload; None otherwise.
+    search_info: str | None = None
 
 
 class Conflict(BaseModel):
