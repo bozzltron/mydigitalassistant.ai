@@ -19,7 +19,7 @@ import logging
 from dataclasses import dataclass, field
 
 from assistant.backend.config import settings
-from assistant.backend.db.sqlcipher import aiosqlite_connect
+from assistant.backend.db.sqlcipher import open_checked_db
 from assistant.backend.memory.store import ALERT_FRAME_TYPE
 from assistant.backend.pipeline.extractor import normalize_frame_name
 
@@ -165,14 +165,14 @@ async def strengthen_from_episodes(db_path: str) -> int:
 
     from assistant.backend.memory.confidence import bump_confidence
 
-    async with aiosqlite_connect(db_path) as db:
+    async with open_checked_db(db_path) as db:
         await db.execute("PRAGMA busy_timeout = 15000")
         cursor_row = await db.execute_fetchall(
             "SELECT value FROM metadata WHERE key = 'last_strengthened_episode_id'"
         )
     last_id = int(cursor_row[0][0]) if cursor_row and cursor_row[0][0] else 0
 
-    async with aiosqlite_connect(db_path) as db:
+    async with open_checked_db(db_path) as db:
         await db.execute("PRAGMA busy_timeout = 15000")
         rows = await db.execute_fetchall(
             "SELECT id, frame_ids FROM episodes WHERE id > ? "
@@ -196,7 +196,7 @@ async def strengthen_from_episodes(db_path: str) -> int:
                 pair_counts[(a, b)] = pair_counts.get((a, b), 0) + 1
 
     strengthened = 0
-    async with aiosqlite_connect(db_path) as db:
+    async with open_checked_db(db_path) as db:
         await db.execute("PRAGMA busy_timeout = 15000")
         await db.execute("BEGIN")
         for (a, b), _count in pair_counts.items():
@@ -257,7 +257,7 @@ async def run_consolidation(
     if not dry_run:
         report.associations_strengthened = await strengthen_from_episodes(db_path)
 
-    async with aiosqlite_connect(db_path) as db:
+    async with open_checked_db(db_path) as db:
         await db.execute("PRAGMA busy_timeout = 15000")
         # Alert frames are excluded outright. Merge-on-similarity is right for
         # entities -- two names for one thing should become one frame -- and clearly
@@ -301,7 +301,7 @@ async def run_consolidation(
     # Pass 2: shared identifying slot values (e.g. two frames both holding
     # title="The Mountain & The Wolf" are the same album however the extractor
     # named them). Strongest duplicate evidence available.
-    async with aiosqlite_connect(db_path) as db:
+    async with open_checked_db(db_path) as db:
         await db.execute("PRAGMA busy_timeout = 15000")
         ident_rows = await db.execute_fetchall(
             """
@@ -477,7 +477,7 @@ async def _apply_merge(
     store, db_path: str, merge: PlannedMerge, embed_fn=None
 ) -> None:
     """Move slots/edges from loser to survivor, record alias, tombstone loser."""
-    async with aiosqlite_connect(db_path) as db:
+    async with open_checked_db(db_path) as db:
         await db.execute("PRAGMA busy_timeout = 15000")
         # 1. Slots: copy each loser slot onto the survivor through upsert_slot
         #    so confidence bumping, belief revision, conflicts and slot_history
@@ -561,7 +561,7 @@ async def _apply_merge(
         await store.record_frame_alias(loser_norm, merge.survivor_id)
         aliases += 1
 
-    async with aiosqlite_connect(db_path) as db:
+    async with open_checked_db(db_path) as db:
         await db.execute("PRAGMA busy_timeout = 15000")
         await db.execute(
             "UPDATE frames SET deleted_at = datetime('now') WHERE id = ?",

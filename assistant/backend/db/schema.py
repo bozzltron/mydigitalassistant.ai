@@ -1,6 +1,6 @@
 import logging
 
-from assistant.backend.db.sqlcipher import aiosqlite_connect
+from assistant.backend.db.sqlcipher import open_checked_db
 
 logger = logging.getLogger(__name__)
 
@@ -535,7 +535,7 @@ async def init_db(db_path: str) -> None:
     plain otherwise. This ensures the file format matches how the app will open
     it later.
     """
-    async with aiosqlite_connect(db_path) as db:
+    async with open_checked_db(db_path) as db:
         await db.execute("PRAGMA foreign_keys = ON")
         await db.execute("PRAGMA journal_mode = WAL")
 

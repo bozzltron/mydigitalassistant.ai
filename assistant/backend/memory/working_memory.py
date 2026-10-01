@@ -14,7 +14,7 @@ import logging
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
-from assistant.backend.db.sqlcipher import aiosqlite_connect
+from assistant.backend.db.sqlcipher import aiosqlite_connect_checked
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +45,11 @@ class WorkingMemory:
 
     @asynccontextmanager
     async def _connect(self):
-        db = await aiosqlite_connect(self.db_path)
+        # Validated open: a fresh encrypted connection derives its key from page
+        # 1 on the first read, which can transiently fail under a concurrent WAL
+        # checkpoint. aiosqlite_connect_checked retries that on a new connection
+        # instead of letting "disk I/O error" surface mid-turn.
+        db = await aiosqlite_connect_checked(self.db_path)
         try:
             yield db
         finally:

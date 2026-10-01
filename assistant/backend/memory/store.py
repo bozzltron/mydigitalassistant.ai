@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 import aiosqlite
 
 from assistant.backend.db.schema import _load_sqlite_vec
-from assistant.backend.db.sqlcipher import aiosqlite_connect
+from assistant.backend.db.sqlcipher import aiosqlite_connect_checked
 from assistant.backend.memory.belief_revision import OperationType, revise
 from assistant.backend.memory.confidence import (
     ConflictResolution,
@@ -165,7 +165,10 @@ class MemoryStore:
 
     async def _open(self) -> aiosqlite.Connection:
         """Open a connection with the pragmas and extension every caller needs."""
-        db = await aiosqlite_connect(self.db_path)
+        # Validated open (see aiosqlite_connect_checked): the first read on a
+        # fresh encrypted connection derives the key from page 1, which can
+        # transiently fail under a concurrent WAL checkpoint.
+        db = await aiosqlite_connect_checked(self.db_path)
         _live_conns.add(db)
         await db.execute("PRAGMA foreign_keys = ON")
         # Housekeeping (consolidation/GC) shares this file with live chat;

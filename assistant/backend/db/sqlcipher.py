@@ -7,8 +7,11 @@ encrypted connections as needed.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import sqlite3
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -228,3 +231,92 @@ def aiosqlite_connect(
             )
 
     return aiosqlite_connect_plain(database, **kwargs)
+
+
+# SQLite/SQLCipher errors a *fresh* connection can clear on retry.
+#
+# The one this exists for: SQLCipher derives its key lazily on a connection's
+# first read, taking the database salt from page 1. Under concurrent WAL
+# checkpoints that read can transiently fail to authenticate — SQLCipher logs
+# "hmac check failed for pgno=1" and the failure surfaces as "disk I/O error" —
+# then succeed on the next connection. It is a retryable read race, not
+# corruption (``PRAGMA cipher_integrity_check`` still passes), so a new
+# connection is the right response instead of failing the user's turn.
+_TRANSIENT_IO_MARKERS = (
+    "disk i/o error",
+    "database is locked",
+    "database table is locked",
+    "unable to open database",
+)
+
+
+def is_transient_io_error(exc: BaseException) -> bool:
+    """True for SQLite errors that a fresh attempt can plausibly clear."""
+    if not isinstance(exc, sqlite3.OperationalError):
+        return False
+    message = str(exc).lower()
+    return any(marker in message for marker in _TRANSIENT_IO_MARKERS)
+
+
+async def aiosqlite_connect_checked(
+    database: str | Path,
+    *,
+    encrypted: bool | None = None,
+    attempts: int = 3,
+    base_delay: float = 0.05,
+    **kwargs: Any,
+) -> Any:
+    """Open an async connection and force SQLCipher's lazy key derivation now.
+
+    The first read on an encrypted connection derives the key from page 1, so a
+    transient page-1 read failure would otherwise surface in the middle of a
+    caller's query. Validating here turns it into a retry on a fresh connection,
+    with a warning logged so the event is visible rather than silently swallowed.
+    Non-transient errors (and a persistent I/O failure) still raise.
+    """
+    last_exc: BaseException | None = None
+    for attempt in range(attempts):
+        db = await aiosqlite_connect(database, encrypted=encrypted, **kwargs)
+        try:
+            # Forces the key derivation and the page-1 read.
+            await db.execute_fetchall("SELECT count(*) FROM sqlite_master")
+            return db
+        except sqlite3.OperationalError as exc:
+            try:
+                await db.close()
+            except Exception:
+                _logger.debug("Closing a failed DB connection also failed", exc_info=True)
+            last_exc = exc
+            if attempt >= attempts - 1 or not is_transient_io_error(exc):
+                raise
+            _logger.warning(
+                "Transient DB I/O error opening %s (attempt %d/%d): %s; retrying",
+                database,
+                attempt + 1,
+                attempts,
+                exc,
+            )
+            await asyncio.sleep(base_delay * (2**attempt))
+
+    # Unreachable: the loop either returns or raises.
+    assert last_exc is not None
+    raise last_exc
+
+
+@asynccontextmanager
+async def open_checked_db(
+    database: str | Path,
+    *,
+    encrypted: bool | None = None,
+    **kwargs: Any,
+) -> AsyncGenerator[Any, None]:
+    """``aiosqlite_connect_checked`` as an async context manager that closes on exit.
+
+    For the many call sites that used ``async with aiosqlite_connect(...)`` and
+    want the transient-I/O retry without managing the connection themselves.
+    """
+    db = await aiosqlite_connect_checked(database, encrypted=encrypted, **kwargs)
+    try:
+        yield db
+    finally:
+        await db.close()

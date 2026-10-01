@@ -97,9 +97,9 @@ async def backup_db():
         console.print("✗ No database found")
         return False
 
-    from assistant.backend.db.sqlcipher import aiosqlite_connect
+    from assistant.backend.db.sqlcipher import open_checked_db
 
-    async with aiosqlite_connect(str(db_path)) as adb:
+    async with open_checked_db(str(db_path)) as adb:
         await adb.execute("PRAGMA wal_checkpoint(TRUNCATE)")
 
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")

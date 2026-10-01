@@ -23,7 +23,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
 from assistant.backend.config import settings
-from assistant.backend.db.sqlcipher import aiosqlite_connect
+from assistant.backend.db.sqlcipher import open_checked_db
 from assistant.backend.memory.store import MemoryStore
 from assistant.backend.pipeline.orchestrator import SCHEDULED_TASK_ALERT_PREFIX, Orchestrator
 from assistant.backend.scheduler.summarizer import Summarizer
@@ -339,7 +339,7 @@ async def _backup_db(db_path: str, label: str) -> Path:
     import uuid
 
     src = Path(db_path)
-    async with aiosqlite_connect(db_path) as db:
+    async with open_checked_db(db_path) as db:
         cursor = await db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         row = await cursor.fetchone()
         # row = (busy, wal_pages, checkpointed_pages). busy != 0 means readers

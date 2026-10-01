@@ -22,7 +22,7 @@ from pathlib import Path
 
 from assistant.backend.config import settings
 from assistant.backend.db.sqlcipher import (
-    aiosqlite_connect,
+    aiosqlite_connect_checked,
     connect,
     connect_plain,
 )
@@ -75,7 +75,7 @@ def _key_id(key: str) -> str:
 @asynccontextmanager
 async def _export_tables_encrypted(db_path: str):
     """Export all tables from an encrypted SQLCipher database."""
-    db = await aiosqlite_connect(db_path, encrypted=True)
+    db = await aiosqlite_connect_checked(db_path, encrypted=True)
     await db.execute("PRAGMA foreign_keys = OFF")
     tables: dict[str, list[dict]] = {}
 

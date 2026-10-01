@@ -85,10 +85,10 @@ async def _check_embedding_model_mismatch(db_path: str) -> None:
             current_model,
         )
 
-    from assistant.backend.db.sqlcipher import aiosqlite_connect
+    from assistant.backend.db.sqlcipher import open_checked_db
 
     try:
-        async with aiosqlite_connect(db_path) as db:
+        async with open_checked_db(db_path) as db:
             frame_labels = await db.execute_fetchall(
                 "SELECT embedding_model, COUNT(*) FROM frame_embeddings "
                 "GROUP BY embedding_model ORDER BY 2 DESC"
