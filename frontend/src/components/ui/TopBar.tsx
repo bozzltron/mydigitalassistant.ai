@@ -279,47 +279,50 @@ export default function TopBar(props: TopBarProps) {
         </div>
         <div class="header-right">
           <AlertsPanel />
-          <span class="voice-status-bar" id="voice-status-bar" classList={{ active: voiceStatusActive() }}>
-            <span class="voice-dot" id="voice-status-dot" classList={{ [voiceStatusClass()]: true }} />
-            <span id="voice-status-text">{voiceStatusText()}</span>
+          {/* While a voice turn is live the status bar takes the button's place:
+              it carries the same stop/cancel actions, so showing both is
+              redundant and costs horizontal space. */}
+          <Show
+            when={voice.status === 'idle'}
+            fallback={
+              <span class="voice-status-bar" id="voice-status-bar" classList={{ active: voiceStatusActive() }}>
+                <span class="voice-dot" id="voice-status-dot" classList={{ [voiceStatusClass()]: true }} />
+                <span id="voice-status-text">{voiceStatusText()}</span>
+                <button
+                  class="voice-btn-small"
+                  id="voice-stop-inline"
+                  onClick={() => stopRecording()}
+                  title="Stop recording and transcribe (I'm done talking)"
+                >
+                  {stopBtnText()}
+                </button>
+                <button
+                  class="voice-btn-small danger"
+                  id="voice-cancel-inline"
+                  onClick={() => {
+                    exitVoiceMode()
+                    updateSetting('voiceMode', false)
+                  }}
+                  title="Exit voice mode (cancel)"
+                >
+                  Cancel
+                </button>
+              </span>
+            }
+          >
             <button
-              class="voice-btn-small"
-              id="voice-stop-inline"
-              onClick={() => stopRecording()}
-              title="Stop recording and transcribe (I'm done talking)"
-            >
-              {stopBtnText()}
-            </button>
-            <button
-              class="voice-btn-small danger"
-              id="voice-cancel-inline"
+              id="voice-mode-btn"
+              class="topbar-btn"
+              title="Voice conversation mode"
               onClick={() => {
-                exitVoiceMode()
-                updateSetting('voiceMode', false)
-              }}
-              title="Exit voice mode (cancel)"
-            >
-              Cancel
-            </button>
-          </span>
-          <button
-            id="voice-mode-btn"
-            class="topbar-btn"
-            title="Voice conversation mode"
-            onClick={() => {
-              if (voice.status !== 'idle') {
-                exitVoiceMode()
-                updateSetting('voiceMode', false)
-              } else {
                 enterVoiceMode()
                 updateSetting('voiceMode', true)
-              }
-            }}
-            classList={{ 'is-active': voice.status !== 'idle' }}
-          >
-            <MicIcon />
-            {voice.status !== 'idle' ? 'Stop Conversation' : "Let's talk"}
-          </button>
+              }}
+            >
+              <MicIcon />
+              Let's talk
+            </button>
+          </Show>
           <a href="/files" class="topbar-btn" title="File Browser">
             <FolderIcon />
             Files

@@ -84,13 +84,6 @@
   padding: 0.35rem;
 }
 
-/* Voice mode is on. */
-.topbar-btn.is-active {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
-}
-
 /* Something is waiting in the bell: the colour is the signal, the badge the count. */
 .topbar-btn.has-alerts {
   border-color: var(--error);
