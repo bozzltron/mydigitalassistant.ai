@@ -1,7 +1,7 @@
 ---
 date: 2026-10-01
 status: active
-estimated_hours: 17
+estimated_hours: 23
 ---
 
 # Plan F — Manual-test follow-ups
@@ -121,6 +121,39 @@ turn; clicking an external link asks first and opens a new tab only on confirm.
 .xlsx and .pptx each extract readable text; a `.doc` reports unsupported; each daily task
 runs manually and lands a clean result.
 
+### Phase 5 — Alerts & conversation selection (~6 h, appended 2026-10-01)
+
+Reported from manual testing:
+
+- **Alerts flicker.** They are there, then they are not; a page refresh can empty the list.
+- **Conversation selection.** Some conversations never appear in the switcher. One named
+  "corrections" was created as a would-be default and never loads as an option; the handoff
+  between the switcher and the active conversation is suspect.
+
+Diagnosis first, as with Plan E and the scheduler investigation — write down which symptom
+is real before changing anything.
+
+1. **Conversations (R13).** `GET /users/{id}/sessions` reads
+   `store.get_sessions_for_user` (`WHERE user_id = ? AND deleted_at IS NULL … ORDER BY
+   last_activity DESC`). A conversation with no episodes has `last_activity = NULL` and
+   sorts last; `useConversations.createNewConversation` creates then refetches;
+   `useActiveConversation.initializeFromSavedSession` restores the saved id or the first
+   entry. Establish, with the actual API response, whether "corrections" is missing because
+   of an owner mismatch (the app pins user 1), a NULL-`last_activity` sort, a list limit, or
+   a dropped row in the frontend mapping. Then make every non-deleted conversation for the
+   user appear and be selectable, and make selection land on the chosen conversation and
+   survive reload.
+2. **Alerts (R14).** `AlertsPanel` fetches `GET /alerts`; alerts are memory, and
+   `resolve_alerts_for_session` resolves them when a conversation is opened and answered.
+   Determine whether the flicker/vanish is a re-fetch clearing the list, an `unread_only`
+   race, or the resolve backstop firing on a session the user did not actually answer.
+   Alerts must be stable across refresh and poll, and change state only through the
+   documented presence rule (resolved by being answered).
+
+**Acceptance:** a newly created (empty) conversation appears in the switcher and can be
+selected; reloading lands on the last selected conversation; alerts hold steady across
+refreshes and disappear only when resolved by the presence rule.
+
 ## What this plan does not do
 
 - **Does not change the upload/parse allowlist beyond read support.** No writing of Office
@@ -148,6 +181,8 @@ runs manually and lands a clean result.
 | R10 | Dev and prod are separate Compose projects (distinct container names and DBs) under one encryption key; prod compose env is current. | 4 |
 | R11 | PDF, .docx, .xlsx, .pptx extract readable text; legacy binaries report unsupported. | 4 |
 | R12 | Each daily task runs manually and produces a clean, stored result. | 4 |
+| R13 | Every non-deleted conversation for the user appears in the switcher and is selectable (including empty ones); the chosen conversation is active and survives reload. | 5 |
+| R14 | Alerts are stable across refresh/poll and change state only through the documented resolve rule. | 5 |
 
 **Non-functional**
 
@@ -162,6 +197,7 @@ runs manually and lands a clean result.
 | N7 | The confirm modal is keyboard-accessible and focus-managed. |
 | N8 | A full-res image that exceeds the proxy cap (5 MB, `main.py:829`) falls back to the thumbnail, not a broken tile. |
 | N9 | File extraction runs off the event loop and is bounded, so a large document cannot stall other requests. |
+| N10 | The alerts and conversation fixes are preceded by a written diagnosis naming the real defect, with the actual API responses as evidence. |
 
 ## Technical approach
 
