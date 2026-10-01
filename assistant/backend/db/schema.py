@@ -226,27 +226,8 @@ CREATE TABLE IF NOT EXISTS working_memory (
 CREATE INDEX IF NOT EXISTS idx_wm_last_accessed ON working_memory(last_accessed_at);
 CREATE INDEX IF NOT EXISTS idx_wm_access_count ON working_memory(access_count);
 
--- Alerts (learning monitor): notifications for user about learned facts, task results, etc.
-CREATE TABLE IF NOT EXISTS alerts (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    type TEXT NOT NULL,
-    title TEXT NOT NULL,
-    message TEXT NOT NULL,
-    source_frame_id INTEGER,
-    source_episode_id INTEGER,
-    severity TEXT NOT NULL DEFAULT 'info',
-    is_read INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    read_at TEXT,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-    FOREIGN KEY (source_frame_id) REFERENCES frames(id) ON DELETE SET NULL,
-    FOREIGN KEY (source_episode_id) REFERENCES episodes(id) ON DELETE SET NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_alerts_user ON alerts(user_id);
-CREATE INDEX IF NOT EXISTS idx_alerts_unread ON alerts(user_id, is_read);
-CREATE INDEX IF NOT EXISTS idx_alerts_created ON alerts(created_at);
+-- An alert is a frame of type 'alert', not a table. See store.ALERT_FRAME_TYPE
+-- and plans/2026-09-30-alerts-as-memory.md.
 """
 
 
@@ -479,43 +460,29 @@ async def _migrate_add_reasoning_trace(db) -> None:
         logger.debug("Migration: reasoning_trace column added to episodes")
 
 
-async def _migrate_add_alerts_table(db) -> None:
-    """Add alerts table if it doesn't exist (for existing databases)."""
+async def _migrate_drop_alerts_table(db) -> None:
+    """Drop the alerts table if a previous version created one.
+
+    An alert is memory of a type, so the table was a second storage mechanism for
+    something the frames model already expresses -- and a second place for the same
+    thing to be wrong. It is dropped on boot rather than left in place, because
+    `CREATE TABLE IF NOT EXISTS` meant any explicit drop in a migration script was
+    silently undone on the next start.
+
+    A pre-migration backup is the caller's responsibility; the rows worth keeping
+    (`task_alert`, `correction`) are migrated to alert frames by
+    `assistant/scripts/migrate_alerts_to_frames.py`.
+    """
     tables = await db.execute_fetchall(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='alerts'"
     )
-    if not tables:
-        await db.execute(
-            """
-            CREATE TABLE IF NOT EXISTS alerts (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                type TEXT NOT NULL,
-                title TEXT NOT NULL,
-                message TEXT NOT NULL,
-                source_frame_id INTEGER,
-                source_episode_id INTEGER,
-                severity TEXT NOT NULL DEFAULT 'info',
-                is_read INTEGER NOT NULL DEFAULT 0,
-                created_at TEXT NOT NULL DEFAULT (datetime('now')),
-                read_at TEXT,
-                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-                FOREIGN KEY (source_frame_id) REFERENCES frames(id) ON DELETE SET NULL,
-                FOREIGN KEY (source_episode_id) REFERENCES episodes(id) ON DELETE SET NULL
-            )
-            """
-        )
-        await db.execute(
-            "CREATE INDEX IF NOT EXISTS idx_alerts_user ON alerts(user_id)"
-        )
-        await db.execute(
-            "CREATE INDEX IF NOT EXISTS idx_alerts_unread ON alerts(user_id, is_read)"
-        )
-        await db.execute(
-            "CREATE INDEX IF NOT EXISTS idx_alerts_created ON alerts(created_at)"
-        )
+    if tables:
+        await db.execute("DROP TABLE alerts")
+        await db.execute("DROP INDEX IF EXISTS idx_alerts_user")
+        await db.execute("DROP INDEX IF EXISTS idx_alerts_unread")
+        await db.execute("DROP INDEX IF EXISTS idx_alerts_created")
         await db.commit()
-        logger.debug("Migration: alerts table created")
+        logger.info("Migration: alerts table dropped (alerts are frames of type 'alert')")
 
 
 async def init_db(db_path: str) -> None:
@@ -542,4 +509,4 @@ async def init_db(db_path: str) -> None:
         await _migrate_add_sessions_table(db)
         await _migrate_add_deleted_at_to_sessions(db)
         await _migrate_add_reasoning_trace(db)
-        await _migrate_add_alerts_table(db)
+        await _migrate_drop_alerts_table(db)

@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 
 from assistant.backend.config import settings
 from assistant.backend.db.sqlcipher import aiosqlite_connect
+from assistant.backend.memory.store import ALERT_FRAME_TYPE
 from assistant.backend.pipeline.extractor import normalize_frame_name
 
 logger = logging.getLogger(__name__)
@@ -258,9 +259,15 @@ async def run_consolidation(
 
     async with aiosqlite_connect(db_path) as db:
         await db.execute("PRAGMA busy_timeout = 15000")
+        # Alert frames are excluded outright. Merge-on-similarity is right for
+        # entities -- two names for one thing should become one frame -- and clearly
+        # wrong for "things the agent wants to ask you": two unrelated questions
+        # would fuse into one, and the user would be asked about something they were
+        # never asked about. Alerts are tombstoned by resolution, never by merging.
         rows = await db.execute_fetchall(
             "SELECT id, name, type, confidence, owner_user_id, created_at "
-            "FROM frames WHERE deleted_at IS NULL ORDER BY id"
+            "FROM frames WHERE deleted_at IS NULL AND type != ? ORDER BY id",
+            (ALERT_FRAME_TYPE,),
         )
         frames = [
             {
@@ -309,7 +316,9 @@ async def run_consolidation(
             WHERE lower(s1.key) IN ('title', 'name', 'full_name', 'url')
               AND f1.deleted_at IS NULL AND f2.deleted_at IS NULL
               AND f1.owner_user_id IS f2.owner_user_id
-            """
+              AND f1.type != ? AND f2.type != ?
+            """,
+            (ALERT_FRAME_TYPE, ALERT_FRAME_TYPE),
         )
     for id_a, id_b in ident_rows:
         fa, fb = by_id[id_a], by_id[id_b]

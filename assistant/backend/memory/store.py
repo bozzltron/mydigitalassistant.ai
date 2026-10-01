@@ -39,6 +39,12 @@ logger = logging.getLogger(__name__)
 # engages on the 167 that could actually be diluted.
 CHUNK_MIN_SLOTS = 6
 
+# An alert is memory of a type, not a row in a notifications table. Because it is
+# memory it participates in retrieval, so the agent can raise one when it is
+# contextually relevant rather than only when the user opens a bell. See
+# plans/2026-09-30-alerts-as-memory.md.
+ALERT_FRAME_TYPE = "alert"
+
 # Max ids per batched IN (...) lookup. SQLite's default bound-parameter ceiling
 # is 999, so stay well under it; get_all_associations_for_frames binds each id
 # twice (from_ and to_), which is why this is not simply 999.
@@ -2942,114 +2948,155 @@ class MemoryStore:
         source_frame_id: int | None = None,
         source_episode_id: int | None = None,
         severity: str = "info",
+        about: str | None = None,
     ) -> Alert:
-        """Create a new alert for the user."""
-        async with self._connect() as db:
-            cursor = await db.execute(
-                """
-                INSERT INTO alerts (user_id, type, title, message,
-                                   source_frame_id, source_episode_id, severity)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (user_id, type, title, message, source_frame_id, source_episode_id, severity),
+        """Create an alert.
+
+        **An alert is memory of a type.** It is stored as a frame of type `alert`
+        rather than a row in a notifications table, for the same reason a scheduled
+        task is a frame: the agent's own memory is the source of truth, and the bell
+        is a view over it.
+
+        That choice is not cosmetic. Because an alert is memory it participates in
+        retrieval, so the agent can raise one *when it is contextually relevant* --
+        the user mid-conversation about their submission list can be told about the
+        alert already held on a related conflict. A notification table can only be
+        looked at.
+
+        The signature is unchanged from the table-backed version, so every existing
+        call site keeps working and the migration is not a rewrite of its callers.
+        """
+        # Type and severity ride in the frame name so a human reading the brain
+        # graph can tell an alert from a fact at a glance.
+        frame_name = f"alert_{type}_{int(datetime.now(UTC).timestamp() * 1000)}"
+        frame = await self.create_frame(
+            name=frame_name,
+            type=ALERT_FRAME_TYPE,
+            owner_user_id=user_id,
+            source_type="alert",
+            source_reliability=0.9,
+        )
+
+        # `message` and `title` are asserted by the agent, so they take the normal
+        # belief path; `status` is derived state and does not.
+        await self.upsert_slot(
+            frame_id=frame.id,
+            key="title",
+            value=title,
+            source_type="alert",
+            source_reliability=0.9,
+            priority=0.8,
+        )
+        await self.upsert_slot(
+            frame_id=frame.id,
+            key="message",
+            value=message,
+            source_episode_id=source_episode_id,
+            source_type="alert",
+            source_reliability=0.9,
+            priority=0.8,
+        )
+        await self.set_derived_slot(frame.id, "status", "new", source_type="alert")
+        await self.set_derived_slot(frame.id, "severity", severity, source_type="alert")
+        await self.set_derived_slot(frame.id, "kind", type, source_type="alert")
+
+        # What the alert concerns, so resolution has a target. Falls back to the
+        # frame the caller named, which is what the deterministic backstop watches.
+        target = about
+        if target is None and source_frame_id is not None:
+            target = str(source_frame_id)
+        if target is not None:
+            await self.set_derived_slot(frame.id, "about", target, source_type="alert")
+        if source_episode_id is not None:
+            await self.set_derived_slot(
+                frame.id, "origin_episode", str(source_episode_id), source_type="alert"
             )
-            await db.commit()
-            row = await db.execute_fetchall(
-                """
-                SELECT id, user_id, type, title, message, source_frame_id, source_episode_id,
-                       severity, is_read, created_at, read_at
-                FROM alerts WHERE id = ?
-                """,
-                (cursor.lastrowid,),
-            )
-            if not row:
-                raise ValueError("Failed to retrieve created alert")
-            id_, uid, t, title_, msg, sf_id, se_id, sev, is_read, created_at, read_at = row[0]
-            return Alert(
-                id=id_,
-                user_id=uid,
-                type=t,
-                title=title_,
-                message=msg,
-                source_frame_id=sf_id,
-                source_episode_id=se_id,
-                severity=sev,
-                is_read=bool(is_read),
-                created_at=created_at,
-                read_at=read_at,
-            )
+
+        return Alert(
+            id=frame.id,
+            user_id=user_id,
+            type=type,
+            title=title,
+            message=message,
+            source_frame_id=source_frame_id,
+            source_episode_id=source_episode_id,
+            severity=severity,
+            is_read=False,
+            created_at=frame.created_at,
+        )
 
     async def get_alerts(
         self,
         user_id: int,
         unread_only: bool = False,
         limit: int = 50,
+        include_resolved: bool = False,
     ) -> list[Alert]:
-        """Get alerts for a user, newest first."""
-        async with self._connect() as db:
-            query = """
-                SELECT id, user_id, type, title, message, source_frame_id, source_episode_id,
-                       severity, is_read, created_at, read_at
-                FROM alerts
-                WHERE user_id = ?
-            """
-            params = [user_id]
-            if unread_only:
-                query += " AND is_read = 0"
-            query += " ORDER BY id DESC LIMIT ?"
-            params.append(limit)
-            rows = await db.execute_fetchall(query, params)
-            return [
+        """Alerts for a user, newest first.
+
+        `unread_only` is kept for signature compatibility but now means
+        "status = new" — there is no read flag in the memory model, because reading
+        an alert without resolving it accomplishes nothing. The bell counts open
+        questions, not unread notifications.
+        """
+        statuses = ("new",) if (unread_only or not include_resolved) else ("new", "resolved")
+        alerts: list[Alert] = []
+        frames = await self.list_frames(ALERT_FRAME_TYPE, owner_user_id=user_id)
+        for frame in frames:
+            slots = {s.key: s.value for s in await self.get_slots_for_frame(frame.id)}
+            if slots.get("status") not in statuses:
+                continue
+            alerts.append(
                 Alert(
-                    id=r[0],
-                    user_id=r[1],
-                    type=r[2],
-                    title=r[3],
-                    message=r[4],
-                    source_frame_id=r[5],
-                    source_episode_id=r[6],
-                    severity=r[7],
-                    is_read=bool(r[8]),
-                    created_at=r[9],
-                    read_at=r[10],
+                    id=frame.id,
+                    user_id=user_id,
+                    type=slots.get("kind") or "alert",
+                    title=slots.get("title") or "",
+                    message=slots.get("message") or "",
+                    source_episode_id=(
+                        int(slots["origin_episode"])
+                        if slots.get("origin_episode", "").isdigit()
+                        else None
+                    ),
+                    severity=slots.get("severity") or "info",
+                    is_read=slots.get("status") == "resolved",
+                    created_at=frame.created_at,
                 )
-                for r in rows
-            ]
+            )
+        alerts.sort(key=lambda a: a.id or 0, reverse=True)
+        return alerts[:limit]
 
     async def get_unread_alert_count(self, user_id: int) -> int:
-        """Get count of unread alerts for a user."""
-        async with self._connect() as db:
-            row = await db.execute_fetchall(
-                "SELECT COUNT(*) FROM alerts WHERE user_id = ? AND is_read = 0",
-                (user_id,),
-            )
-            return row[0][0] if row else 0
+        """Count of open alerts. Named for the API it serves, not the model: the
+        memory model has no read flag, so this is the count of unresolved."""
+        return len(await self.get_alerts(user_id, unread_only=True, limit=1000))
 
     async def mark_alert_read(self, alert_id: int, user_id: int) -> bool:
-        """Mark an alert as read."""
-        from datetime import UTC, datetime
-        async with self._connect() as db:
-            cursor = await db.execute(
-                """
-                UPDATE alerts SET is_read = 1, read_at = ? WHERE id = ? AND user_id = ?
-                """,
-                (datetime.now(UTC).isoformat(), alert_id, user_id),
-            )
-            await db.commit()
-            return cursor.rowcount > 0
+        """Resolve an alert.
+
+        Kept under its old name because the API route uses it, but it now performs
+        the real transition: `status = resolved`. There is no "seen but open" state,
+        because an alert the user looked at and did not answer is still a thing the
+        agent is waiting on.
+        """
+        return await self.resolve_alert(alert_id)
+
+    async def resolve_alert(self, alert_id: int) -> bool:
+        """Mark an alert resolved. Writes `slot_history` like any belief change."""
+        frame = await self.get_frame(alert_id)
+        if frame is None or frame.type != ALERT_FRAME_TYPE:
+            return False
+        await self.set_derived_slot(alert_id, "status", "resolved", source_type="alert")
+        logger.info("Alert resolved: frame=%d", alert_id)
+        return True
 
     async def mark_all_alerts_read(self, user_id: int) -> int:
-        """Mark all alerts as read for a user."""
-        from datetime import UTC, datetime
-        async with self._connect() as db:
-            cursor = await db.execute(
-                """
-                UPDATE alerts SET is_read = 1, read_at = ? WHERE user_id = ? AND is_read = 0
-                """,
-                (datetime.now(UTC).isoformat(), user_id),
-            )
-            await db.commit()
-            return cursor.rowcount
+        """Resolve every open alert for a user. Returns how many moved."""
+        alerts = await self.get_alerts(user_id, unread_only=True, limit=1000)
+        for alert in alerts:
+            if alert.id is not None:
+                await self.resolve_alert(alert.id)
+        return len(alerts)
 
 
 def lexical_blend_similarity(coverage: float) -> float:
