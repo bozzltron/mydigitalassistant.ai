@@ -245,13 +245,16 @@ The agent must confirm before performing actions that could expose sensitive inf
   `POST /correction` (the LLM correction pipeline above).
 
 ## Brain portability
-- **Portable brains**: `POST /brain/export-portable` and `POST /brain/import-portable` API
-  endpoints; `assistant db export-portable` and `assistant db import-portable` CLI commands.
-  Exports the live SQLCipher database as an encrypted, version-3 `.assistant-brain` file
-  that can be renamed, copied, and restored on any instance sharing the same `DB_KEY`.
-  A pre-restore backup of the current brain is created automatically before import.
+- **Portable brains — implemented, not wired.** `export_portable_brain` /
+  `import_portable_brain` exist in `backend/memory/backup.py` and are covered by
+  `tests/test_brain_portable.py` (12 tests). They are **not reachable by a user**: there
+  is no `/brain/export-portable` or `/brain/import-portable` API endpoint in `main.py`,
+  and no `assistant db export-portable` CLI command in `cli/app.py`. Earlier revisions
+  of this file described those endpoints and commands as if they existed; they do not.
+  Wiring them is small, and until then the working paths are the full-DB ones below.
 - **Full-DB backup/restore**: `assistant db backup` and `assistant db restore` CLI commands
   create and restore encrypted JSON bundles. Still useful for point-in-time snapshots.
+  `POST /db/backup` also exists and is what the scheduler calls on its 12-hour clock.
 
 ## Confidence rules (assistant/backend/memory/confidence.py)
 - New slot value: confidence 0.5.
@@ -264,6 +267,29 @@ The agent must confirm before performing actions that could expose sensitive inf
 - Negative feedback: `lower_confidence(current)` = `max(current - 0.15, INITIAL_CONFIDENCE)`.
 - Association confidence: increases with co-occurrence in episodes (batch process
   during consolidation, not real-time).
+
+### The ladder is measured, not assumed
+
+Instrumentation and audit confirmed the ladder works, and the measurement is worth
+recording because the opposite was long believed:
+
+- **It discriminates.** A user-stated fact (`source_reliability` 0.99) against a search
+  attempt (0.5) resolves to the user's value. The first rung fires.
+- **A 100% "new wins" figure is ties, not a bypass.** `revise()` passes
+  `new_source_reliability=None` → 0.5; when the existing side is also 0.5, rungs 1–3
+  tie and recency decides, which is what a tiebreak is for.
+- **`EXISTING_WINS` is recorded as decided.** It sets `status='auto_resolved'` with
+  `resolved_value` = the existing value. It previously wrote `status='pending'`, which
+  made a decision indistinguishable from a deferral — 252 of 279 "pending" rows were
+  decided-and-applied. The slot is deliberately **not** updated: existing standing is
+  the outcome, not an omission.
+- **Every conflict records its decision inputs** — `existing_/new_source_reliability`,
+  `_confidence`, `_priority` on the `conflicts` row. `slot_history` keeps old and new
+  *values* but no provenance, so before these columns a past decision could not be
+  audited at all.
+
+See `assistant/experiments/conflict_ladder_value/`. Plan D (a model that reasons over
+conflicts) was **closed** on this evidence: it would duplicate a working comparator.
 
 ## Model fleet config
 Role-based model selection. Configurable in `.env`: `CHAT_MODEL`, `UTILITY_MODEL`,
@@ -308,6 +334,45 @@ the assessment criteria, memory budget, and re-evaluation process.
   one-sentence reason. The runner parses that footer into a high-visibility
   `task_alert` (severity `important`) in the user's alert bell, and strips the
   footer from the stored task summary so it does not pollute the output memory.
+
+## Alerts — the agent's channel to the user
+
+**An alert is memory of a type**, not a row in a notifications table: a frame of type
+`alert` with slots `title`, `message`, `status` (`new` | `resolved`), `severity`,
+`kind`, `about`, and `session_id`. The bell is a view over it. Because an alert is
+memory it participates in retrieval, so the agent can raise one *when it is
+contextually relevant* rather than only when the user opens a bell.
+
+**The presence rule decides when an alert is warranted:**
+
+> An alert is warranted when the agent learned something and the user was **not there
+> to hear it**.
+
+| Situation | Behaviour |
+|---|---|
+| The agent learns during a live conversation | Say it in the conversation. **No alert.** |
+| The agent learns during scheduled work, user absent | **Alert.** |
+| The agent finds something it cannot settle | **Alert** — a request, not a report. |
+| A task completes | **Not an alert.** The output is already an episode. |
+| A task **fails** | **Alert** (`task_failure`). The user asked for a recurring task and it is silently broken. |
+
+Measured before this was enforced: of 111 alert rows, 103 were mechanism — 54 "Task
+completed: …", 24 search notices fired mid-conversation, 25 auto-resolved conflicts
+announced to the user watching them resolve. Removing those writers left 8 real ones.
+
+**An alert closes by being answered, not by being read.** There is no read flag —
+which is why 103 rows previously sat unread: reading one accomplished nothing.
+`mark_alert_read` performs the real transition (`status = resolved`) and is named for
+the API route that calls it.
+
+**Resolution happens in a conversation.** `POST /alerts/{id}/open` attaches an alert to
+a session (or seeds one, if empty), and the alert closes when the user replies there —
+by the agent's instruction in the alert's own opening message, *and* by a
+deterministic backstop (`resolve_alerts_for_session`), because relying on a small model
+to remember a housekeeping step is a failure this project has already been bitten by.
+The default is an existing conversation, not a new thread: a thread per alert fills the
+conversation list with one-off threads. See `plans/2026-09-30-alerts-as-memory.md`.
+
 - **Daily-run event frames.** Each morning the scheduler creates/updates an `event`
   frame named `daily_run_YYYY_MM_DD`. It records `date`, `tasks_run`, and `status`,
   and associations link each task frame to the run and to its output episode.

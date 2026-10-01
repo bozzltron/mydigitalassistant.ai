@@ -2297,6 +2297,12 @@ async def upload_file_to_memory(
                 slot_key = re.sub(r'_+', '_', slot_key).strip('_')
                 if not slot_key:
                     slot_key = f"col_{i}"
+                # An empty cell is an absent fact, not a fact with an empty value.
+                # Writing it created 65 blank-value slots in a single day; skipping
+                # it is the accurate representation. The store refuses blanks too,
+                # so this is the courteous half of the same rule.
+                if val is None or not str(val).strip():
+                    continue
                 await store.upsert_slot(
                     frame_id=row_frame.id,
                     key=slot_key,

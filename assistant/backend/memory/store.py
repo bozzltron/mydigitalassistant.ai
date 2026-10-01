@@ -1310,6 +1310,24 @@ class MemoryStore:
                 "it CONTAINS with read_file. See "
                 "plans/2026-10-01-file-support-diagnosis.md"
             )
+        if not key or not str(key).strip():
+            # A slot with no key is an object with no identity: nothing can look it
+            # up, and it inflates every count that iterates slots.
+            raise ValueError("upsert_slot requires a non-blank key")
+        if value is None or not str(value).strip():
+            # A blank value is not a fact. This is the store-level counterpart to the
+            # extraction-path guard, and it exists because the extraction guard was
+            # not enough: CSV row ingestion writes one slot per column, including
+            # empty cells, which produced 65 blank-value slots in a single day
+            # (measured 2026-10-01). Refusing here covers every writer, not just the
+            # extractor — the same reasoning as the content guard above.
+            #
+            # An empty CSV cell is an absent fact; not writing a slot for it is the
+            # accurate representation, not a loss.
+            raise ValueError(
+                f"upsert_slot requires a non-blank value (frame_id={frame_id}, "
+                f"key={key!r})"
+            )
         async with self._connect() as db:
             existing = await db.execute_fetchall(
                 "SELECT id, value, confidence, essential, source_reliability, priority FROM slots "

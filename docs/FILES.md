@@ -50,27 +50,34 @@ self-correct with `list_files()` instead of retrying blindly.
 
 - Metadata slots are shown (`file_name`, `file_size`, `file_ext`, `row_count`,
   `columns`, …).
-- **Content slots are never leaked into the prompt.** `file_content_preview`
-  (200-char snapshot) and full `file_content` are *hints*, not the file. If the
-  model sees a 200-char preview it answers from the snippet — "incomplete
-  memories in the way of contents".
-- Instead, file frames get an explicit pointer:
+- File frames get an explicit pointer:
   `read full contents: read_file(frame_name="file_…") or read_file(path="…")`
 
 The system prompt (both functional and introspective branches in
 `llm_client.py`) reinforces: a memory preview is a hint, never the full contents.
+
+**Memory holds what a file *is*, never what it *contains*.** The bytes live in the
+sandbox and are read verbatim. Content slots (`file_content`, `file_content_preview`)
+are **refused at write time** by `upsert_slot`, which raises
+`FileContentInMemoryError` — not merely excluded from the prompt. That distinction
+matters: exclusion at render time left a stale copy in the database, and `read_file`
+had a fallback that served it when a file was missing, so the model answered from a
+truncated preview believing it had read the file. The refusal is at the store because
+every writer funnels through it, so a new call site cannot reintroduce the copy. See
+`plans/2026-10-01-file-support-diagnosis.md`.
 
 ## Memory shape of an upload
 
 One frame per uploaded file (`frames.name = file_<safe>`, `source_type=file_upload`):
 
 - `file_name` / `file_ext` / `file_size` / `file_safe_name`
-- `file_content_preview` — first 200 chars (kept in the DB for the Files UI
-  preview; excluded from the LLM prompt)
 - CSV extras when the file is a CSV: `row_count`, `columns`, plus up to
   `CSV_MAX_ROW_FRAMES` (default 100) `csv_row_<n>` child frames for small-CSV
   recall/edit. Row data beyond the cap stays on disk, read via `read_file`.
 - Entity slots from key extraction are capped at `FILE_MAX_ENTITY_SLOTS` (50).
+
+No content slot is stored. The upload *response* still carries a `content_preview`
+field so the UI can show what was received, but it is never written to memory.
 
 Large files are never fully embedded; the frame embeds metadata only.
 

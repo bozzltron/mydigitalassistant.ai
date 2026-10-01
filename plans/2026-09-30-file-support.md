@@ -6,6 +6,24 @@ estimated_hours: 8
 
 # Plan E — File support: the agent's own artifacts
 
+> **Progress (2026-10-01).** Phases 1–2 are done and shipped; only the journal
+> (Phase 3) remains.
+>
+> - **Phase 1 — diagnosis.** Complete. The file/memory conflict turned out to be an
+>   unenforced boundary rather than a missing feature, and it is written up in
+>   `plans/2026-10-01-file-support-diagnosis.md`.
+> - **Phase 2 — enforce the boundary.** Complete. Memory holds what a file *is*, never
+>   what it *contains*: four write sites stopped writing content (create, edit, upload,
+>   and **read**, which wrote a preview on every file read), `upsert_slot` refuses
+>   content keys outright, and the `read_file` disk-failure fallback was removed so a
+>   missing file reports missing rather than serving a stale preview. Backfill removed
+>   10 preview rows. See `assistant/tests/test_file_content_boundary.py`.
+> - **Phase 3 — the journal.** Not started, and deliberately so. Alerts (Plan C) now
+>   cover the agent telling the user things; a journal earns its place only if the
+>   value is a durable artifact to work through offline, not another way to notify.
+>   That question is unanswered, so this phase is not begun.
+
+
 ## Objective
 
 Make the sandbox filesystem genuinely usable so the agent can write durable artifacts for
