@@ -35,17 +35,21 @@ async def test_contradiction_then_auto_and_manual_resolution(store: MemoryStore)
     assert slot.confidence <= MAX_CONFIDENCE
 
     # Turn 3c: a fresh contradicting value now loses because 8's confidence is higher.
-    slot, pending_conflict = await store.upsert_slot(frame.id, "strings", "12")
+    # The ladder decides (existing stands) and now records that it decided: this used
+    # to be 'pending', which read as "unresolved" when the outcome had been applied.
+    slot, decided_conflict = await store.upsert_slot(frame.id, "strings", "12")
     assert slot.value == "8"
-    assert pending_conflict is not None
-    assert pending_conflict.status == "pending"
+    assert decided_conflict is not None
+    assert decided_conflict.status == "auto_resolved"
+    assert decided_conflict.resolved_value == "8"
 
-    # Manual override resolves the pending conflict.
-    resolved_slot = await store.manual_override_conflict(pending_conflict.id, "10")
+    # The user can still override the decision by hand; that escape hatch is
+    # independent of how the automatic pass recorded itself.
+    resolved_slot = await store.manual_override_conflict(decided_conflict.id, "10")
     assert resolved_slot.value == "10"
 
     final_conflicts = await store.get_conflicts_for_frame(frame.id)
-    override_conflict = next(c for c in final_conflicts if c.id == pending_conflict.id)
+    override_conflict = next(c for c in final_conflicts if c.id == decided_conflict.id)
     assert override_conflict.status == "manual_override"
     assert override_conflict.resolved_value == "10"
 

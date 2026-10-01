@@ -78,9 +78,15 @@ class TestProvenanceIsRecorded:
         )
 
     @pytest.mark.asyncio
-    async def test_a_pending_conflict_also_carries_them(self, store):
-        """Pending rows are the ones a future study task will reason about, so they
-        need the inputs at least as much as the auto-resolved ones."""
+    async def test_an_existing_wins_decision_is_recorded_as_decided(self, store):
+        """The `grok` shape: a lower-reliability source tries to overwrite a
+        higher-reliability fact.
+
+        The ladder decides (the user's value stands) and the row now says so. It used
+        to say 'pending', which is why a decision the agent had made read as an open
+        question — and why "the agent nearly got renamed to grok" looked like luck
+        rather than the ladder working.
+        """
         user = await store.create_user("alice")
         frame = await store.create_frame("identity_name", "entity", owner_user_id=user.id)
         await store.upsert_slot(
@@ -90,8 +96,7 @@ class TestProvenanceIsRecorded:
             source_type="user_correction",
             source_reliability=0.99,
         )
-        # A lower-reliability source trying to overwrite it: pending, not resolved.
-        _, conflict = await store.upsert_slot(
+        slot, conflict = await store.upsert_slot(
             frame_id=frame.id,
             key="full_name",
             value="grok",
@@ -100,7 +105,13 @@ class TestProvenanceIsRecorded:
         )
 
         assert conflict is not None
-        assert conflict.status == "pending"
+        # Decided, not deferred.
+        assert conflict.status == "auto_resolved"
+        assert conflict.resolved_value == "Echo"
+        # The hostile value did not land.
+        assert slot.value == "Echo"
+        # And the inputs that produced the decision are on the row, so this is
+        # auditable rather than reconstructed.
         assert conflict.existing_source_reliability == 0.99
         assert conflict.new_source_reliability == 0.5
 

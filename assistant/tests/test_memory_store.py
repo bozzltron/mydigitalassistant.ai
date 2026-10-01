@@ -111,7 +111,15 @@ async def test_upsert_slot_conflict_existing_wins(store: MemoryStore):
     slot, conflict = await store.upsert_slot(frame.id, "color", "yellow")
     assert slot.value == "white"
     assert conflict is not None
-    assert conflict.status == "pending"
+    # The ladder *decided*: existing stands. This used to be recorded as 'pending',
+    # which made a decision indistinguishable from a deferral -- measured on the live
+    # brain, 256 of 279 'pending' rows were this exact case, the slot still holding
+    # the existing value. `resolved_value` names the winner so the row says what was
+    # decided rather than that nothing was.
+    assert conflict.status == "auto_resolved"
+    assert conflict.resolved_value == "white"
+    # And the slot was deliberately not updated: existing standing is the outcome.
+    assert slot.value == "white"
 
 
 async def test_slot_history_preserved_on_conflict(store: MemoryStore):

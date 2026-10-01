@@ -1436,17 +1436,32 @@ class MemoryStore:
                     await db.commit()
                     conflict = await self._get_conflict_row(db, cursor.lastrowid)
                 else:
+                    # EXISTING_WINS: the ladder *decided*, and the existing value
+                    # stands. Recording that as 'pending' made a decision
+                    # indistinguishable from a deferral -- measured on the live brain,
+                    # 256 of 279 'pending' rows were exactly this: the slot still
+                    # held the existing value, so the decision had been applied and
+                    # the label was wrong. 92% of the apparent backlog was applied
+                    # decisions mislabelled as open questions.
+                    #
+                    # `resolved_value` carries the winner (the existing value) so the
+                    # row says what was decided, matching the shape
+                    # `manual_override_conflict` already uses on the human path. The
+                    # slot is deliberately NOT updated: existing standing is the
+                    # correct outcome, not an omission.
                     cursor = await db.execute(
                         """
                         INSERT INTO conflicts (
-                            frame_id, slot_key, existing_value, new_value, status,
+                            frame_id, slot_key, existing_value, new_value,
+                            resolved_value, status, resolved_at,
                             existing_source_reliability, new_source_reliability,
                             existing_confidence, new_confidence,
                             existing_priority, new_priority
                         )
-                        VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)
+                        VALUES (?, ?, ?, ?, ?, 'auto_resolved', datetime('now'),
+                                ?, ?, ?, ?, ?, ?)
                         """,
-                        (frame_id, key, existing_value, value, *provenance),
+                        (frame_id, key, existing_value, value, existing_value, *provenance),
                     )
                     conflict_id = cursor.lastrowid
                     await db.execute(
