@@ -1,6 +1,6 @@
 ---
 date: 2026-09-30
-status: active
+status: done
 estimated_hours: 14
 ---
 
@@ -153,9 +153,22 @@ with the alert; resolving closes the alert and the badge decrements.
 2. `task_alert` needs **no repair** — verified working, see above. Phase 4 only stops
    `task_result` from competing with it.
 
+**Shipped.** Two writers were removed and one was kept with its reasoning recorded:
+
+- `Orchestrator._create_learning_alerts` is now a documented no-op. Nothing is lost:
+  the response carries `extraction_summary` and `search_extraction_summary`, and
+  `Message.tsx` renders both as "What I learned" / "Found from search", itemised per
+  slot with a conflict flag. The bell entry was a third copy of on-screen content.
+- Task **completion** no longer alerts; the output is already an episode, and the run
+  is recorded as memory (daily-run frame, `last_run`, heartbeat).
+- Task **failure** keeps its alert, as `task_failure` rather than `task_result`. This
+  is not an exception to the presence rule but the rule applied properly: the user
+  asked for a recurring task and it is silently broken, which they were not there to
+  see and only the agent knows. `task_failure` keeps the distinction queryable.
+
 **Acceptance:** a task run produces no `task_result` alert; a task whose output ends
 `ALERT: …` still produces a `task_alert` frame with the footer removed from the summary
-(regression test for a path that is working but was never pinned by a test).
+(pinned in `test_daily_schedule.py::test_extract_agent_alert_parses_footer`).
 
 ## What this plan does not do
 

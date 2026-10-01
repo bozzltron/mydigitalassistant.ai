@@ -903,53 +903,32 @@ class Orchestrator:
         extraction_summary: dict,
         search_extraction_summary: dict,
     ) -> None:
-        """Raise the bell notifications for facts learned this turn.
+        """No-op. Facts learned mid-conversation are not alerts.
 
-        Shared by chat() and chat_stream(). The streaming path had none of these,
-        so a user on the web UI was never told a search had stored facts or that a
-        contradiction had been auto-resolved, even when the trace panel said so.
+        The presence rule, from plans/2026-09-30-alerts-as-memory.md:
+
+            An alert is warranted when the agent learned something and the user was
+            not there to hear it.
+
+        This method did the opposite. It raised bell notifications for a conflict
+        auto-resolved during the turn, or for facts a search had just stored — both
+        of which happened while the user was watching, in the conversation they were
+        having. "New facts learned from search" is not news to the person who just
+        asked for the search.
+
+        Nothing is lost by removing it. The information was already on screen twice
+        over: the response carries `extraction_summary` and
+        `search_extraction_summary`, and Message.tsx renders them as "What I learned"
+        and "Found from search", itemised per slot with a conflict flag. The bell
+        entry was a third copy of something the user could already read.
+
+        Kept as a named method rather than deleting the call sites, so the two
+        orchestrator paths stay symmetrical and the reasoning lives where the
+        behaviour used to be. Measured on the live brain before this: of 111 alert
+        rows, 103 were this class of noise and 8 were real.
         """
-        try:
-            conv_conflicts = extraction_summary.get("conflicts_created", 0)
-            if conv_conflicts > 0:
-                fact_word = "fact" if conv_conflicts == 1 else "facts"
-                await self.store.create_alert(
-                    user_id=user_id,
-                    type="conflict",
-                    title="Auto-resolved conflict in learning",
-                    message=(
-                        f"{conv_conflicts} {fact_word} you mentioned contradicted "
-                        "existing memory and were auto-resolved. "
-                        "Check the trace panel for details."
-                    ),
-                    severity="info",
-                )
+        return
 
-            search_conflicts = search_extraction_summary.get("conflicts_created", 0)
-            search_slots = search_extraction_summary.get("slots_applied", 0)
-            if search_slots > 0:
-                if search_conflicts > 0:
-                    fact_word = "fact" if search_conflicts == 1 else "facts"
-                    await self.store.create_alert(
-                        user_id=user_id,
-                        type="conflict",
-                        title="Search conflict auto-resolved",
-                        message=(
-                            f"Search found {search_conflicts} {fact_word} that "
-                            "contradicted existing memory and were auto-resolved."
-                        ),
-                        severity="info",
-                    )
-                else:
-                    await self.store.create_alert(
-                        user_id=user_id,
-                        type="search_result",
-                        title="New facts learned from search",
-                        message=f"Search returned {search_slots} new fact(s) stored in memory.",
-                        severity="info",
-                    )
-        except Exception as e:
-            logger.warning("Failed to create learning alerts: %s", e)
 
     async def chat(
         self,
