@@ -69,6 +69,15 @@ class Conflict(BaseModel):
     status: str = "pending"
     created_at: str | None = None
     resolved_at: str | None = None
+    # The provenance each side carried when this was decided. Recorded so a past
+    # belief change can be audited after the fact; NULL on rows written before the
+    # columns existed, whose inputs are genuinely gone.
+    existing_source_reliability: float | None = None
+    new_source_reliability: float | None = None
+    existing_confidence: float | None = None
+    new_confidence: float | None = None
+    existing_priority: float | None = None
+    new_priority: float | None = None
 
 
 class User(BaseModel):

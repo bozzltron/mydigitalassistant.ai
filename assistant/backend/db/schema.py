@@ -136,6 +136,19 @@ CREATE TABLE IF NOT EXISTS conflicts (
     status TEXT NOT NULL DEFAULT 'pending',
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     resolved_at TEXT,
+    -- The provenance each side carried at decision time.
+    --
+    -- These exist because the conflict_ladder_value experiment could not answer
+    -- whether the confidence ladder was doing anything: slot_history records the
+    -- old and new *values* for every conflict but no reliability, so the inputs to
+    -- a past decision were unreconstructable for 100% of the sample. Without them
+    -- the brain cannot account for its own belief changes after the fact.
+    existing_source_reliability REAL,
+    new_source_reliability REAL,
+    existing_confidence REAL,
+    new_confidence REAL,
+    existing_priority REAL,
+    new_priority REAL,
     FOREIGN KEY (frame_id) REFERENCES frames(id) ON DELETE CASCADE
 );
 
@@ -460,6 +473,36 @@ async def _migrate_add_reasoning_trace(db) -> None:
         logger.debug("Migration: reasoning_trace column added to episodes")
 
 
+async def _migrate_add_conflict_provenance(db) -> None:
+    """Add the decision-input columns to `conflicts` if they are missing.
+
+    The conflict_ladder_value experiment could not answer whether the confidence
+    ladder was doing anything, because the inputs to a past decision are not
+    retained: `slot_history` records old and new *values* for every conflict but no
+    reliability, so the sample was 100% unreconstructable. Without these columns the
+    brain cannot account for its own belief changes after the fact.
+
+    Existing rows keep NULL — their provenance is genuinely gone and inventing it
+    would be worse than admitting the gap.
+    """
+    cols = {r[1] for r in await db.execute_fetchall("PRAGMA table_info(conflicts)")}
+    added = False
+    for name, kind in (
+        ("existing_source_reliability", "REAL"),
+        ("new_source_reliability", "REAL"),
+        ("existing_confidence", "REAL"),
+        ("new_confidence", "REAL"),
+        ("existing_priority", "REAL"),
+        ("new_priority", "REAL"),
+    ):
+        if name not in cols:
+            await db.execute(f"ALTER TABLE conflicts ADD COLUMN {name} {kind}")
+            added = True
+    if added:
+        await db.commit()
+        logger.debug("Migration: conflict provenance columns added")
+
+
 async def _migrate_drop_alerts_table(db) -> None:
     """Drop the alerts table if a previous version created one.
 
@@ -509,4 +552,5 @@ async def init_db(db_path: str) -> None:
         await _migrate_add_sessions_table(db)
         await _migrate_add_deleted_at_to_sessions(db)
         await _migrate_add_reasoning_trace(db)
+        await _migrate_add_conflict_provenance(db)
         await _migrate_drop_alerts_table(db)

@@ -1381,6 +1381,21 @@ class MemoryStore:
             conflict: Conflict | None = None
 
             if revision_result.operation == OperationType.REVISE:
+                # The provenance each side carried at decision time. Recorded for
+                # every resolve, because without it a past decision cannot be
+                # audited: slot_history keeps the values but not the reliability,
+                # which made the conflict_ladder_value experiment 100%
+                # unreconstructable. `source_reliability` is recorded as received
+                # (possibly None), not as defaulted, so the row shows what the
+                # decision actually ran on.
+                provenance = (
+                    existing_rel,
+                    source_reliability,
+                    existing_confidence,
+                    initial_confidence(),
+                    existing_pri,
+                    priority,
+                )
                 if revision_result.resolution == ConflictResolution.NEW_WINS:
                     await db.execute(
                         "UPDATE slots "
@@ -1408,11 +1423,15 @@ class MemoryStore:
                         """
                         INSERT INTO conflicts (
                             frame_id, slot_key, existing_value, new_value,
-                            resolved_value, status, resolved_at
+                            resolved_value, status, resolved_at,
+                            existing_source_reliability, new_source_reliability,
+                            existing_confidence, new_confidence,
+                            existing_priority, new_priority
                         )
-                        VALUES (?, ?, ?, ?, ?, 'auto_resolved', datetime('now'))
+                        VALUES (?, ?, ?, ?, ?, 'auto_resolved', datetime('now'),
+                                ?, ?, ?, ?, ?, ?)
                         """,
-                        (frame_id, key, existing_value, value, value),
+                        (frame_id, key, existing_value, value, value, *provenance),
                     )
                     await db.commit()
                     conflict = await self._get_conflict_row(db, cursor.lastrowid)
@@ -1420,11 +1439,14 @@ class MemoryStore:
                     cursor = await db.execute(
                         """
                         INSERT INTO conflicts (
-                            frame_id, slot_key, existing_value, new_value, status
+                            frame_id, slot_key, existing_value, new_value, status,
+                            existing_source_reliability, new_source_reliability,
+                            existing_confidence, new_confidence,
+                            existing_priority, new_priority
                         )
-                        VALUES (?, ?, ?, ?, 'pending')
+                        VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)
                         """,
-                        (frame_id, key, existing_value, value),
+                        (frame_id, key, existing_value, value, *provenance),
                     )
                     conflict_id = cursor.lastrowid
                     await db.execute(
@@ -1989,14 +2011,20 @@ class MemoryStore:
             if status:
                 rows = await db.execute_fetchall(
                     "SELECT id, frame_id, slot_key, existing_value, new_value, "
-                    "resolved_value, status, created_at, resolved_at "
+                    "resolved_value, status, created_at, resolved_at, "
+                    "existing_source_reliability, new_source_reliability, "
+                    "existing_confidence, new_confidence, "
+                    "existing_priority, new_priority "
                     "FROM conflicts WHERE status = ? ORDER BY id",
                     (status,),
                 )
             else:
                 rows = await db.execute_fetchall(
                     "SELECT id, frame_id, slot_key, existing_value, new_value, "
-                    "resolved_value, status, created_at, resolved_at "
+                    "resolved_value, status, created_at, resolved_at, "
+                    "existing_source_reliability, new_source_reliability, "
+                    "existing_confidence, new_confidence, "
+                    "existing_priority, new_priority "
                     "FROM conflicts ORDER BY id"
                 )
             return [Conflict(**self._conflict_dict(row)) for row in rows]
@@ -2011,7 +2039,10 @@ class MemoryStore:
         async with self._connect() as db:
             rows = await db.execute_fetchall(
                 "SELECT id, frame_id, slot_key, existing_value, new_value, "
-                "resolved_value, status, created_at, resolved_at "
+                "resolved_value, status, created_at, resolved_at, "
+                "existing_source_reliability, new_source_reliability, "
+                "existing_confidence, new_confidence, "
+                "existing_priority, new_priority "
                 "FROM conflicts WHERE frame_id = ? ORDER BY id",
                 (frame_id,),
             )
@@ -2311,7 +2342,10 @@ class MemoryStore:
     async def _get_conflict_row(self, db: aiosqlite.Connection, conflict_id: int) -> Conflict:
         row = await db.execute_fetchall(
             "SELECT id, frame_id, slot_key, existing_value, new_value, "
-            "resolved_value, status, created_at, resolved_at "
+            "resolved_value, status, created_at, resolved_at, "
+            "existing_source_reliability, new_source_reliability, "
+            "existing_confidence, new_confidence, "
+            "existing_priority, new_priority "
             "FROM conflicts WHERE id = ?",
             (conflict_id,),
         )
@@ -2331,6 +2365,13 @@ class MemoryStore:
             "status": row[6],
             "created_at": row[7],
             "resolved_at": row[8],
+            # Decision inputs, so a past belief change stays auditable.
+            "existing_source_reliability": row[9],
+            "new_source_reliability": row[10],
+            "existing_confidence": row[11],
+            "new_confidence": row[12],
+            "existing_priority": row[13],
+            "new_priority": row[14],
         }
 
     async def upsert_scheduled_task(
