@@ -101,8 +101,9 @@ export interface YouTubeVideo {
 export interface SearchResultItem {
   title: string
   url: string
-  snippet: string
-  engine: string
+  /** Present on live search results; omitted from the persisted episode payload. */
+  snippet?: string
+  engine?: string
   thumbnail?: string | null
   /** Full-size image (Brave thumbnail.original); falls back to `thumbnail`. */
   image?: string | null

@@ -310,7 +310,7 @@ def search_info_payload(search_info: "SearchInfo | None", max_results: int = 20)
                 "thumbnail_url": v.thumbnail_url,
                 "url": v.url,
             }
-            for v in (search_info.video_results or [])
+            for v in (search_info.video_results or [])[:max_results]
         ],
     }
     return json.dumps(payload)
