@@ -22,8 +22,25 @@ from urllib.parse import urlsplit, urlunsplit
 import httpx
 
 from assistant.backend.config import settings
+from assistant.backend.retry import retry_transient
 
 logger = logging.getLogger(__name__)
+
+
+async def _get_json(
+    client: httpx.AsyncClient,
+    url: str,
+    *,
+    params: dict | None = None,
+    headers: dict | None = None,
+) -> dict:
+    """GET JSON, raising on a non-2xx status.
+
+    A named function so ``retry_transient`` can call it again from scratch.
+    """
+    response = await client.get(url, params=params, headers=headers)
+    response.raise_for_status()
+    return response.json()
 
 
 class QuerySensitivity(Enum):
@@ -426,9 +443,10 @@ class SearXNGBackend(SearchBackend):
             }
             if settings.search_language:
                 params["language"] = settings.search_language
-            r = await client.get(f"{self.base_url}/search", params=params)
-            r.raise_for_status()
-            data = r.json()
+            data = await retry_transient(
+                lambda: _get_json(client, f"{self.base_url}/search", params=params),
+                label="searxng search",
+            )
 
             # Rank by SearXNG's merged engine score before slicing — the raw
             # result order interleaves engines and is not quality-sorted.
@@ -553,9 +571,12 @@ class BraveBackend(SearchBackend):
                 "safesearch": "moderate",
                 "search_lang": settings.search_language or "en",
             }
-            r = await client.get(self.BRAVE_URL, params=params, headers=headers)
-            r.raise_for_status()
-            data = r.json()
+            data = await retry_transient(
+                lambda: _get_json(
+                    client, self.BRAVE_URL, params=params, headers=headers
+                ),
+                label="brave search",
+            )
             web_results = data.get("web", {}).get("results", [])
             if not web_results:
                 # Must match the ABC's (results, videos) contract. A bare `[]`

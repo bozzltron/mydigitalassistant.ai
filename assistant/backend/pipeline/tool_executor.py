@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
 import re
 import time
 from collections.abc import Callable
@@ -22,6 +23,7 @@ from assistant.backend.memory.store import MemoryStore
 # `file_safe_name` is consumed as a filesystem path by the /files endpoints, so a
 # model-supplied value there is a path primitive. See test_file_slot_reserved_keys.py.
 from assistant.backend.pipeline.extractor import RESERVED_SLOT_PREFIXES
+from assistant.backend.retry import is_transient_error_message
 
 if TYPE_CHECKING:
     from assistant.backend.pipeline.orchestrator import Orchestrator
@@ -1471,6 +1473,19 @@ async def execute_finalize(args: dict, user_id: str, session_id: str = "") -> To
 # Main dispatcher
 # ---------------------------------------------------------------------------
 
+# Tools that only read (filesystem, memory). Their calls are idempotent, so a
+# transient failure is retried here rather than handed to the model as an error
+# it must recover from. Side-effecting tools are deliberately excluded: repeating
+# a write/delete/upsert can double-apply it, and the tool loop already lets the
+# model — which can see the result — decide whether to repeat the call.
+# web_search/fetch_url are excluded too: they already retry inside their own HTTP
+# layer, and nesting the two would multiply attempts.
+_READ_ONLY_TOOLS = frozenset(
+    {"list_files", "read_file", "glob", "recall", "search_episodes"}
+)
+_TOOL_RETRY_ATTEMPTS = 3
+
+
 async def execute_tool(
     tool_name: str,
     raw_args: dict,
@@ -1516,18 +1531,40 @@ async def execute_tool(
     func = schema_info["func"]
     timeout = schema_info["timeout"]
 
-    # 3. Execute with timeout
-    try:
-        result = await asyncio.wait_for(
-            func(validated, user_id, session_id),
-            timeout=timeout,
+    # 3. Execute with timeout. Read-only tools are idempotent, so a transient
+    # failure is retried; side-effecting tools are not (see _READ_ONLY_TOOLS).
+    attempts = _TOOL_RETRY_ATTEMPTS if tool_name in _READ_ONLY_TOOLS else 1
+    result: ToolResult
+    for attempt in range(1, attempts + 1):
+        try:
+            result = await asyncio.wait_for(
+                func(validated, user_id, session_id),
+                timeout=timeout,
+            )
+        except TimeoutError:
+            logger.warning(f"Tool {tool_name} timed out after {timeout}s")
+            return ToolResult(success=False, error=f"Tool timeout after {timeout}s")
+        except Exception as e:
+            logger.error(f"Tool {tool_name} error: {e}", exc_info=True)
+            result = ToolResult(success=False, error=str(e))
+
+        error = getattr(result, "error", "") or ""
+        if (
+            getattr(result, "success", True)
+            or attempt >= attempts
+            or not is_transient_error_message(error)
+        ):
+            break
+        delay = min(0.25 * (2 ** (attempt - 1)), 2.0) * random.uniform(0.8, 1.2)
+        logger.warning(
+            "Tool %s transient failure (attempt %d/%d): %s; retrying in %.2fs",
+            tool_name,
+            attempt,
+            attempts,
+            error,
+            delay,
         )
-    except TimeoutError:
-        logger.warning(f"Tool {tool_name} timed out after {timeout}s")
-        return ToolResult(success=False, error=f"Tool timeout after {timeout}s")
-    except Exception as e:
-        logger.error(f"Tool {tool_name} error: {e}", exc_info=True)
-        return ToolResult(success=False, error=str(e))
+        await asyncio.sleep(delay)
 
     # 4. Attach latency metadata
     result.metadata = getattr(result, "metadata", {})
