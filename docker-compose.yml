@@ -1,12 +1,14 @@
+name: mydigitalassistantai-dev
+
 services:
   assistant:
     build: .
-    container_name: assistant-backend
+    container_name: assistant-backend-dev
     # Ollama runs on the HOST (see OLLAMA_URL). For model residency (Option A)
     # the host daemon needs: OLLAMA_KEEP_ALIVE=-1 and
     # OLLAMA_MAX_LOADED_MODELS>=2 (chat + utility stay warm side-by-side).
     environment:
-      - DATABASE_PATH=/app/data/assistant.db
+      - DATABASE_PATH=/app/data/assistant.dev.db
       - DB_KEY=${DB_KEY}
       - OLLAMA_URL=http://host.docker.internal:11434
       - OLLAMA_TIMEOUT=${OLLAMA_TIMEOUT:-600}
@@ -84,7 +86,7 @@ services:
 
   cli:
     build: .
-    container_name: assistant-cli
+    container_name: assistant-cli-dev
     environment:
       - ASSISTANT_BACKEND=http://assistant-backend:8000
     depends_on:

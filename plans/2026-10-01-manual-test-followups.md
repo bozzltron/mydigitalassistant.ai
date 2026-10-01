@@ -18,7 +18,7 @@ here is "sounds broken, look into it."
 | Item | Where it lives | What is actually wrong |
 |---|---|---|
 | `embed_frames ... EmbeddingResponse is not JSON serializable` | `scheduler/summarizer.py:232,255` | Passes `self.llm_client.embed` (returns `EmbeddingResponse`) where `embed_frames` wants `list[float]`. Every other call site wraps (`get_embedding`/`embed_text`/`embed_fn`). `OllamaClient.embed_one` already returns the bare vector. |
-| Dev/prod share a DB | `docker-compose.yml:9`, `docker-compose.prod.yml:9` | Neither compose file sets `name:`, so both resolve to the same Compose project, the same `assistant-data` volume, and the same `/app/data/assistant.db`. Prod also defaults `EMBEDDING_MODEL=nomic-embed-text` while dev defaults `qwen3-embedding:0.6b`; against one shared DB the embedding-model metadata mismatches (`main.py:74-81` warns). |
+| Dev/prod collide | `docker-compose.yml`, `docker-compose.prod.yml` | Neither sets `name:`, so both resolve to the same Compose project, the same `assistant-data` volume, and the same `/app/data/assistant.db` — and both declare `container_name: assistant-backend`, so they cannot run at once (observed: `docker compose up` fails with a name conflict while the other stack is up). Prod also defaulted `EMBEDDING_MODEL=nomic-embed-text` against a `qwen3-embedding:0.6b` brain. |
 | Media lost on refresh | `main.py:1250` | `GET /chat/session/{id}/messages` returns only `role, content, timestamp`. `search_info` is never persisted. The frontend already reads `s.search_info` on restore (`state/chat.ts`), so the contract is half-built. |
 | Video query heroes an image | `utils/media.ts:174` | `searchMedia` pushes images before videos; `getHeroMedia` returns `media[0]`. |
 | Many video iframes | `MessageContent.tsx:67` | `getExtraVideos` renders a full `MediaCard` (iframe embed) per video. |
@@ -97,11 +97,14 @@ turn; clicking an external link asks first and opens a new tab only on confirm.
 
 ### Phase 4 — Infra & file support (~7 h)
 
-1. **Fork prod/dev DB (R10).** Copy the live DB to `assistant.dev.db` (same `DB_KEY`, so a
-   raw file copy is valid). Dev compose sets `DATABASE_PATH=/app/data/assistant.dev.db`;
-   prod keeps `/app/data/assistant.db`. Both files coexist in the shared volume. Bring
-   `docker-compose.prod.yml` back in sync with dev (missing `CHAT_NUM_CTX`, `TOOLS_*`,
-   `MAX_*`, `MATH_*`) and align its embedding model so prod stops warning on mismatch.
+1. **Separate the environments (R10).** Give each compose file its own `name:` — prod stays
+   `mydigitalassistantai` (so it keeps the existing volume and brain), dev becomes
+   `mydigitalassistantai-dev` with its own volume and network. Rename dev's shared
+   containers (`assistant-backend-dev`, `assistant-cli-dev`) so both stacks can run at once.
+   Dev sets `DATABASE_PATH=/app/data/assistant.dev.db`; seed its volume from a fresh
+   `/db/backup` snapshot (a consistent copy, unlike a raw copy of a live WAL DB) owned by
+   uid 1000. Prod keeps `assistant.db`. Bring `docker-compose.prod.yml` back in sync with
+   dev (missing `CHAT_NUM_CTX`, `TOOLS_*`, `MAX_*`, `MATH_*`) and align its embedding model.
 2. **PDF + modern Office read support (R11).** Add `pypdf`, `python-docx`, `openpyxl`,
    `python-pptx` (all pure-Python, offline — no new network calls). New extractors in
    `pipeline/files.py`; extend the dispatch map and all three allowlists
@@ -142,7 +145,7 @@ runs manually and lands a clean result.
 | R7 | Dynamic content follows one documented order and spacing rule. | 2 |
 | R8 | Search/media payload is persisted on the assistant episode and returned on session reload. | 3 |
 | R9 | External links confirm (naming the host) before opening a new tab. | 3 |
-| R10 | Dev and prod use separate DB files under one encryption key; prod compose env is current. | 4 |
+| R10 | Dev and prod are separate Compose projects (distinct container names and DBs) under one encryption key; prod compose env is current. | 4 |
 | R11 | PDF, .docx, .xlsx, .pptx extract readable text; legacy binaries report unsupported. | 4 |
 | R12 | Each daily task runs manually and produces a clean, stored result. | 4 |
 
@@ -176,8 +179,11 @@ plain `<a target="_blank" rel="noopener noreferrer">` markup and the delegated h
 intercepts. This keeps markdown-rendered links (which cannot carry a per-link handler)
 covered by the same rule.
 
-**R10.** File copy, not export/import, because the encrypted file plus the existing
-`DB_KEY` is exactly a working brain. Document the copy command against the live volume.
+**R10.** The dev brain is seeded from a fresh `/db/backup` snapshot rather than a raw copy of
+the live file: the DB is in WAL mode, so a plain `cp` can miss recent writes, while the
+backup endpoint uses SQLite's backup API and produces a consistent encrypted copy that the
+same `DB_KEY` opens. The copied file is chowned to uid 1000, matching the volume the backend
+writes to.
 
 **R11.** Each extractor is a small pure function `(bytes) -> (text, entities, questions)`
 matching the existing signatures, so the dispatch map and `FileExtractionResult` are
