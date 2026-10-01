@@ -1,7 +1,7 @@
 ---
 date: 2026-09-30
-status: active
-estimated_hours: 11
+status: done
+estimated_hours: 9
 ---
 
 # Plan A — Triangulation: user content is a source, not a prompt
@@ -88,9 +88,9 @@ rewrite), that content is the subject. Search enriches it; it never replaces it.
    cache intact — the rule sits in the prefix that already reuses KV across turns.
 6. **Do not let search replace the content.** The model keeps `web_search` — research
    is legitimately what the user may be asking for ("let's search about them if we need
-   to") — but the supplied content must remain the subject of the answer rather than
-   being substituted by search prose. Enforced by the prompt rule above and by the
-   output invariant in Phase 3, **not** by withholding the tool.
+   to") — but the supplied content remains the subject of the answer. Enforced by the
+   prompt rule above and by the model's own judgement, **not** by withholding the tool
+   and not by a system-side verifier.
 
    History, kept because the mistake is instructive: three attempts were made to reach
    this with a static rule — a router flag, a prompt line, and finally removing
@@ -121,30 +121,23 @@ rewrite), that content is the subject. Search enriches it; it never replaces it.
 - **No transform subsystem.** An interim design proposed an action type for
   sort/rank/enrich, a per-item decomposition pipeline, and a `transform_decomposition`
   experiment to justify it. All dropped: the 45-URL failure was not a missing
-  subsystem, it was the agent discarding its input. Adding a vocabulary for operations
-  the model can already express in prose is mechanism where none was needed. What
-  remains is the invariant below — verification of the output, not a new component.
+  subsystem, it was the agent discarding its input.
+
+- **No output invariant.** A Phase 3 was drafted to check that every supplied item
+  survives into the answer, with additions labelled. Dropped as well, and the reason
+  is worth recording: it was the fourth design for this one failure, and it was again
+  a system-side rule standing where the model's judgement belongs — the same shape as
+  the router flag, the prompt line, and the tool allowlist that preceded it. Three of
+  those were tried and reverted. The cost of building a verifier for one request
+  shape, and the false confidence of a check that fires on prose rather than on
+  intent, outweighed the guarantee.
+
+  What survives is Phases 1 and 2: the content reaches memory and the prompt, and the
+  model decides what to do with it. That is the general fix. The specific failure —
+  one list, one user, one genre — is not worth a subsystem.
 
 - **No tool withholding.** `web_search` is available on every turn. Whether a transform
   turn wants research is the model's per-turn judgement, not a rule.
-
-### Phase 3 — the output invariant (the general fix)
-
-**Every item the user supplied must survive into the answer; anything added must be
-labelled as an addition rather than silently substituted for an item.**
-
-This is the half that is model-first: it constrains the *result*, not the model's
-choices, so the model keeps its freedom where judgement belongs and the system
-guarantees the thing that is mechanically checkable. It is the same posture as the
-frame-aware prompt fit (drop whole frames, never slice one) and `fetch_url` (strip
-HTML, don't trust the model to).
-
-Deliberately small: a check on the assembled answer, not a subsystem. Violations are
-recorded as ordinary memory — a fact the agent can retrieve — not a parallel learning
-mechanism.
-
-**Acceptance:** a transform answer containing none of the supplied items, or
-substituting invented items for them, is detected.
 
 **No retrieval re-tuning.** The `daily_run_*` frames acting as a retrieval magnet is a
 real observation but it is a *measurement question*, not a plan phase. It moves to
@@ -164,7 +157,6 @@ real observation but it is a *measurement question*, not a plan phase. It moves 
 | R6 | The system prompt carries the authority rule: when a request transforms user-supplied content, that content is the subject; search enriches, never replaces. | 2 |
 | R7 | `web_search` remains available on every turn; whether a transform turn wants research is the model's judgement, not a rule. | 2 |
 | R8 | `recall` and `search_episodes` tool descriptions state they are to be used when the user refers to something earlier in the conversation. | 2 |
-| R9 | Every item the user supplied survives into the answer; inventions and substitutions are detectable. | 3 |
 
 **Non-functional**
 
@@ -175,7 +167,7 @@ real observation but it is a *measurement question*, not a plan phase. It moves 
 | N3 | No templated user-facing response. The model writes every answer; the plan only guarantees the source data exists. |
 | N4 | User content stays local. Nothing about this plan requires an external call, and the model decides when search is warranted. |
 | N5 | No cloud LLM; all inference local. |
-| N6 | **No new subsystem.** Phase 3 is a check on output, not an action vocabulary, a decomposition pipeline, or a second learning mechanism. |
+| N6 | **No new subsystem.** Phases 1-2 add a frame type and prompt text; there is no verifier, action vocabulary, or second learning mechanism. |
 
 **Constraints**
 
