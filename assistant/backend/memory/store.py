@@ -3090,6 +3090,124 @@ class MemoryStore:
         logger.info("Alert resolved: frame=%d", alert_id)
         return True
 
+    async def open_alert_conversation(
+        self,
+        alert_id: int,
+        user_id: int,
+        session_id: str | None = None,
+    ) -> tuple[str, int]:
+        """Open a conversation *for* an alert, and make the alert its first message.
+
+        The normal flow is user-initiated: the user speaks, the agent answers. An
+        alert inverts it — the agent opens with the problem, and the user replies.
+        So this writes an assistant episode as the session's first turn.
+
+        The alert carries its own resolution instructions. That is not decoration: it
+        is the agent's message to itself, and it is how the agent knows what
+        "resolved" means for this particular alert when it comes back later with the
+        user's reply in hand.
+
+        Returns `(session_id, episode_id)`. Idempotent per alert: reopening returns
+        the existing conversation rather than creating a second one, so a user
+        clicking twice does not fork the thread.
+        """
+        frame = await self.get_frame(alert_id)
+        if frame is None or frame.type != ALERT_FRAME_TYPE:
+            raise ValueError(f"frame {alert_id} is not an alert")
+
+        slots = {s.key: s.value for s in await self.get_slots_for_frame(alert_id)}
+
+        # Already open? Reuse it. Two conversations for one alert would mean two
+        # places to resolve the same thing.
+        existing_session = slots.get("session_id")
+        if existing_session:
+            episodes = await self.get_episodes_for_session(
+                existing_session, user_id=user_id, limit=1
+            )
+            first = episodes[0].id if episodes else 0
+            return existing_session, first
+
+        if session_id is None:
+            session_id = f"conv_alert_{alert_id}"
+        await self.create_session(session_id, user_id)
+
+        about = slots.get("about")
+        target_note = (
+            f"\n\nWhat this concerns: {about}. "
+            "When we settle it, update that and mark this alert resolved."
+            if about
+            else "\n\nWhen we settle this, mark the alert resolved."
+        )
+        opening = (
+            f"{slots.get('message', '')}"
+            f"\n\n{slots.get('title', '')}"
+            f"{target_note}"
+        ).strip()
+
+        episode = await self.create_episode(
+            user_id=user_id,
+            session_id=session_id,
+            role="assistant",
+            content=opening,
+            frame_ids=[alert_id],
+        )
+
+        # Link the alert to its conversation so resolution can find it and so the
+        # backstop knows which session to watch. Derived: it is routing state, not
+        # a claim about the world.
+        await self.set_derived_slot(
+            alert_id, "session_id", session_id, source_type="alert"
+        )
+        logger.info(
+            "Alert %d opened conversation %s (episode %d)", alert_id, session_id, episode.id
+        )
+        return session_id, episode.id
+
+    async def resolve_alerts_for_session(self, session_id: str) -> int:
+        """Resolve alerts whose conversation this is.
+
+        The deterministic backstop. Relying only on the model remembering to close
+        its own alert is the failure we have already been bitten by, so when a turn
+        lands in a session an alert opened, the alert closes — the model decides
+        *what* to settle, and the plumbing guarantees the close.
+
+        Returns how many alerts were resolved.
+        """
+        alerts = await self.get_alerts_by_session(session_id)
+        resolved = 0
+        for alert in alerts:
+            if await self.resolve_alert(alert.id):
+                resolved += 1
+        if resolved:
+            logger.info(
+                "Resolved %d alert(s) via conversation %s", resolved, session_id
+            )
+        return resolved
+
+    async def get_alerts_by_session(self, session_id: str) -> list[Alert]:
+        """Open alerts whose conversation is `session_id`."""
+        alerts: list[Alert] = []
+        frames = await self.list_frames(ALERT_FRAME_TYPE)
+        for frame in frames:
+            slots = {s.key: s.value for s in await self.get_slots_for_frame(frame.id)}
+            if slots.get("status") != "new":
+                continue
+            if slots.get("session_id") != session_id:
+                continue
+            alerts.append(
+                Alert(
+                    id=frame.id,
+                    user_id=frame.owner_user_id or 0,
+                    type=slots.get("kind") or "alert",
+                    title=slots.get("title") or "",
+                    message=slots.get("message") or "",
+                    severity=slots.get("severity") or "info",
+                    is_read=False,
+                    created_at=frame.created_at,
+                )
+            )
+        return alerts
+
     async def mark_all_alerts_read(self, user_id: int) -> int:
         """Resolve every open alert for a user. Returns how many moved."""
         alerts = await self.get_alerts(user_id, unread_only=True, limit=1000)

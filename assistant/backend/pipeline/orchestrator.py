@@ -980,6 +980,16 @@ class Orchestrator:
         episode_log_time = time.monotonic() - turn_start
         logger.debug("Episode logging: %.3fs", episode_log_time)
 
+        # 2b. Deterministic alert backstop. If this session is an alert's
+        # conversation, the user has now engaged with it, so it closes. The model
+        # decides what to settle; this guarantees the close, because relying only
+        # on the model remembering to mark its own alert resolved is the failure
+        # we have already been bitten by. Cheap: one query filtered to open alerts.
+        try:
+            await self.store.resolve_alerts_for_session(session_id)
+        except Exception as exc:
+            logger.warning("Alert backstop failed: %s", exc)
+
         # 3. Classify task type + search intent AND Retrieve memory context IN PARALLEL
         # Router doesn't need memory; retrieval doesn't need router result.
         await self._report(progress, "routing", "reading your message")
@@ -1993,6 +2003,14 @@ class Orchestrator:
             role="user",
             content=request.message,
         )
+
+        # 2b. Deterministic alert backstop (see chat() for the full note). The
+        # streaming path is the one the frontend uses, so this is the copy that
+        # actually runs in production.
+        try:
+            await self.store.resolve_alerts_for_session(session_id)
+        except Exception as exc:
+            logger.warning("Alert backstop failed: %s", exc)
 
         # 3. Classify task type + search intent AND Retrieve memory context IN PARALLEL
         await self._report(progress, "routing", "reading your message")

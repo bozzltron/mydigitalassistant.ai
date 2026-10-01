@@ -1650,11 +1650,48 @@ async def mark_alert_read(
     user_id: int = 1,
     store: MemoryStore = _Depends(get_store),
 ):
-    """Mark an alert as read."""
+    """Resolve an alert.
+
+    Kept under its old name and route because the UI uses them, but this now
+    performs the real transition: `status = resolved`. There is no "seen but open"
+    state — an alert the user looked at and did not answer is still a thing the
+    agent is waiting on. See plans/2026-09-30-alerts-as-memory.md.
+    """
     success = await store.mark_alert_read(alert_id, user_id)
     if not success:
         raise HTTPException(status_code=404, detail="Alert not found")
     return {"status": "ok", "alert_id": alert_id}
+
+
+@app.post("/alerts/{alert_id}/open")
+async def open_alert_conversation(
+    alert_id: int,
+    user_id: int = 1,
+    session_id: str | None = None,
+    store: MemoryStore = _Depends(get_store),
+):
+    """Open a conversation for an alert, with the alert as its first message.
+
+    Normal conversations are user-initiated. This inverts that: the agent opens
+    with the problem and the user replies. The alert carries its own resolution
+    instructions, so the conversation that answers it is the agent working its own
+    queue with the user as the tiebreaker.
+
+    Idempotent per alert — reopening returns the existing conversation rather than
+    forking a second thread for the same question.
+    """
+    try:
+        opened_session, episode_id = await store.open_alert_conversation(
+            alert_id, user_id, session_id=session_id
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {
+        "status": "ok",
+        "alert_id": alert_id,
+        "session_id": opened_session,
+        "episode_id": episode_id,
+    }
 
 
 @app.post("/alerts/read-all")
