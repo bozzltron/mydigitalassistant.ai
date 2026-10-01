@@ -44,6 +44,24 @@ class StubLLMClient(OllamaClient):
         )
 
 
+class EmbeddingStubLLMClient(StubLLMClient):
+    """Stub whose `embed_one` returns a bare vector, matching real usage.
+
+    `embed` returns an `EmbeddingResponse`, exactly as `OllamaClient` does. The
+    summarizer used to hand `embed` to `embed_frames`, which expected `list[float]`
+    and raised inside `json.dumps`; `embed_frames` swallowed it per frame, so the
+    summary frame was created with no embedding and only a warning was logged.
+    """
+
+    async def embed_one(self, text: str) -> list[float]:
+        return [0.1] * 768
+
+    async def embed(self, text, model=None):
+        from assistant.backend.pipeline.llm_client import EmbeddingResponse
+
+        return EmbeddingResponse(embedding=[0.1] * 768, model=model or "stub")
+
+
 @pytest.fixture
 async def store(tmp_path):
     from assistant.backend.db.schema import init_db
@@ -175,6 +193,38 @@ async def test_summarizer_skips_insufficient_turns(store, tmp_path):
     result = await summarizer.summarize_session(session_id, user.id)
 
     assert result is None
+
+
+@pytest.mark.asyncio
+async def test_summarizer_stores_embedding_for_summary_frame(store):
+    """Regression: a summary frame must actually get its embedding stored.
+
+    Before the fix the summarizer passed `llm_client.embed` (which returns an
+    `EmbeddingResponse`) where `embed_frames` wanted `list[float]`. `json.dumps`
+    rejected it for every frame, the failure was swallowed, and the frame was
+    left unindexed — the "stored 0 of 1" warning in the live logs.
+    """
+    from assistant.backend.config import settings
+
+    settings.summarization_min_turns = 3
+
+    user = await store.create_user("embeduser")
+    session_id = "embed_session"
+    for i in range(4):
+        await store.create_episode(user.id, session_id, "user", f"Message {i}", frame_ids=[])
+
+    summarizer = Summarizer(store=store, llm_client=EmbeddingStubLLMClient())
+    summarizer.llm_client.set_summary(
+        {"summary": "A summary", "key_entities": [], "open_questions": []}
+    )
+
+    result = await summarizer.summarize_session(session_id, user.id)
+    assert result is not None
+
+    frame = await store.get_frame_by_name(f"conversation_summary_{session_id}")
+    assert frame is not None
+    chunks = await store.count_frame_embedding_chunks(frame.id, settings.embedding_model)
+    assert chunks >= 1, "summary frame was created without an embedding"
 
 
 if __name__ == "__main__":

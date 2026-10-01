@@ -229,7 +229,7 @@ Produce a JSON object with these fields:
                 )
             # Update embedding
             await self.store.embed_frames(
-                [existing.id], self.llm_client.embed, settings.embedding_model
+                [existing.id], self.llm_client.embed_one, settings.embedding_model
             )
             logger.info("Updated summary frame for session %s", session_id)
             return False
@@ -252,7 +252,7 @@ Produce a JSON object with these fields:
                 )
             # Generate embedding for new summary frame
             await self.store.embed_frames(
-                [frame.id], self.llm_client.embed, settings.embedding_model
+                [frame.id], self.llm_client.embed_one, settings.embedding_model
             )
             logger.info("Created summary frame for session %s", session_id)
             return True
