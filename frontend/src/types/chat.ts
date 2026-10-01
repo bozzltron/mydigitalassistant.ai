@@ -185,6 +185,8 @@ export interface SessionSummary {
   id: string
   episode_count: number
   last_activity: string | null
+  /** When the session was created; used to order never-used conversations. */
+  created_at: string | null
   /**
    * Backend-computed display label, not a chat message: an explicit title if
    * one was set, else the first user message (truncated), else "Conversation N".
@@ -198,6 +200,7 @@ export interface Session {
   title: string
   episode_count: number
   last_activity: string | null
+  created_at: string | null
 }
 
 export interface DeletedSession {

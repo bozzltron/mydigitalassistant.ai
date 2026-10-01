@@ -1,4 +1,4 @@
-import { createSignal, onMount, onCleanup, For, Show, createMemo } from 'solid-js'
+import { createSignal, createEffect, onMount, onCleanup, For, Show, createMemo } from 'solid-js'
 import {
   getAlerts,
   getAlertConversationOptions,
@@ -34,7 +34,9 @@ export function AlertsPanel() {
   const [alerts, setAlerts] = createSignal<Alert[]>([])
   const [unreadCount, setUnreadCount] = createSignal(0)
   const [isOpen, setIsOpen] = createSignal(false)
-  const [isLoading, setIsLoading] = createSignal(false)
+  // `hasLoaded`, not `isLoading`: the 30s poll must not swap the list for a
+  // spinner, which read as the alerts flickering away every half minute.
+  const [hasLoaded, setHasLoaded] = createSignal(false)
   const [picker, setPicker] = createSignal<PickerState>(null)
   const [options, setOptions] = createSignal<AlertConversationOption[]>([])
   const [optionsLoading, setOptionsLoading] = createSignal(false)
@@ -47,7 +49,6 @@ export function AlertsPanel() {
     const u = user()
     if (!u) return
 
-    setIsLoading(true)
     try {
       const response = await getAlerts(u.id, 50)
       if (response) {
@@ -57,12 +58,18 @@ export function AlertsPanel() {
     } catch (error) {
       console.error('Failed to fetch alerts:', error)
     } finally {
-      setIsLoading(false)
+      setHasLoaded(true)
     }
   }
 
+  // `user()` arrives asynchronously, so fetch when it does rather than only once
+  // on mount: the mount-time call no-opped before the user was set, and the bell
+  // stayed empty until the first 30s tick (which is why a refresh showed nothing).
+  createEffect(() => {
+    if (user()) void fetchAlerts()
+  })
+
   onMount(() => {
-    fetchAlerts() // Initial fetch
     intervalId = window.setInterval(fetchAlerts, 30000)
   })
 
@@ -230,11 +237,11 @@ export function AlertsPanel() {
             </Show>
           </div>
 
-          <Show when={isLoading()}>
+          <Show when={!hasLoaded()}>
             <div class={styles.loading}>Loading alerts...</div>
           </Show>
 
-          <Show when={!isLoading() && alerts().length === 0}>
+          <Show when={hasLoaded() && alerts().length === 0}>
             <div class={styles.empty}>
               <p>Nothing waiting</p>
               <p class={styles.emptyHint}>
@@ -243,7 +250,7 @@ export function AlertsPanel() {
             </div>
           </Show>
 
-          <Show when={!isLoading() && alerts().length > 0}>
+          <Show when={hasLoaded() && alerts().length > 0}>
             <div class={styles.alertsList}>
               <For each={alerts()}>
                 {(alert: Alert) => (

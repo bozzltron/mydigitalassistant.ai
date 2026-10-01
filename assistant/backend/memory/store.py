@@ -1845,6 +1845,7 @@ class MemoryStore:
                     "id": sid,
                     "episode_count": episode_count or 0,
                     "last_activity": last_activity,
+                    "created_at": created_at,
                     "last_message": label,
                 })
             return sessions

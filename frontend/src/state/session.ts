@@ -25,18 +25,23 @@ function toSession(summary: SessionSummary): Session {
     title: sessionTitle(summary),
     episode_count: summary.episode_count,
     last_activity: summary.last_activity,
+    created_at: summary.created_at,
   }
 }
 
 /**
- * Most recently active first (ISO timestamps sort lexicographically). A brand
- * new conversation has no activity yet, so it sorts last rather than floating to
- * the top with a stale/absent value.
+ * Most recently active first (ISO timestamps sort lexicographically).
+ *
+ * A conversation with no turns yet has no `last_activity`, so it is ordered by
+ * its `created_at` instead. That is what puts a just-created conversation at the
+ * top where the user can find it: sorting every never-used conversation to the
+ * bottom buried the one they had just made (a new "Corrections" conversation sat
+ * at position 31 of 32, below the fold).
  */
 export function sortByRecentActivity(sessions: Session[]): Session[] {
   return [...sessions].sort((a, b) => {
-    const av = a.last_activity ?? ''
-    const bv = b.last_activity ?? ''
+    const av = a.last_activity ?? a.created_at ?? ''
+    const bv = b.last_activity ?? b.created_at ?? ''
     if (av === bv) return 0
     if (av === '') return 1
     if (bv === '') return -1

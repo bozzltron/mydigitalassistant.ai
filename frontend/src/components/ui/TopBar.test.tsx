@@ -4,8 +4,8 @@ import TopBar from './TopBar'
 import { setUser } from '../../state/user'
 
 const mockConversations = [
-  { id: 'conv-1', title: 'First Conversation', episode_count: 5, last_activity: '2024-01-01' },
-  { id: 'conv-2', title: 'Second Conversation', episode_count: 3, last_activity: '2024-01-02' },
+  { id: 'conv-1', title: 'First Conversation', episode_count: 5, last_activity: '2024-01-01', created_at: '2024-01-01' },
+  { id: 'conv-2', title: 'Second Conversation', episode_count: 3, last_activity: '2024-01-02', created_at: '2024-01-02' },
 ]
 
 describe('TopBar', () => {

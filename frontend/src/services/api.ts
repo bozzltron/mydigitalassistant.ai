@@ -66,6 +66,7 @@ export const SessionSummarySchema = z.object({
   id: z.string(),
   episode_count: z.number().int(),
   last_activity: z.string().nullable(),
+  created_at: z.string().nullable(),
   last_message: z.string(),
 })
 

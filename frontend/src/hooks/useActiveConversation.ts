@@ -51,6 +51,7 @@ export function useActiveConversation(conversations: () => Session[]) {
       title: 'Alert',
       episode_count: 0,
       last_activity: new Date().toISOString(),
+      created_at: new Date().toISOString(),
     })
   }
 

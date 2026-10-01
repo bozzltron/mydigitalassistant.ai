@@ -37,6 +37,7 @@ export default function App() {
         title: title || 'New Conversation',
         episode_count: 0,
         last_activity: null,
+        created_at: new Date().toISOString(),
       }
       setActiveConversation(created)
       setShowNewConvModal(false)

@@ -20,8 +20,8 @@ vi.mock('../services/api')
  */
 describe('useActiveConversation — opening a conversation from an alert', () => {
   const sessions: Session[] = [
-    { id: 'conv_a', title: 'First', episode_count: 3, last_activity: '2026-09-30T10:00:00Z' },
-    { id: 'conv_b', title: 'Second', episode_count: 5, last_activity: '2026-10-01T10:00:00Z' },
+    { id: 'conv_a', title: 'First', episode_count: 3, last_activity: '2026-09-30T10:00:00Z', created_at: '2026-09-30T10:00:00Z' },
+    { id: 'conv_b', title: 'Second', episode_count: 5, last_activity: '2026-10-01T10:00:00Z', created_at: '2026-10-01T10:00:00Z' },
   ]
 
   beforeEach(() => {

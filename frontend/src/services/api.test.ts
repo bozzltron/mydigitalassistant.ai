@@ -202,7 +202,7 @@ describe('api service', () => {
   describe('getUserSessions', () => {
     it('fetches user sessions', async () => {
       const mockSessions = [
-        { id: 'conv_1', episode_count: 2, last_activity: '2026-01-01T00:00:00', last_message: 'Hello there' },
+        { id: 'conv_1', episode_count: 2, last_activity: '2026-01-01T00:00:00', created_at: '2025-12-01T00:00:00', last_message: 'Hello there' },
       ]
       mockFetch.mockResolvedValue({
         ok: true,

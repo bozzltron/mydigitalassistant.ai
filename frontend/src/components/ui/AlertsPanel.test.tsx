@@ -70,6 +70,32 @@ describe('AlertsPanel', () => {
     expect(getAlerts).not.toHaveBeenCalled()
   })
 
+  it('fetches once the user becomes available after mount', async () => {
+    // Regression: the fetch ran once on mount, before `user()` was set, and
+    // no-opped — the bell stayed empty until the first 30s tick.
+    setUser(null)
+    render(() => <AlertsPanel />)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(getAlerts).not.toHaveBeenCalled()
+
+    setUser({ id: 1, name: 'Test User' })
+    await waitFor(() => expect(getAlerts).toHaveBeenCalledWith(1, 50))
+  })
+
+  it('does not flash the loading placeholder on a background poll', async () => {
+    // Regression: every 30s poll set isLoading, swapping the list for "Loading
+    // alerts..." — the flicker that read as alerts appearing and disappearing.
+    render(() => <AlertsPanel />)
+    fireEvent.click(await screen.findByText('Alerts'))
+    expect(await screen.findByText('Test Alert')).toBeTruthy()
+
+    intervalCalls[0][0]() // fire the registered poll
+    await waitFor(() => expect(getAlerts).toHaveBeenCalledTimes(2))
+
+    expect(screen.queryByText('Loading alerts...')).toBeNull()
+    expect(screen.getByText('Test Alert')).toBeTruthy()
+  })
+
   it('shows the count of waiting alerts on the trigger', async () => {
     render(() => <AlertsPanel />)
     expect(await screen.findByText('1')).toBeTruthy()
