@@ -8,7 +8,7 @@ fails against the pre-fix code:
 2. A generation failure escaped the generator instead of degrading to a message.
 3. A `compute` result was shown to the user and never stored in memory.
 4. The `**Sources:**` footer was never appended.
-5. The learning/conflict alerts were never raised.
+5. Learning reaches the user on both paths, and raises no alert.
 """
 
 from __future__ import annotations
@@ -240,10 +240,30 @@ async def test_streamed_search_answer_carries_its_sources(store, stub_llm):
     assert "https://en.wikipedia.org/wiki/Texas" in answers
 
 
-# 5. Learning alerts -----------------------------------------------------------
+# 5. Learning on both paths ----------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_streamed_search_learning_raises_an_alert(store, stub_llm, monkeypatch):
+async def test_streamed_search_learning_reaches_the_user_without_an_alert(
+    store, stub_llm, monkeypatch
+):
+    """Both orchestrator paths surface what was learned, and neither rings the bell.
+
+    This test used to assert the opposite — that a `search_result`/`conflict` alert
+    was raised — because the original bug was that the streaming path raised none at
+    all, so a web-UI user was never told anything. That was the right fix for the
+    wrong signal.
+
+    Phase C.4 removed these alerts from *both* paths: a fact learned while the user
+    is watching, in the conversation they are having, is not something they were
+    absent for. "New facts learned from search" is news to nobody who just asked for
+    the search.
+
+    Parity still matters, so it is asserted on the channel that survived: the
+    summaries in the response, which `Message.tsx` renders as "What I learned" and
+    "Found from search", itemised per slot. If that reached one path and not the
+    other, the UI would silently stop reporting learning on the web client — which
+    is the original bug, in the other direction.
+    """
     add_embedding_cluster("capital", "texas", "austin")
     results = [
         SearchResult(title="T", url="https://example.com/a", snippet="Austin", engine="e")
@@ -269,7 +289,7 @@ async def test_streamed_search_learning_raises_an_alert(store, stub_llm, monkeyp
     monkeypatch.setattr(store, "create_alert", recording_create_alert)
 
     try:
-        await _collect(
+        events = await _collect(
             orchestrator.chat_stream(
                 ChatRequest(user_id=user.id, message="What is the capital of Texas?",
                             session_id="s-alert")
@@ -278,9 +298,23 @@ async def test_streamed_search_learning_raises_an_alert(store, stub_llm, monkeyp
     finally:
         stub_llm.chat = original
 
-    assert any(
-        a.get("type") in ("search_result", "conflict") for a in alerts
-    ), "no learning alert was raised on the streaming path"
+    # The information reached the client.
+    meta = [e for e in events if e["type"] == "meta"]
+    assert meta, "the stream produced no meta event for the UI to render"
+    summary = meta[-1].get("extraction_summary") or {}
+    search_summary = meta[-1].get("search_extraction_summary") or {}
+    assert summary or search_summary, (
+        "no extraction summary on the streaming path — the web UI would report "
+        "nothing learned"
+    )
+
+    # And no bell entry was raised for it: the user was present.
+    learning_alerts = [
+        a for a in alerts if a.get("type") in ("search_result", "conflict")
+    ]
+    assert learning_alerts == [], (
+        f"learning alerts were raised mid-conversation: {learning_alerts}"
+    )
 
 
 # 6. Streaming corrections do not double the turn -----------------------------
