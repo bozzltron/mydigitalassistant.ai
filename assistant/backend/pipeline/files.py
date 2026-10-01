@@ -1,14 +1,24 @@
 """File processing pipeline for the cognitive assistant.
 
-Handles extraction of content from various file types (.txt, .csv, .json, .xml, .html)
-and integrates with the memory system.
+Handles extraction of content from user-supplied files — text and structured
+formats (.txt, .csv, .json, .xml, .html, .ics) plus binary documents
+(.pdf, .docx, .xlsx, .pptx) — and integrates with the memory system.
 """
 
+import asyncio
 import json
 import logging
 from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
+
+# Formats the upload paths accept. Reading is handled by `extract_file_content`;
+# this is the single source of truth for the three call sites in `main.py`.
+# Legacy binaries (.doc/.xls/.ppt) are deliberately absent: there is no good
+# offline pure-Python reader, so the user is told to re-save as .docx/.pdf.
+SUPPORTED_UPLOAD_EXTS = frozenset(
+    {"txt", "csv", "json", "xml", "html", "ics", "pdf", "docx", "xlsx", "pptx"}
+)
 
 
 @dataclass
@@ -283,6 +293,90 @@ def extract_text_from_ics(content: bytes) -> tuple[str, list[str], list[str]]:
         return "Error parsing iCalendar file", [], []
 
 
+# A long document is not worth reading past its first pages for the assistant's
+# purposes, and an unbounded parse is a way to stall a request. Cap the pages.
+PDF_MAX_PAGES = 50
+
+
+def extract_text_from_pdf(content: bytes) -> tuple[str, list[str], list[str]]:
+    """Extract text from a .pdf file (the first `PDF_MAX_PAGES` pages)."""
+    try:
+        from io import BytesIO
+
+        from pypdf import PdfReader
+
+        reader = PdfReader(BytesIO(content))
+        pages = list(reader.pages)[:PDF_MAX_PAGES]
+        text = "\n\n".join((page.extract_text() or "").strip() for page in pages).strip()
+        return text, [], ["Review the document for key points"]
+    except Exception as e:
+        logger.warning(f"PDF extraction failed: {e}")
+        return "", [], []
+
+
+def extract_text_from_docx(content: bytes) -> tuple[str, list[str], list[str]]:
+    """Extract text from a .docx file (paragraphs and table cells)."""
+    try:
+        from io import BytesIO
+
+        from docx import Document
+
+        doc = Document(BytesIO(content))
+        parts = [p.text for p in doc.paragraphs if p.text.strip()]
+        for table in doc.tables:
+            for row in table.rows:
+                cells = [c.text.strip() for c in row.cells if c.text.strip()]
+                if cells:
+                    parts.append(" | ".join(cells))
+        return "\n".join(parts), [], ["Review the document for key points"]
+    except Exception as e:
+        logger.warning(f"DOCX extraction failed: {e}")
+        return "", [], []
+
+
+def extract_text_from_xlsx(content: bytes) -> tuple[str, list[str], list[str]]:
+    """Extract text from a .xlsx workbook, sheet by sheet."""
+    try:
+        from io import BytesIO
+
+        from openpyxl import load_workbook
+
+        wb = load_workbook(BytesIO(content), read_only=True, data_only=True)
+        lines: list[str] = []
+        for sheet in wb.worksheets:
+            lines.append(f"# {sheet.title}")
+            for row in sheet.iter_rows(values_only=True):
+                lines.append(" | ".join("" if v is None else str(v) for v in row))
+        wb.close()
+        return "\n".join(lines), [], ["Review the workbook for key figures"]
+    except Exception as e:
+        logger.warning(f"XLSX extraction failed: {e}")
+        return "", [], []
+
+
+def extract_text_from_pptx(content: bytes) -> tuple[str, list[str], list[str]]:
+    """Extract text from a .pptx deck, slide by slide."""
+    try:
+        from io import BytesIO
+
+        from pptx import Presentation
+
+        prs = Presentation(BytesIO(content))
+        parts: list[str] = []
+        for i, slide in enumerate(prs.slides, 1):
+            texts = [
+                shape.text_frame.text.strip()
+                for shape in slide.shapes
+                if shape.has_text_frame and shape.text_frame.text.strip()
+            ]
+            if texts:
+                parts.append(f"# Slide {i}\n" + "\n".join(texts))
+        return "\n\n".join(parts), [], ["Review the deck for key points"]
+    except Exception as e:
+        logger.warning(f"PPTX extraction failed: {e}")
+        return "", [], []
+
+
 async def extract_file_content(
     file_path: str,
     ext: str,
@@ -298,9 +392,6 @@ async def extract_file_content(
     Returns:
         FileExtractionResult with extracted text, entities, and questions
     """
-    # Read file content once
-    content_str = content.decode("utf-8", errors="replace")
-
     # Route to appropriate extractor
     extractors = {
         "txt": extract_text_from_txt,
@@ -309,17 +400,25 @@ async def extract_file_content(
         "xml": extract_text_from_xml,
         "html": extract_text_from_html,
         "ics": extract_text_from_ics,
+        "pdf": extract_text_from_pdf,
+        "docx": extract_text_from_docx,
+        "xlsx": extract_text_from_xlsx,
+        "pptx": extract_text_from_pptx,
     }
 
     extractor = extractors.get(ext)
     if not extractor:
-        # Fallback: treat as plain text
-        plain_text = content_str
+        # Unknown extension: best-effort plain text. Legacy binaries (.doc/.xls/
+        # .ppt) never reach here — the upload allowlist rejects them — so this is
+        # a plain-text fallback, not a way to read binary documents.
+        plain_text = content.decode("utf-8", errors="replace")
         key_entities = []
         open_questions = ["Review file content"]
         row_data = None
     else:
-        result = extractor(content)
+        # Parsing is CPU-bound and synchronous; a large document must not block
+        # the event loop, so run it off-thread.
+        result = await asyncio.to_thread(extractor, content)
         if len(result) == 4:
             plain_text, key_entities, open_questions, row_data = result
         else:

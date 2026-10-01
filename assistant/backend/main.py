@@ -44,6 +44,7 @@ from assistant.backend.pipeline.extractor import (
     extract_correction,
     validate_correction,
 )
+from assistant.backend.pipeline.files import SUPPORTED_UPLOAD_EXTS
 from assistant.backend.pipeline.llm_client import ChatMessage, OllamaClient
 from assistant.backend.pipeline.orchestrator import ChatRequest, ChatResponse, Orchestrator
 from assistant.backend.pipeline.orchestrator import OrchestratorDeps as _OrchestratorDeps
@@ -499,7 +500,7 @@ async def chat(
             content_bytes = text_content.encode("utf-8")
             
             # Validate file type
-            allowed_types = {"txt", "csv", "json", "xml", "html", "ics"}
+            allowed_types = SUPPORTED_UPLOAD_EXTS
             if ext not in allowed_types:
                 # Skip unsupported files but log
                 logger.warning(f"Skipping unsupported file type: .{ext}")
@@ -639,7 +640,7 @@ async def chat_stream(
             text_content = fc.get("text", "")
             content_bytes = text_content.encode("utf-8")
 
-            allowed_types = {"txt", "csv", "json", "xml", "html", "ics"}
+            allowed_types = SUPPORTED_UPLOAD_EXTS
             if ext not in allowed_types:
                 logger.warning(f"Skipping unsupported file type: .{ext}")
                 continue
@@ -2356,18 +2357,23 @@ async def upload_file(
 ):
     """Upload and process a file.
 
-    Supported formats: .txt, .csv, .json, .xml, .html
+    Supported formats: .txt, .csv, .json, .xml, .html, .ics, .pdf, .docx, .xlsx,
+    .pptx. Legacy binaries (.doc/.xls/.ppt) are rejected — re-save as .docx/.pdf.
     Returns file metadata and extracted content.
     """
     # Validate file type
     filename = file.filename or "unknown"
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
-    allowed_types = {"txt", "csv", "json", "xml", "html", "ics"}
+    allowed_types = SUPPORTED_UPLOAD_EXTS
     
     if ext not in allowed_types:
         raise HTTPException(
             status_code=400,
-            detail=f"Unsupported file type: .{ext}. Allowed: .txt, .csv, .json, .xml, .html",
+            detail=(
+                f"Unsupported file type: .{ext}. Allowed: .txt, .csv, .json, .xml, "
+                ".html, .ics, .pdf, .docx, .xlsx, .pptx. For legacy .doc/.xls/.ppt, "
+                "re-save as .docx/.xlsx/.pptx or .pdf."
+            ),
         )
     
     # Size limit (10MB)

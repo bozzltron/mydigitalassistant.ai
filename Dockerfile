@@ -20,6 +20,10 @@ RUN pip install --no-cache-dir --upgrade pip \
         "numpy>=1.26" \
         "aiosqlite>=0.20" \
         "sqlite-vec>=0.1.0" \
+        "pypdf>=4.2" \
+        "python-docx>=1.1" \
+        "openpyxl>=3.1" \
+        "python-pptx>=0.6.23" \
         "sqlalchemy>=2.0" \
         "faster-whisper>=1.0" \
         "croniter>=2.0" \
@@ -62,6 +66,10 @@ RUN pip install --no-cache-dir --no-index --find-links /wheels \
         numpy \
         aiosqlite \
         sqlite-vec \
+        pypdf \
+        python-docx \
+        openpyxl \
+        python-pptx \
         faster-whisper \
         croniter \
         python-multipart \
