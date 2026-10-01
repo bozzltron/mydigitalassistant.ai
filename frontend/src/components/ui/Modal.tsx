@@ -1,4 +1,4 @@
-import { createSignal, Show } from 'solid-js';
+import { createSignal, Show, onMount, onCleanup } from 'solid-js';
 import type { JSX } from 'solid-js';
 
 export interface ModalProps {
@@ -19,6 +19,16 @@ export const Modal = (props: ModalProps) => {
       setIsAnimating(false);
     }, 150);
   };
+  
+  // Escape closes the dialog — the expected keyboard affordance, and the one
+  // gap that kept every modal here mouse-only.
+  onMount(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && props.isOpen) handleClose();
+    };
+    document.addEventListener('keydown', onKey);
+    onCleanup(() => document.removeEventListener('keydown', onKey));
+  });
   
   return (
     <Show when={props.isOpen}>
