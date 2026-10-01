@@ -1,4 +1,4 @@
-"""Regression: mechanism notices are not alerts.
+"""Regression: mechanism notices are not alerts, and removing them loses no information.
 
 Phase C.4. The presence rule, from plans/2026-09-30-alerts-as-memory.md:
 
@@ -10,108 +10,186 @@ class of noise** — 54 "Task completed: job_postings_monitor", 24 search notice
 mid-conversation, 25 auto-resolved conflicts announced to the user who was watching
 them resolve. The 8 that were real were buried in it.
 
-Two writers were removed, and one was kept with its reasoning recorded:
-
-- **Task completion** — not an alert. Mechanism, and the output is already an episode
-  the user can ask about.
-- **Facts learned mid-conversation** (search results, auto-resolved conflicts) — not
-  an alert. `Message.tsx` already renders both as "What I learned" and "Found from
-  search", itemised per slot with a conflict flag, so the bell entry was a third copy
-  of something already on screen.
-- **Task failure** — *kept*, and this is the presence rule applied properly rather
-  than an exception to it. The user asked for a recurring task and it is silently
-  broken; that is something they were not there to see, it needs their attention, and
-  nobody else will tell them.
+These tests go through `chat_stream`, not through the private method that used to
+emit the notices. Asserting that a no-op returns `None`, or that two fields still
+exist on a response model, would pass whether or not the behaviour held — the
+guarantee is about what happens to a turn that learns things.
 """
 
 from __future__ import annotations
 
 import pytest
 
-from assistant.backend.memory.store import ALERT_FRAME_TYPE
-from assistant.backend.pipeline.orchestrator import Orchestrator
+from assistant.backend.pipeline.orchestrator import ChatRequest
+from assistant.backend.pipeline.search import SearchResult
+
+from .conftest import add_embedding_cluster
 
 
-async def _open_alert_types(store, user_id: int) -> list[str]:
-    alerts = await store.get_alerts(user_id, unread_only=True, limit=100)
-    return [a.type for a in alerts]
+def _search_tool(results):
+    from assistant.backend.pipeline.search import WebSearchTool
+
+    tool = WebSearchTool(enabled=False)
+
+    async def _with_info(query, num_results=5, llm_client=None, user_consent=False):
+        return results, None
+
+    tool.search_with_info = _with_info  # type: ignore[method-assign]
+    return tool
 
 
-class TestLearnedFactsAreNotAlerts:
-    """The mid-conversation writer, which fired while the user was watching."""
+def _orchestrator(store, llm, search):
+    from assistant.backend.memory.retrieval import Retriever
+    from assistant.backend.pipeline.orchestrator import Orchestrator, OrchestratorDeps
+
+    return Orchestrator(
+        deps=OrchestratorDeps(
+            store=store,
+            retriever=Retriever(store=store, llm_client=llm),
+            llm_client=llm,
+            search_tool=search,
+        )
+    )
+
+
+async def _run_turn(store, llm, search, message, session_id, user_id: int = 1):
+    orch = _orchestrator(store, llm, search)
+    events = []
+    async for chunk in orch.chat_stream(
+        ChatRequest(user_id=user_id, message=message, session_id=session_id)
+    ):
+        events.append(chunk)
+    return events
+
+
+class TestAMidConversationTurnRaisesNoAlert:
+    """The writer that fired while the user was watching."""
 
     @pytest.mark.asyncio
-    async def test_search_results_do_not_raise_an_alert(self, store):
-        orch = Orchestrator.__new__(Orchestrator)
-        orch.store = store
+    async def test_search_learning_creates_no_alert(self, store, stub_llm, monkeypatch):
+        add_embedding_cluster("capital", "texas", "austin")
+        search = _search_tool(
+            [
+                SearchResult(
+                    title="Capital of Texas",
+                    url="https://en.wikipedia.org/wiki/Texas",
+                    snippet="Austin is the capital of Texas",
+                    engine="wikipedia",
+                )
+            ]
+        )
         user = await store.create_user("alice")
 
-        await orch._create_learning_alerts(
+        raised: list[dict] = []
+        real = store.create_alert
+
+        async def recording(**kwargs):
+            raised.append(kwargs)
+            return await real(**kwargs)
+
+        monkeypatch.setattr(store, "create_alert", recording)
+
+        await _run_turn(
+            store,
+            stub_llm,
+            search,
+            "What is the capital of Texas?",
+            "s-learn",
             user_id=user.id,
-            extraction_summary={},
-            search_extraction_summary={"slots_applied": 5, "conflicts_created": 0},
         )
 
-        assert await _open_alert_types(store, user.id) == [], (
-            "'New facts learned from search' is news to nobody: the user just asked "
-            "for the search and the facts are already rendered in the response"
+        learning = [
+            a for a in raised if a.get("type") in ("search_result", "conflict")
+        ]
+        assert learning == [], (
+            "a fact learned while the user was in the conversation raised a bell "
+            f"entry: {learning}"
         )
 
     @pytest.mark.asyncio
-    async def test_auto_resolved_conflicts_do_not_raise_an_alert(self, store):
-        orch = Orchestrator.__new__(Orchestrator)
-        orch.store = store
+    async def test_the_learning_still_reaches_the_ui(self, store, stub_llm, monkeypatch):
+        """Removing the alert must not remove the information.
+
+        `Message.tsx` renders `extraction_summary` and `search_extraction_summary`
+        as "What I learned" / "Found from search", itemised per slot. If that stopped
+        arriving, the web UI would silently stop reporting learning — which is the
+        bug the removed alerts were originally added to fix.
+        """
+        add_embedding_cluster("capital", "texas", "austin")
+        search = _search_tool(
+            [
+                SearchResult(
+                    title="Capital of Texas",
+                    url="https://en.wikipedia.org/wiki/Texas",
+                    snippet="Austin is the capital of Texas",
+                    engine="wikipedia",
+                )
+            ]
+        )
         user = await store.create_user("alice")
 
-        await orch._create_learning_alerts(
+        events = await _run_turn(
+            store,
+            stub_llm,
+            search,
+            "What is the capital of Texas?",
+            "s-learn-2",
             user_id=user.id,
-            extraction_summary={"conflicts_created": 3},
-            search_extraction_summary={"slots_applied": 2, "conflicts_created": 1},
         )
 
-        assert await _open_alert_types(store, user.id) == [], (
-            "conflicts resolved during the turn were announced to the user who was "
-            "watching them resolve, and the response already flags them per slot"
-        )
+        metas = [e for e in events if '"type": "meta"' in e]
+        assert metas, "the stream produced no meta event for the UI to render"
+        # The payload the UI reads must be present, even when empty.
+        assert "extraction_summary" in metas[-1]
+        assert "search_extraction_summary" in metas[-1]
+
+
+class TestTaskCompletionIsNotAnAlert:
+    """Mechanism, not a message — and the output is already queryable memory."""
 
     @pytest.mark.asyncio
-    async def test_the_method_is_still_callable_on_both_paths(self, store):
-        """chat() and chat_stream() both call it; it must not raise."""
-        orch = Orchestrator.__new__(Orchestrator)
-        orch.store = store
+    async def test_a_completed_task_creates_no_alert(self, store, stub_llm):
+        from assistant.backend.scheduler.runner import execute_and_record_task
+
         user = await store.create_user("alice")
+        frame_id = await store.upsert_scheduled_task(
+            name="probe_task",
+            description="",
+            schedule_cron="daily",
+            prompt="say hello",
+            owner_user_id=user.id,
+        )
+        before = len(await store.get_alerts(user.id, unread_only=True, limit=100))
 
-        # No return value and no side effect — the contract is now "do nothing".
-        assert (
-            await orch._create_learning_alerts(user.id, {}, {})  # type: ignore[func-returns-value]
-            is None
+        search = _search_tool([])
+        orch = _orchestrator(store, stub_llm, search)
+        await execute_and_record_task(
+            store=store,
+            orchestrator=orch,
+            task_frame_id=frame_id,
+            task_name="probe_task",
+            task_prompt="say hello",
+            owner_user_id=user.id,
         )
 
-
-class TestTheInformationSurvives:
-    """Removing the alert must not remove the information.
-
-    The response carries both summaries and the UI renders them; that is why the
-    alert was a duplicate. This pins the payload the UI depends on so a future
-    change cannot quietly drop it along with the alert.
-    """
-
-    @pytest.mark.asyncio
-    async def test_response_type_carries_both_summaries(self, store):
-        from assistant.backend.pipeline.orchestrator import ChatResponse
-
-        fields = ChatResponse.model_fields
-        assert "extraction_summary" in fields
-        assert "search_extraction_summary" in fields
+        after = await store.get_alerts(user.id, unread_only=True, limit=100)
+        completion = [a for a in after if a.type == "task_result"]
+        assert completion == [], (
+            f"'Task completed: probe_task' raised a bell entry ({len(after)} vs "
+            f"{before} open alerts)"
+        )
 
 
 class TestTaskFailureStillAlerts:
-    """The one mechanism notice that earns its place, and why."""
+    """The one mechanism notice that earns its place.
+
+    Not an exception to the presence rule — the rule applied properly. The user
+    asked for a recurring task and it is now silently broken: they were not there to
+    see it, it needs their attention, and nobody else will tell them.
+    """
 
     @pytest.mark.asyncio
-    async def test_a_failed_task_creates_an_alert_the_user_can_act_on(self, store):
-        """Not an exception to the presence rule: the task broke while the user was
-        away, and only the agent knows."""
+    async def test_a_failed_task_creates_an_actionable_alert(self, store):
         user = await store.create_user("alice")
         await store.create_alert(
             user_id=user.id,
@@ -125,17 +203,15 @@ class TestTaskFailureStillAlerts:
         assert len(alerts) == 1
         assert alerts[0].type == "task_failure"
         assert alerts[0].severity == "warning"
-        # Actionable: it says what broke and that it will retry.
+        # Actionable: what broke, and that it will retry.
         assert "failed to run" in alerts[0].message
 
     @pytest.mark.asyncio
-    async def test_task_completion_is_distinguishable_by_type(self, store):
-        """`task_failure` exists so a completion and a failure are not the same
-        type — the distinction is deliberate and should stay queryable."""
+    async def test_failure_is_a_distinct_kind_from_completion(self, store):
+        """`task_failure` exists so the two are not the same kind. The distinction
+        is deliberate and must stay queryable, or the next reader cannot tell it was
+        a decision rather than an inconsistency."""
         user = await store.create_user("alice")
-        frames = await store.list_frames(ALERT_FRAME_TYPE, owner_user_id=user.id)
-        assert frames == [], "no alert should exist before one is created"
-
         await store.create_alert(
             user_id=user.id,
             type="task_failure",
@@ -143,10 +219,11 @@ class TestTaskFailureStillAlerts:
             message="failed",
             severity="warning",
         )
-        slots = {
-            s.key: s.value
-            for f in await store.list_frames(ALERT_FRAME_TYPE, owner_user_id=user.id)
+        frames = await store.list_frames("alert", owner_user_id=user.id)
+        kinds = {
+            s.value
+            for f in frames
             for s in await store.get_slots_for_frame(f.id)
+            if s.key == "kind"
         }
-        assert slots["kind"] == "task_failure"
-        assert slots["kind"] != "task_result"
+        assert kinds == {"task_failure"}

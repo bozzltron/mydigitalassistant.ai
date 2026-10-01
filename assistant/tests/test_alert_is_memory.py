@@ -155,30 +155,83 @@ class TestTwoStatesOnly:
 
 
 class TestConsolidationExcludesAlerts:
-    """Two unrelated questions must never fuse into one."""
+    """Two unrelated questions must never fuse into one.
+
+    Merge-on-similarity is right for entities — two names for one thing should become
+    one frame — and clearly wrong for "things the agent wants to ask you". Two
+    unrelated questions would fuse, and the user would be asked about something they
+    were never asked about.
+
+    The assertion is behavioural (would it merge them?) rather than arithmetic on the
+    scanned count. An earlier version of this test compared `scanned_frames` against
+    `2 + len(alerts)`, which is satisfied whether or not the exclusion is in place —
+    it passed with the exclusion removed, so it covered nothing.
+    """
 
     @pytest.mark.asyncio
-    async def test_alert_frames_are_not_scanned_for_merging(self, store):
+    async def test_identical_alert_text_is_never_merged(self, store):
         from assistant.backend.memory.consolidate import run_consolidation
 
         user = await store.create_user("alice")
-        # Two alerts with near-identical text -- exactly what fuzzy merging would
-        # unify if alerts were not excluded.
+        # Deliberately identical title and message: the strongest duplicate evidence
+        # the shared-slot pass uses. If alerts were not excluded these would union.
+        alerts = []
         for _ in range(2):
-            await store.create_alert(
-                user_id=user.id,
-                type="conflict",
-                title="Two beliefs about your city",
-                message="I hold 'Austin' and 'Austin, TX' and cannot choose.",
+            alerts.append(
+                await store.create_alert(
+                    user_id=user.id,
+                    type="conflict",
+                    title="Two beliefs about your city",
+                    message="I hold 'Austin' and 'Austin, TX' and cannot choose.",
+                )
             )
 
-        # dry_run: compute the plan, write nothing.
-        report = await run_consolidation(store.db_path, dry_run=True)
-        alert_ids = {
-            f.id for f in await store.list_frames(ALERT_FRAME_TYPE, owner_user_id=user.id)
-        }
-        assert alert_ids, "no alert frames were created"
-        # The report counts what it scanned; alerts must not be among them.
-        assert report.scanned_frames < 2 + len(alert_ids), (
-            "alert frames were included in the consolidation scan"
+        # Apply, not dry_run: the question is whether a merge actually happens.
+        await run_consolidation(store.db_path, dry_run=False)
+
+        # Both must still be **live, separate** frames. Asserting `get_frame(...) is
+        # not None` would not catch a merge: a merge tombstones the loser rather than
+        # deleting it, so the row is still readable. The observable difference is
+        # `deleted_at` (tombstoned) and the aliases recorded against the survivor.
+        live = await store.list_frames(ALERT_FRAME_TYPE, owner_user_id=user.id)
+        assert len(live) == 2, (
+            f"consolidation merged the alerts: {len(live)} live frame(s) remain"
         )
+        assert {f.id for f in live} == {a.id for a in alerts}, (
+            "an alert frame was replaced by another frame"
+        )
+
+        for alert in alerts:
+            frame = await store.get_frame(alert.id)
+            assert frame is not None
+            assert frame.deleted_at is None, (
+                f"alert {alert.id} was tombstoned by consolidation, so the user "
+                "would never be asked about it"
+            )
+
+    @pytest.mark.asyncio
+    async def test_an_alert_is_not_absorbed_into_a_lookalike_entity(self, store):
+        """The shared-slot pass joins on (key, value) across frames. An alert whose
+        `title` slot matches an entity's `title` slot must not be swallowed by it."""
+        from assistant.backend.memory.consolidate import run_consolidation
+
+        user = await store.create_user("alice")
+        entity = await store.create_frame("austin_tx", "entity", owner_user_id=user.id)
+        await store.upsert_slot(
+            frame_id=entity.id, key="title", value="Austin, TX"
+        )
+        alert = await store.create_alert(
+            user_id=user.id,
+            type="conflict",
+            title="Austin, TX",
+            message="I hold two spellings.",
+        )
+
+        await run_consolidation(store.db_path, dry_run=False)
+
+        frame = await store.get_frame(alert.id)
+        assert frame is not None, "the alert was merged away"
+        assert frame.type == ALERT_FRAME_TYPE, (
+            f"the alert frame's type changed to {frame.type!r}"
+        )
+
