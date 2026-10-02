@@ -107,7 +107,11 @@ Large files are never fully embedded; the frame embeds metadata only.
   could not then be read.
 - `read_file` returns document text through `extract_file_content` (the same
   extractor upload uses), not raw bytes: reading a PDF as UTF-8 yields garbage.
-  Text formats (txt/md/csv/tsv/json/xml/html/ics/eml/yaml) are read directly.
+  The rule is **extract whenever an extractor exists**; only formats with none
+  (`txt`, `md`, `log`, `yaml`, `yml`) are read directly. That includes
+  `html`/`xml`/`ics`/`eml`, which are text but whose extractors strip markup,
+  parse the message, or summarise the calendar — reading those raw would hand the
+  model `<h1>Title</h1>` or MIME boundaries instead of the content.
 - The only bound is the **model's context window** on what `read_file` returns
   (`MAX_READ_CHARS_FOR_MODEL`), and a truncated read carries an explicit marker
   with the true total so the model can say it saw a fragment. The file on disk is

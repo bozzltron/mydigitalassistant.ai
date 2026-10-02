@@ -1,6 +1,6 @@
 import { createSignal, Show, For } from 'solid-js';
 import { postFileUpload } from '../../services/api';
-import { ACCEPT_ATTR } from '../../utils/uploadFormats';
+import { ACCEPT_ATTR, isSupportedUploadExt } from '../../utils/uploadFormats';
 import { Toast } from '../ui/Toast';
 
 interface UploadedFile {
@@ -49,6 +49,18 @@ export const UploadZone = () => {
 
   const processFiles = async (fileList: File[]) => {
     for (const file of fileList) {
+      // `accept` filters the file picker but not a drag-and-drop, so an
+      // unsupported file could still reach the backend and come back as a
+      // generic 400. Reject it here with a message that says why.
+      const ext = file.name.split('.').pop()?.toLowerCase() ?? ''
+      if (!isSupportedUploadExt(ext)) {
+        showToast(
+          `Can't read .${ext || file.name} — try PDF, Word, Excel, PowerPoint, RTF, OpenDocument, or text`,
+          'error',
+        )
+        continue
+      }
+
       const fileId = Date.now() + Math.random();
       const newFile: UploadedFile = {
         id: fileId,

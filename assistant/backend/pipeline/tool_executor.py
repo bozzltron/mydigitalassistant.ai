@@ -771,12 +771,12 @@ async def _available_file_names(store: MemoryStore, user_id: str) -> str:
     return ", ".join(sorted(names)) or "(none)"
 
 
-# Extensions whose *text* lives in the file as bytes, so a UTF-8 read is the
-# content. Everything else is a container (PDF object streams, OOXML zips,
-# legacy binaries) where reading bytes as text yields garbage.
-PLAIN_TEXT_EXTS = frozenset(
-    {"txt", "md", "csv", "tsv", "json", "xml", "html", "ics", "eml", "log", "yaml", "yml"}
-)
+# Extensions with no extractor, where the bytes on disk are already the content
+# the model should read. Everything else goes through `extract_file_content` —
+# including html/xml/eml/ics, which are text but whose extractors strip markup,
+# parse the message, or summarise the calendar. Reading those raw would hand the
+# model `<h1>Title</h1>` or MIME boundaries instead of the content.
+PLAIN_TEXT_EXTS = frozenset({"txt", "md", "log", "yaml", "yml"})
 
 # How much extracted text a single read_file returns to the model. This is NOT a
 # file-size limit: the file is stored whole on disk and nothing is refused at any
@@ -789,11 +789,13 @@ MAX_READ_CHARS_FOR_MODEL = 60_000
 async def _read_file_text(file_path: str, ext: str) -> tuple[str | None, str | None]:
     """Return ``(text, error)`` for a sandbox file, extracting when needed.
 
-    Text formats are read directly. Document formats go through
-    ``extract_file_content``, the same path upload uses — the model must read a
-    PDF the way upload understood it, not as raw bytes. Reading a PDF as UTF-8
-    was the bug: a 6.7 MB press kit extracted to 9,213 clean characters at upload
-    and returned binary noise (or nothing) on read.
+    Only formats with no extractor are read directly (`PLAIN_TEXT_EXTS`).
+    Everything else goes through ``extract_file_content``, the same path upload
+    uses — the model must read a document the way upload understood it, not as
+    raw bytes. Reading a PDF as UTF-8 was the bug: a 6.7 MB press kit extracted
+    to 9,213 clean characters at upload and returned binary noise (or nothing) on
+    read. The same rule covers html/xml/eml/ics, which are text but whose
+    extractors strip markup, parse the message, or summarise the calendar.
 
     ``extract_file_content`` extracts from the bytes it is given, not from the
     path, so the bytes are read here and handed over.

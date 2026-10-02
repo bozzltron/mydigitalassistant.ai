@@ -15,6 +15,7 @@ vi.mock('../../services/api', () => ({
   getSessionMessages: vi.fn(),
   postFeedback: vi.fn(),
   getUsers: vi.fn(),
+  postFileUpload: vi.fn(),
 }))
 
 vi.mock('../../services/status', () => ({
@@ -86,5 +87,35 @@ describe('ChatPage chat wiring', () => {
     onEvent!({ type: 'finalize', answer: 'Streamed reply' })
     const markdown = document.querySelector('.msg-assistant .msg-markdown')
     expect(markdown?.textContent).toContain('Streamed reply')
+  })
+
+  it('sends the message even when an attachment fails to upload', async () => {
+    // The input bar uploads bytes through the multipart endpoint and references
+    // the stored file by frame. If that upload throws — the backend 400s an
+    // unsupported type, or the request drops — the user's typed message must
+    // still go: losing what they wrote because a file was rejected is the worse
+    // failure. The failed attachment is dropped instead.
+    vi.mocked(api.postChatStream).mockResolvedValue({
+      response: 'ok',
+      task_type: 'functional',
+      session_id: 'session-cp-1',
+    })
+    vi.mocked(api.postFileUpload).mockRejectedValue(new Error('Unsupported file type'))
+
+    render(() => <ChatPage conversation={null} />)
+
+    const fileInput = screen.getByTestId('file-input') as HTMLInputElement
+    const file = new File(['%PDF-1.4'], 'report.pdf', { type: 'application/pdf' })
+    fireEvent.change(fileInput, { target: { files: [file] } })
+
+    const textarea = screen.getByPlaceholderText('Type a message...')
+    fireEvent.input(textarea, { target: { value: 'read this please' } })
+    fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: false })
+
+    // The upload was attempted, failed, and did not stop the message.
+    await vi.waitFor(() => expect(api.postChatStream).toHaveBeenCalled())
+    const [message, , attached] = vi.mocked(api.postChatStream).mock.calls[0]
+    expect(message).toBe('read this please')
+    expect(attached).toEqual([])
   })
 })

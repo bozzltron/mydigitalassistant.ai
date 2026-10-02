@@ -272,6 +272,62 @@ class TestContainerFormatsReadEndToEnd:
         assert "xmlns" not in content
 
 
+class TestTextFormatsWithExtractorsAreExtracted:
+    """`html`/`xml`/`ics` are text but have extractors that add real value.
+
+    Reading them raw would hand the model `<h1>Title</h1>` or ICS syntax. The rule
+    is "extract whenever an extractor exists", not "extract only binaries".
+    """
+
+    @pytest.mark.asyncio
+    async def test_html_is_stripped_of_markup(self, store):
+        from assistant.backend.pipeline import filesystem
+
+        filesystem.SANDBOX_ROOT.mkdir(parents=True, exist_ok=True)
+        (filesystem.SANDBOX_ROOT / "phase2_note.txt").write_bytes(
+            b"<html><body><h1>Title</h1><p>Some <b>bold</b> prose.</p></body></html>"
+        )
+        # Rename so the extension routes it to the HTML extractor.
+        src = filesystem.SANDBOX_ROOT / "phase2_note.txt"
+        dst = filesystem.SANDBOX_ROOT / "phase2_page.html"
+        src.rename(dst)
+        try:
+            from assistant.backend.pipeline.tool_executor import execute_read_file
+
+            result = await execute_read_file(
+                {"path": "phase2_page.html"}, user_id="1", session_id="s"
+            )
+            assert result.success
+            content = result.data["content"]
+            assert "Some bold prose." in content
+            assert "<h1>" not in content and "<b>" not in content
+        finally:
+            dst.unlink(missing_ok=True)
+
+    @pytest.mark.asyncio
+    async def test_ics_is_summarised_not_dumped(self, store):
+        from assistant.backend.pipeline import filesystem
+
+        filesystem.SANDBOX_ROOT.mkdir(parents=True, exist_ok=True)
+        dst = filesystem.SANDBOX_ROOT / "phase2_cal.ics"
+        dst.write_bytes(
+            b"BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nSUMMARY:Team sync\r\n"
+            b"DTSTART:20261005T090000Z\r\nEND:VEVENT\r\nEND:VCALENDAR"
+        )
+        try:
+            from assistant.backend.pipeline.tool_executor import execute_read_file
+
+            result = await execute_read_file(
+                {"path": "phase2_cal.ics"}, user_id="1", session_id="s"
+            )
+            assert result.success
+            content = result.data["content"]
+            assert "Team sync" in content
+            assert "BEGIN:VEVENT" not in content
+        finally:
+            dst.unlink(missing_ok=True)
+
+
 class TestNoSizeLimits:
     @pytest.mark.asyncio
     async def test_a_document_larger_than_one_megabyte_reads(self, store):
