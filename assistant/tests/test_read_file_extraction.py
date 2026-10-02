@@ -47,6 +47,16 @@ def _cleanup_sandbox_file():
             pass
 
 
+@pytest.fixture(autouse=True)
+def _wire_tool_executor_store(store):
+    """`read_file` resolves frame names through a module-global store."""
+    from assistant.backend.pipeline import tool_executor as te
+
+    te._store = store
+    yield
+    te._store = None
+
+
 class TestReadFileUsesTheExtractor:
     @pytest.mark.asyncio
     async def test_a_real_pdf_reads_as_text(self, store):
@@ -177,6 +187,89 @@ class TestSandboxSafetySurvives:
 
         assert callable(validate_path_safety)
         assert issubclass(SymlinkEscapeError, Exception)
+
+
+class TestContainerFormatsReadEndToEnd:
+    """Every binary container format, not just the PDF that was reported.
+
+    F3 was not a PDF bug: `read_file` decoded *all* container formats as UTF-8.
+    The extractors had unit tests, but nothing exercised the path a user takes —
+    upload, then read — so the break lived between two tested halves. These tests
+    go through `upload_file_to_memory` and `execute_read_file` by frame name.
+    """
+
+    @staticmethod
+    def _docx(text: str) -> bytes:
+        from io import BytesIO
+
+        from docx import Document
+
+        doc = Document()
+        doc.add_paragraph(text)
+        buf = BytesIO()
+        doc.save(buf)
+        return buf.getvalue()
+
+    @staticmethod
+    def _xlsx(text: str) -> bytes:
+        from io import BytesIO
+
+        from openpyxl import Workbook
+
+        wb = Workbook()
+        wb.active["A1"] = text
+        buf = BytesIO()
+        wb.save(buf)
+        return buf.getvalue()
+
+    @staticmethod
+    def _pptx(text: str) -> bytes:
+        from io import BytesIO
+
+        from pptx import Presentation
+        from pptx.util import Inches
+
+        prs = Presentation()
+        slide = prs.slides.add_slide(prs.slide_layouts[5])
+        box = slide.shapes.add_textbox(Inches(1), Inches(1), Inches(4), Inches(1))
+        box.text_frame.text = text
+        buf = BytesIO()
+        prs.save(buf)
+        return buf.getvalue()
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "ext,builder,phrase",
+        [
+            ("docx", _docx.__func__, "Quarterly Word Report"),
+            ("xlsx", _xlsx.__func__, "Quarterly Spreadsheet"),
+            ("pptx", _pptx.__func__, "Quarterly Deck"),
+        ],
+    )
+    async def test_upload_then_read_returns_the_text(self, store, ext, builder, phrase):
+        from assistant.backend.main import upload_file_to_memory
+        from assistant.backend.pipeline.tool_executor import execute_read_file
+
+        user = await store.create_user("alice")
+        up = await upload_file_to_memory(
+            filename=f"report.{ext}",
+            content=builder(phrase),
+            ext=ext,
+            store=store,
+            user_id=user.id,
+        )
+
+        result = await execute_read_file(
+            {"frame_name": up["frame_name"]}, user_id=str(user.id), session_id="s"
+        )
+
+        assert result.success, f"read_file failed for .{ext}: {result.error}"
+        content = result.data["content"]
+        assert phrase in content, f".{ext} text did not survive read_file"
+        # No container-format signature should reach the model.
+        assert "PK" not in content[:4], f".{ext} leaked zip bytes"
+        assert "endstream" not in content
+        assert "xmlns" not in content
 
 
 class TestNoSizeLimits:
