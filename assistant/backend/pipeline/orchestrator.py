@@ -409,21 +409,14 @@ class Orchestrator:
                     current_value,
                     correction.new_value,
                 )
-                # Create alert for contradicted correction
-                try:
-                    await self.store.create_alert(
-                        user_id=request.user_id,
-                        type="correction",
-                        title="Correction contradicted by sources",
-                        message=(
-                            f"Your correction to '{correction.frame_name}."
-                            f"{correction.slot_key}' was contradicted by "
-                            f"third-party sources and not applied."
-                        ),
-                        severity="warning",
-                    )
-                except Exception as e:
-                    logger.warning("Failed to create correction alert: %s", e)
+                # No alert. The presence rule: an alert is warranted when the
+                # agent learned something and the user was **not there to hear
+                # it**. This happened in the user's own conversation, and
+                # `_acknowledge_correction` below already says it in the reply.
+                # The alert was a third copy of something on screen, and it was
+                # unclearable: there is nothing to answer in a notice about
+                # something that already happened. (Measured before removal: of
+                # 111 alert rows, 103 were this class of noise.)
                 response_text = await self._acknowledge_correction(
                     correction.frame_name,
                     correction.slot_key,
@@ -447,25 +440,10 @@ class Orchestrator:
                     correction_summary.get("new_value"),
                     validation.corroborated,
                 )
-                # Create alert for applied correction
-                try:
-                    corr_msg = (
-                        f"Updated '{correction.frame_name}.{correction.slot_key}' "
-                        f"to '{correction.new_value}'."
-                    )
-                    if validation.corroborated:
-                        corr_msg += " Corroborated by sources."
-                    else:
-                        corr_msg += " No third-party sources available."
-                    await self.store.create_alert(
-                        user_id=request.user_id,
-                        type="correction",
-                        title="Correction applied",
-                        message=corr_msg,
-                        severity="info",
-                    )
-                except Exception as e:
-                    logger.warning("Failed to create correction alert: %s", e)
+                # No alert for an applied correction, for the same reason as the
+                # contradicted branch above: it happened in this conversation and
+                # `_acknowledge_correction` says so in the reply. See that branch
+                # for the measured rationale.
                 response_text = await self._acknowledge_correction(
                     correction.frame_name,
                     correction.slot_key,

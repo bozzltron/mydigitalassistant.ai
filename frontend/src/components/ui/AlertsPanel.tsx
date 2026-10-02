@@ -50,7 +50,7 @@ export function AlertsPanel() {
     if (!u) return
 
     try {
-      const response = await getAlerts(u.id, 50)
+      const response = await getAlerts(u.id, 200)
       if (response) {
         setAlerts(response.alerts)
         setUnreadCount(response.unread_count)
@@ -332,6 +332,15 @@ export function AlertsPanel() {
                   </div>
                 )}
               </For>
+              {/* The badge counts every open alert; the list is capped. When the
+                  two disagree, say so rather than showing a shorter list under a
+                  larger number and leaving the user to wonder where the rest
+                  went. */}
+              <Show when={unreadCount() > alerts().length}>
+                <p class={styles.truncationNote}>
+                  Showing {alerts().length} of {unreadCount()} waiting
+                </p>
+              </Show>
             </div>
           </Show>
         </div>

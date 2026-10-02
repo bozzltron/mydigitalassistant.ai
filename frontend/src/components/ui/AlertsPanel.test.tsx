@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve as pathResolve } from 'node:path'
 import { render, fireEvent, screen, waitFor } from '@solidjs/testing-library'
 import { AlertsPanel } from './AlertsPanel'
 import { setUser } from '../../state/user'
@@ -21,7 +23,7 @@ vi.mock('../../services/api')
  */
 describe('AlertsPanel', () => {
   const mockAlerts: Alert[] = [
-    { id: 1, user_id: 1, type: 'task_alert', title: 'Test Alert', message: 'Test message', source_frame_id: null, source_episode_id: null, severity: 'important', is_read: false, created_at: '2024-01-01T00:00:00Z', read_at: null },
+    { id: 1, user_id: 1, type: 'task_alert', title: 'Test Alert', message: 'Test message', source_frame_id: null, source_episode_id: null, severity: 'important', created_at: '2024-01-01T00:00:00Z',},
   ]
 
   let intervalCalls: Array<[() => void, number]>
@@ -48,7 +50,7 @@ describe('AlertsPanel', () => {
 
   it('fetches alerts on mount', async () => {
     render(() => <AlertsPanel />)
-    await waitFor(() => expect(getAlerts).toHaveBeenCalledWith(1, 50))
+    await waitFor(() => expect(getAlerts).toHaveBeenCalledWith(1, 200))
   })
 
   it('polls at the expected interval and clears it on unmount', async () => {
@@ -79,7 +81,7 @@ describe('AlertsPanel', () => {
     expect(getAlerts).not.toHaveBeenCalled()
 
     setUser({ id: 1, name: 'Test User' })
-    await waitFor(() => expect(getAlerts).toHaveBeenCalledWith(1, 50))
+    await waitFor(() => expect(getAlerts).toHaveBeenCalledWith(1, 200))
   })
 
   it('does not flash the loading placeholder on a background poll', async () => {
@@ -212,5 +214,31 @@ describe('AlertsPanel', () => {
     fireEvent.click(await screen.findByText('Resolve all'))
 
     await waitFor(() => expect(markAllAlertsAsRead).toHaveBeenCalledWith(1))
+  })
+})
+
+describe('severity colour means severity only', () => {
+  it('does not paint info-severity alerts with the accent colour', () => {
+    // The regression: `--accent` is the mint brand colour, so an `info` stripe
+    // rendered green — and green read as "resolved". The stripe must mean
+    // severity and nothing else, so `info` is neutral.
+    const css = readFileSync(
+      pathResolve(process.cwd(), 'src/components/ui/AlertsPanel.module.css'),
+      'utf8',
+    )
+    const infoRule = css.match(/\.alertItem:global\(\.alert-info\)\s*\{[^}]*\}/)
+    expect(infoRule, 'no .alert-info rule found').toBeTruthy()
+    expect(infoRule![0]).not.toContain('--accent')
+    expect(infoRule![0]).toContain('--border')
+  })
+
+  it('keeps the severity colours that carry meaning', () => {
+    const css = readFileSync(
+      pathResolve(process.cwd(), 'src/components/ui/AlertsPanel.module.css'),
+      'utf8',
+    )
+    // `important` and `warning` are real signals and must stay distinct.
+    expect(css).toMatch(/\.alertItem:global\(\.alert-important\)\s*\{[^}]*--error/)
+    expect(css).toMatch(/\.alertItem:global\(\.alert-warning\)\s*\{[^}]*--warning/)
   })
 })

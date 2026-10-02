@@ -107,6 +107,4 @@ class Alert(BaseModel):
     source_frame_id: int | None = None
     source_episode_id: int | None = None
     severity: str = "info"  # "info", "warning", "important"
-    is_read: bool = False
     created_at: str | None = None
-    read_at: str | None = None

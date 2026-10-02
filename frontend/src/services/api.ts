@@ -511,9 +511,7 @@ export interface Alert {
   source_frame_id: number | null
   source_episode_id: number | null
   severity: string
-  is_read: boolean
   created_at: string | null
-  read_at: string | null
 }
 
 export interface AlertsListResponse {

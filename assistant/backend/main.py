@@ -1668,9 +1668,7 @@ class AlertResponse(BaseModel):
     source_frame_id: int | None = None
     source_episode_id: int | None = None
     severity: str
-    is_read: bool
     created_at: str | None = None
-    read_at: str | None = None
 
 
 class AlertsListResponse(BaseModel):

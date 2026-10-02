@@ -38,7 +38,6 @@ async def test_create_alert(store: MemoryStore):
     assert alert.title == "Test Alert"
     assert alert.message == "This is a test alert message"
     assert alert.severity == "info"
-    assert alert.is_read is False
     assert alert.created_at is not None
 
 
@@ -124,7 +123,8 @@ async def test_mark_alert_read_wrong_user(store: MemoryStore):
     # Alert should still be open, for its owner.
     alerts = await store.get_alerts(user_id=1)
     assert len(alerts) == 1
-    assert alerts[0].is_read is False
+    # Open, so it is still in the set the bell shows. There is no `is_read`
+    # field: the read flag was removed as a state that changed nothing.
 
 
 @pytest.mark.asyncio
@@ -236,3 +236,75 @@ async def test_alert_limit(store: MemoryStore):
     # Should be newest 3 (Alert 9, 8, 7)
     assert alerts[0].title == "Alert 9"
     assert alerts[2].title == "Alert 7"
+
+class TestResolveAlertsByType:
+    """The scoped repair for alerts raised by a writer that has been removed.
+
+    Those rows are notices with no question in them, so they cannot be resolved by
+    replying. A blanket `mark_all_alerts_read` would also close the alerts the user
+    still needs to see, so the repair names the kinds it is allowed to touch.
+    """
+
+    @pytest.mark.asyncio
+    async def test_only_the_named_kinds_are_closed(self, store: MemoryStore):
+        user = await store.create_user("alice")
+        await store.create_alert(
+            user_id=user.id, type="correction", title="Correction applied", message="m"
+        )
+        await store.create_alert(
+            user_id=user.id, type="search_result", title="Facts learned", message="m"
+        )
+        await store.create_alert(
+            user_id=user.id, type="task_alert", title="Real alert", message="m"
+        )
+
+        closed = await store.resolve_alerts_by_type(
+            user.id, {"correction", "search_result"}
+        )
+
+        assert closed == 2
+        remaining = await store.get_alerts(user.id)
+        assert [a.type for a in remaining] == ["task_alert"], (
+            "the repair closed an alert the user still needs to see"
+        )
+
+    @pytest.mark.asyncio
+    async def test_it_is_idempotent(self, store: MemoryStore):
+        user = await store.create_user("alice")
+        await store.create_alert(
+            user_id=user.id, type="correction", title="Correction applied", message="m"
+        )
+
+        assert await store.resolve_alerts_by_type(user.id, {"correction"}) == 1
+        assert await store.resolve_alerts_by_type(user.id, {"correction"}) == 0
+
+    @pytest.mark.asyncio
+    async def test_it_does_not_touch_another_users_alerts(self, store: MemoryStore):
+        alice = await store.create_user("alice")
+        bob = await store.create_user("bob")
+        await store.create_alert(
+            user_id=bob.id, type="correction", title="Bob's", message="m"
+        )
+
+        closed = await store.resolve_alerts_by_type(alice.id, {"correction"})
+
+        assert closed == 0
+        assert len(await store.get_alerts(bob.id)) == 1
+
+
+class TestTheReadFlagIsGone:
+    """`is_read`/`read_at` were served but never read, and meant "resolved" while
+    resolved rows are filtered out of the list — a field that could only be
+    misleading. Removed rather than implemented."""
+
+    def test_the_alert_model_has_no_read_flag(self):
+        from assistant.backend.memory.models import Alert
+
+        assert "is_read" not in Alert.model_fields
+        assert "read_at" not in Alert.model_fields
+
+    def test_the_response_model_has_no_read_flag(self):
+        from assistant.backend.main import AlertResponse
+
+        assert "is_read" not in AlertResponse.model_fields
+        assert "read_at" not in AlertResponse.model_fields

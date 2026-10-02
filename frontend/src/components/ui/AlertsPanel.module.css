@@ -115,7 +115,12 @@
 }
 
 /* getSeverityClass() in AlertsPanel.tsx returns these three as plain strings,
-   so they stay global while the item class stays module-scoped. */
+   so they stay global while the item class stays module-scoped.
+
+   `info` is deliberately a neutral border, not `--accent`. The accent is the
+   mint brand colour, and a green stripe read as "resolved" — the colour was
+   doing double duty as a severity and an implied state. Severity is the only
+   thing this stripe means now. */
 .alertItem:global(.alert-warning) {
   border-left: 4px solid var(--warning);
 }
@@ -125,7 +130,7 @@
 }
 
 .alertItem:global(.alert-info) {
-  border-left: 4px solid var(--accent);
+  border-left: 4px solid var(--border);
 }
 
 .alertContent {
@@ -269,4 +274,13 @@
 .optionMeta {
   font-size: 0.8125rem;
   color: var(--text-dim);
+}
+
+/* Shown only when the badge count exceeds the list length (the list is capped),
+   so a shorter list under a larger number is explained rather than mysterious. */
+.truncationNote {
+  margin: var(--space-sm) 0 0;
+  font-size: 0.8125rem;
+  color: var(--text-dim);
+  text-align: center;
 }

@@ -3128,7 +3128,6 @@ class MemoryStore:
             source_frame_id=source_frame_id,
             source_episode_id=source_episode_id,
             severity=severity,
-            is_read=False,
             created_at=frame.created_at,
         )
 
@@ -3166,7 +3165,6 @@ class MemoryStore:
                         else None
                     ),
                     severity=slots.get("severity") or "info",
-                    is_read=slots.get("status") == "resolved",
                     created_at=frame.created_at,
                 )
             )
@@ -3379,7 +3377,6 @@ class MemoryStore:
                     title=slots.get("title") or "",
                     message=slots.get("message") or "",
                     severity=slots.get("severity") or "info",
-                    is_read=False,
                     created_at=frame.created_at,
                 )
             )
@@ -3392,6 +3389,25 @@ class MemoryStore:
             if alert.id is not None:
                 await self.resolve_alert(alert.id)
         return len(alerts)
+
+    async def resolve_alerts_by_type(
+        self, user_id: int, types: set[str]
+    ) -> int:
+        """Resolve the user's open alerts whose `kind` is in `types`.
+
+        For repairing alerts raised by a writer that has since been removed —
+        those rows are notices with no question in them, so they cannot be
+        resolved by replying. Scoped by type on purpose: a blanket
+        `mark_all_alerts_read` would also close the alerts the user still needs
+        to see. Idempotent — an already-resolved row is simply not in the set.
+        """
+        alerts = await self.get_alerts(user_id, unread_only=True, limit=1000)
+        resolved = 0
+        for alert in alerts:
+            if alert.type in types and alert.id is not None:
+                if await self.resolve_alert(alert.id, user_id=user_id):
+                    resolved += 1
+        return resolved
 
 
 def lexical_blend_similarity(coverage: float) -> float:
