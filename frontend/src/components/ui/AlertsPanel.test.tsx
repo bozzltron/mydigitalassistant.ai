@@ -23,7 +23,7 @@ vi.mock('../../services/api')
  */
 describe('AlertsPanel', () => {
   const mockAlerts: Alert[] = [
-    { id: 1, user_id: 1, type: 'task_alert', title: 'Test Alert', message: 'Test message', source_frame_id: null, source_episode_id: null, severity: 'important', created_at: '2024-01-01T00:00:00Z',},
+    { id: 1, user_id: 1, type: 'task_alert', title: 'Test Alert', message: 'Test message', source_episode_id: null, severity: 'important', created_at: '2024-01-01T00:00:00Z',},
   ]
 
   let intervalCalls: Array<[() => void, number]>

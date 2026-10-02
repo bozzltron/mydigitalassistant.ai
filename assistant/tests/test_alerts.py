@@ -162,9 +162,12 @@ async def test_alert_with_source_frame_and_episode(store: MemoryStore):
         severity="warning",
     )
     
-    assert alert.source_frame_id == frame.id
     assert alert.source_episode_id is None
     assert alert.severity == "warning"
+    # The alert names the frame it concerns; the numeric id is not carried on
+    # the wire (see TestAlertAboutIsANameNotAnId).
+    slots = {sl.key: sl.value for sl in await store.get_slots_for_frame(alert.id)}
+    assert slots["about"] == "test_frame"
 
 
 @pytest.mark.asyncio

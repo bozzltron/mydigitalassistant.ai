@@ -1665,7 +1665,6 @@ class AlertResponse(BaseModel):
     type: str
     title: str
     message: str
-    source_frame_id: int | None = None
     source_episode_id: int | None = None
     severity: str
     created_at: str | None = None

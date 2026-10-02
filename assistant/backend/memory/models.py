@@ -104,7 +104,6 @@ class Alert(BaseModel):
     type: str  # "learning", "task_result", "conflict", "correction", "search_result"
     title: str
     message: str
-    source_frame_id: int | None = None
     source_episode_id: int | None = None
     severity: str = "info"  # "info", "warning", "important"
     created_at: str | None = None

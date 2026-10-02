@@ -3125,7 +3125,6 @@ class MemoryStore:
             type=type,
             title=title,
             message=message,
-            source_frame_id=source_frame_id,
             source_episode_id=source_episode_id,
             severity=severity,
             created_at=frame.created_at,

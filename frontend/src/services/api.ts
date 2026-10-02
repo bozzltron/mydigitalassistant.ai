@@ -508,7 +508,6 @@ export interface Alert {
   type: string
   title: string
   message: string
-  source_frame_id: number | null
   source_episode_id: number | null
   severity: string
   created_at: string | null
