@@ -11,7 +11,7 @@ from urllib.parse import urlsplit
 import httpx
 from fastapi import Depends as _Depends
 from fastapi import FastAPI, File, HTTPException, Query, Response, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -304,7 +304,32 @@ app = FastAPI(
 _static_path = Path(__file__).parent / "static"
 _static_path.mkdir(exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(_static_path)), name="static")
-app.mount("/assets", StaticFiles(directory=str(_static_path / "assets")), name="assets")
+# The frontend bundle is build output: present in the image, absent in a fresh
+# checkout (and excluded from the Docker build context so it cannot clobber the
+# freshly built copy). Mount only when it exists, rather than failing to import.
+_assets_path = _static_path / "assets"
+if _assets_path.is_dir():
+    app.mount("/assets", StaticFiles(directory=str(_assets_path)), name="assets")
+
+_INDEX_PATH = _static_path / "index.html"
+
+
+def _spa_response() -> Response:
+    """The SPA shell if it has been built, else a minimal HTML page.
+
+    The bundle is build output: present in the image, absent in a fresh checkout
+    (and excluded from the Docker build context so it cannot clobber the freshly
+    built copy). These routes must return HTML either way -- in dev the app is
+    served by Vite, and a 404 here would break a deep link.
+    """
+    if _INDEX_PATH.exists():
+        return FileResponse(str(_INDEX_PATH))
+    return HTMLResponse(
+        '<!doctype html><html><head><meta charset="utf-8">'
+        "<title>MyDigitalAssistant.ai</title>"
+        "</head><body><p>The web UI has not been built. Run <code>npm run build</code> "
+        "in <code>frontend/</code>, or use the dev server.</p></body></html>"
+    )
 
 
 def get_store() -> MemoryStore:
@@ -319,11 +344,7 @@ def get_orchestrator() -> Orchestrator:
 @app.get("/chat-ui")
 async def chat_ui():
     """Serve the web chat interface (SolidJS SPA)."""
-    from fastapi.responses import FileResponse
-    index_path = Path(__file__).parent / "static" / "index.html"
-    if index_path.exists():
-        return FileResponse(str(index_path))
-    raise HTTPException(status_code=404, detail="index.html not found")
+    return _spa_response()
 
 
 @app.get("/assistant/name")
@@ -342,11 +363,7 @@ async def get_assistant_name(store: MemoryStore = _Depends(get_store)):
 @app.get("/brain-ui")
 async def brain_ui():
     """Serve the brain visualization interface (SolidJS SPA)."""
-    from fastapi.responses import FileResponse
-    index_path = Path(__file__).parent / "static" / "index.html"
-    if index_path.exists():
-        return FileResponse(str(index_path))
-    raise HTTPException(status_code=404, detail="index.html not found")
+    return _spa_response()
 
 
 # Health
@@ -2669,10 +2686,6 @@ async def delete_file(
 @app.get("/{path:path}")
 async def spa_catch_all(path: str):
     """Serve the SolidJS SPA for any unmatched path."""
-    from pathlib import Path
-
-    from fastapi.responses import FileResponse, PlainTextResponse
-
     # Don't serve SPA for asset file types, /assets/, or API routes
     asset_extensions = [".js", ".css", ".svg", ".png", ".jpg", ".ico", ".wasm", ".json"]
     api_prefixes = [
@@ -2703,11 +2716,7 @@ async def spa_catch_all(path: str):
         raise HTTPException(status_code=404, detail="Asset not found - use /static/path")
     if any(path.startswith(prefix.lstrip("/")) for prefix in api_prefixes):
         raise HTTPException(status_code=404, detail="API route not found")
-    index_path = Path(__file__).parent / "static" / "index.html"
-    if index_path.exists():
-        return FileResponse(str(index_path))
-    # Fallback to a simple 200 response for any other assets
-    return PlainTextResponse("Assistant frontend loaded", status_code=200)
+    return _spa_response()
 
 # Log that app is loaded
 logger = logging.getLogger(__name__)

@@ -81,10 +81,15 @@ export function AlertsPanel() {
     }
   })
 
-  /** Open the picker for an alert and load the conversations it could go in. */
+  /** Toggle the inline conversation picker for an alert. */
   const chooseConversation = async (alert: Alert) => {
     const u = user()
     if (!u) return
+
+    if (picker()?.alertId === alert.id) {
+      setPicker(null)
+      return
+    }
 
     setPicker({ alertId: alert.id, alertTitle: alert.title })
     setOptionsLoading(true)
@@ -262,8 +267,9 @@ export function AlertsPanel() {
                           {formatDate(alert.created_at)}
                         </span>
                       </div>
+                      {/* The question, not the report: `alert.message` is the whole
+                          task output and read as a wall of text here. */}
                       <div class={styles.alertTitle}>{alert.title}</div>
-                      <div class={styles.alertMessage}>{alert.message}</div>
                     </div>
                     <div class={styles.alertActions}>
                       <button
@@ -271,67 +277,62 @@ export function AlertsPanel() {
                         onClick={() => chooseConversation(alert)}
                         disabled={resolvingId() === alert.id}
                       >
-                        Resolve…
+                        {picker()?.alertId === alert.id ? 'Cancel' : 'Resolve…'}
                       </button>
                     </div>
+
+                    {/* One question, then the conversation selector inline --
+                        no second modal, no wall of text. */}
+                    <Show when={picker()?.alertId === alert.id}>
+                      <div class={styles.inlinePicker}>
+                        <p class={styles.pickerHint}>
+                          Pick the conversation to settle this in.
+                          <Show when={options().length === 0 && !optionsLoading()}>
+                            {' '}
+                            You have no other conversations, so this will start one.
+                          </Show>
+                        </p>
+                        <Show when={optionsLoading()}>
+                          <div class={styles.loading}>Loading conversations...</div>
+                        </Show>
+                        <Show when={!optionsLoading()}>
+                          <div class={styles.optionsList}>
+                            <For each={options()}>
+                              {(option) => (
+                                <button
+                                  class={styles.optionItem}
+                                  onClick={() => resolveIn(option.session_id)}
+                                  disabled={resolvingId() !== null}
+                                >
+                                  <span class={styles.optionName}>{option.name}</span>
+                                  <span class={styles.optionMeta}>
+                                    {option.message_count} message
+                                    {option.message_count === 1 ? '' : 's'}
+                                    <Show when={option.last_activity}>
+                                      {' · '}
+                                      {formatDate(option.last_activity)}
+                                    </Show>
+                                  </span>
+                                </button>
+                              )}
+                            </For>
+                            <button
+                              class={`${styles.optionItem} ${styles.optionNew}`}
+                              onClick={() => resolveIn(null)}
+                              disabled={resolvingId() !== null}
+                            >
+                              <span class={styles.optionName}>New conversation</span>
+                              <span class={styles.optionMeta}>
+                                Starts a thread just for this alert
+                              </span>
+                            </button>
+                          </div>
+                        </Show>
+                      </div>
+                    </Show>
                   </div>
                 )}
               </For>
-            </div>
-          </Show>
-        </div>
-      </Modal>
-
-      <Modal
-        isOpen={picker() !== null}
-        onClose={() => setPicker(null)}
-        title="Resolve this where?"
-        size="medium"
-      >
-        <div class={styles.picker}>
-          <p class={styles.pickerHint}>
-            {picker()?.alertTitle} — pick the conversation you want to settle it in.
-            <Show when={options().length === 0 && !optionsLoading()}>
-              {' '}
-              You have no other conversations, so this will start one.
-            </Show>
-          </p>
-
-          <Show when={optionsLoading()}>
-            <div class={styles.loading}>Loading conversations...</div>
-          </Show>
-
-          <Show when={!optionsLoading()}>
-            <div class={styles.optionsList}>
-              <For each={options()}>
-                {(option) => (
-                  <button
-                    class={styles.optionItem}
-                    onClick={() => resolveIn(option.session_id)}
-                    disabled={resolvingId() !== null}
-                  >
-                    <span class={styles.optionName}>{option.name}</span>
-                    <span class={styles.optionMeta}>
-                      {option.message_count} message
-                      {option.message_count === 1 ? '' : 's'}
-                      <Show when={option.last_activity}>
-                        {' · '}
-                        {formatDate(option.last_activity)}
-                      </Show>
-                    </span>
-                  </button>
-                )}
-              </For>
-              <button
-                class={`${styles.optionItem} ${styles.optionNew}`}
-                onClick={() => resolveIn(null)}
-                disabled={resolvingId() !== null}
-              >
-                <span class={styles.optionName}>New conversation</span>
-                <span class={styles.optionMeta}>
-                  Starts a thread just for this alert
-                </span>
-              </button>
             </div>
           </Show>
         </div>

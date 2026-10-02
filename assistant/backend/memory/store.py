@@ -3215,24 +3215,25 @@ class MemoryStore:
         alert_id: int,
         user_id: int,
         session_id: str,
-        *,
-        seed_if_empty: bool = True,
     ) -> tuple[str, int | None]:
-        """Attach an alert to a conversation, so it can be resolved there.
+        """Attach an alert to a conversation, posting it as a message.
 
         The selector's server side. The default is **an existing conversation**:
         giving every alert its own thread solves one problem (nothing to choose) and
         creates another, because the conversation list then fills with one-off alert
-        threads -- the inbox problem in different clothes. Attaching to a conversation
-        the user already has means nothing new accumulates.
+        threads -- the inbox problem in different clothes.
 
-        `seed_if_empty` writes the alert as the opening assistant message when the
-        session has no turns yet. On a session that already has history no message is
-        written: the user is mid-conversation, and the agent raises the alert in flow
-        rather than as a discontinuity. Either way the alert is linked to the session,
-        so the backstop closes it when the user replies.
+        The alert is always posted as a concise assistant message the user can
+        answer, whether or not the conversation already has history. It used to be
+        written only into an *empty* session, so choosing any conversation the user
+        had used before showed nothing at all -- indistinguishable from the feature
+        being broken. The message is the alert's short `title` (the question), not
+        `message`, which for a task alert is the entire report. It is posted once
+        per conversation: re-opening the same alert adds no second opening. The
+        alert is linked to the session either way, so the backstop closes it when
+        the user replies.
 
-        Returns `(session_id, episode_id or None)`.
+        Returns `(session_id, episode_id)`.
         """
         frame = await self.get_frame(alert_id)
         if frame is None or frame.type != ALERT_FRAME_TYPE:
@@ -3241,12 +3242,11 @@ class MemoryStore:
             raise ValueError(f"alert {alert_id} is not owned by user {user_id}")
 
         slots = {s.key: s.value for s in await self.get_slots_for_frame(alert_id)}
-        episodes = await self.get_episodes_for_session(
-            session_id, user_id=user_id, limit=1
-        )
+        # Post once per conversation. Re-opening the same alert (which the picker
+        # can do) must not stack duplicate openings in the same thread.
+        already_here = slots.get("session_id") == session_id
         episode_id: int | None = None
-
-        if not episodes and seed_if_empty:
+        if not already_here:
             about = slots.get("about")
             target_note = (
                 f"\n\nWhat this concerns: {about}. "
@@ -3254,11 +3254,10 @@ class MemoryStore:
                 if about
                 else "\n\nWhen we settle this, mark the alert resolved."
             )
-            opening = (
-                f"{slots.get('message', '')}"
-                f"\n\n{slots.get('title', '')}"
-                f"{target_note}"
-            ).strip()
+            headline = (slots.get("title") or "").strip() or (
+                slots.get("message") or ""
+            )[:200].strip()
+            opening = f"{headline}{target_note}".strip()
             episode = await self.create_episode(
                 user_id=user_id,
                 session_id=session_id,
@@ -3272,7 +3271,7 @@ class MemoryStore:
             alert_id, "session_id", session_id, source_type="alert"
         )
         logger.info(
-            "Alert %d attached to conversation %s (seeded=%s)",
+            "Alert %d attached to conversation %s (posted=%s)",
             alert_id,
             session_id,
             episode_id is not None,

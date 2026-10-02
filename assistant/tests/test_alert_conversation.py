@@ -58,15 +58,18 @@ class TestAlertStartsTheConversation:
         assert episodes[0].id == episode_id
 
     @pytest.mark.asyncio
-    async def test_opening_message_carries_the_alert(self, store):
+    async def test_opening_message_is_the_question_not_the_report(self, store):
+        """The opening is the alert's short title, so it reads as a question to
+        answer rather than a wall of text. `message` is the full task report and
+        is deliberately not dumped into the conversation."""
         user = await store.create_user("alice")
         alert = await _an_alert(store, user.id)
         session_id, _ = await store.open_alert_conversation(alert.id, user.id)
 
         episodes = await store.get_episodes_for_session(session_id, user_id=user.id)
         opening = episodes[0].content
-        assert "Austin" in opening
-        assert "Two beliefs about your city" in opening
+        assert opening.startswith("Two beliefs about your city")
+        assert "I hold both 'Austin' and 'Austin, TX'" not in opening
 
     @pytest.mark.asyncio
     async def test_opening_message_carries_its_own_resolution_instructions(self, store):
@@ -184,9 +187,11 @@ class TestAttachToAnExistingConversation:
     build up one per alert."""
 
     @pytest.mark.asyncio
-    async def test_attaching_to_an_existing_session_writes_no_message(self, store):
-        """The user is mid-conversation; the alert is raised in flow, not as a
-        discontinuity in their thread."""
+    async def test_attaching_to_an_existing_session_posts_the_alert(self, store):
+        """The alert must appear in the conversation the user picked, whether or not
+        it already has history. It used to be written only into an *empty* session,
+        so choosing any conversation you had used before showed nothing at all --
+        which read as the feature being broken."""
         user = await store.create_user("alice")
         await store.create_session("conv_talking", user.id)
         await store.create_episode(
@@ -202,11 +207,15 @@ class TestAttachToAnExistingConversation:
         )
 
         assert session_id == "conv_talking"
-        assert episode_id is None, "a message was injected mid-conversation"
+        assert episode_id is not None, "the alert was not posted into the conversation"
         episodes = await store.get_episodes_for_session(
             "conv_talking", user_id=user.id
         )
-        assert len(episodes) == 1, "the alert added a turn to a live conversation"
+        assert len(episodes) == 2, "the alert should add exactly one turn"
+        # The message is the short question, not the whole report.
+        assert episodes[-1].role == "assistant"
+        assert episodes[-1].content.startswith("Two beliefs about your city")
+        assert "I hold both 'Austin' and 'Austin, TX'" not in episodes[-1].content
 
     @pytest.mark.asyncio
     async def test_attached_alert_closes_when_the_user_replies(self, store):
