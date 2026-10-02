@@ -210,21 +210,21 @@ export function AlertsPanel() {
         onClick={() => setIsOpen(true)}
         aria-label={
           unreadCount() > 0
-            ? `Open alerts (${unreadCount()} waiting)`
-            : 'Open alerts'
+            ? `For You (${unreadCount()} waiting)`
+            : 'For You'
         }
       >
         <BellIcon />
         <Show when={unreadCount() > 0}>
           <span class={styles.unreadBadge}>{unreadCount()}</span>
         </Show>
-        <span class={styles.alertsLabel}>Alerts</span>
+        <span class={styles.alertsLabel}>For You</span>
       </button>
 
       <Modal
         isOpen={isOpen()}
         onClose={() => setIsOpen(false)}
-        title="Alerts"
+        title="For You"
         size="large"
       >
         <div class={styles.alertsPanel}>
@@ -238,14 +238,14 @@ export function AlertsPanel() {
           </div>
 
           <Show when={!hasLoaded()}>
-            <div class={styles.loading}>Loading alerts...</div>
+            <div class={styles.loading}>Loading…</div>
           </Show>
 
           <Show when={hasLoaded() && alerts().length === 0}>
             <div class={styles.empty}>
               <p>Nothing waiting</p>
               <p class={styles.emptyHint}>
-                Alerts appear when I learn something while you are away
+                Things land here when I learn something while you're away
               </p>
             </div>
           </Show>

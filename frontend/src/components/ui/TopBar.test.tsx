@@ -103,7 +103,7 @@ describe('TopBar', () => {
     ).map((el) => (el.getAttribute('aria-label') || el.textContent || '').trim())
 
     expect(labels).toHaveLength(6)
-    expect(labels[0]).toMatch(/alerts/i)
+    expect(labels[0]).toMatch(/for you/i)
     expect(labels[1]).toMatch(/let's talk/i)
     expect(labels[2]).toBe('Files')
     expect(labels[3]).toBe('Brain')

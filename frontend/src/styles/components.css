@@ -69,16 +69,17 @@
   padding: 0.35rem;
 }
 
-/* Something is waiting in the bell: the colour is the signal, the badge the count. */
+/* Something is waiting: mint, not red. These are things to talk about, not
+   errors, so the colour invites rather than alarms. The badge carries the count. */
 .topbar-btn.has-alerts {
-  border-color: var(--error);
-  color: var(--error);
+  border-color: var(--accent2);
+  color: var(--accent2);
 }
 
 .topbar-btn.has-alerts:hover {
-  background: var(--error);
-  border-color: var(--error);
-  color: #fff;
+  background: var(--accent2);
+  border-color: var(--accent2);
+  color: var(--bg);
 }
 
 /* Voice button */

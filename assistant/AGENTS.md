@@ -382,6 +382,10 @@ the assessment criteria, memory budget, and re-evaluation process.
 
 ## Alerts — the agent's channel to the user
 
+**In the UI the bell is labelled "For You"** (mint, not red). Under the hood these
+are `alert` frames — the label is the user-facing name, chosen because these are
+things to talk about, not errors, and a red badge read as alarm.
+
 **An alert is memory of a type**, not a row in a notifications table: a frame of type
 `alert` with slots `title`, `message`, `status` (`new` | `resolved`), `severity`,
 `kind`, `about`, and `session_id`. The bell is a view over it. Because an alert is

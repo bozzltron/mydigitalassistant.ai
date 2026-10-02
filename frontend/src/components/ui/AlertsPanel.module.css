@@ -30,8 +30,8 @@
   min-width: 20px;
   height: 20px;
   padding: 0 6px;
-  background: var(--error);
-  color: #fff;
+  background: var(--accent2);
+  color: var(--bg);
   border-radius: 10px;
   font-size: 0.75rem;
   font-weight: 600;

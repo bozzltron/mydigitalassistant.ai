@@ -86,7 +86,7 @@ describe('AlertsPanel', () => {
     // Regression: every 30s poll set isLoading, swapping the list for "Loading
     // alerts..." — the flicker that read as alerts appearing and disappearing.
     render(() => <AlertsPanel />)
-    fireEvent.click(await screen.findByText('Alerts'))
+    fireEvent.click(await screen.findByText('For You'))
     expect(await screen.findByText('Test Alert')).toBeTruthy()
 
     intervalCalls[0][0]() // fire the registered poll
@@ -125,7 +125,7 @@ describe('AlertsPanel', () => {
 
     it('offers conversations to resolve into', async () => {
       render(() => <AlertsPanel />)
-      fireEvent.click(await screen.findByText('Alerts'))
+      fireEvent.click(await screen.findByText('For You'))
       fireEvent.click(await screen.findByText('Resolve…'))
 
       await waitFor(() => expect(getAlertConversationOptions).toHaveBeenCalledWith(1, 1))
@@ -136,7 +136,7 @@ describe('AlertsPanel', () => {
 
     it('attaches the alert to the chosen conversation, not a new one', async () => {
       render(() => <AlertsPanel />)
-      fireEvent.click(await screen.findByText('Alerts'))
+      fireEvent.click(await screen.findByText('For You'))
       fireEvent.click(await screen.findByText('Resolve…'))
       fireEvent.click(await screen.findByText('Friend Music Records'))
 
@@ -147,7 +147,7 @@ describe('AlertsPanel', () => {
 
     it('removes the alert from the list once attached', async () => {
       render(() => <AlertsPanel />)
-      fireEvent.click(await screen.findByText('Alerts'))
+      fireEvent.click(await screen.findByText('For You'))
       fireEvent.click(await screen.findByText('Resolve…'))
       fireEvent.click(await screen.findByText('Friend Music Records'))
 
@@ -164,7 +164,7 @@ describe('AlertsPanel', () => {
         seeded: true,
       })
       render(() => <AlertsPanel />)
-      fireEvent.click(await screen.findByText('Alerts'))
+      fireEvent.click(await screen.findByText('For You'))
       fireEvent.click(await screen.findByText('Resolve…'))
       fireEvent.click(await screen.findByText('New conversation'))
 
@@ -179,7 +179,7 @@ describe('AlertsPanel', () => {
       window.addEventListener('open-conversation', listener)
       try {
         render(() => <AlertsPanel />)
-        fireEvent.click(await screen.findByText('Alerts'))
+        fireEvent.click(await screen.findByText('For You'))
         fireEvent.click(await screen.findByText('Resolve…'))
         fireEvent.click(await screen.findByText('Friend Music Records'))
 
@@ -197,7 +197,7 @@ describe('AlertsPanel', () => {
         conversations: [],
       })
       render(() => <AlertsPanel />)
-      fireEvent.click(await screen.findByText('Alerts'))
+      fireEvent.click(await screen.findByText('For You'))
       fireEvent.click(await screen.findByText('Resolve…'))
 
       await waitFor(() =>
@@ -208,7 +208,7 @@ describe('AlertsPanel', () => {
 
   it('resolves everything on request', async () => {
     render(() => <AlertsPanel />)
-    fireEvent.click(await screen.findByText('Alerts'))
+    fireEvent.click(await screen.findByText('For You'))
     fireEvent.click(await screen.findByText('Resolve all'))
 
     await waitFor(() => expect(markAllAlertsAsRead).toHaveBeenCalledWith(1))
