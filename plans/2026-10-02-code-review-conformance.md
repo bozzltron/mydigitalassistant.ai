@@ -15,13 +15,15 @@ pass and are not touched here.
 
 ## Measured findings (evidence, not inference)
 
-**F1 — Inline styles in the Brain UI.** `AGENTS.md`: "No inline styles. Inline
-styles (`style={{...}}`) are prohibited." Present in `BrainPage.tsx` (7),
-`FrameDetail.tsx` (2), `BrainGraph.tsx` (2), all injecting CSS custom properties
-(`--dot-color`, `--conf`, `--type-color`, `--legend-color`). The project already
-ruled on this shape: `media-grid.css` says even a genuinely dynamic value "should
-be a class, not an inline style." Brain has no module CSS; its styles are global
-`brain.css`.
+**F1 — literal inline styles in `brainLib.ts` (corrected during implementation).**
+The first pass flagged every Brain JSX `style={{...}}` (`BrainPage.tsx`,
+`FrameDetail.tsx`, `BrainGraph.tsx`) as a violation. That was wrong:
+`designSystem.test.ts` explicitly **sanctions** `style={{ '--custom-prop': v }}`
+as the way to pass a dynamic value to CSS, so those were already conformant — and
+the class rewrite that followed duplicated the palette and made the confidence bar
+lossy, so it was reverted. The genuine defect is `brainLib.ts`, which builds the
+tooltip as an HTML string and set literal `style="color:…"` there — invisible to
+the guard, which only scanned `.tsx` files.
 
 **F2 — Dependency lists drifted, and the declared one is incomplete.**
 `pyproject.toml` `[project].dependencies` omits `sqlcipher3`, `cryptography`,
@@ -62,7 +64,7 @@ result-after-verification; nothing distinguishes "in flight" from "abandoned."
 
 | # | Requirement |
 |---|---|
-| R1 | Brain UI and modal close buttons render no inline `style={{...}}`; dynamic theming is carried by classes. |
+| R1 | The tooltip HTML emits no literal inline style property (custom properties are the sanctioned form); the design-system guard scans `.ts` as well as `.tsx`. |
 | R2 | `pyproject.toml` declares every runtime dependency, so `pip install -e ".[dev]"` yields a working (encrypted-capable) install. |
 | R3 | The Dockerfile installs from the declared dependencies rather than a hand-maintained second list. |
 | R4 | The duplicate `assistant/pyproject.toml` is resolved: its unique content (the `learning_exam` marker) is preserved and pytest still finds a config for `assistant/tests/`. |
@@ -84,25 +86,22 @@ result-after-verification; nothing distinguishes "in flight" from "abandoned."
 
 ## Design
 
-- **F1:** `brain.css` already reads the custom properties (`--dot-color`, `--conf`,
-  `--type-color`, `--legend-color`), so the fix is to stop *setting* them inline and
-  set them from classes. Frame-type colours become `.legend-dot--person` etc.,
-  using the same values as `TYPE_COLORS` in `brainLib.ts`. Confidence becomes a
-  banded class (`--band-low/mid/high`) instead of a computed percentage.
-  `FrameDetail`'s `--type-color` becomes a `frame-type--<type>` class.
-  `BrainGraph`'s graph-legend colour becomes a per-group class. `TYPE_COLORS`
-  stays in `brainLib.ts` (it is also used by the 3D graph).
+- **F1:** the tooltip name's colour becomes a custom property
+  (`style="--type-color:…"`) read by `.tooltip-name`, and the fixed tokens
+  (`--text-dim`, `--warning`, `--error`) become `muted` / `essential` / `conflict`
+  classes. The design-system guard is extended to read `.ts` files, since the JSX
+  rule never saw the string form.
 - **F2/R4:** root `pyproject.toml` becomes the single source of truth (add the
   four missing runtime deps). **Confirmed:** pytest resolves
   `configfile: pyproject.toml` with `rootdir: /app/assistant` for
   `assistant/tests/`, i.e. it is using the *nested* file. So `learning_exam` and
   `asyncio_mode` must be added to the root `[tool.pytest.ini_options]` before the
   duplicate is removed, or a full-suite run changes behaviour.
-- **F3:** add file-type and close icons to a shared icon module (the one added in
-  Plan G, `TopBarIcons.tsx`, or a sibling) and use them in `FileGrid`,
-  `FileViewer`, `FrameDetail`, `Modal`, `EditModal`.
-- **F4:** `git rm --cached -r assistant/backend/static` plus a `.gitignore` entry
-  for the build output, keeping the working files in place.
+- **F3:** add file-type and close icons to a shared icon module (`ui/Icons.tsx`)
+  and use them in `FileGrid`, `FileViewer`, `FrameDetail`, `Modal`, `EditModal`.
+- **F4:** `git rm --cached assistant/backend/static/assets assistant/backend/static/index.html`
+  plus `.gitignore` entries. The SVGs stay tracked: Vite cannot empty a directory
+  outside its own root, so they are hand-maintained and served at runtime.
 - **F6:** document the key.
 
 ## Dependencies and ordering
@@ -138,15 +137,21 @@ result-after-verification; nothing distinguishes "in flight" from "abandoned."
 All changes are source-only and revertable with `git revert`. Untracking build
 artifacts (F4) does not delete the working files.
 
-## Resolved while planning
+## Resolved while implementing
 
-- **F2/R4 (resolved):** pytest uses `assistant/pyproject.toml` as `configfile`
-  (`rootdir: /app/assistant`). Move `asyncio_mode`, `pythonpath`, `testpaths` and
-  the `learning_exam` marker into the root `[tool.pytest.ini_options]`, then delete
-  `assistant/pyproject.toml`. Re-run the suite to confirm nothing changes.
-- **F7 (to decide per experiment):** each of the three needs a one-line verdict —
-  finish it (`result.md`) or delete the plan because it is abandoned. No
-  third state.
+- **F1 (corrected):** the JSX custom-property inline styles were sanctioned, not a
+  defect. Only `brainLib.ts`'s literal styles were real, and the guard now covers
+  `.ts`.
+- **F2/R4 (resolved):** pytest used `assistant/pyproject.toml` as `configfile`
+  (`rootdir: /app/assistant`). `asyncio_mode`, `pythonpath`, `testpaths` and the
+  `learning_exam` marker moved into the root config, the duplicate was deleted, and
+  two `from scripts.…` imports were corrected to `assistant.scripts.…` (the nested
+  rootdir had made the bare path resolvable).
+- **F4 (scoped):** only `assets/` and `index.html` are generated; the SVGs are
+  runtime assets Vite leaves in place, so they stay tracked.
+- **F7 (resolved):** `daily_schedule_e2e` is superseded; `memory_health` is a tool.
+  Both now say so in their plan. `daily_run_retrieval_magnet` already stated it is
+  pre-registered with no data.
 - **Not in scope:** the documented open gaps — answer text not streamed
   (`TextDeltaEvent` unconstructed), portable-brain export/import unwired, and the
   Modal's missing focus trap. These are known and deliberate; they are recorded in
