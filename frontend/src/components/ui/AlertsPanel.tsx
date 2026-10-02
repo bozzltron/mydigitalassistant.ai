@@ -25,10 +25,9 @@ import styles from './AlertsPanel.module.css'
  * conversation list with one-off threads, which is the inbox problem again.
  */
 
-/** The modal is a two-step flow: pick a conversation, then go there. */
+/** The inline picker is open for one alert at a time. */
 type PickerState = {
   alertId: number
-  alertTitle: string
 } | null
 
 export function AlertsPanel() {
@@ -91,7 +90,7 @@ export function AlertsPanel() {
       return
     }
 
-    setPicker({ alertId: alert.id, alertTitle: alert.title })
+    setPicker({ alertId: alert.id })
     setOptionsLoading(true)
     setOptions([])
     try {
