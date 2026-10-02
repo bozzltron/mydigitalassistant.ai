@@ -1,5 +1,60 @@
 # MyDigitalAssistant.ai — release notes
 
+## v0.5.0-alpha
+
+**The alerts channel stops looking like a warning.** These are things the agent
+wants to bring up and discuss, not errors — so the bell is now **For You**, in
+mint, and resolving one actually puts it in the conversation you chose.
+
+### "For You", not "Alerts"
+
+- The bell, its badge and its hover are **mint** (`--accent2`) instead of red.
+  Severity is unchanged: an `important` item still carries its red stripe,
+  because that is a signal about the item, not the feature.
+- The control is labelled **For You**; under the hood these stay `alert` frames.
+
+### Resolving an alert puts it in the conversation
+
+- **The alert is posted**, whether or not the conversation already had history.
+  It used to be written only into an *empty* session, so picking any conversation
+  you had used before showed nothing — indistinguishable from broken.
+- The posted message is the **question** (the alert's short title), not the whole
+  task report. Posted once per conversation; re-opening does not stack duplicates.
+- **One modal, not two.** The alert shows its question and **Resolve…** expands
+  the conversation selector inline. The wall of text is gone.
+- An alert attached *before* this behaviour existed (its `session_id` slot set,
+  no message) now posts when resolved, rather than silently declining.
+
+### The stale frontend that made rebuilds look broken
+
+The Dockerfile copied the freshly built Vite bundle, then `COPY assistant/`
+re-copied the **stale committed** `static/index.html` and `assets/` over it — so
+prod served a frontend from before the top-bar work and none of the UI fixes
+reached it. The build output is excluded from the build context now and the
+on-disk copies are gone. Verified: a marker added to the source survives a
+rebuild and reaches the served page.
+
+### Class collisions across global stylesheets
+
+A bare class defined in two global stylesheets collides: the later import wins
+the properties it sets, and the earlier one's remaining properties still apply.
+`.empty-state` (brain.css's absolute overlay vs files.css's flex box) left the
+file viewer's empty state floating; `.voice-dot` dimmed the top bar's dot; and
+`.file-icon` plus a dead `.welcome*` block overrode live rules. All scoped or
+removed, with a guard that fails if a bare class is defined twice.
+
+### Dev frontend mount
+
+`solid-dev` mounted seven individual files. A file bind mount pins an inode, so
+any `git checkout` or `stash` left Vite reading a deleted file (`ENOENT:
+/app/frontend/index.html`) and showing its error overlay. It mounts the
+`frontend/` directory now, with a named volume over `node_modules`.
+
+### Housekeeping
+
+The SPA routes return a minimal HTML page when the bundle has not been built,
+rather than 404-ing a deep link.
+
 ## v0.4.0-alpha
 
 **One top bar, and the small lies it was telling.** This release makes the
