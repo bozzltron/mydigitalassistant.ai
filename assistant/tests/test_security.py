@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts.verify_security import (
+from assistant.scripts.verify_security import (
     check_bind_address,
     check_env_example_exists,
     check_env_gitignored,
@@ -81,7 +81,7 @@ def test_no_secrets_committed():
 
 def test_security_check_types_are_exhaustive():
     """Ensure all checks return (bool, str)."""
-    from scripts.verify_security import CHECKS
+    from assistant.scripts.verify_security import CHECKS
 
     for _name, check_fn in CHECKS:
         result = check_fn()

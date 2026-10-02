@@ -9,36 +9,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml ./
+# The package source is needed for the metadata build (`.[dev]`); this is not
+# the runtime copy, which happens in the final stage.
+COPY assistant/ ./assistant/
 RUN pip install --no-cache-dir --upgrade pip \
-    && pip wheel --no-cache-dir --wheel-dir /wheels \
-        "fastapi>=0.110" \
-        "uvicorn[standard]>=0.27" \
-        "httpx>=0.27" \
-        "pydantic>=2.6" \
-        "pydantic-settings>=2.2" \
-        "rich>=13.7" \
-        "numpy>=1.26" \
-        "aiosqlite>=0.20" \
-        "sqlite-vec>=0.1.0" \
-        "pypdf>=4.2" \
-        "python-docx>=1.1" \
-        "openpyxl>=3.1" \
-        "python-pptx>=0.6.23" \
-        "icalendar>=6.0" \
-        "striprtf>=0.0.26" \
-        "odfpy>=1.4" \
-        "xlrd>=2.0" \
-        "defusedxml>=0.7" \
-        "xlwt>=1.3" \
-        "sqlalchemy>=2.0" \
-        "faster-whisper>=1.0" \
-        "python-multipart>=0.0.9" \
-        "ruff>=0.7.0" \
-        "pytest>=8.0" \
-        "pytest-asyncio>=0.23" \
-        "sqlcipher3>=0.6.0" \
-        "cryptography>=42.0" \
-        "sqlalchemy>=2.0"
+    && pip wheel --no-cache-dir --wheel-dir /wheels ".[dev]"
 
 # --- Frontend build stage ---
 FROM node:22-alpine AS frontend-builder
@@ -61,6 +36,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /wheels /wheels
+# Install the built wheels by name. They were resolved from pyproject.toml in the
+# builder stage, so this list need not repeat version pins -- it only names what
+# to install from /wheels.
 RUN pip install --no-cache-dir --no-index --find-links /wheels \
         fastapi \
         "uvicorn[standard]" \
@@ -71,6 +49,10 @@ RUN pip install --no-cache-dir --no-index --find-links /wheels \
         numpy \
         aiosqlite \
         sqlite-vec \
+        sqlcipher3 \
+        cryptography \
+        faster-whisper \
+        python-multipart \
         pypdf \
         python-docx \
         openpyxl \
@@ -80,15 +62,11 @@ RUN pip install --no-cache-dir --no-index --find-links /wheels \
         odfpy \
         xlrd \
         defusedxml \
-        xlwt \
-        faster-whisper \
-        python-multipart \
         ruff \
         pytest \
         pytest-asyncio \
-        sqlcipher3 \
-        cryptography \
-        sqlalchemy>=2.0 \
+        sqlalchemy \
+        xlwt \
     && rm -rf /wheels
 
 COPY --from=frontend-builder /app/assistant/backend/static /app/assistant/backend/static

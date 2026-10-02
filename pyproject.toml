@@ -17,6 +17,14 @@ dependencies = [
     "numpy>=1.26",
     "sqlite-vec>=0.1.0",
     "aiosqlite>=0.20",
+    # Encrypted brain (SQLCipher). Previously absent here, so `pip install -e .`
+    # produced an install with no SQLCipher and therefore no encrypted DB.
+    "sqlcipher3>=0.6.0",
+    "cryptography>=42.0",
+    # Local speech-to-text.
+    "faster-whisper>=1.0",
+    # Uploads (FastAPI's File/UploadFile).
+    "python-multipart>=0.0.9",
     # Read support for user-supplied documents. All offline, pure-Python, no
     # system binaries: PDF, Word (.docx), Excel (.xlsx), PowerPoint (.pptx).
     "pypdf>=4.2",
@@ -33,9 +41,9 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
-        "sqlalchemy>=2.0",
     "pytest-asyncio>=0.23",
     "ruff>=0.3",
+    "sqlalchemy>=2.0",
     # Test-only: generates the legacy .xls fixture (xlrd only reads).
     "xlwt>=1.3",
 ]
@@ -61,6 +69,9 @@ package-dir = { assistant = "assistant" }
 asyncio_mode = "auto"
 testpaths = ["tests"]
 pythonpath = ["."]
+markers = [
+    "learning_exam: marks the E2E learning exam test (requires real Ollama + SearXNG; excluded from default runs)",
+]
 
 [tool.ruff]
 line-length = 100
