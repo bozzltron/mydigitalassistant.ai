@@ -57,11 +57,13 @@ class MemoryContext:
     # Semantic matches over archived conversation turns (older than the
     # recency window, any session). (episode, similarity) best-first.
     past_conversations: list[tuple[Episode, float]] = field(default_factory=list)
-    # id -> name for every frame an association points at, so the prompt can
-    # render `relation -> name` instead of `relation -> frame:4812`. A database
-    # id means nothing to the model or the user, and the model echoed them back
-    # into its replies. Populated during retrieval from the frames already
-    # fetched; targets not present here are omitted rather than printed as ids.
+    # id -> name for association targets, so the prompt can render
+    # `relation -> name` instead of `relation -> frame:4812`. A database id means
+    # nothing to the model or the user, and the model echoed them back into its
+    # replies. Populated during retrieval from the frames already fetched, plus
+    # one batched read for targets not in the selection. A target that cannot be
+    # resolved is *absent* here, and the renderer omits that edge rather than
+    # printing an id.
     frame_names: dict[int, str] = field(default_factory=dict)
 
 
@@ -431,31 +433,33 @@ class Retriever:
                  )
              )
 
-        # 5a. Resolve association target names. Targets are neighbours that may
-        # not be in `selected`, so this is the one extra lookup the name
-        # rendering needs. It is a single batched read (get_frames_by_ids chunks
-        # internally) over ids we do not already hold -- no per-edge query, so
-        # nothing on the hot path scales with the number of associations. The
-        # result also seeds names for frames we already fetched, at no cost.
+        # Association targets are whichever end is not the retrieved frame, and
+        # they may not be in `selected` at all. Collect the names we do not hold
+        # and fetch them in one batched read; `get_frames_by_ids` chunks
+        # internally, so this is a single round trip regardless of how many edges
+        # there are — nothing here scales per-association on the hot path.
         frame_names: dict[int, str] = {
             fid: f.name for fid, f in frames_by_id.items()
         }
 
         async def _resolve_assoc_names() -> None:
-            """Fetch names for any association target not already known.
+            """Fetch names for association targets not already known.
 
             Called again after the identity boost, which inserts a frame with
             associations of its own after the first pass has run.
             """
-            unresolved = {
-                a.from_frame_id if a.to_frame_id in frame_names else a.to_frame_id
-                for rf in retrieved_frames
-                for a in rf.associations
-                if a.from_frame_id not in frame_names or a.to_frame_id not in frame_names
-            }
-            unresolved -= set(frame_names)
-            if unresolved:
-                extra = await self.store.get_frames_by_ids(list(unresolved))
+            wanted: set[int] = set()
+            for rf in retrieved_frames:
+                for a in rf.associations:
+                    other = (
+                        a.from_frame_id
+                        if a.to_frame_id == rf.frame.id
+                        else a.to_frame_id
+                    )
+                    if other not in frame_names:
+                        wanted.add(other)
+            if wanted:
+                extra = await self.store.get_frames_by_ids(list(wanted))
                 frame_names.update({fid: f.name for fid, f in extra.items()})
 
         await _resolve_assoc_names()

@@ -98,10 +98,20 @@ Large files are never fully embedded; the frame embeds metadata only.
 ## Sandbox rules
 
 - All ops route through `pipeline/filesystem.py`: `SANDBOX_ROOT = /app/data`,
-  path-traversal and symlink-escape checks, `sandbox_max_file_size` (10 MB
-  write), `sandbox_max_read_size` (1 MB read), `sandbox_max_glob_results`.
-- `read_file` returns the full content to the model — keep reads under the
-  context budget; that cap is the backstop.
+  path-traversal and symlink-escape checks, `sandbox_max_glob_results`.
+- **No file-size limits.** Upload, read, and write are uncapped: this is a local,
+  disk-backed project, so the user's disk is the limit. The deleted
+  `sandbox_max_file_size` / `sandbox_max_read_size` knobs are gone, as is
+  `SizeLimitError`. Do not reintroduce a cap as a "safety" measure — it was a
+  policy on the user's own files, and it is why a 6.7 MB PDF that uploaded fine
+  could not then be read.
+- `read_file` returns document text through `extract_file_content` (the same
+  extractor upload uses), not raw bytes: reading a PDF as UTF-8 yields garbage.
+  Text formats (txt/md/csv/tsv/json/xml/html/ics/eml/yaml) are read directly.
+- The only bound is the **model's context window** on what `read_file` returns
+  (`MAX_READ_CHARS_FOR_MODEL`), and a truncated read carries an explicit marker
+  with the true total so the model can say it saw a fragment. The file on disk is
+  never truncated.
 - Jobs, backups (`.db`, `.assistant-brain`) and the search index also live in
   `/app/data`; `list_sandbox_files("**/*")` sees everything, which is why
   `list_files` enriches from frames (only `file_upload` / `file_create` frames
@@ -121,7 +131,10 @@ old index frames like `uploaded_files` can carry stale references (see below).
   correct reads; consider cleaning the index frame's `file_list` slot when a
   file is renamed or deleted.
 - **`read_file` result size.** The tool result is re-sent into the model's
-  context. A 45 KB CSV is fine; near-1 MB reads are not. Keep the cap.
+  context, so `_bounded_for_model` caps what the model *sees* per turn at
+  `MAX_READ_CHARS_FOR_MODEL` with an explicit truncation marker and the true
+  total. This is a context-window bound, not a file-size limit: the file is
+  stored and read whole, and nothing is refused at any size.
 - **Embedding model drift.** Frames may carry embeddings under a different
   `embedding_model` than the runtime default (the current default is
   `qwen3-embedding:0.6b`, 1024-dim; older data may still carry
