@@ -30,7 +30,7 @@ function walk(dir: string, exts: string[]): string[] {
 
 const tsxFiles = walk(SRC, ['.tsx']).filter((f) => !f.includes('.test.'))
 const tsFiles = walk(SRC, ['.ts']).filter((f) => !f.includes('.test.'))
-const styleFiles = walk(SRC, ['.css'])
+const styleFiles = walk(SRC, ['.css']).filter((f) => !f.endsWith('.module.css'))
 const read = (f: string) => readFileSync(f, 'utf8')
 const show = (f: string) => relative(SRC_REL, f)
 
@@ -145,6 +145,40 @@ describe('design-system guards', () => {
     expect(
       offenders,
       `inline style with a non-custom-property key (use a class or a custom property):\n${offenders.join('\n')}`,
+    ).toEqual([])
+  })
+
+  it('no bare class selector is defined in more than one stylesheet', () => {
+    // A bare `.foo` in two global stylesheets collides: the later import wins the
+    // properties it sets, and the earlier one's remaining properties still apply.
+    // This is what broke the file viewer: brain.css's `.empty-state` is an
+    // absolutely-positioned overlay, and files.css does not reset `position`, so
+    // the file page's empty state floated to the wrong place. `.voice-dot` gave
+    // the top bar the status indicator's colour, and messages.css's `.file-icon`
+    // sized the file page's icon. All are scoped or removed now.
+    const owners = new Map<string, Set<string>>()
+    for (const f of styleFiles) {
+      const text = stripComments(read(f))
+      // A rule head is everything between the previous `{`/`}` and this `{`, with
+      // at-rules excluded. Grouped selectors (`.a, .b {`) and rules nested in a
+      // media query are both matched -- an earlier version keyed on `^\s*\.x {`
+      // and so missed `.empty-state,` entirely.
+      for (const m of text.matchAll(/(?:^|[{}])\s*([^{}@]+?)\s*\{/g)) {
+        const parts = m[1].split(',').map((s) => s.trim())
+        if (parts.length === 0) continue
+        if (!parts.every((s) => /^\.[a-zA-Z][a-zA-Z0-9_-]*$/.test(s))) continue
+        for (const s of parts) {
+          if (!owners.has(s)) owners.set(s, new Set())
+          owners.get(s)!.add(show(f))
+        }
+      }
+    }
+    const offenders = [...owners.entries()]
+      .filter(([, files]) => files.size > 1)
+      .map(([cls, files]) => `${cls}: ${[...files].join(', ')}`)
+    expect(
+      offenders,
+      `bare class defined in multiple stylesheets (scope one of them):\n${offenders.join('\n')}`,
     ).toEqual([])
   })
 

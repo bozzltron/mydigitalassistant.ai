@@ -341,7 +341,12 @@
   color: var(--text-dim);
 }
 
-.empty-state {
+/* Scoped to the graph container. This is an absolutely-positioned overlay, and a
+   bare `.empty-state` collided with files.css: files.css does not reset
+   `position`, so its rule (flow/flex-based) inherited this one's `position:
+   absolute; top/left: 50%` and the file viewer's empty state floated to the
+   wrong place instead of centring in the panel. */
+.brain-graph-container .empty-state {
   position: absolute;
   top: 50%;
   left: 50%;
@@ -352,7 +357,7 @@
   z-index: 5;
 }
 
-.empty-state h2 {
+.brain-graph-container .empty-state h2 {
   font-size: 1.2rem;
   margin-bottom: 0.5rem;
   color: var(--accent);

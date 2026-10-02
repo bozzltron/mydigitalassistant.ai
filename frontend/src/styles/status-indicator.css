@@ -18,7 +18,7 @@
 
 .status-indicator.active { display: flex; }
 
-.voice-dot {
+.status-indicator .voice-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
@@ -28,12 +28,12 @@
   box-shadow: 0 0 6px currentColor;
 }
 
-.voice-dot.listening {
+.status-indicator .voice-dot.listening {
   background: var(--accent);
   box-shadow: 0 0 8px var(--accent);
 }
 
-.voice-dot.processing {
+.status-indicator .voice-dot.processing {
   background: var(--warning);
   box-shadow: 0 0 8px var(--warning);
 }
@@ -41,7 +41,7 @@
 /* The component computes a `speaking` state, but only `listening` and
    `processing` had rules -- so `getDotClass()` returning 'voice-dot speaking'
    fell through to the undifferentiated base colour. */
-.voice-dot.speaking {
+.status-indicator .voice-dot.speaking {
   background: var(--accent2);
   box-shadow: 0 0 8px var(--accent2);
 }
@@ -174,37 +174,10 @@
   overflow-y: auto;
 }
 
-/* Welcome / loading states */
-.welcome {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  color: var(--text-dim);
-}
-
-.welcome-icon { font-size: 3rem; margin-bottom: 0.5rem; }
-
-.welcome h2 {
-  font-size: 1.2rem;
-  font-weight: 500;
-  color: var(--text);
-}
-
-.welcome p { font-size: 0.85rem; }
-
-.welcome-message {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  color: var(--text-dim);
-  padding: 2rem;
-}
+/* Welcome / loading states are styled by messages.css. The duplicate block that
+   lived here (`.welcome`, `.welcome-icon`, `.welcome h2`, `.welcome p`,
+   `.welcome-message`) was dead -- nothing rendered it -- yet it overrode
+   messages.css by import order, so the chat welcome was taking these rules. */
 
 .loading-dots::after {
   content: '';

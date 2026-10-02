@@ -291,8 +291,6 @@
 .file-chip.remove { cursor: pointer; color: var(--error); }
 .file-chip.remove:hover { color: var(--error); }
 
-.file-icon { width: 12px; height: 12px; }
-
 /* Confidence tooltip: a dotted underline over a statement grounded in memory,
    revealing the source frame/slot and its confidence on hover. */
 .confidence-tooltip {

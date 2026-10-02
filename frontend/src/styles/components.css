@@ -353,7 +353,7 @@ select {
   display: flex;
 }
 
-.voice-dot {
+.voice-status-bar .voice-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
@@ -362,11 +362,11 @@ select {
   flex-shrink: 0;
 }
 
-.voice-dot.processing {
+.voice-status-bar .voice-dot.processing {
   background: var(--warning);
 }
 
-.voice-dot.speaking {
+.voice-status-bar .voice-dot.speaking {
   background: var(--accent2);
   animation: none;
 }
