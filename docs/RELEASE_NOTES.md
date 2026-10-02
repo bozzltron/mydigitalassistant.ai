@@ -1,5 +1,87 @@
 # MyDigitalAssistant.ai — release notes
 
+## v0.6.0-alpha
+
+**Files actually work now.** The assistant could read a document at upload and
+not at read — two paths that disagreed about what a file is — and a large one was
+refused outright. It also printed raw database ids at you, and its For You bell
+filled with things that were never questions. This release fixes the reading, the
+limits, the ids, and the bell.
+
+### Documents are read, not decoded as text
+
+`read_file` bypassed the extractor entirely and decoded every file as UTF-8. For
+a PDF or a `.docx` that is binary noise, and past 1 MB it was refused before it
+got that far. A 6.7 MB press kit extracted to 9,213 clean characters at upload
+and was unreadable at read — which is what "the file was too large" actually
+meant.
+
+- Every document format now reads through the same extractor upload uses: PDF,
+  docx, xlsx, pptx, xls, rtf, odt/ods/odp. Text formats are still read directly.
+- A scanned PDF with no text layer says so, instead of looking like an empty
+  file. A corrupt file is not reported as missing.
+- The input bar had its own bug: it read files as text before sending them, so
+  even a correctly-extracted PDF arrived corrupted. It now uploads the bytes
+  (multipart, the same path the files page uses) and references the stored file
+  by frame.
+- Its format list was six entries while the files page offered seventeen, so the
+  attach button silently refused PDFs and Office documents. Both now derive from
+  one list, and a test reads the backend's Python source and fails if they drift.
+
+### No file-size limits
+
+A local, disk-backed project should be limited by the disk, not by a constant
+someone picked. Removed: the 1 MB read cap, the 10 MB write cap, and three 10 MB
+upload guards, along with `SizeLimitError` and its config knobs. The only bound
+left is the model's context window on what `read_file` returns, marked honestly
+with the true character total so the agent can say it saw a fragment.
+
+### No database ids in replies
+
+The memory context rendered graph edges as `related_to→frame:4832`, and alert
+messages printed `What this concerns: 4593.` — numbers that mean nothing to you,
+which the model then repeated back. Relations now render the target's **name**
+(`label→mozworth`), and an alert names the frame it concerns. An edge whose
+target cannot be named is omitted rather than shown as an id.
+
+### For You can be cleared
+
+The bell was full of items that were not questions: "Correction applied" fired
+during the conversation you were in, announcing something already on screen.
+There was nothing to reply to, so they could never be resolved.
+
+- The two correction writers are gone; alerts are now raised only by scheduled
+  work, when you were not there to hear it.
+- The alerts those writers already raised are closed — a scoped repair, not a
+  blanket clear, so your genuine task alerts are untouched.
+- **The green stripe was not "resolved".** `info` severity used the mint brand
+  colour, which read as a state rather than a severity. It is neutral now;
+  warning and important are unchanged.
+- `is_read` and `read_at` were served but read by nothing, and `is_read` meant
+  "resolved" while resolved rows are filtered out of the list. Removed.
+
+### Container resilience
+
+`restart: unless-stopped` was already there and Docker already backs off
+exponentially, so a crash cannot hot-loop. What was missing was the hung-process
+case, which never exits and so is never restarted.
+
+- The healthcheck probed `/health`, which calls Ollama and can block for up to
+  600s when Ollama is down — so an Ollama outage marked the app unhealthy and
+  restarted a container a restart cannot fix. It now probes `/healthz`, a
+  liveness route that does no I/O.
+- `autoheal` (prod) restarts unhealthy containers, scoped by label — never
+  `all`, which on this host would restart unrelated stacks.
+- Caddy waits for a healthy backend; SQLite gets a grace period on stop; logs are
+  rotated (Docker's default is unbounded).
+
+### Smaller things
+
+- Modal width was fixed at 400px for every dialog because the `size` prop had no
+  CSS behind it; Trash Can and For You now get 800px.
+- The dev/prod rebuild flow is documented: they are separate projects on
+  different ports, and a change is not verified until **both** are rebuilt.
+
 ## v0.5.0-alpha
 
 **The alerts channel stops looking like a warning.** These are things the agent
