@@ -90,3 +90,9 @@ assistant.db.unencrypted.backup
 eval_results/
 data/
 *.assistant-brain
+
+# Built frontend bundle (Vite writes here; rebuilt in the Docker image).
+# icons.svg / trash.svg stay tracked -- they are hand-maintained and served at
+# runtime, and Vite cannot empty a directory outside its own root.
+assistant/backend/static/assets/
+assistant/backend/static/index.html

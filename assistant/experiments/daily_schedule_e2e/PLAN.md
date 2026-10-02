@@ -1,5 +1,13 @@
 # Experiment: Atomic Daily Scheduled Tasks End-to-End
 
+## Status
+
+**Superseded.** The `POST /tasks/run-due` endpoint this specified shipped in
+`main.py`, and the full loop — create task → run-due → query the report — is
+covered by `assistant/tests/test_daily_schedule_experiment.py`
+(`test_daily_task_full_loop`). No separate `result.md` is written; the code and
+its test are the record.
+
 ## Goal
 Prove the full loop: natural language → scheduled task stored in memory → manual run via API → task executes through full cognitive loop → generates queryable memories → user asks "what did you learn today" → agent recalls and reports.
 

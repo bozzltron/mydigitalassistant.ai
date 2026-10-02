@@ -1,5 +1,11 @@
 # Experiment: Memory Health Check
 
+## Status
+
+**A tool, not a one-shot experiment.** `__main__.py` is a reusable diagnostic
+that prints a JSON snapshot of memory vitals on demand; it does not test a
+hypothesis, so there is no `result.md` to write. This document is its reference.
+
 ## Question
 Is the memory system healthy? Quick snapshot of key vitals.
 
