@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "assistant"
-version = "0.3.0"
+version = "0.4.0"
 description = "Privacy-first cognitive digital assistant with frame/slot memory"
 requires-python = ">=3.11"
 dependencies = [

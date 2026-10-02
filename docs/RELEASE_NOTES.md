@@ -1,5 +1,59 @@
 # MyDigitalAssistant.ai — release notes
 
+## v0.4.0-alpha
+
+**One top bar, and the small lies it was telling.** This release makes the
+header a single coherent control strip, and fixes two places where the UI showed
+a state that was not true — a voice turn that said "Listening" while it was
+transcribing, and an alert that looked unresolved after it had been resolved.
+
+### The top bar is one set
+
+The header mixed four button styles, three corner radii (6px, 20px, bare) and
+four controls with no icon. Now:
+
+- **One shared style.** Every control uses `.topbar-btn` — same radius, padding,
+  font and hover.
+- **Every control has an inline SVG icon**, coloured by `currentColor` so it
+  matches its label. New gains a `+`, Let's talk a microphone, Files a folder,
+  Brain a brain; Settings is icon-only.
+- **A deliberate order:** Alerts, Let's talk, Files, Brain, Settings, Trash. New
+  stays after the conversation switcher.
+- **The voice status bar takes Let's talk's place** while a turn is live — it
+  already carried the same stop/cancel actions, so showing both was redundant.
+
+### Two UI states that were lying
+
+- **"Transcribing…" now appears during a conversation turn.** The conversation
+  capture hook kept its own private state and never advanced the global voice
+  status, so the indicator read "Listening…" through the whole transcription.
+- **Resolving an alert into the conversation you are already viewing now shows
+  it.** The message-loading effect tracked the active conversation's id, so
+  re-opening the same conversation was a no-op: the seeded message was written
+  server-side and never appeared, making the alert look unresolved.
+
+### One dependency source
+
+`pyproject.toml` omitted `sqlcipher3`, `cryptography`, `faster-whisper` and
+`python-multipart`, so the documented `pip install -e .` produced an install with
+no SQLCipher — no encrypted brain. They are declared now, the Dockerfile builds
+its wheels from `.[dev]` instead of a hand-maintained second list, and the stale
+`assistant/pyproject.toml` is gone.
+
+### Icons are SVG, not emoji
+
+The file browser, frame detail and the modal close buttons used emoji and text
+glyphs as icons. They are inline SVG now, from one shared set. The design-system
+guard reads `.ts` files too — it only scanned `.tsx`, so a literal inline style
+emitted in an HTML string slipped past it, which is how the tooltip's
+`style="color:…"` survived; it is a custom property now.
+
+### Clean ship
+
+Dead CSS from the pre-Solid voice UI removed; stale build artifacts untracked and
+gitignored; `.env.example` gained the one key it was missing; two experiment
+plans now state whether they are pending or superseded.
+
 ## v0.3.0-alpha
 
 **It reads your documents, and it remembers what it showed you.** This release
