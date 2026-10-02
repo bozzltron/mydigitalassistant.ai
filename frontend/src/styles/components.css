@@ -1,21 +1,6 @@
 /* Components - Reusable UI components */
 
 /* Buttons */
-.btn {
-  background: var(--surface2);
-  border: 1px solid var(--border);
-  color: var(--text);
-  border-radius: 8px;
-  padding: 0 0.75rem;
-  font-size: 0.9rem;
-  cursor: pointer;
-  transition: background 0.15s;
-  height: 52px;
-}
-
-.btn:hover { background: var(--border); }
-.btn.danger { color: var(--error); border-color: var(--error); }
-
 .btn-primary {
   background: var(--accent);
   border: none;
@@ -110,12 +95,6 @@
 
 .voice-btn-small:hover { background: var(--border); }
 .voice-btn-small.danger { color: var(--error); border-color: var(--error); }
-
-/* User badge */
-.user-badge {
-  font-size: 0.8rem;
-  color: var(--text-dim);
-}
 
 /* Header right */
 .header-right {
@@ -430,90 +409,6 @@ select {
   pointer-events: auto;
 }
 
-.voice-bubble {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  padding: 2rem;
-  text-align: center;
-  min-width: 240px;
-}
-
-.voice-bubble h3 {
-  font-size: 0.9rem;
-  color: var(--text-dim);
-  margin-bottom: 1rem;
-}
-
-.voice-bubble.processing .pulse-ring {
-  border-color: var(--warning);
-  animation-duration: 2s;
-}
-
-.voice-bubble.processing .pulse-ring::after {
-  background: var(--warning);
-}
-
-.voice-bubble.speaking .pulse-ring {
-  border-color: var(--accent2);
-  animation: none;
-  opacity: 0.6;
-}
-
-.voice-bubble.speaking .pulse-ring::after {
-  background: var(--accent2);
-}
-
-.pulse-ring {
-  width: 64px;
-  height: 64px;
-  border-radius: 50%;
-  border: 3px solid var(--accent);
-  margin: 0 auto 1rem;
-  animation: pulse 1.2s infinite;
-  position: relative;
-}
-
-.pulse-ring::after {
-  content: '';
-  position: absolute;
-  inset: 8px;
-  background: var(--accent);
-  border-radius: 50%;
-  opacity: 0.5;
-}
-
-@keyframes pulse {
-  0%, 100% { transform: scale(1); opacity: 1; }
-  50% { transform: scale(1.08); opacity: 0.7; }
-}
-
-.voice-actions {
-  display: flex;
-  gap: 0.75rem;
-  justify-content: center;
-  margin-top: 1rem;
-}
-
-.voice-stop {
-  background: var(--error);
-  border: none;
-  color: #fff;
-  border-radius: 6px;
-  padding: 0.5rem 1.2rem;
-  font-size: 0.85rem;
-  cursor: pointer;
-}
-
-.voice-cancel {
-  background: var(--surface2);
-  border: 1px solid var(--border);
-  color: var(--text);
-  border-radius: 6px;
-  padding: 0.5rem 1.2rem;
-  font-size: 0.85rem;
-  cursor: pointer;
-}
 /* Icon button: a square, borderless button sized to the glyph it wraps.
    This class was defined inside a <style> block in TrashCan.tsx, yet it is used
    by InputBar (file-attach, mic, max-tokens) and VoiceControls (mic) as well.
