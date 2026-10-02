@@ -137,6 +137,102 @@ def test_format_memory_context_with_frames_and_episodes():
     assert "recent conversation" in formatted.lower()
 
 
+def test_memory_context_renders_association_names_not_ids():
+    """Relations must render the target's *name*, never a database id.
+
+    Regression: `format_memory_context` emitted `related_to→frame:4812`. The
+    model echoed those ids into its replies, where they mean nothing to the
+    user. The name is what the model and the reader can both use.
+    """
+    frame = Frame(id=1, name="guitar", type="entity", confidence=0.8)
+    assoc = Association(
+        id=1, from_frame_id=1, to_frame_id=752, relation_type="related_to", confidence=0.7
+    )
+    rf = RetrievedFrame(
+        frame=frame,
+        slots=[],
+        associations=[assoc],
+        relevance=0.85,
+        source="direct_match",
+    )
+    ctx = MemoryContext(
+        query="guitars",
+        retrieved_frames=[rf],
+        recent_episodes=[],
+        formatted="",
+        frame_names={752: "amplifier"},
+    )
+    formatted = format_memory_context(ctx)
+
+    assert "related_to\u2192amplifier" in formatted
+    assert "frame:752" not in formatted
+    assert "752" not in formatted
+
+
+def test_memory_context_omits_association_when_target_unresolvable():
+    """An edge whose target cannot be named is dropped, not printed as an id.
+
+    A missing name means we could not resolve the frame (deleted, or a target
+    never fetched). Printing `frame:752` in that case reintroduces exactly the
+    id leak above, so the edge is omitted instead.
+    """
+    frame = Frame(id=1, name="guitar", type="entity", confidence=0.8)
+    assoc = Association(
+        id=1, from_frame_id=1, to_frame_id=752, relation_type="related_to", confidence=0.7
+    )
+    rf = RetrievedFrame(
+        frame=frame,
+        slots=[],
+        associations=[assoc],
+        relevance=0.85,
+        source="direct_match",
+    )
+    ctx = MemoryContext(
+        query="guitars",
+        retrieved_frames=[rf],
+        recent_episodes=[],
+        formatted="",
+        frame_names={},  # 752 unresolved
+    )
+    formatted = format_memory_context(ctx)
+
+    assert "related_to" not in formatted
+    assert "frame:752" not in formatted
+    assert "752" not in formatted
+
+
+def test_memory_context_names_inbound_association_from_its_source():
+    """An edge pointing *at* this frame is named from the other end.
+
+    Associations are stored directionally but rendered as a relation this frame
+    participates in, so the target is whichever end is not this frame. Reading
+    `to_frame_id` unconditionally would name the frame itself and lose the
+    subject.
+    """
+    frame = Frame(id=500, name="amplifier", type="entity", confidence=0.8)
+    assoc = Association(
+        id=1, from_frame_id=1, to_frame_id=500, relation_type="used_by", confidence=0.7
+    )
+    rf = RetrievedFrame(
+        frame=frame,
+        slots=[],
+        associations=[assoc],
+        relevance=0.85,
+        source="graph_neighbor",
+    )
+    ctx = MemoryContext(
+        query="amplifiers",
+        retrieved_frames=[rf],
+        recent_episodes=[],
+        formatted="",
+        frame_names={1: "guitar"},
+    )
+    formatted = format_memory_context(ctx)
+
+    assert "used_by\u2192guitar" in formatted
+    assert "frame:500" not in formatted
+
+
 def test_format_memory_context_preserves_full_episode_content():
     """Episodes should NOT be truncated - the LLM needs full content."""
     ep = Episode(

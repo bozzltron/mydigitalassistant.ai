@@ -3101,11 +3101,17 @@ class MemoryStore:
         await self.set_derived_slot(frame.id, "severity", severity, source_type="alert")
         await self.set_derived_slot(frame.id, "kind", type, source_type="alert")
 
-        # What the alert concerns, so resolution has a target. Falls back to the
-        # frame the caller named, which is what the deterministic backstop watches.
+        # What the alert concerns, so resolution has a target.
+        #
+        # This falls back to the *name* of the frame the caller named, never its
+        # id. The seeded message says "What this concerns: {about}", so an id
+        # here leaked a bare number into user-facing text ("What this concerns:
+        # 4593") that means nothing to the reader. A name is what the reader
+        # shares with the memory.
         target = about
         if target is None and source_frame_id is not None:
-            target = str(source_frame_id)
+            source_frame = await self.get_frame(source_frame_id)
+            target = source_frame.name if source_frame is not None else None
         if target is not None:
             await self.set_derived_slot(frame.id, "about", target, source_type="alert")
         if source_episode_id is not None:

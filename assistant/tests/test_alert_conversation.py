@@ -397,3 +397,83 @@ class TestAFullAlertLifecycle:
         slots = {s.key: s.value for s in await store.get_slots_for_frame(alert.id)}
         assert slots["title"] == "Two beliefs about your city"
         assert slots["status"] == "resolved"
+
+
+class TestAlertAboutIsANameNotAnId:
+    """`about` is user-facing text, so it holds a name, never a frame id.
+
+    Regression: `create_alert` fell back to `str(source_frame_id)`, and the
+    seeded opening message renders it as "What this concerns: {about}". A live
+    alert therefore read "What this concerns: 4593." — a database id, shown to
+    the user, which they cannot act on and which the model echoed back.
+    """
+
+    @pytest.mark.asyncio
+    async def test_about_falls_back_to_the_frame_name(self, store):
+        user = await store.create_user("alice")
+        source = await store.create_frame(
+            "product_launch_plan", "entity", owner_user_id=user.id
+        )
+
+        alert = await store.create_alert(
+            user_id=user.id,
+            type="task_alert",
+            title="Launch date moved",
+            message="The launch moved from March to April.",
+            source_frame_id=source.id,
+        )
+
+        slots = {s.key: s.value for s in await store.get_slots_for_frame(alert.id)}
+        assert slots["about"] == "product_launch_plan"
+        assert slots["about"] != str(source.id)
+
+    @pytest.mark.asyncio
+    async def test_seeded_message_prints_the_name_not_the_id(self, store):
+        user = await store.create_user("alice")
+        source = await store.create_frame(
+            "product_launch_plan", "entity", owner_user_id=user.id
+        )
+        alert = await store.create_alert(
+            user_id=user.id,
+            type="task_alert",
+            title="Launch date moved",
+            message="The launch moved from March to April.",
+            source_frame_id=source.id,
+        )
+
+        session_id, _ = await store.open_alert_conversation(alert.id, user.id)
+        episodes = await store.get_episodes_for_session(session_id, user_id=user.id)
+        opening = episodes[0].content
+
+        assert "product_launch_plan" in opening
+        assert str(source.id) not in opening
+        assert "What this concerns:" in opening
+
+    @pytest.mark.asyncio
+    async def test_explicit_about_is_kept_verbatim(self, store):
+        """A caller that names the subject keeps control of the wording."""
+        user = await store.create_user("alice")
+        alert = await store.create_alert(
+            user_id=user.id,
+            type="task_alert",
+            title="Something to settle",
+            message="Please decide.",
+            source_frame_id=None,
+            about="the kitchen renovation budget",
+        )
+        slots = {s.key: s.value for s in await store.get_slots_for_frame(alert.id)}
+        assert slots["about"] == "the kitchen renovation budget"
+
+    @pytest.mark.asyncio
+    async def test_missing_source_frame_omits_about_rather_than_leaking_id(self, store):
+        """An unresolvable source yields no `about`, not a dangling number."""
+        user = await store.create_user("alice")
+        alert = await store.create_alert(
+            user_id=user.id,
+            type="task_alert",
+            title="Something to settle",
+            message="Please decide.",
+            source_frame_id=999_999,  # does not exist
+        )
+        slots = {s.key: s.value for s in await store.get_slots_for_frame(alert.id)}
+        assert "about" not in slots

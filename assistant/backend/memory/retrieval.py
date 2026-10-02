@@ -57,6 +57,12 @@ class MemoryContext:
     # Semantic matches over archived conversation turns (older than the
     # recency window, any session). (episode, similarity) best-first.
     past_conversations: list[tuple[Episode, float]] = field(default_factory=list)
+    # id -> name for every frame an association points at, so the prompt can
+    # render `relation -> name` instead of `relation -> frame:4812`. A database
+    # id means nothing to the model or the user, and the model echoed them back
+    # into its replies. Populated during retrieval from the frames already
+    # fetched; targets not present here are omitted rather than printed as ids.
+    frame_names: dict[int, str] = field(default_factory=dict)
 
 
 def frame_to_text(frame: Frame, slots: list[Slot]) -> str:
@@ -194,10 +200,24 @@ def format_memory_context(
                     pointer += f' or read_file(path="{file_safe_name}")'
                 block.append(pointer)
             if rf.associations:
-                assoc_str = ", ".join(
-                    f"{a.relation_type}\u2192frame:{a.to_frame_id}" for a in rf.associations[:3]
-                )
-                block.append(f"  relations: {assoc_str}")
+                # Render the *name* of what each edge points at, never the id.
+                # The target is whichever end is not this frame, so an inbound
+                # edge is named from its source rather than shown as a dangling
+                # id. An unresolvable target is dropped: an edge the model
+                # cannot name is not worth a prompt slot, and printing
+                # `frame:4812` is what made replies leak database ids.
+                named: list[str] = []
+                for a in rf.associations[:3]:
+                    target_id = (
+                        a.from_frame_id
+                        if a.to_frame_id == rf.frame.id
+                        else a.to_frame_id
+                    )
+                    target_name = context.frame_names.get(target_id)
+                    if target_name:
+                        named.append(f"{a.relation_type}\u2192{target_name}")
+                if named:
+                    block.append(f"  relations: {', '.join(named)}")
             if _fits(lines, block, max_memory_chars, emitted):
                 lines.extend(block)
                 emitted += 1
@@ -411,6 +431,35 @@ class Retriever:
                  )
              )
 
+        # 5a. Resolve association target names. Targets are neighbours that may
+        # not be in `selected`, so this is the one extra lookup the name
+        # rendering needs. It is a single batched read (get_frames_by_ids chunks
+        # internally) over ids we do not already hold -- no per-edge query, so
+        # nothing on the hot path scales with the number of associations. The
+        # result also seeds names for frames we already fetched, at no cost.
+        frame_names: dict[int, str] = {
+            fid: f.name for fid, f in frames_by_id.items()
+        }
+
+        async def _resolve_assoc_names() -> None:
+            """Fetch names for any association target not already known.
+
+            Called again after the identity boost, which inserts a frame with
+            associations of its own after the first pass has run.
+            """
+            unresolved = {
+                a.from_frame_id if a.to_frame_id in frame_names else a.to_frame_id
+                for rf in retrieved_frames
+                for a in rf.associations
+                if a.from_frame_id not in frame_names or a.to_frame_id not in frame_names
+            }
+            unresolved -= set(frame_names)
+            if unresolved:
+                extra = await self.store.get_frames_by_ids(list(unresolved))
+                frame_names.update({fid: f.name for fid, f in extra.items()})
+
+        await _resolve_assoc_names()
+
          # 5b. For self-identity queries, always include identity_name frame at top relevance
         if self._is_identity_query(query):
             identity_frame = await self.store.get_frame_by_name("identity_name")
@@ -434,6 +483,9 @@ class Retriever:
                         if rf.frame.id == identity_frame.id:
                             rf.relevance = max(rf.relevance, 1.0)
                             break
+        # The identity frame brings associations the first pass never saw, so
+        # its targets need naming too or its edges render nameless.
+        await _resolve_assoc_names()
 
          # 6. Recent episodes — prefer session-scoped when session_id is provided
         if session_id:
@@ -467,6 +519,7 @@ class Retriever:
             recent_episodes=recent_episodes,
             past_conversations=past_conversations,
             formatted="",
+            frame_names=frame_names,
          )
         context.formatted = format_memory_context(context)
 
