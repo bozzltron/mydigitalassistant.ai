@@ -11,7 +11,7 @@ vi.mock('../services/queueDrainer', () => ({
 
 import { useConversationVoiceRecording } from './useConversationVoiceRecording';
 import { getQueue, clearQueue, isProcessing, setProcessing, setActiveConversation } from '../state/messageQueue';
-import { setVoice, setTtsSpeaking } from '../state/voice';
+import { setVoice, setTtsSpeaking, voice } from '../state/voice';
 
 // ---------------------------------------------------------------------------
 // Media API mocks
@@ -351,6 +351,34 @@ describe('useConversationVoiceRecording', () => {
     // Queued, not sent: the drainer refuses while the agent is busy, so it waits.
     expect(getQueue().map((m) => m.content)).toEqual(['also, what is the weather tomorrow']);
     expect(getQueue()[0].source).toBe('voice');
+    dispose();
+  });
+
+  it('shows the transcribing status while a conversation turn is transcribed (regression: the top-bar bar stayed on "listening")', async () => {
+    // The conversation hook kept its own 'transcribing' state and never advanced
+    // the global voice status, so the indicator read "Listening..." through the
+    // whole /transcribe round-trip. It must follow the same signal it always had.
+    const voiceMode = voiceModeSignal(true);
+    const { dispose } = mountHook({ isVoiceMode: voiceMode.is, isTurnActive: () => false });
+    await flush();
+    expect(voice.status).toBe('listening');
+
+    let resolveFetch!: (v: unknown) => void;
+    global.fetch = vi.fn(
+      () => new Promise((r) => { resolveFetch = r; }),
+    ) as unknown as typeof fetch;
+
+    await speakThenPause();
+
+    // The request is in flight and the status reflects it.
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(voice.status).toBe('processing');
+
+    resolveFetch({ ok: true, status: 200, json: async () => ({ text: 'hello there' }) });
+    await flush(20);
+
+    // Back to listening once the turn's text is queued.
+    expect(voice.status).toBe('listening');
     dispose();
   });
 

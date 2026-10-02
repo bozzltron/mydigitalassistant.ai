@@ -3,7 +3,7 @@ import { debug } from '../services/logger';
 import { enqueue, isProcessing } from '../state/messageQueue';
 import { triggerDrain } from '../services/queueDrainer';
 import { isExitCommand, playEarcon } from '../services/audio';
-import { exitVoiceMode, isOutputActive } from '../state/voice';
+import { exitVoiceMode, isOutputActive, startListening, startProcessing } from '../state/voice';
 import { createVoiceCapture } from './voiceCapture';
 
 // How long to stay shut after the microphone fails to open. Long enough that a
@@ -136,6 +136,10 @@ export function useConversationVoiceRecording({
     // own sentence.
     if (inFlight || capture.isSettling()) {
       setConvState('transcribing');
+      // The global status is what the top-bar indicator reads, and this hook
+      // never advanced it: during a conversation turn it stayed 'listening', so
+      // the bar showed "Listening..." while actually transcribing.
+      startProcessing();
       return;
     }
 
@@ -152,6 +156,7 @@ export function useConversationVoiceRecording({
     }
 
     setConvState('recording');
+    startListening();
     void capture.start();
   });
 
@@ -164,6 +169,7 @@ export function useConversationVoiceRecording({
     batch(() => {
       setTranscriptionInFlight(true);
       setConvState('transcribing');
+      startProcessing();
     });
     playEarcon('stop');
 
