@@ -13,6 +13,7 @@ import type {
   Frame,
   Association,
   FileEntry,
+  FileUploadResult,
   User,
   SessionSummary,
   SessionMessage,
@@ -95,6 +96,7 @@ export type {
   Frame,
   Association,
   FileEntry,
+  FileUploadResult,
   User,
   SessionSummary,
   SessionMessage,
@@ -338,7 +340,7 @@ export async function listFiles(): Promise<FileEntry[]> {
   return api<FileEntry[]>(`/files/list`)
 }
 
-export async function postFileUpload(file: File): Promise<FileEntry> {
+export async function postFileUpload(file: File): Promise<FileUploadResult> {
   debug('Uploading file:', file.name)
   const formData = new FormData()
   formData.append('file', file)

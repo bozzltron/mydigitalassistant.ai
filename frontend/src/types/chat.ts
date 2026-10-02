@@ -164,6 +164,22 @@ export interface Conflict {
   created_at: string
 }
 
+/** Response from `POST /files/upload` (see `upload_file_to_memory`). */
+export interface FileUploadResult {
+  status: string
+  file_name: string
+  file_size: number
+  file_ext: string
+  content_preview: string
+  key_entities: string[]
+  open_questions: string[]
+  frame_name: string
+  frame_id: number
+  parent_frame_id: number
+  row_count: number
+  row_frame_ids: number[]
+}
+
 export interface FileEntry {
   id: string
   name: string
@@ -227,10 +243,19 @@ export interface AttachedFile {
   name: string
   ext: string
   preview: string
-  content: string
+  /**
+   * Inline text for the legacy text-only path. Empty for the input bar, which
+   * uploads the file first and sends `frame_id`/`frame_name` instead — embedding
+   * content here is what corrupted binary files (a PDF read as UTF-8) before
+   * they reached the server. There is no `content` field: it was a second copy
+   * of `text` that nothing read.
+   */
   text: string
   key_entities: string[]
   open_questions: string[]
+  /** The uploaded file's frame, so the backend can reference it by identity. */
+  frame_id?: number
+  frame_name?: string
 }
 
 export interface ChatRequestConsent {

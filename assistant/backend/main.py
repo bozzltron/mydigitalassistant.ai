@@ -480,6 +480,140 @@ def _prune_turn_progress() -> None:
         _turn_progress.pop(tid, None)
 
 
+async def _process_attached_files(
+    attached_files: list[dict],
+    store: "MemoryStore",
+    user_id: int,
+) -> tuple[list[dict], list[dict]]:
+    """Resolve chat attachments to uploaded file frames.
+
+    Two shapes are accepted:
+
+    1. **A frame reference** (`frame_id` / `frame_name`) — the client uploaded
+       the file through `POST /files/upload` first and is pointing at it. This is
+       the input bar's path and the only one that carries binary formats
+       correctly, because the bytes travelled as multipart rather than as UTF-8
+       text. The file is already stored, so it is referenced, never re-uploaded.
+    2. **Inline text** (`text`) — a legacy text-only attachment. Its bytes are
+       the text's UTF-8 encoding, which is correct *only* for the text formats an
+       older client could offer. Kept so an old client does not break.
+
+    Returns `(uploaded_files, file_contents)`, index-aligned. A file that cannot
+    be resolved is skipped with a warning rather than failing the whole turn.
+    """
+    uploaded_files: list[dict] = []
+    file_contents: list[dict] = []
+
+    for fc in attached_files:
+        filename = fc.get("name", "unknown")
+        ext = (fc.get("ext") or "txt").lower()
+        frame_id = fc.get("frame_id")
+        frame_name = fc.get("frame_name")
+
+        if frame_id is not None or frame_name:
+            frame = None
+            if frame_id is not None:
+                frame = await store.get_frame(int(frame_id))
+            if frame is None and frame_name:
+                frame = await store.get_frame_by_name(frame_name)
+            if frame is None:
+                logger.warning(
+                    "Attached file reference not found: %s", frame_id or frame_name
+                )
+                continue
+            # Ownership: a frame reference must not become a way to read another
+            # user's file. `None` means "not scoped", matching the file API.
+            if frame.owner_user_id not in (None, user_id):
+                logger.warning(
+                    "Refusing attached file %s: owned by another user", frame.id
+                )
+                continue
+
+            slots = {s.key: s.value for s in await store.get_slots_for_frame(frame.id)}
+            resolved_name = slots.get("file_name") or filename
+            resolved_ext = (slots.get("file_ext") or ext).lower()
+            uploaded_files.append({
+                "frame_id": frame.id,
+                "frame_name": frame.name,
+                "file_name": resolved_name,
+                "file_ext": resolved_ext,
+            })
+            file_contents.append({
+                "name": resolved_name,
+                "ext": resolved_ext,
+                "preview": (fc.get("preview") or "")[:500],
+                "key_entities": fc.get("key_entities", []),
+                "open_questions": fc.get("open_questions", []),
+            })
+            continue
+
+        # Legacy inline-text attachment.
+        if ext not in SUPPORTED_UPLOAD_EXTS:
+            logger.warning("Skipping unsupported file type: .%s", ext)
+            continue
+        text_content = fc.get("text", "")
+        try:
+            upload_result = await upload_file_to_memory(
+                filename=filename,
+                content=text_content.encode("utf-8"),
+                ext=ext,
+                store=store,
+                user_id=user_id,
+            )
+        except Exception as e:
+            logger.error("Failed to upload attached file %s: %s", filename, e)
+            continue
+
+        uploaded_files.append({
+            "frame_id": upload_result["frame_id"],
+            "frame_name": upload_result["frame_name"],
+            "file_name": upload_result["file_name"],
+            "file_ext": upload_result["file_ext"],
+        })
+        file_contents.append({
+            "name": filename,
+            "ext": ext,
+            "preview": (fc.get("preview") or "")[:500],
+            "key_entities": fc.get("key_entities", []),
+            "open_questions": fc.get("open_questions", []),
+        })
+
+    return uploaded_files, file_contents
+
+
+def _build_enhanced_message(
+    message: str,
+    file_contents: list[dict],
+    uploaded_files: list[dict],
+) -> str:
+    """Append a per-file summary to the user's message.
+
+    The summary names the file's **frame_name**, which is what `read_file`
+    resolves against. It deliberately does not include the numeric frame id: an
+    id in the prompt is what the model echoed back to the user (see Phase 1), and
+    `read_file` accepts the name, so the id earned nothing.
+    """
+    if not file_contents:
+        return message
+
+    summaries: list[str] = []
+    for i, fc in enumerate(file_contents):
+        frame_info = ""
+        if i < len(uploaded_files):
+            frame_info = f' [read with: read_file(frame_name="{uploaded_files[i]["frame_name"]}")]'
+        line = f"File: {fc['name']} ({fc['ext']}) - {fc['preview']}{frame_info}"
+        entities = fc.get("key_entities") or []
+        if entities:
+            line += f" [entities: {', '.join(entities[:3])}]"
+        questions = fc.get("open_questions") or []
+        if questions:
+            line += f" [questions: {' '.join(questions[:2])}]"
+        summaries.append(line)
+
+    joined = "\n".join(summaries)
+    return f"{message}\n\n{joined}" if message else f"\n\n{joined}"
+
+
 @app.post("/chat", response_model=ChatResponse)
 async def chat(
     request: ChatRequest,
@@ -506,77 +640,16 @@ async def chat(
             entry["stage"] = stage
             entry["detail"] = detail
 
-    # Process attached files: upload to memory so agent can use read_file tool
-    uploaded_files = []
-    file_contents = []
-    if request.attached_files:
-        for fc in request.attached_files:
-            filename = fc.get("name", "unknown")
-            ext = fc.get("ext", "txt")
-            text_content = fc.get("text", "")
-            content_bytes = text_content.encode("utf-8")
-            
-            # Validate file type
-            allowed_types = SUPPORTED_UPLOAD_EXTS
-            if ext not in allowed_types:
-                # Skip unsupported files but log
-                logger.warning(f"Skipping unsupported file type: .{ext}")
-                continue
-
-            # Upload file to memory and disk
-            try:
-                upload_result = await upload_file_to_memory(
-                    filename=filename,
-                    content=content_bytes,
-                    ext=ext,
-                    store=store,
-                    user_id=request.user_id,
-                )
-                uploaded_files.append({
-                    "frame_id": upload_result["frame_id"],
-                    "frame_name": upload_result["frame_name"],
-                    "file_name": upload_result["file_name"],
-                    "file_ext": upload_result["file_ext"],
-                })
-            except Exception as e:
-                logger.error(f"Failed to upload attached file {filename}: {e}")
-                continue
-            
-            # Also keep the content for message context
-            file_contents.append({
-                "name": filename,
-                "ext": ext,
-                "preview": fc.get("preview", "")[:500],
-                "text": text_content,
-                "key_entities": fc.get("key_entities", []),
-                "open_questions": fc.get("open_questions", []),
-            })
+    # Process attached files: uploaded files are referenced by frame; inline
+    # text (legacy clients) is stored here. One path for both chat endpoints.
+    uploaded_files, file_contents = await _process_attached_files(
+        request.attached_files or [], store, request.user_id
+    )
 
     # Build the enhanced message with file context
-    enhanced_message = request.message
-    if file_contents:
-        file_summaries = []
-        for i, fc in enumerate(file_contents):
-            entities_str = (
-                ", ".join(fc.get("key_entities", [])[:3]) if fc.get("key_entities") else ""
-            )
-            questions_str = (
-                " ".join(fc.get("open_questions", [])[:2]) if fc.get("open_questions") else ""
-            )
-            # Include frame info so agent can use read_file tool
-            frame_info = ""
-            if i < len(uploaded_files):
-                uf = uploaded_files[i]
-                frame_info = f" [frame_id: {uf['frame_id']}, frame_name: {uf['frame_name']}]"
-            file_summaries.append(f"File: {fc['name']} ({fc['ext']}) - {fc['preview']}{frame_info}")
-            if entities_str:
-                file_summaries[-1] += f" [entities: {entities_str}]"
-            if questions_str:
-                file_summaries[-1] += f" [questions: {questions_str}]"
-        if request.message:
-            enhanced_message = request.message + "\n\n" + "\n".join(file_summaries)
-        else:
-            enhanced_message = "\n\n" + "\n".join(file_summaries)
+    enhanced_message = _build_enhanced_message(
+        request.message, file_contents, uploaded_files
+    )
 
     try:
         # Combine file_contents with uploaded frame info for the orchestrator
@@ -642,72 +715,15 @@ async def chat_stream(
             entry["detail"] = detail
         stage_queue.put_nowait(serialize_event(StageEvent(stage, detail)))
 
-    # Process attached files (same as regular chat)
-    uploaded_files = []
-    file_contents = []
-    if request.attached_files:
-        for fc in request.attached_files:
-            filename = fc.get("name", "unknown")
-            ext = fc.get("ext", "txt")
-            text_content = fc.get("text", "")
-            content_bytes = text_content.encode("utf-8")
-
-            allowed_types = SUPPORTED_UPLOAD_EXTS
-            if ext not in allowed_types:
-                logger.warning(f"Skipping unsupported file type: .{ext}")
-                continue
-
-            try:
-                upload_result = await upload_file_to_memory(
-                    filename=filename,
-                    content=content_bytes,
-                    ext=ext,
-                    store=store,
-                    user_id=request.user_id,
-                )
-                uploaded_files.append({
-                    "frame_id": upload_result["frame_id"],
-                    "frame_name": upload_result["frame_name"],
-                    "file_name": upload_result["file_name"],
-                    "file_ext": upload_result["file_ext"],
-                })
-            except Exception as e:
-                logger.error(f"Failed to upload attached file {filename}: {e}")
-                continue
-
-            file_contents.append({
-                "name": filename,
-                "ext": ext,
-                "preview": fc.get("preview", "")[:500],
-                "text": text_content,
-                "key_entities": fc.get("key_entities", []),
-                "open_questions": fc.get("open_questions", []),
-            })
+    # Process attached files (shared path with /chat).
+    uploaded_files, file_contents = await _process_attached_files(
+        request.attached_files or [], store, request.user_id
+    )
 
     # Build enhanced message
-    enhanced_message = request.message
-    if file_contents:
-        file_summaries = []
-        for i, fc in enumerate(file_contents):
-            entities_str = (
-                ", ".join(fc.get("key_entities", [])[:3]) if fc.get("key_entities") else ""
-            )
-            questions_str = (
-                " ".join(fc.get("open_questions", [])[:2]) if fc.get("open_questions") else ""
-            )
-            frame_info = ""
-            if i < len(uploaded_files):
-                uf = uploaded_files[i]
-                frame_info = f" [frame_id: {uf['frame_id']}, frame_name: {uf['frame_name']}]"
-            file_summaries.append(f"File: {fc['name']} ({fc['ext']}) - {fc['preview']}{frame_info}")
-            if entities_str:
-                file_summaries[-1] += f" [entities: {entities_str}]"
-            if questions_str:
-                file_summaries[-1] += f" [questions: {questions_str}]"
-        if request.message:
-            enhanced_message = request.message + "\n\n" + "\n".join(file_summaries)
-        else:
-            enhanced_message = "\n\n" + "\n".join(file_summaries)
+    enhanced_message = _build_enhanced_message(
+        request.message, file_contents, uploaded_files
+    )
 
     orch_attached_files = []
     for i, fc in enumerate(file_contents):

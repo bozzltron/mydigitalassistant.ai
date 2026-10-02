@@ -6,6 +6,7 @@ import { Modal } from '../ui/Modal'
 import { messages, sessionId, isTurnActive, useConversationTurnId, addMessageToConversation, isStreaming } from '../../state/chat'
 import { getQueue, getQueueLength, dequeue, enqueue, isProcessing, setActiveConversation, isDrainBlocked } from '../../state/messageQueue'
 import { triggerDrain, drainQueueIfReady, onSearchConsentRequired } from '../../services/queueDrainer'
+import { postFileUpload } from '../../services/api'
 import type { Session } from '../../state/session'
 import { useTurnStatus } from '../../services/status'
 import { useVoiceRecording } from '../../hooks/useVoiceRecording'
@@ -79,25 +80,31 @@ export default function ChatPage(props: {
   })
 
   // Read file and convert to AttachedFile format
-  const readFileAsAttachedFile = async (file: File): Promise<AttachedFile> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader()
-      reader.onload = (e) => {
-        const text = e.target?.result as string || ''
-        const ext = file.name.split('.').pop()?.toLowerCase() || 'txt'
-        resolve({
-          name: file.name,
-          ext,
-          preview: text.slice(0, 500),
-          content: text,
-          text,
-          key_entities: [],
-          open_questions: [],
-        })
-      }
-      reader.onerror = reject
-      reader.readAsText(file)
-    })
+  /**
+   * Upload a file and return a reference to it.
+   *
+   * Files used to be read with `readAsText` and their content embedded in the
+   * chat JSON. That corrupts every binary format before it ever reaches the
+   * server — a PDF read as UTF-8 is garbage — so the bytes must travel as bytes.
+   * The multipart upload endpoint already does this correctly and is what the
+   * files page uses, so the input bar reuses it: upload first, then reference
+   * the stored file by frame. One upload path, no content in the chat payload.
+   */
+  const uploadAttachedFile = async (file: File): Promise<AttachedFile> => {
+    const ext = file.name.split('.').pop()?.toLowerCase() || 'txt'
+    const uploaded = await postFileUpload(file)
+    return {
+      name: file.name,
+      ext,
+      preview: uploaded.content_preview ?? '',
+      // Text is deliberately empty: the bytes live on disk and are read via
+      // read_file. Memory records what a file *is*, never what it contains.
+      text: '',
+      key_entities: uploaded.key_entities ?? [],
+      open_questions: uploaded.open_questions ?? [],
+      frame_id: uploaded.frame_id,
+      frame_name: uploaded.frame_name,
+    }
   }
 
   const handleSendMessage = async (message: string, attachedFiles?: File[], search_consent?: boolean) => {
@@ -114,7 +121,7 @@ export default function ChatPage(props: {
     // stacked rather than dropped or sent out of order.
     const processedFiles: AttachedFile[] =
       attachedFiles && attachedFiles.length > 0
-        ? await Promise.all(attachedFiles.map(readFileAsAttachedFile))
+        ? await Promise.all(attachedFiles.map(uploadAttachedFile))
         : []
 
     enqueue({

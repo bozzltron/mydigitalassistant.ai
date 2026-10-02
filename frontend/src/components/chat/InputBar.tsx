@@ -1,4 +1,5 @@
 import { createSignal, createEffect, onCleanup, onMount, For } from 'solid-js'
+import { ACCEPT_ATTR } from '../../utils/uploadFormats'
 
 interface InputBarProps {
   onSend: (message: string, attachedFiles?: File[]) => void
@@ -136,7 +137,7 @@ export default function InputBar(props: InputBarProps) {
           data-testid="file-input"
           class="file-input-hidden"
           multiple
-          accept=".txt,.csv,.json,.xml,.html,.ics"
+          accept={ACCEPT_ATTR}
           onChange={handleFileChange}
         />
       </div>

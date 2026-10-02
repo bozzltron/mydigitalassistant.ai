@@ -1,5 +1,6 @@
 import { createSignal, Show, For } from 'solid-js';
 import { postFileUpload } from '../../services/api';
+import { ACCEPT_ATTR } from '../../utils/uploadFormats';
 import { Toast } from '../ui/Toast';
 
 interface UploadedFile {
@@ -100,7 +101,7 @@ export const UploadZone = () => {
           multiple
           onChange={handleFileInput}
           class="file-input"
-          accept=".txt,.csv,.tsv,.json,.xml,.html,.ics,.eml,.pdf,.docx,.xlsx,.pptx,.xls,.rtf,.odt,.ods,.odp"
+          accept={ACCEPT_ATTR}
         />
       </div>
 
