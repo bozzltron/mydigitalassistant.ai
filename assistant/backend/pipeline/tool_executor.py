@@ -771,6 +771,84 @@ async def _available_file_names(store: MemoryStore, user_id: str) -> str:
     return ", ".join(sorted(names)) or "(none)"
 
 
+# Extensions whose *text* lives in the file as bytes, so a UTF-8 read is the
+# content. Everything else is a container (PDF object streams, OOXML zips,
+# legacy binaries) where reading bytes as text yields garbage.
+PLAIN_TEXT_EXTS = frozenset(
+    {"txt", "md", "csv", "tsv", "json", "xml", "html", "ics", "eml", "log", "yaml", "yml"}
+)
+
+# How much extracted text a single read_file returns to the model. This is NOT a
+# file-size limit: the file is stored whole on disk and nothing is refused at any
+# size. It bounds only what can ride in one turn's context window, which is a
+# property of the model, not a policy on the user's files. The marker tells the
+# model it saw a fragment so it can say so rather than answer from a silent cut.
+MAX_READ_CHARS_FOR_MODEL = 60_000
+
+
+async def _read_file_text(file_path: str, ext: str) -> tuple[str | None, str | None]:
+    """Return ``(text, error)`` for a sandbox file, extracting when needed.
+
+    Text formats are read directly. Document formats go through
+    ``extract_file_content``, the same path upload uses — the model must read a
+    PDF the way upload understood it, not as raw bytes. Reading a PDF as UTF-8
+    was the bug: a 6.7 MB press kit extracted to 9,213 clean characters at upload
+    and returned binary noise (or nothing) on read.
+
+    ``extract_file_content`` extracts from the bytes it is given, not from the
+    path, so the bytes are read here and handed over.
+
+    Returns ``(None, reason)`` when the format is known but no text could be
+    recovered (e.g. an image-only PDF with no text layer), so the caller can tell
+    the model "not readable as text" instead of handing it emptiness.
+    """
+    from assistant.backend.pipeline.files import extract_file_content
+    from assistant.backend.pipeline.filesystem import resolve_sandbox_path
+
+    path = resolve_sandbox_path(file_path)
+
+    if ext in PLAIN_TEXT_EXTS:
+        # FileNotFoundError propagates: "missing" and "unreadable" are different
+        # answers and the caller reports them differently.
+        return path.read_text(encoding="utf-8", errors="replace"), None
+
+    try:
+        raw = path.read_bytes()
+    except FileNotFoundError:
+        raise
+    except OSError as e:
+        return None, f"'{file_path}' could not be opened ({e})"
+
+    try:
+        result = await extract_file_content(file_path, ext, raw)
+    except Exception as e:
+        logger.warning("Extraction failed for %s (.%s): %s", file_path, ext, e)
+        return None, f"could not extract text from .{ext} file"
+
+    text = (result.text or "").strip()
+    if not text:
+        return None, (
+            f"the .{ext} file opened but contains no extractable text"
+            " (it may be scanned images rather than text)"
+        )
+    return text, None
+
+
+def _bounded_for_model(text: str) -> str:
+    """Trim extracted text to the model's share, with an honest marker.
+
+    Never applied to the file on disk — this is the context-window bound and
+    nothing else. The marker states the true total so the model can tell the user
+    it read a fragment rather than believing it read the whole document.
+    """
+    if len(text) <= MAX_READ_CHARS_FOR_MODEL:
+        return text
+    return (
+        text[:MAX_READ_CHARS_FOR_MODEL]
+        + f"\n\n... [truncated for this turn: {len(text):,} characters total]"
+    )
+
+
 async def execute_read_file(args: dict, user_id: str, session_id: str) -> ToolResult:
     """Read a sandbox file or an uploaded file.
 
@@ -782,11 +860,7 @@ async def execute_read_file(args: dict, user_id: str, session_id: str) -> ToolRe
          quoted in old conversations still resolve to the current file
     """
     try:
-        from assistant.backend.pipeline.filesystem import (
-            PathTraversalError,
-            SizeLimitError,
-            read_sandbox_file,
-        )
+        from assistant.backend.pipeline.filesystem import PathTraversalError
 
         frame_id = args.get("frame_id")
         frame_name = args.get("frame_name")
@@ -838,13 +912,27 @@ async def execute_read_file(args: dict, user_id: str, session_id: str) -> ToolRe
             file_safe_name = slots_dict.get("file_safe_name", "")
 
             content = ""
+            read_error: str | None = None
             if file_safe_name:
                 try:
-                    content = read_sandbox_file(file_safe_name)
+                    content, read_error = await _read_file_text(
+                        file_safe_name, (file_ext or "").lower()
+                    )
+                    content = content or ""
                 except FileNotFoundError:
-                    pass  # Not on disk — fall back to memory slots.
+                    pass  # Not on disk — report it below, never fall back to memory.
                 except Exception as e:
                     logger.warning(f"Failed to read sandbox file {file_safe_name}: {e}")
+                    read_error = str(e)
+
+            # A file we opened but could not turn into text is reported as such.
+            # Returning the raw bytes as "content" is what shipped binary noise to
+            # the model; returning empty read to it as an unreadable file.
+            if not content and read_error:
+                return ToolResult(
+                    success=False,
+                    error=f"Could not read '{file_name}': {read_error}.",
+                )
 
             # A missing file reports missing. This used to fall back to
             # `file_content_preview` from memory, which meant a disk failure
@@ -862,6 +950,7 @@ async def execute_read_file(args: dict, user_id: str, session_id: str) -> ToolRe
                     ),
                 )
 
+            bounded = _bounded_for_model(content)
             return ToolResult(
                 success=True,
                 data={
@@ -869,8 +958,9 @@ async def execute_read_file(args: dict, user_id: str, session_id: str) -> ToolRe
                     "frame_name": frame.name,
                     "file_name": file_name,
                     "file_ext": file_ext,
-                    "content": content,
-                    "size": len(content),
+                    "content": bounded,
+                    "size": len(bounded),
+                    "total_chars": len(content),
                 },
             )
 
@@ -886,12 +976,46 @@ async def execute_read_file(args: dict, user_id: str, session_id: str) -> ToolRe
         resolved_path = ""
         resolved_frame: Frame | None = None
 
+        def _ext(path_str: str) -> str:
+            return path_str.rsplit(".", 1)[-1].lower() if "." in path_str else ""
+
+        # Set when a file was found but could not be turned into text, so the
+        # caller reports *that* rather than "File not found" — which would send
+        # the model hunting for a file it already has.
+        unreadable: str | None = None
+
+        async def _try(resolved: str) -> str | None:
+            """Read `resolved` as text, extracting when its extension needs it.
+
+            Returns None when the file is absent or resolution should move on to
+            the next strategy. A file that exists but cannot be read sets
+            `unreadable` and still returns None, so the final error is accurate.
+
+            `PathTraversalError` deliberately propagates: a path escaping the
+            sandbox is a security rejection, and swallowing it into "not found"
+            would hide an attack attempt as a missing file.
+            """
+            nonlocal unreadable
+            try:
+                text, err = await _read_file_text(resolved, _ext(resolved))
+            except FileNotFoundError:
+                return None
+            except PermissionError as e:
+                unreadable = f"'{resolved}' is not readable ({e})"
+                return None
+            except PathTraversalError:
+                raise
+            except Exception as e:
+                logger.debug(f"read_file could not read {resolved}: {e}")
+                return None
+            if text is None and err:
+                unreadable = f"'{resolved}': {err}"
+            return text
+
         # 1. literal sandbox path
-        try:
-            content = read_sandbox_file(path)
+        content = await _try(path)
+        if content is not None:
             resolved_path = path
-        except FileNotFoundError:
-            pass  # Try resolving it as an uploaded-file reference.
 
         # 2. frame name given as path, e.g. "file_subscribers_active.csv"
         if content is None and _store is not None:
@@ -902,12 +1026,11 @@ async def execute_read_file(args: dict, user_id: str, session_id: str) -> ToolRe
                 if frame is not None:
                     safe = await _file_safe_name_for_frame(_store, frame)
                     if safe:
-                        try:
-                            content = read_sandbox_file(safe)
+                        text = await _try(safe)
+                        if text is not None:
+                            content = text
                             resolved_path = safe
                             resolved_frame = frame
-                        except FileNotFoundError:
-                            pass
             except Exception as e:  # best-effort: DB may be uninitialized
                 logger.debug(f"read_file frame-name resolution unavailable: {e}")
 
@@ -915,11 +1038,10 @@ async def execute_read_file(args: dict, user_id: str, session_id: str) -> ToolRe
         if content is None:
             stripped = _strip_frame_prefix(path)
             if stripped != path:
-                try:
-                    content = read_sandbox_file(stripped)
+                text = await _try(stripped)
+                if text is not None:
+                    content = text
                     resolved_path = stripped
-                except FileNotFoundError:
-                    pass
 
         # 4. stale/partial name -> unique fuzzy match against uploaded files
         if content is None and _store is not None:
@@ -928,16 +1050,22 @@ async def execute_read_file(args: dict, user_id: str, session_id: str) -> ToolRe
                 if frame is not None:
                     safe = await _file_safe_name_for_frame(_store, frame)
                     if safe:
-                        try:
-                            content = read_sandbox_file(safe)
+                        text = await _try(safe)
+                        if text is not None:
+                            content = text
                             resolved_path = safe
                             resolved_frame = frame
-                        except FileNotFoundError:
-                            pass
             except Exception as e:  # best-effort: DB may be uninitialized
                 logger.debug(f"read_file fuzzy resolution unavailable: {e}")
 
         if content is None:
+            # A file that exists but could not be read is a different error from
+            # one that does not exist, and the model acts differently on each.
+            if unreadable:
+                return ToolResult(
+                    success=False,
+                    error=f"Could not read {unreadable}.",
+                )
             error = f"File not found: {requested!r}"
             if _store is not None:
                 try:
@@ -951,7 +1079,13 @@ async def execute_read_file(args: dict, user_id: str, session_id: str) -> ToolRe
                     pass
             return ToolResult(success=False, error=error)
 
-        data: dict = {"path": resolved_path, "content": content, "size": len(content)}
+        bounded = _bounded_for_model(content)
+        data: dict = {
+            "path": resolved_path,
+            "content": bounded,
+            "size": len(bounded),
+            "total_chars": len(content),
+        }
         if resolved_frame is not None:
             data["frame_id"] = resolved_frame.id
             data["frame_name"] = resolved_frame.name
@@ -964,8 +1098,6 @@ async def execute_read_file(args: dict, user_id: str, session_id: str) -> ToolRe
             data["resolved_from"] = requested
         return ToolResult(success=True, data=data)
     except PathTraversalError as e:
-        return ToolResult(success=False, error=str(e))
-    except SizeLimitError as e:
         return ToolResult(success=False, error=str(e))
     except FileNotFoundError as e:
         return ToolResult(success=False, error=str(e))
@@ -983,7 +1115,6 @@ async def execute_write_file(args: dict, user_id: str, session_id: str) -> ToolR
 
         from assistant.backend.pipeline.filesystem import (
             PathTraversalError,
-            SizeLimitError,
             get_sandbox_root,
             write_sandbox_file,
         )
@@ -1094,8 +1225,6 @@ async def execute_write_file(args: dict, user_id: str, session_id: str) -> ToolR
         })
     except PathTraversalError as e:
         return ToolResult(success=False, error=str(e))
-    except SizeLimitError as e:
-        return ToolResult(success=False, error=str(e))
     except FileExistsError as e:
         return ToolResult(success=False, error=str(e))
     except Exception as e:
@@ -1110,7 +1239,6 @@ async def execute_edit_file(args: dict, user_id: str, session_id: str) -> ToolRe
 
         from assistant.backend.pipeline.filesystem import (
             PathTraversalError,
-            SizeLimitError,
             read_sandbox_file,
             write_sandbox_file,
         )
@@ -1160,8 +1288,6 @@ async def execute_edit_file(args: dict, user_id: str, session_id: str) -> ToolRe
             "path": path, "changes": changes, "new_size": len(new_content)
         })
     except PathTraversalError as e:
-        return ToolResult(success=False, error=str(e))
-    except SizeLimitError as e:
         return ToolResult(success=False, error=str(e))
     except FileNotFoundError as e:
         return ToolResult(success=False, error=str(e))

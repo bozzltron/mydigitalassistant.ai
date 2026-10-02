@@ -44,8 +44,6 @@ class Settings(BaseSettings):
     tools_enabled: bool = True
 
     # File sandbox settings
-    sandbox_max_file_size: int = 10_000_000      # 10MB max write
-    sandbox_max_read_size: int = 1_000_000       # 1MB max read
     sandbox_max_glob_results: int = 1000         # max glob results
 
     # CSV uploads: cap per-row memory frames. Files with more rows than this

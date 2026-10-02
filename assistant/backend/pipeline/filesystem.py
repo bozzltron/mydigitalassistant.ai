@@ -14,9 +14,11 @@ from assistant.backend.config import settings
 # Sandbox root - all paths resolved relative to this
 SANDBOX_ROOT = Path("/app/data").resolve()
 
-# Size limits (can be overridden via settings)
-MAX_FILE_SIZE = getattr(settings, "sandbox_max_file_size", 10_000_000)      # 10MB write
-MAX_READ_SIZE = getattr(settings, "sandbox_max_read_size", 1_000_000)       # 1MB read
+# No file-size limits. This is a local, disk-backed project: the user's disk is
+# the limit and the user limits themselves. A cap here was never a safety control
+# -- it was a policy on the user's own files, and it is why a 6.7 MB PDF that
+# uploaded fine could not then be read. The one real bound is the model's context
+# window, applied where text is handed to the model, not here.
 MAX_GLOB_RESULTS = getattr(settings, "sandbox_max_glob_results", 1000)      # 1000 results
 
 
@@ -32,11 +34,6 @@ class PathTraversalError(SandboxError):
 
 class SymlinkEscapeError(SandboxError):
     """Raised when a symlink points outside the sandbox."""
-    pass
-
-
-class SizeLimitError(SandboxError):
-    """Raised when a file exceeds size limits."""
     pass
 
 
@@ -77,21 +74,18 @@ def validate_path_safety(path: Path) -> None:
 
     Raises:
         SymlinkEscapeError: If symlink points outside sandbox
-        SizeLimitError: If existing file exceeds write limit
     """
-    # Check symlinks - resolve and verify target is in sandbox
+    # Check symlinks - resolve and verify target is in sandbox.
+    #
+    # This is a security control and stays. The size check that used to live
+    # below it was a file policy, not a safety property, and has been removed
+    # (see the note on SANDBOX_ROOT).
     if path.is_symlink():
         try:
             target = path.resolve()
             target.relative_to(SANDBOX_ROOT)
         except ValueError as e:
             raise SymlinkEscapeError("Symlink points outside sandbox") from e
-
-    # Check size of existing file (for write operations)
-    if path.exists() and path.is_file():
-        size = path.stat().st_size
-        if size > MAX_FILE_SIZE:
-            raise SizeLimitError(f"File exceeds {MAX_FILE_SIZE} byte limit ({size} bytes)")
 
 
 def list_sandbox_files(pattern: str = "**/*") -> list[dict]:
@@ -137,18 +131,24 @@ def list_sandbox_files(pattern: str = "**/*") -> list[dict]:
     return files
 
 
-def read_sandbox_file(relative_path: str, max_size: int | None = None) -> str:
-    """Read a file from the sandbox.
+def read_sandbox_file(relative_path: str) -> str:
+    """Read a file from the sandbox as text.
 
     Args:
         relative_path: Path relative to sandbox root
-        max_size: Override max read size (default: MAX_READ_SIZE)
 
     Returns:
         File content as string
 
     Raises:
-        PathTraversalError, FileNotFoundError, SizeLimitError
+        PathTraversalError, FileNotFoundError
+
+    Note on binary formats: this reads bytes as UTF-8 with `errors="replace"`,
+    which is correct for text files and meaningless for a PDF or a .docx. Callers
+    that may be handed a document must go through
+    `files.extract_file_content`, which dispatches on the extension. The
+    `max_size` parameter that used to sit here was dead (no caller passed it) and
+    is gone with the size limits.
     """
     path = resolve_sandbox_path(relative_path)
     validate_path_safety(path)
@@ -158,10 +158,6 @@ def read_sandbox_file(relative_path: str, max_size: int | None = None) -> str:
 
     if not path.is_file():
         raise ValueError(f"Not a file: {relative_path}")
-
-    limit = max_size or MAX_READ_SIZE
-    if path.stat().st_size > limit:
-        raise SizeLimitError(f"File exceeds read limit of {limit} bytes")
 
     return path.read_text(encoding="utf-8", errors="replace")
 
@@ -178,20 +174,13 @@ def write_sandbox_file(relative_path: str, content: str, overwrite: bool = False
         Path object of written file
 
     Raises:
-        PathTraversalError, FileExistsError, SizeLimitError
+        PathTraversalError, FileExistsError
     """
     path = resolve_sandbox_path(relative_path)
     validate_path_safety(path)
 
     if path.exists() and not overwrite:
         raise FileExistsError(f"File exists: {relative_path} (use overwrite=True)")
-
-    # Check content size before writing
-    content_bytes = content.encode("utf-8")
-    if len(content_bytes) > MAX_FILE_SIZE:
-        raise SizeLimitError(
-            f"Content exceeds {MAX_FILE_SIZE} byte limit ({len(content_bytes)} bytes)"
-        )
 
     # Atomic write: write to temp file then rename
     path.parent.mkdir(parents=True, exist_ok=True)

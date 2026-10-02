@@ -522,12 +522,7 @@ async def chat(
                 # Skip unsupported files but log
                 logger.warning(f"Skipping unsupported file type: .{ext}")
                 continue
-            
-            # Size limit (10MB)
-            if len(content_bytes) > 10_000_000:
-                logger.warning(f"Skipping file too large: {filename}")
-                continue
-            
+
             # Upload file to memory and disk
             try:
                 upload_result = await upload_file_to_memory(
@@ -660,10 +655,6 @@ async def chat_stream(
             allowed_types = SUPPORTED_UPLOAD_EXTS
             if ext not in allowed_types:
                 logger.warning(f"Skipping unsupported file type: .{ext}")
-                continue
-
-            if len(content_bytes) > 10_000_000:
-                logger.warning(f"Skipping file too large: {filename}")
                 continue
 
             try:
@@ -2393,14 +2384,7 @@ async def upload_file(
             ),
         )
     
-    # Size limit (10MB)
     content = await file.read()
-    if len(content) > 10_000_000:
-        raise HTTPException(
-            status_code=400,
-            detail="File too large. Maximum size: 10MB",
-        )
-    
     return await upload_file_to_memory(filename, content, ext, store)
 
 
