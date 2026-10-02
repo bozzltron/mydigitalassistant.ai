@@ -87,4 +87,29 @@ describe('useActiveConversation — opening a conversation from an alert', () =>
     expect(harness.get()).toBeNull()
     harness.dispose()
   })
+
+  it('reloads the messages when the alert resolves into the conversation already active', async () => {
+    // Regression: the effect tracked `activeConversation()?.id`, so resolving an
+    // alert into the conversation you are already viewing wrote the seeded
+    // opening message server-side but re-ran nothing — the message never
+    // appeared, and the alert looked like it had not resolved.
+    const harness = mount(sessions)
+    render(() => null)
+
+    // First open: the conversation becomes active (and loads once).
+    window.dispatchEvent(
+      new CustomEvent('open-conversation', { detail: { sessionId: 'conv_a' } })
+    )
+    await waitFor(() => expect(vi.mocked(api.getSessionMessages)).toHaveBeenCalledTimes(1))
+
+    // Same conversation again — this is the resolve-into-the-active-conversation
+    // case, and it must reload rather than no-op.
+    window.dispatchEvent(
+      new CustomEvent('open-conversation', { detail: { sessionId: 'conv_a' } })
+    )
+
+    await waitFor(() => expect(vi.mocked(api.getSessionMessages)).toHaveBeenCalledTimes(2))
+    expect(harness.get()?.id).toBe('conv_a')
+    harness.dispose()
+  })
 })

@@ -1,4 +1,4 @@
-import { createSignal, createEffect, onMount, onCleanup } from 'solid-js'
+import { createSignal, createEffect, on, onMount, onCleanup } from 'solid-js'
 import { loadConversationMessages } from '../state/chat'
 import { user } from '../state/user'
 import type { Session } from '../state/session'
@@ -20,8 +20,13 @@ export function useActiveConversation(conversations: () => Session[]) {
     setActiveConversation(conversation)
   }
 
-  createEffect(() => {
-    const conv = activeConversation()
+  createEffect(on(activeConversation, (conv) => {
+    // `on` with the signal (not the `.id`) is what makes an explicit re-open
+    // re-run: setting the *same* object is a no-op, but setting the active
+    // conversation to a fresh object (the alert path adopts one) fires. Reading
+    // the whole signal, not `.id`, also survives a session object being replaced
+    // by a refetch. Resolving an alert into the conversation you are already in
+    // then reloads and the seeded opening message appears.
     const u = user()
     if (conv && u) {
       loadConversationMessages(conv.id, u.id)
@@ -29,7 +34,7 @@ export function useActiveConversation(conversations: () => Session[]) {
     } else if (!conv) {
       setSessionId(null)
     }
-  })
+  }, { defer: true }))
 
   /**
    * Open a conversation by id, even one not in the current list.
@@ -41,8 +46,10 @@ export function useActiveConversation(conversations: () => Session[]) {
    */
   const openConversationById = (sessionId: string) => {
     const known = conversations().find(c => c.id === sessionId)
+    // Always a fresh object: an explicit open must reload even when the target is
+    // already active, and `on(activeConversation, …)` fires on a new reference.
     if (known) {
-      setActiveConversation(known)
+      setActiveConversation({ ...known })
       return
     }
     // Not in the list yet: adopt a minimal entry so the effect still fires.
