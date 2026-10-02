@@ -1,4 +1,5 @@
 import { createSignal, Show, createEffect } from 'solid-js'
+import { CloseIcon } from './Icons'
 
 export interface EditModalProps {
   isOpen: boolean
@@ -50,7 +51,7 @@ export const EditModal = (props: EditModalProps) => {
               }}
               aria-label="Close modal"
             >
-              ✕
+              <CloseIcon size={20} />
             </button>
           </div>
           <div class="modal-content">

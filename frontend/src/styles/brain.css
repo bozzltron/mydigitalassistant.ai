@@ -494,7 +494,12 @@
   font-size: 0.85rem;
   font-weight: 700;
   margin-bottom: 0.25rem;
+  color: var(--type-color, var(--text));
 }
+
+.tooltip .muted { color: var(--text-dim); }
+.tooltip .essential { color: var(--warning); }
+.tooltip .conflict { color: var(--error); }
 
 .tooltip-type {
   font-size: 0.6rem;

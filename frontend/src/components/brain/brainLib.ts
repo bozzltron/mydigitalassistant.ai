@@ -71,7 +71,7 @@ function slotLines(d: GraphNode): string {
       ${s.confidence != null ? `<span class="tooltip-slot-conf" title="slot confidence">${Math.round(s.confidence * 100)}%</span>` : ''}
     </div>
   `).join('')
-  return `${lines}${(d.slots?.length || 0) > 5 ? `<div style="color:var(--text-dim)">+${d.slots!.length - 5} more</div>` : ''}`
+  return `${lines}${(d.slots?.length || 0) > 5 ? `<div class="muted">+${d.slots!.length - 5} more</div>` : ''}`
 }
 
 function conflictLines(conflicts: BrainConflict[]): string {
@@ -97,12 +97,12 @@ export function tooltipHtml(d: GraphNode, conflictsByFrame: Record<number, Brain
   const frameConflicts = conflictsByFrame[d.id] || []
 
   return `
-    <div class="tooltip-name" style="color:${typeColor(d.type)}">${esc(d.name)}</div>
+    <div class="tooltip-name" style="--type-color:${typeColor(d.type)}">${esc(d.name)}</div>
     <div class="tooltip-type">${esc(d.type)}</div>
     <div class="tooltip-meta">
       confidence: ${conf}% &nbsp;|&nbsp; priority: ${pri}%
-      ${d.essential ? '&nbsp;|&nbsp; <span style="color:var(--warning)">essential</span>' : ''}
-      ${d.hasConflict ? '&nbsp;|&nbsp; <span style="color:var(--error)">conflict</span>' : ''}
+      ${d.essential ? '&nbsp;|&nbsp; <span class="essential">essential</span>' : ''}
+      ${d.hasConflict ? '&nbsp;|&nbsp; <span class="conflict">conflict</span>' : ''}
     </div>
     ${d.slots?.length ? `<div class="tooltip-slots">${slotLines(d)}</div>` : ''}
     ${frameConflicts.length ? `<div class="tooltip-conflicts"><div class="tooltip-conflicts-title">Pending conflicts</div>${conflictLines(frameConflicts)}</div>` : ''}

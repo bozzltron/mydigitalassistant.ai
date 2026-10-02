@@ -29,6 +29,7 @@ function walk(dir: string, exts: string[]): string[] {
 }
 
 const tsxFiles = walk(SRC, ['.tsx']).filter((f) => !f.includes('.test.'))
+const tsFiles = walk(SRC, ['.ts']).filter((f) => !f.includes('.test.'))
 const styleFiles = walk(SRC, ['.css'])
 const read = (f: string) => readFileSync(f, 'utf8')
 const show = (f: string) => relative(SRC_REL, f)
@@ -144,6 +145,29 @@ describe('design-system guards', () => {
     expect(
       offenders,
       `inline style with a non-custom-property key (use a class or a custom property):\n${offenders.join('\n')}`,
+    ).toEqual([])
+  })
+
+  it('no source file emits a literal inline style in an HTML string', () => {
+    // The JSX rule above scans .tsx only. brainLib.ts builds the tooltip as an
+    // HTML string and set `style="color:…"` there — a literal property that
+    // slipped past the guard because .ts files were never read. The sanctioned
+    // form in a string is a custom property (`style="--x:…"`); a literal
+    // property is not.
+    const offenders: string[] = []
+    for (const f of [...tsxFiles, ...tsFiles]) {
+      const text = stripComments(read(f))
+      for (const m of text.matchAll(/style="([^"]*)"/g)) {
+        const literal = m[1]
+          .split(';')
+          .map((d) => d.trim())
+          .filter((d) => d.length > 0 && !d.startsWith('--'))
+        if (literal.length > 0) offenders.push(`${show(f)}: ${literal.join('; ')}`)
+      }
+    }
+    expect(
+      offenders,
+      `literal inline style in an HTML string (use a class or a custom property):\n${offenders.join('\n')}`,
     ).toEqual([])
   })
 })

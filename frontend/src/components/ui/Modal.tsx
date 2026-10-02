@@ -1,5 +1,6 @@
 import { createSignal, Show, onMount, onCleanup } from 'solid-js';
 import type { JSX } from 'solid-js';
+import { CloseIcon } from './Icons';
 
 export interface ModalProps {
   isOpen: boolean;
@@ -46,7 +47,7 @@ export const Modal = (props: ModalProps) => {
               onClick={handleClose}
               aria-label="Close modal"
             >
-              ✕
+              <CloseIcon size={20} />
             </button>
           </div>
           <div class="modal-content">

@@ -1,6 +1,7 @@
 import { createSignal, Show, createEffect } from 'solid-js';
 import { api } from '../../services/api';
 import { Toast } from '../ui/Toast';
+import { FileIcon, fileKind } from '../ui/Icons';
 
 interface FileContentResponse {
   frame_id: number;
@@ -50,19 +51,6 @@ export const FileViewer = (props: { fileId?: string | null }) => {
     }
   });
 
-  const getFileIcon = (ext: string | null | undefined) => {
-    if (!ext) return '📄';
-    switch (ext) {
-      case 'txt': return '📄';
-      case 'csv': return '📊';
-      case 'json': return '📋';
-      case 'xml': return '📰';
-      case 'html': return '🌐';
-      case 'ics': return '📅';
-      default: return '📄';
-    }
-  };
-
   const formatFileSize = (bytes: number | null | undefined) => {
     if (!bytes) return 'Unknown';
     if (bytes < 1024) return bytes + ' B';
@@ -79,7 +67,7 @@ export const FileViewer = (props: { fileId?: string | null }) => {
       <Show when={!isLoading() && fileData()}>
         <div class="file-content">
           <div class="file-header">
-            <span class="file-icon-large">{getFileIcon(fileData()?.file_ext)}</span>
+            <span class="file-icon-large"><FileIcon kind={fileKind(fileData()?.file_ext)} size={24} /></span>
             <div class="file-meta-info">
               <h3>{fileData()?.file_name || fileData()?.frame_name}</h3>
               <div class="file-details">

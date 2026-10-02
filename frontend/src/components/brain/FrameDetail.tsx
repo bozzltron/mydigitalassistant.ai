@@ -2,6 +2,7 @@ import { Show, For, createSignal, createEffect } from 'solid-js'
 import type { JSX } from 'solid-js'
 import type { BrainAssociation, BrainConflict, BrainFrame, BrainSlot } from '../../types'
 import { esc, typeColor } from './brainLib'
+import { DiamondIcon } from '../ui/Icons'
 
 interface FrameDetailProps {
   frame?: BrainFrame
@@ -120,7 +121,7 @@ export default function FrameDetail(props: FrameDetailProps) {
                 </div>
                 <Show when={f.essential}>
                   <div class="info-item essential-badge">
-                    <span>⬢ Essential</span>
+                    <span><DiamondIcon /> Essential</span>
                   </div>
                 </Show>
                 <Show when={f.source_url}>
@@ -177,7 +178,7 @@ export default function FrameDetail(props: FrameDetailProps) {
                             <td><code>{esc(slot.key)}</code></td>
                             <td>{esc(slot.value)}</td>
                             <td>{Math.round((slot.confidence || 0.5) * 100)}%</td>
-                            <td>{slot.essential ? '⬢' : ''}</td>
+                            <td>{slot.essential ? <DiamondIcon /> : ''}</td>
                             <td>{Math.round((slot.priority || 0.5) * 100)}%</td>
                             <td>{fmtTs(slot.updated_at)}</td>
                           </tr>

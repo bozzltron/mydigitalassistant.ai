@@ -69,11 +69,23 @@ function frame(overrides: Partial<GraphNode> = {}): GraphNode {
 describe('tooltipHtml', () => {
   it('renders name, type, confidence and priority', () => {
     const html = tooltipHtml(frame(), {})
+    // The name's colour is passed as a custom property (the sanctioned inline
+    // form), so the declaration itself stays in brain.css.
     expect(html).toContain('class="tooltip-name"')
+    expect(html).toContain('style="--type-color:#f78166"')
     expect(html).toContain('Alice')
     expect(html).toContain('person')
     expect(html).toContain('confidence: 80%')
     expect(html).toContain('priority: 60%')
+  })
+
+  it('uses no literal inline style properties', () => {
+    // The tooltip HTML previously set `style="color:…"` — a literal property,
+    // which the design-system guard missed because it only scanned .tsx files.
+    const html = tooltipHtml(frame(), {})
+    const styles = [...html.matchAll(/style="([^"]*)"/g)].map((m) => m[1].trim())
+    expect(styles.length).toBeGreaterThan(0)
+    expect(styles.every((s) => s.startsWith('--'))).toBe(true)
   })
 
   it('escapes the frame name before interpolation', () => {

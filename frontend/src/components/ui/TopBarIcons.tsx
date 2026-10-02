@@ -1,4 +1,4 @@
-import type { JSX } from 'solid-js'
+import { Icon } from './Icons'
 
 /**
  * The top bar's icon set, in one place so the row reads as one family: 24×24,
@@ -8,24 +8,6 @@ import type { JSX } from 'solid-js'
  * Every icon is `aria-hidden`: the visible label, or the button's own
  * `aria-label`, carries the accessible name.
  */
-function Icon(props: { class?: string; children: JSX.Element }) {
-  return (
-    <svg
-      class={props.class}
-      viewBox="0 0 24 24"
-      width="16"
-      height="16"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="2"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-      aria-hidden="true"
-    >
-      {props.children}
-    </svg>
-  )
-}
 
 export const PlusIcon = (props: { class?: string }) => (
   <Icon class={props.class}>

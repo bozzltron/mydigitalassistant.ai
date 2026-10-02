@@ -1,6 +1,7 @@
 import { createSignal, Show, For, createEffect, onCleanup } from 'solid-js';
 import { listFiles, deleteFile } from '../../services/api';
 import { Toast } from '../ui/Toast';
+import { FileIcon, fileKind } from '../ui/Icons';
 
 interface FileEntry {
   id: string;
@@ -77,19 +78,8 @@ export const FileGrid = (props: { onFileSelect?: (file: FileEntry) => void }) =>
     }
   };
 
-  const getFileIcon = (type: string) => {
-    if (type.startsWith('text/')) return '📄';
-    if (type.startsWith('image/')) return '🖼️';
-    if (type === 'application/json') return '📋';
-    if (type === 'text/csv') return '📊';
-    if (type === 'application/xml' || type === 'text/xml') return '📰';
-    if (type === 'text/calendar') return '📅';
-    return '📄';
-  };
-
   return (
-    <div class="file-grid">
-      <div class="file-grid-header">
+    <div class="file-grid">      <div class="file-grid-header">
         <h3>Uploaded Files</h3>
         <button class="btn-secondary" onClick={loadFiles} disabled={isLoading()}>
           {isLoading() ? 'Refreshing...' : 'Refresh'}
@@ -113,7 +103,7 @@ export const FileGrid = (props: { onFileSelect?: (file: FileEntry) => void }) =>
             <For each={files()}>{file => (
               <div class="file-item" onClick={() => props.onFileSelect?.(file)}>
                 <div class="file-cell file-name-cell">
-                  <span class="file-icon">{getFileIcon(file.type)}</span>
+                  <span class="file-icon"><FileIcon kind={fileKind(file.type)} /></span>
                   <span class="file-name">{file.file_name || file.name}</span>
                 </div>
                 <div class="file-cell file-type-cell">
