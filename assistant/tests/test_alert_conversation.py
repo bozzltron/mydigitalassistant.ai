@@ -218,6 +218,49 @@ class TestAttachToAnExistingConversation:
         assert "I hold both 'Austin' and 'Austin, TX'" not in episodes[-1].content
 
     @pytest.mark.asyncio
+    async def test_posts_when_the_slot_is_set_but_no_message_exists(self, store):
+        """An alert attached before this behaviour existed has `session_id` set and
+        no message. Keying "already posted" on that slot refused to post it, so
+        resolving it looked broken -- which is exactly what a user hit."""
+        user = await store.create_user("alice")
+        await store.create_session("conv_talking", user.id)
+        await store.create_episode(
+            user_id=user.id, session_id="conv_talking", role="user", content="Hi"
+        )
+        alert = await _an_alert(store, user.id)
+        # Simulate the old attach: the slot points here, no message was written.
+        await store.set_derived_slot(
+            alert.id, "session_id", "conv_talking", source_type="alert"
+        )
+
+        _, episode_id = await store.attach_alert_to_conversation(
+            alert.id, user.id, "conv_talking"
+        )
+
+        assert episode_id is not None, "not posted despite there being no message"
+        episodes = await store.get_episodes_for_session("conv_talking", user_id=user.id)
+        assert len(episodes) == 2
+
+    @pytest.mark.asyncio
+    async def test_reposting_to_the_same_session_does_not_duplicate(self, store):
+        """Once posted, resolving the same alert here again must not stack."""
+        user = await store.create_user("alice")
+        await store.create_session("conv_talking", user.id)
+        alert = await _an_alert(store, user.id)
+
+        _, first = await store.attach_alert_to_conversation(
+            alert.id, user.id, "conv_talking"
+        )
+        _, second = await store.attach_alert_to_conversation(
+            alert.id, user.id, "conv_talking"
+        )
+
+        assert first is not None
+        assert second is None, "a second opening was posted"
+        episodes = await store.get_episodes_for_session("conv_talking", user_id=user.id)
+        assert len(episodes) == 1
+
+    @pytest.mark.asyncio
     async def test_attached_alert_closes_when_the_user_replies(self, store):
         """The point of attaching: resolution happens where the user already is."""
         user = await store.create_user("alice")

@@ -3242,11 +3242,14 @@ class MemoryStore:
             raise ValueError(f"alert {alert_id} is not owned by user {user_id}")
 
         slots = {s.key: s.value for s in await self.get_slots_for_frame(alert_id)}
-        # Post once per conversation. Re-opening the same alert (which the picker
-        # can do) must not stack duplicate openings in the same thread.
-        already_here = slots.get("session_id") == session_id
+        # Post once per conversation, keyed on whether the conversation actually
+        # holds a message for this alert -- not on the `session_id` slot. An alert
+        # attached before this behaviour existed has the slot set but no message,
+        # and keying on the slot refused to post it, which looks exactly like the
+        # feature being broken.
+        already_posted = await self._session_has_alert_episode(session_id, alert_id)
         episode_id: int | None = None
-        if not already_here:
+        if not already_posted:
             about = slots.get("about")
             target_note = (
                 f"\n\nWhat this concerns: {about}. "
@@ -3298,6 +3301,22 @@ class MemoryStore:
         target = session_id or slots.get("session_id") or f"conv_alert_{alert_id}"
         await self.create_session_if_missing(target, user_id)
         return await self.attach_alert_to_conversation(alert_id, user_id, target)
+
+    async def _session_has_alert_episode(self, session_id: str, alert_id: int) -> bool:
+        """Whether this session already holds a posted message for the alert.
+
+        Keyed on the episode's `frame_ids`, which is what a posted alert message
+        carries -- not on the alert's `session_id` slot, which an older attach set
+        without writing anything.
+        """
+        async with self._connect() as db:
+            rows = await db.execute_fetchall(
+                "SELECT 1 FROM episodes WHERE session_id = ? "
+                "AND EXISTS (SELECT 1 FROM json_each(episodes.frame_ids) je "
+                "WHERE je.value = ?) LIMIT 1",
+                (session_id, alert_id),
+            )
+        return bool(rows)
 
     async def create_session_if_missing(self, session_id: str, user_id: int) -> None:
         """Create a session row unless one exists. The attach path may target a
