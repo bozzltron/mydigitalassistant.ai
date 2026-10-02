@@ -180,6 +180,23 @@ select {
   animation: slideUp 0.2s ease-out;
 }
 
+/* The `size` prop on <Modal> emitted a class that had no rule, so every modal
+   was 400px however wide its content needed to be — the Trash Can and For You
+   lists wrapped awkwardly inside a box sized for a confirmation. Each variant is
+   sized to its content; `width: 100%` above still lets them shrink on a narrow
+   viewport. */
+.modal.small {
+  max-width: 400px;
+}
+
+.modal.medium {
+  max-width: 640px;
+}
+
+.modal.large {
+  max-width: 800px;
+}
+
 @keyframes slideUp {
   from { opacity: 0; transform: translateY(20px); }
   to { opacity: 1; transform: translateY(0); }

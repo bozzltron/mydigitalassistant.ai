@@ -205,3 +205,40 @@ describe('design-system guards', () => {
     ).toEqual([])
   })
 })
+
+describe('modal sizes are real, not a dead prop', () => {
+  // <Modal size="large"> emitted `modal large`, but no `.modal.large` rule
+  // existed, so every modal rendered at the base 400px and the Trash Can and
+  // For You lists were squished. The prop is either implemented or removed;
+  // these pin implemented.
+  const css = readFileSync(join(__dirname, 'components.css'), 'utf8')
+
+  function maxWidthOf(selector: string): number {
+    const rule = css.match(new RegExp(`\\.${selector}\\s*\\{[^}]*\\}`))
+    if (!rule) throw new Error(`no rule for .${selector}`)
+    const m = rule[0].match(/max-width:\s*(\d+)px/)
+    if (!m) throw new Error(`.${selector} has no px max-width`)
+    return Number(m[1])
+  }
+
+  it('defines a rule for every size the component offers', () => {
+    for (const size of ['small', 'medium', 'large']) {
+      expect(() => maxWidthOf(`modal\\.${size}`)).not.toThrow()
+    }
+  })
+
+  it('makes large at least double the base width', () => {
+    // The reported problem: both flagged modals already asked for `large` and
+    // were 400px anyway. Double is the floor the request set.
+    const base = maxWidthOf('modal')
+    expect(maxWidthOf('modal\\.large')).toBeGreaterThanOrEqual(base * 2)
+  })
+
+  it('keeps the sizes ordered', () => {
+    const small = maxWidthOf('modal\\.small')
+    const medium = maxWidthOf('modal\\.medium')
+    const large = maxWidthOf('modal\\.large')
+    expect(small).toBeLessThan(medium)
+    expect(medium).toBeLessThan(large)
+  })
+})
