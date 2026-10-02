@@ -3194,12 +3194,17 @@ class MemoryStore:
         return await self.resolve_alert(alert_id, user_id=user_id)
 
     async def resolve_alert(self, alert_id: int, user_id: int | None = None) -> bool:
-        """Mark an alert resolved. Writes `slot_history` like any belief change.
+        """Mark an alert resolved.
 
         `user_id` scopes the operation to the alert's owner when given. The
         deterministic backstop (`resolve_alerts_for_session`) omits it because it
         has already selected alerts by session, and a session is itself owner-scoped
         -- but any user-facing path must pass it.
+
+        Note: `status` is a derived slot, so this writes **no** `slot_history` (see
+        `set_derived_slot`). An earlier version of this docstring claimed it did.
+        What actually records the resolution is the conversation the alert was
+        attached to: the alert's opening message and the user's reply are episodes.
         """
         frame = await self.get_frame(alert_id)
         if frame is None or frame.type != ALERT_FRAME_TYPE:

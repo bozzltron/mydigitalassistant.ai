@@ -392,6 +392,23 @@ async def health():
     }
 
 
+@app.get("/healthz")
+async def healthz():
+    """Liveness probe: is this process up and serving?
+
+    Deliberately does **no** I/O, and that is the whole point. `/health` reports
+    the model fleet and probes Ollama, which can block for the client timeout
+    (up to `OLLAMA_TIMEOUT`, 600s in compose) when Ollama is down. Used as a
+    container healthcheck, that would mark the app unhealthy during an Ollama
+    outage and — with autoheal — restart it in a loop. Restarting this container
+    cannot fix Ollama, so the liveness probe must not depend on it.
+
+    A hung event loop still fails this probe (the request is never served), which
+    is the case a restart does fix.
+    """
+    return {"status": "ok"}
+
+
 @app.get("/settings")
 async def get_settings() -> dict:
     """Return frontend-facing settings so the UI can show/hide the Brave toggle."""

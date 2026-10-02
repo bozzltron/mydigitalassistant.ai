@@ -1,5 +1,15 @@
 name: mydigitalassistantai
 
+# Log rotation, shared by the long-running services. Docker's json-file driver
+# defaults to unbounded (verified: `Config: map[]`), and this app logs per turn,
+# per LLM call, and per embedding, so an unbounded log grows without limit —
+# slow in normal use, acute in a crash loop. 30MB per service is ample.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   assistant:
     build: .
@@ -50,7 +60,33 @@ services:
     # $${...} = expanded at RUNTIME inside the container (container env wins);
     # a host-side .env value can no longer silently override the bind.
     command: ["sh", "-c", "uvicorn assistant.backend.main:app --host $${BACKEND_HOST:-0.0.0.0} --port 8000"]
+    # The healthcheck is the image's (see Dockerfile), which probes /healthz —
+    # liveness only, no Ollama dependency. autoheal uses that status.
+    stop_grace_period: 30s
     restart: unless-stopped
+    logging: *default-logging
+    networks:
+      - appnet
+
+  # Docker restarts a container when its process *exits*, never when it is merely
+  # unhealthy — a wedged process is invisible to the restart policy. autoheal
+  # watches health status and restarts the unhealthy. It reads the Docker socket,
+  # which is why it is a separate small container rather than baked into the app.
+  #
+  # Scoped by label, not `all`: this host runs other stacks, and AUTOHEAL_*=`all`
+  # would restart any unhealthy container on the machine. Only containers that
+  # opt in with `autoheal=true` are touched.
+  autoheal:
+    image: willfarrell/autoheal:latest
+    container_name: autoheal-prod
+    environment:
+      - AUTOHEAL_CONTAINER_LABEL=autoheal
+      - AUTOHEAL_INTERVAL=30
+      - AUTOHEAL_START_PERIOD=60
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+    logging: *default-logging
     networks:
       - appnet
 
@@ -63,9 +99,13 @@ services:
       - ./Caddyfile.prod:/etc/caddy/Caddyfile
       - ./.data/caddy:/etc/caddy/certs
       - caddy-data:/data
+    # Wait for the backend to answer, not merely to start: Caddy would otherwise
+    # proxy to a half-booted app on the first requests after a rebuild.
     depends_on:
-      - assistant
+      assistant:
+        condition: service_healthy
     restart: unless-stopped
+    logging: *default-logging
     networks:
       - appnet
 
@@ -105,6 +145,7 @@ services:
       retries: 3
       start_period: 15s
     restart: unless-stopped
+    logging: *default-logging
     networks:
       - appnet
 

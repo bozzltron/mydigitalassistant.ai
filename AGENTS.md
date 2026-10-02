@@ -96,12 +96,30 @@ it works.
 
 ## Build and test commands
 - Install: `docker build -t assistant .`
-- Run backend: `docker compose up` (FastAPI server via Caddy on 127.0.0.1:8443)
+- Run backend (dev): `docker compose up -d --build` — Vite dev server, Caddy on 127.0.0.1:8443
+- Run backend (prod): `docker compose -f docker-compose.prod.yml up -d --build` — built bundle, Caddy on 127.0.0.1:8444
+  - **Dev and prod are separate Compose projects** (separate images, databases, ports) and run side by side. A source change does not reach either until its image is rebuilt, so rebuild **both** to verify a change: "it still does the old thing" is usually an un-rebuilt environment. After rebuilding, hard-refresh the browser (⌘⇧R) — the SPA holds its JS in memory.
+  - The two Caddy ports differ on purpose (dev 8443, prod 8444); working in one says nothing about the other.
 - Run CLI: `./assistant/bin/assistant chat`
 - Run tests: `docker run -it --rm -v $(pwd):/app -w /app assistant pytest assistant/tests/`
 - Run full suite (plain + encrypted): `./run_ci.sh`
 - Run single test mode: `docker compose -f docker-compose.test.yml run --rm test-plain`
 - Lint: `docker run -it --rm -v $(pwd):/app -w /app assistant ruff check .`
+- Frontend check: `cd frontend && npm run check` (lint + typecheck + tests; requires host Node)
+
+### Container resilience
+- `restart: unless-stopped` handles a crashed process (Docker backs off
+  exponentially, capped at 1 minute, so it cannot hot-loop). It does **not**
+  handle a hung process, which never exits — `autoheal` (prod) restarts
+  containers whose health status goes unhealthy.
+- The healthcheck probes `/healthz`, a **liveness** route that does no I/O. Do
+  not point it at `/health`: that probes Ollama and can block for the client
+  timeout when Ollama is down, which would mark the app unhealthy and restart it
+  in a loop over an outage a restart cannot fix.
+- `autoheal` is scoped by label (`AUTOHEAL_CONTAINER_LABEL=autoheal`), never
+  `all` — this host runs other stacks, and a global autoheal would restart them.
+- Logs are rotated (json-file defaults to unbounded and the app logs per turn and
+  per LLM call).
 
 ## Pre-Commit Flow (Required)
 **Before every commit, run both lint and tests in Docker:**

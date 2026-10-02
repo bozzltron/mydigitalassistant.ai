@@ -1,5 +1,14 @@
 name: mydigitalassistantai-dev
 
+# See docker-compose.prod.yml: json-file defaults to unbounded and this app is
+# chatty. Same cap; prod additionally runs autoheal, which dev deliberately does
+# not — dev is where a wedged container should be visible, not restarted away.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   assistant:
     build: .
@@ -64,7 +73,10 @@ services:
     # $${...} = expanded at RUNTIME inside the container (container env wins);
     # a host-side .env value can no longer silently override the bind.
     command: ["sh", "-c", "uvicorn assistant.backend.main:app --host $${BACKEND_HOST:-0.0.0.0} --port 8000"]
+    # Healthcheck comes from the image (Dockerfile) and probes /healthz.
+    stop_grace_period: 30s
     restart: unless-stopped
+    logging: *default-logging
     networks:
       - appnet
 
@@ -80,6 +92,7 @@ services:
     depends_on:
       - assistant
     restart: unless-stopped
+    logging: *default-logging
     networks:
       - appnet
 
@@ -126,6 +139,7 @@ services:
       retries: 3
       start_period: 15s
     restart: unless-stopped
+    logging: *default-logging
     networks:
       - appnet
 
@@ -154,6 +168,7 @@ services:
     depends_on:
       - assistant
     restart: unless-stopped
+    logging: *default-logging
     networks:
       - appnet
 

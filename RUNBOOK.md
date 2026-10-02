@@ -97,10 +97,31 @@ Verify against AGENTS.md principles:
 - Add regression tests for critical path changes
 
 #### 8.2 Run Live Code & Read Logs
+
+**Both environments must be rebuilt.** A source change does not reach a running
+container until its image is rebuilt and the container recreated, so "it still
+does the old thing" usually means one environment was not rebuilt. Dev and prod
+are separate Compose projects with separate images, databases, and ports; a
+change is not verified until **both** are rebuilt.
+
 ```bash
-docker compose up
+# Dev — Vite on https://localhost:8443 (hot reload for the frontend)
+docker compose up -d --build
+
+# Prod — the built bundle on https://localhost:8444
+docker compose -f docker-compose.prod.yml up -d --build
+
 # Watch logs, verify behavior matches expectations
+docker compose logs -f assistant
 ```
+
+The backend image is shared by both (same `Dockerfile`); only the frontend
+differs (Vite vs. the built bundle). Rebuild after any backend change, since
+neither environment reloads Python.
+
+After a rebuild, hard-refresh the browser (⌘⇧R): the SPA keeps its JavaScript in
+memory and will otherwise keep running the previous bundle.
+
 
 #### 8.3 Code Review Against Design Principles
 - Self-review: Does this change violate any principle in Section 7?
@@ -174,13 +195,21 @@ Once all phases/milestones are done:
 ### 9.2 Vet Docker Compose Environments
 ```bash
 # Dev environment
-docker compose up
+docker compose up -d --build
 # Verify: FastAPI on 127.0.0.1:8443 via Caddy, all services healthy
 
 # Prod environment
-docker compose -f docker-compose.prod.yml up --build
-# Verify: Compiles, runs, no published backend ports, Caddy on 127.0.0.1:8443
+docker compose -f docker-compose.prod.yml up -d --build
+# Verify: Compiles, runs, no published backend ports, Caddy on 127.0.0.1:8444
+
+# Both: containers report healthy, and only this project's containers are
+# autohealed (autoheal is label-scoped, not global).
+docker compose ps
+docker compose -f docker-compose.prod.yml ps
 ```
+
+Note the prod Caddy port is **8444** (dev is 8443); they run side by side, so
+"it works" in one says nothing about the other.
 
 ### 9.3 Final Commit & Push
 ```bash

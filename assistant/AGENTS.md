@@ -415,6 +415,15 @@ status that changes nothing is why notification rows accumulate unread.
 `mark_alert_read` performs the real transition (`status = resolved`) and is named for
 the API route that calls it.
 
+**There is deliberately no dismiss action** ("ignore", "I know", "Not important").
+Two lighter actions were designed and dropped, because of what each path *stores*:
+resolving in a conversation writes an **episode** — the alert's question, the user's
+reply — which is embedded and retrievable by meaning, while a dismiss button would
+write only a `status` value via `set_derived_slot` (no `slot_history`, no episode, no
+embedding). The conversation path is not merely simpler; it produces the richer
+memory, and more communication improves the knowledge model over time. Do not
+re-propose a dismiss without that context.
+
 **Resolution happens in a conversation.** `POST /alerts/{id}/open` attaches an alert to
 a session (or seeds one, if empty), and the alert closes when the user replies there —
 by the agent's instruction in the alert's own opening message, *and* by a

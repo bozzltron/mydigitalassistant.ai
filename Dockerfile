@@ -89,7 +89,11 @@ ENV DATABASE_PATH=/app/data/assistant.db \
 
 EXPOSE 8000
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -f http://127.0.0.1:8000/health || exit 1
+# Liveness, not readiness: /healthz does no I/O. The previous probe hit /health,
+# which calls Ollama and can block for the client timeout (up to OLLAMA_TIMEOUT,
+# 600s) when Ollama is down — so an Ollama outage marked the app unhealthy, and
+# with autoheal that meant restarting a container a restart cannot fix.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
+    CMD curl -f http://127.0.0.1:8000/healthz || exit 1
 
 CMD ["uvicorn", "assistant.backend.main:app", "--host", "${BACKEND_HOST}", "--port", "8000"]
