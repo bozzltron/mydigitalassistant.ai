@@ -59,7 +59,6 @@ services:
       - TOOLS_ENABLED=${TOOLS_ENABLED:-false}
     volumes:
       - assistant-data:/app/data
-      - ./assistant/backend/static:/app/assistant/backend/static:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     # $${...} = expanded at RUNTIME inside the container (container env wins);

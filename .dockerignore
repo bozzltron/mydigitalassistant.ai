@@ -15,3 +15,8 @@ README.md
 LICENSE
 .env.example
 assistant/tests
+# Vite build output. The image builds it in the frontend-builder stage and
+# COPYs it in; leaving the on-disk copy in the context let `COPY assistant/`
+# clobber the fresh bundle with a stale index.html + assets.
+assistant/backend/static/assets
+assistant/backend/static/index.html
