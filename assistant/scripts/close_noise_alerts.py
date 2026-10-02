@@ -41,6 +41,15 @@ REMOVED_WRITER_KINDS = {"correction", "search_result"}
 
 async def _run(user_id: int, dry_run: bool) -> int:
     store = MemoryStore(settings.database_path)
+    try:
+        return await _report(store, user_id, dry_run)
+    finally:
+        # Drain the pooled connections before the loop closes, or aiosqlite's
+        # worker thread reports "Event loop is closed" on teardown.
+        await store.close()
+
+
+async def _report(store: MemoryStore, user_id: int, dry_run: bool) -> int:
     open_alerts = await store.get_alerts(user_id, unread_only=True, limit=1000)
     noise = [a for a in open_alerts if a.type in REMOVED_WRITER_KINDS]
 
