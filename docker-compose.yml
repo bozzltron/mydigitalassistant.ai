@@ -138,13 +138,14 @@ services:
     ports:
       - "5174:5173"
     volumes:
-      - ./frontend/src:/app/frontend/src
-      - ./frontend/public:/app/frontend/public
-      - ./frontend/index.html:/app/frontend/index.html
-      - ./frontend/vite.config.ts:/app/frontend/vite.config.ts
-      - ./frontend/tsconfig.json:/app/frontend/tsconfig.json
-      - ./frontend/tsconfig.node.json:/app/frontend/tsconfig.node.json
-      - ./frontend/eslint.config.js:/app/frontend/eslint.config.js
+      # Mount the whole frontend directory rather than individual files. A file
+      # bind mount pins an inode, so any `git checkout`/`stash`/branch switch that
+      # replaces a file (git writes a new inode) leaves the container reading a
+      # deleted one -- Vite then fails with ENOENT on /app/frontend/index.html.
+      # The named volume keeps the container's linux node_modules from being
+      # shadowed by the host's.
+      - ./frontend:/app/frontend
+      - frontend-node-modules:/app/frontend/node_modules
       - ./assistant/backend/static:/app/assistant/backend/static
     environment:
       - NODE_ENV=development
@@ -164,4 +165,6 @@ volumes:
   assistant-data:
     driver: local
   caddy-data:
+    driver: local
+  frontend-node-modules:
     driver: local
