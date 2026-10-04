@@ -48,6 +48,22 @@ export const [currentTurnId, setCurrentTurnId] = createSignal<string | null>(nul
 export const [isStreaming, setIsStreaming] = createSignal(false)
 export const [streamingMessageId, setStreamingMessageId] = createSignal<string | null>(null)
 
+/** Event fired when a turn's extraction reports the agent's own name changed. */
+export const ASSISTANT_NAME_CHANGED_EVENT = 'assistant-name-changed'
+
+/**
+ * True when an extraction summary reports the agent's own name changing
+ * (`identity_name.full_name`). The name is memory-driven, so App listens for
+ * ASSISTANT_NAME_CHANGED_EVENT and refetches `/assistant/name` instead of
+ * waiting for a page reload to show a rename.
+ */
+export function reportsIdentityRename(summary?: ExtractionSummary): boolean {
+  if (!summary?.slots) return false
+  return summary.slots.some(
+    (s) => s.frame_name === 'identity_name' && s.key === 'full_name'
+  )
+}
+
 export const messages = createMemo(() => {
   const sid = sessionId()
   if (sid) {
@@ -169,6 +185,14 @@ export async function postChatMessageStream(
   }
 
   let accumulatedResponse = ''
+  let nameChangeSignaled = false
+  const signalNameChangeIfNeeded = (summary?: ExtractionSummary) => {
+    if (nameChangeSignaled || !reportsIdentityRename(summary)) return
+    nameChangeSignaled = true
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent(ASSISTANT_NAME_CHANGED_EVENT))
+    }
+  }
 
   try {
     const result = await postChatStream(
@@ -203,6 +227,7 @@ export async function postChatMessageStream(
               ...(event.search_info ? { search_info: event.search_info } : {}),
             })
           }
+          signalNameChangeIfNeeded(event.extraction_summary)
         } else if (event.type === 'tool_result') {
           // Tool completed - check if it's a file operation that should refresh the file list
           const fileOps = ['write_file', 'edit_file', 'delete_file', 'glob', 'list_files']
@@ -227,6 +252,10 @@ export async function postChatMessageStream(
       },
       user()?.id
     )
+
+    // The non-streaming fallback result may carry the summary even if the meta
+    // event did not; deduped by the local flag.
+    signalNameChangeIfNeeded(result.extraction_summary)
 
     return {
       response: accumulatedResponse,

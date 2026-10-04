@@ -1,7 +1,9 @@
-import { createSignal, createEffect } from 'solid-js'
+import { createSignal, createEffect, onMount, onCleanup } from 'solid-js'
 import { useConversations } from './hooks/useConversations'
 import { useActiveConversation } from './hooks/useActiveConversation'
 import { useAppInit } from './hooks/useAppInit'
+import { getAssistantName } from './services/api'
+import { ASSISTANT_NAME_CHANGED_EVENT } from './state/chat'
 import ChatPage from './components/chat/ChatPage'
 import TopBar from './components/ui/TopBar'
 import { Modal } from './components/ui/Modal'
@@ -19,6 +21,22 @@ export default function App() {
     initializeFromSavedSession,
   } = useActiveConversation(conversations)
   const { initialized } = useAppInit([assistantName, setAssistantName])
+
+  // The name lives in memory, so a rename during a conversation must be
+  // re-read rather than waiting for a page reload. chat state emits this event
+  // when a turn's extraction reports identity_name.full_name changed.
+  onMount(() => {
+    const refreshName = async () => {
+      try {
+        const result = await getAssistantName()
+        if (result.name) setAssistantName(result.name)
+      } catch (error) {
+        console.error('Failed to refresh assistant name:', error)
+      }
+    }
+    window.addEventListener(ASSISTANT_NAME_CHANGED_EVENT, refreshName)
+    onCleanup(() => window.removeEventListener(ASSISTANT_NAME_CHANGED_EVENT, refreshName))
+  })
 
   const handleNewConversationClick = () => {
     setNewConvTitle('')

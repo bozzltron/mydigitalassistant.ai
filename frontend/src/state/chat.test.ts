@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { messages, isTurnActive, sessionId, setSessionId, currentTurnId, setCurrentTurnId, postChatMessageStream, loadConversationMessages, initChat, drainQueue, enqueueMessage, addMessageToConversation } from '../state/chat'
+import { messages, isTurnActive, sessionId, setSessionId, currentTurnId, setCurrentTurnId, postChatMessageStream, loadConversationMessages, initChat, drainQueue, enqueueMessage, addMessageToConversation, reportsIdentityRename, ASSISTANT_NAME_CHANGED_EVENT } from '../state/chat'
 import * as api from '../services/api'
 import * as status from '../services/status'
 import * as messageQueue from '../state/messageQueue'
@@ -184,6 +184,62 @@ describe('chat state', () => {
       // error bubble, not left as empty/streaming state.
       expect(messages()).toHaveLength(1)
       expect(messages()[0].content).toBe('Error: Failed to send message')
+    })
+  })
+
+  describe('reportsIdentityRename', () => {
+    it('is true only when the summary carries identity_name.full_name', () => {
+      expect(reportsIdentityRename(undefined)).toBe(false)
+      expect(reportsIdentityRename({ slots_applied: 0, associations_created: 0, conflicts_created: 0, frame_ids: [], slots: [] })).toBe(false)
+      expect(reportsIdentityRename({
+        slots_applied: 1,
+        associations_created: 0,
+        conflicts_created: 0,
+        frame_ids: [1],
+        slots: [{ frame_name: 'guitar', key: 'strings', value: '6' }],
+      })).toBe(false)
+      expect(reportsIdentityRename({
+        slots_applied: 1,
+        associations_created: 0,
+        conflicts_created: 0,
+        frame_ids: [1],
+        slots: [{ frame_name: 'identity_name', key: 'full_name', value: 'Carl' }],
+      })).toBe(true)
+    })
+
+    it('signals a name change over the stream so the UI can refetch', async () => {
+      setSessionId('session-name-change')
+      let onEvent: ((e: api.StreamEvent) => void) | undefined
+      vi.mocked(api.postChatStream).mockImplementation(
+        async (_message, _session, _files, _turn, _consent, _max, callback) => {
+          onEvent = callback
+          return { response: 'done', session_id: 'session-name-change' }
+        }
+      )
+      vi.mocked(status.beginTurnStatus).mockImplementation(() => {})
+      vi.mocked(status.endTurnStatus).mockImplementation(() => {})
+
+      const heard: Event[] = []
+      const listener = (e: Event) => heard.push(e)
+      window.addEventListener(ASSISTANT_NAME_CHANGED_EVENT, listener)
+      try {
+        const promise = postChatMessageStream('call yourself Carl', 'session-name-change')
+        await Promise.resolve()
+        onEvent!({
+          type: 'meta',
+          extraction_summary: {
+            slots_applied: 1,
+            associations_created: 0,
+            conflicts_created: 0,
+            frame_ids: [1],
+            slots: [{ frame_name: 'identity_name', key: 'full_name', value: 'Carl' }],
+          },
+        })
+        await promise
+        expect(heard).toHaveLength(1)
+      } finally {
+        window.removeEventListener(ASSISTANT_NAME_CHANGED_EVENT, listener)
+      }
     })
   })
 

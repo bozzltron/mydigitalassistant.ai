@@ -154,7 +154,7 @@ Snapshot: 2026-09-05. Full suite runs in both plain SQLite and SQLCipher-encrypt
 | `test_orchestrator.py` | 17 | Full cognitive loop, search injection, correction handling, scheduled-task chat flow. |
 | `test_memory_maintenance.py` | 3 | No time-based decay of idle facts; consolidation skips the backup when there is nothing to merge. |
 | `test_brain_portable.py` | 16 | Encrypted portable brain export/import. |
-| `test_identity_name.py` | 14 | Identity frame/slot behavior, self-description. |
+| `test_identity_name.py` | 17 | Identity frame/slot behavior, self-description, user-authoritative rename. |
 | `test_tools.py` | 12 | `fetch_url` tool, robots.txt, extraction from fetched documents. |
 | `test_daily_schedule.py` | 12 | Clock helpers, store semantics, create/list/delete/pause/resume chat flow. |
 | `test_phase9_memory_strength.py` | 11 | Memory strength reinforcement and slot priority. |

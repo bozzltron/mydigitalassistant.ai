@@ -307,6 +307,14 @@ The agent must confirm before performing actions that could expose sensitive inf
 - Conflicting value: auto-resolve by a fixed ladder — source_reliability →
   confidence → priority → recency tiebreak; loser value → slot_history.
   Both logged in conflicts table.
+- **The assistant's own name is the one deliberate exception.** A user-stated
+  `identity_name.full_name` is written at `source_reliability` 1.0 (the
+  `manual_override` ceiling), so a rename supersedes the stored name instead of
+  losing to an earlier correction that left it at 0.99. This is a reliability
+  floor on that single slot, not a bypass: the value must still trace to the
+  user's message (the self-description guard runs first), and the write still
+  goes through `revise` / `slot_history` / `conflicts`. Only the conversational
+  path sets it; other identity slots keep the normal ladder.
 - Positive feedback: `bump_confidence(current)` = `min(1 - (1-current)*0.7, 0.99)`
   (same repeat-discount curve as reinforcement).
 - Negative feedback: `lower_confidence(current)` = `max(current - 0.15, INITIAL_CONFIDENCE)`.

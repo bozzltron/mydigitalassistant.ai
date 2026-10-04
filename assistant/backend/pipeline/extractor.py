@@ -25,6 +25,14 @@ MAX_SOURCE_RELIABILITY = 0.99
 IDENTITY_FRAME = "identity_name"
 IDENTITY_NAME_SLOT = "full_name"
 
+# The assistant's name is the user's to choose, so a user-stated name is
+# authoritative and must always win over the value already stored -- however
+# entrenched that value is. A correction can leave `full_name` at
+# source_reliability 0.99, while ordinary conversational extraction writes 0.5;
+# without this the ladder returned EXISTING_WINS and the name was effectively
+# frozen (measured: "Carl" / "Carl Sagan" were both rejected against "Echo").
+IDENTITY_NAME_RELIABILITY = 1.0
+
 # Slot-key namespaces owned by the system, not by the model. `file_safe_name` is
 # consumed as a filesystem path by the /files endpoints, so a model-authored value
 # in that namespace is a path primitive. Model output is untrusted input, so this
@@ -594,12 +602,19 @@ async def apply_extraction(
     source_reliability: float | None = None,
     embed_fn=None,
     embedding_model: str | None = None,
+    user_authoritative_identity: bool = False,
 ) -> dict:
     """Apply an ExtractionResult to the MemoryStore.
 
     For each slot: resolve or create its frame (canonicalized), then upsert_slot.
     For each association: ensure both frames exist, then create_association
     (duplicates bump the existing edge's confidence instead of erroring).
+
+    When ``user_authoritative_identity`` is set, an extracted
+    ``identity_name.full_name`` is written as a user-stated fact at
+    ``IDENTITY_NAME_RELIABILITY`` so it always supersedes the stored name. Only
+    the conversational path sets this: a name must come from the user, and the
+    extraction guard has already proven the value traces to the user's message.
     """
     frame_ids: dict[str, int] = {}
 
@@ -662,14 +677,23 @@ async def apply_extraction(
             )
             continue
         frame_id = frame_ids[slot.frame_name]
+        slot_source_type = source_type
+        slot_reliability = source_reliability
+        if (
+            user_authoritative_identity
+            and slot.frame_name == IDENTITY_FRAME
+            and slot.key == IDENTITY_NAME_SLOT
+        ):
+            slot_source_type = "user"
+            slot_reliability = IDENTITY_NAME_RELIABILITY
         stored_slot, conflict = await store.upsert_slot(
             frame_id=frame_id,
             key=slot.key,
             value=slot.value,
             source_episode_id=source_episode_id,
-            source_type=source_type,
+            source_type=slot_source_type,
             source_url=source_url,
-            source_reliability=source_reliability,
+            source_reliability=slot_reliability,
         )
         slots_applied += 1
         if conflict is not None:
@@ -1024,6 +1048,27 @@ def value_stated_by_user(value: str | None, user_message: str) -> bool:
     return any(u[i : i + n] == v for i in range(len(u) - n + 1))
 
 
+# Words that are never a name on their own. The extractor has mined pronouns out
+# of the user's own message ("you" landed on full_name on 2026-10-02) because
+# `value_stated_by_user` only checks that the token appears in the message, and
+# "you" appears in almost every message. A real name is not made entirely of
+# these, so a full_name whose every token is a stopword is not a name.
+_IDENTITY_NAME_STOPWORDS = frozenset(
+    {
+        "you", "your", "yours", "yourself", "me", "my", "mine", "myself",
+        "i", "we", "us", "our", "ours", "it", "its", "itself",
+        "the", "a", "an", "this", "that", "these", "those",
+        "name", "assistant", "agent", "ai", "bot",
+    }
+)
+
+
+def _is_name_like(value: str | None) -> bool:
+    """False when a full_name value is only function words (pronouns, articles)."""
+    tokens = _tokens(value or "")
+    return bool(tokens) and not all(t in _IDENTITY_NAME_STOPWORDS for t in tokens)
+
+
 # Minimum fraction of a value's tokens that must trace back to the user's own
 # words for non-name identity slots (working agreements, traits). Names demand
 # verbatim; longer values may be lightly normalized by the extractor.
@@ -1082,7 +1127,9 @@ def drop_unstated_identity_slots(
             kept.append(slot)
             continue
         if slot.key == IDENTITY_NAME_SLOT:
-            stated = value_stated_by_user(slot.value, user_message)
+            stated = value_stated_by_user(slot.value, user_message) and _is_name_like(
+                slot.value
+            )
         else:
             stated = value_traced_to_user(slot.value, user_message)
         if not stated:
@@ -1127,6 +1174,7 @@ async def extract_and_apply(
             source_episode_id,
             embed_fn=get_embedding,
             embedding_model=llm_client.embedding_model,
+            user_authoritative_identity=True,
         )
         if result.get("frame_ids"):
             # Must be the model that produced the vectors. Omitting it wrote
@@ -1382,7 +1430,12 @@ async def apply_correction(
         value=correction.new_value,
         source_episode_id=source_episode_id,
         source_type="user_correction",
-        source_reliability=0.9,
+        source_reliability=(
+            IDENTITY_NAME_RELIABILITY
+            if correction.frame_name == IDENTITY_FRAME
+            and correction.slot_key == IDENTITY_NAME_SLOT
+            else 0.9
+        ),
     )
 
     if embed_fn is not None and embedding_model is not None:

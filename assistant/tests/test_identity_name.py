@@ -248,3 +248,85 @@ def test_assistant_name_reflects_learned_name_after_chat_turn(client, stub_llm):
     r = client.get("/assistant/name")
     assert r.status_code == 200
     assert r.json() == {"name": "Echo"}
+
+
+# ---- guard: a pronoun is not a name ----
+
+
+def test_guard_drops_pronoun_as_name():
+    """`you` appears in almost every message, but it is not the agent's name."""
+    from assistant.backend.pipeline.extractor import _is_name_like
+
+    assert not _is_name_like("you")
+    assert not _is_name_like("The assistant")
+    assert _is_name_like("Carl")
+    assert _is_name_like("Carl Sagan")
+    # An article plus a real name is still a name.
+    assert _is_name_like("The Edge")
+
+    slots = [_slot("identity_name", "full_name", "you")]
+    kept = drop_unstated_identity_slots(slots, user_message="who are you?")
+    assert kept == []
+
+
+# ---- rename must beat an entrenched name (regression: the "Carl" freeze) ----
+
+
+async def test_user_rename_overrides_entrenched_name(store, stub_llm):
+    """A user-stated rename wins even against a 0.99 correction.
+
+    Measured on the live brain: `full_name` held "Echo" from a user correction
+    (source_reliability 0.99). Two conversational renames ("Carl Sagan", "Carl")
+    were both resolved EXISTING_WINS because extraction writes reliability 0.5,
+    so the name was frozen. The name is the user's to choose; it must stick.
+    """
+    from assistant.backend.pipeline.extractor import extract_and_apply
+
+    frame = await store.create_frame("identity_name", "entity")
+    await store.upsert_slot(
+        frame.id,
+        "full_name",
+        "Echo",
+        source_type="user_correction",
+        source_reliability=0.99,
+    )
+    user = await store.create_user("alice")
+    turn = 'Your name is now "Carl"'
+    episode = await store.create_episode(user.id, "s1", "user", turn, frame_ids=[])
+    stub_llm.set_extraction_result(
+        [{"frame_name": "identity_name", "frame_type": "entity",
+          "key": "full_name", "value": "Carl"}]
+    )
+
+    await extract_and_apply(turn, "I'm Carl now.", store, stub_llm, episode.id)
+
+    slot = await store.get_slot(frame.id, "full_name")
+    assert slot is not None
+    assert slot.value == "Carl"
+
+
+async def test_correction_rename_overrides_entrenched_name(store):
+    """The correction path can also rename, and must beat the stored name."""
+    from assistant.backend.pipeline.extractor import CorrectionResult, apply_correction
+
+    frame = await store.create_frame("identity_name", "entity")
+    await store.upsert_slot(
+        frame.id,
+        "full_name",
+        "Echo",
+        source_type="user_correction",
+        source_reliability=0.99,
+    )
+
+    await apply_correction(
+        CorrectionResult(
+            frame_name="identity_name",
+            slot_key="full_name",
+            new_value="Carl",
+        ),
+        store,
+    )
+
+    slot = await store.get_slot(frame.id, "full_name")
+    assert slot is not None
+    assert slot.value == "Carl"
