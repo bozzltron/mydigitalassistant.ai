@@ -71,10 +71,63 @@ export const SessionSummarySchema = z.object({
   last_message: z.string(),
 })
 
+// `search_info` has to be declared here for it to survive a reload. `z.object()`
+// strips undeclared keys, so a schema that omits a field the UI reads deletes it
+// silently — which is what made the hero image disappear after a refresh while
+// the backend was still persisting and sending it. Fields mirror `SearchInfo` in
+// `types/chat.ts`; keep the two in step, and add a case to `sessionMessageSchema`
+// in api.test.ts when you touch either.
+const SearchResultItemSchema = z.object({
+  title: z.string(),
+  url: z.string(),
+  // Live results only; the persisted episode payload omits them.
+  snippet: z.string().optional(),
+  engine: z.string().optional(),
+  thumbnail: z.string().nullable().optional(),
+  /** Full-size image; `searchMedia` falls back to `thumbnail` without it. */
+  image: z.string().nullable().optional(),
+})
+
+const YouTubeVideoSchema = z.object({
+  video_id: z.string(),
+  title: z.string(),
+  channel_title: z.string().nullable().optional(),
+  thumbnail_url: z.string().nullable().optional(),
+  url: z.string().nullable().optional(),
+  published_at: z.string().nullable().optional(),
+  duration: z.string().nullable().optional(),
+})
+
+export const SearchInfoSchema = z.object({
+  backend: z.string(),
+  query: z.string(),
+  engines: z.array(z.string()).optional(),
+  results: z.array(SearchResultItemSchema).optional(),
+  video_results: z.array(YouTubeVideoSchema).optional(),
+  sensitivity: z
+    .object({
+      // Enumerated, not a bare string, so the parse output matches
+      // `SensitivityResult` and the consent badge cannot render an unknown level.
+      level: z.enum(['safe', 'sensitive', 'ambiguous']),
+      reason: z.string(),
+      // The consent badge reads `.length` unconditionally, so default rather than
+      // leave a hole for a turn that persisted a level but no categories.
+      categories: z.array(z.string()).default([]),
+    })
+    .optional(),
+  consent_required: z.boolean().optional(),
+})
+
 export const SessionMessageSchema = z.object({
   role: z.string(),
   content: z.string(),
   timestamp: z.string().optional(),
+  // The backend sends `null` for a non-search turn. Collapse that to `undefined`
+  // so `SearchInfo | undefined` in the app matches what the parse produces,
+  // rather than forcing every reader to handle a third state.
+  search_info: SearchInfoSchema.nullable()
+    .optional()
+    .transform((v) => v ?? undefined),
 })
 
 export const AssistantNameSchema = z.object({

@@ -265,6 +265,88 @@ describe('api service', () => {
       expect(mockFetch).toHaveBeenCalledWith('/chat/session/session-123/messages?user_id=1&limit=25', expect.any(Object))
       expect(result).toEqual([{ role: 'user', content: 'Hi' }])
     })
+
+    // Regression: `search_info` was undeclared on SessionMessageSchema, and
+    // `z.object()` strips undeclared keys. The backend persisted the payload and
+    // sent it, and this parse deleted it, so a restored conversation lost its
+    // hero image and its "Searched via Brave" badge. The shape below is exactly
+    // what `search_info_payload` writes.
+    it('keeps search_info through validation so media survives a reload', async () => {
+      const searchInfo = {
+        backend: 'brave',
+        query: 'cute cats',
+        results: [
+          {
+            title: 'A cat',
+            url: 'https://example.com/cat',
+            thumbnail: 'https://cdn.example.com/cat-thumb.jpg',
+            image: 'https://cdn.example.com/cat-full.jpg',
+          },
+        ],
+        video_results: [
+          {
+            video_id: 'abcdefghijk',
+            title: 'A video',
+            channel_title: 'A channel',
+            thumbnail_url: 'https://cdn.example.com/v.jpg',
+            url: 'https://youtube.com/watch?v=abcdefghijk',
+          },
+        ],
+      }
+      mockFetch.mockResolvedValue({
+        ok: true,
+        text: () =>
+          Promise.resolve(
+            JSON.stringify([{ role: 'assistant', content: 'Here', search_info: searchInfo }])
+          ),
+      })
+
+      const [message] = await getSessionMessages('session-123', 1, 25)
+
+      expect(message.search_info).toEqual(searchInfo)
+    })
+
+    it('tolerates a persisted result with a null thumbnail and image', async () => {
+      // `search_info_payload` writes `r.thumbnail` / `r.image` straight through,
+      // so a result with neither carries explicit nulls, not absent keys.
+      mockFetch.mockResolvedValue({
+        ok: true,
+        text: () =>
+          Promise.resolve(
+            JSON.stringify([
+              {
+                role: 'assistant',
+                content: 'Here',
+                search_info: {
+                  backend: 'searxng',
+                  query: 'q',
+                  results: [{ title: 'T', url: 'https://e.com', thumbnail: null, image: null }],
+                },
+              },
+            ])
+          ),
+      })
+
+      const [message] = await getSessionMessages('session-123', 1, 25)
+
+      expect(message.search_info?.results?.[0]).toEqual({
+        title: 'T',
+        url: 'https://e.com',
+        thumbnail: null,
+        image: null,
+      })
+    })
+
+    it('accepts a non-search turn with no search_info', async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        text: () => Promise.resolve(JSON.stringify([{ role: 'user', content: 'Hi' }])),
+      })
+
+      const [message] = await getSessionMessages('session-123', 1, 25)
+
+      expect(message.search_info).toBeUndefined()
+    })
   })
 
   describe('getAssistantName', () => {
