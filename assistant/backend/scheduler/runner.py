@@ -258,11 +258,11 @@ async def execute_and_record_task(
 
         # Task *completion* is not an alert.
         #
-        # The presence rule (plans/2026-09-30-alerts-as-memory.md): an alert is
-        # warranted when the agent learned something and the user was not there to
-        # hear it. "Task completed: job_postings_monitor" is not something the agent
-        # learned — it is mechanism, and the task's output is already an episode the
-        # user can ask about. Measured on the live brain: 54 of 111 alert rows were
+        # The presence rule (see assistant/AGENTS.md): an alert is warranted when
+        # the agent learned something and the user was not there to hear it.
+        # "Task completed: job_postings_monitor" is not something the agent
+        # learned — it is mechanism, and the task's output is already an episode
+        # the user can ask about. Measured on the live brain: 54 of 111 alert rows were
         # this, and they buried the 8 that were real.
         #
         # The run is still recorded as memory (daily-run frame, last_run, output

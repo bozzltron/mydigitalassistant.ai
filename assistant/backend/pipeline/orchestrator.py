@@ -896,7 +896,7 @@ class Orchestrator:
     ) -> None:
         """No-op. Facts learned mid-conversation are not alerts.
 
-        The presence rule, from plans/2026-09-30-alerts-as-memory.md:
+        The presence rule (see assistant/AGENTS.md):
 
             An alert is warranted when the agent learned something and the user was
             not there to hear it.

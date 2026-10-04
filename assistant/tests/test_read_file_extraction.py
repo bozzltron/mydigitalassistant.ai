@@ -1,12 +1,11 @@
 """Regression: `read_file` reads a document through the extractor, not as bytes.
 
-The bug (F3 in `plans/2026-10-02-manual-test-round-2.md`): upload ran
-`extract_file_content` and stored the file, but `execute_read_file` called
-`read_sandbox_file`, which does `path.read_text(encoding="utf-8",
-errors="replace")`. For any container format — PDF, .docx, .xlsx, .pptx, .rtf,
-.odt — that yields binary noise, and for a large one it hit the 1 MB read cap
-first. A 6.7 MB press kit extracted to 9,213 clean characters at upload and was
-unreadable at read.
+The bug: upload ran `extract_file_content` and stored the file, but
+`execute_read_file` called `read_sandbox_file`, which does
+`path.read_text(encoding="utf-8", errors="replace")`. For any container format —
+PDF, .docx, .xlsx, .pptx, .rtf, .odt — that yields binary noise, and for a large one
+it hit the 1 MB read cap first. A 6.7 MB press kit extracted to 9,213 clean
+characters at upload and was unreadable at read.
 
 The synthetic PDF used elsewhere in the suite (`_make_pdf`) is a single
 uncompressed content stream, which is why this class of bug survived it. The

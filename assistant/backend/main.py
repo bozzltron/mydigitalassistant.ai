@@ -1702,7 +1702,7 @@ async def mark_alert_read(
     Kept under its old name and route because the UI uses them, but this now
     performs the real transition: `status = resolved`. There is no "seen but open"
     state — an alert the user looked at and did not answer is still a thing the
-    agent is waiting on. See plans/2026-09-30-alerts-as-memory.md.
+    agent is waiting on. See assistant/AGENTS.md, "The presence rule".
     """
     success = await store.mark_alert_read(alert_id, user_id)
     if not success:
@@ -2227,7 +2227,7 @@ async def upload_file_to_memory(
     # Memory records what the file *is*; the content stays on disk and is read
     # verbatim. The preview used to be stored here and excluded at render time,
     # which left a stale copy that could be served in place of the real file when
-    # a disk read failed. See plans/2026-10-01-file-support-diagnosis.md.
+    # a disk read failed. See docs/FILES.md.
     #
     # This preview is for the upload *response* only — so the UI can show what was
     # received — and is never written to a slot.

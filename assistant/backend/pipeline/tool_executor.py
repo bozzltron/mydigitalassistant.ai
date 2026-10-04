@@ -940,7 +940,7 @@ async def execute_read_file(args: dict, user_id: str, session_id: str) -> ToolRe
             # `file_content_preview` from memory, which meant a disk failure
             # silently served a stale 200-character copy and the model answered
             # believing it had read the file. Memory holds what a file *is*, not
-            # what it contains — see plans/2026-10-01-file-support-diagnosis.md.
+            # what it contains — see docs/FILES.md.
             if not content:
                 return ToolResult(
                     success=False,
@@ -1164,7 +1164,7 @@ async def execute_write_file(args: dict, user_id: str, session_id: str) -> ToolR
             # The preview used to be written here and excluded at render time
             # (retrieval.py FILE_CONTENT_HINT_SLOTS), which left a stale copy that
             # the read_file disk-failure fallback could serve in place of the real
-            # file. See plans/2026-10-01-file-support-diagnosis.md.
+            # file. See docs/FILES.md.
 
             # CSV special handling: create row frames (capped — past
             # CSV_MAX_ROW_FRAMES only row_count/columns metadata is stored;

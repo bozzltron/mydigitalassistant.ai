@@ -430,7 +430,7 @@ by the agent's instruction in the alert's own opening message, *and* by a
 deterministic backstop (`resolve_alerts_for_session`), because relying on a small model
 to remember a housekeeping step is a failure this project has already been bitten by.
 The default is an existing conversation, not a new thread: a thread per alert fills the
-conversation list with one-off threads. See `plans/2026-09-30-alerts-as-memory.md`.
+conversation list with one-off threads.
 
 - **Daily-run event frames.** Each morning the scheduler creates/updates an `event`
   frame named `daily_run_YYYY_MM_DD`. It records `date`, `tasks_run`, and `status`,

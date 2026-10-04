@@ -1,6 +1,6 @@
 """Regression: mechanism notices are not alerts, and removing them loses no information.
 
-Phase C.4. The presence rule, from plans/2026-09-30-alerts-as-memory.md:
+Phase C.4. The presence rule, per assistant/AGENTS.md:
 
     An alert is warranted when the agent learned something and the user was not
     there to hear it.

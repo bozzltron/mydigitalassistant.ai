@@ -63,8 +63,7 @@ are **refused at write time** by `upsert_slot`, which raises
 matters: exclusion at render time left a stale copy in the database, and `read_file`
 had a fallback that served it when a file was missing, so the model answered from a
 truncated preview believing it had read the file. The refusal is at the store because
-every writer funnels through it, so a new call site cannot reintroduce the copy. See
-`plans/2026-10-01-file-support-diagnosis.md`.
+every writer funnels through it, so a new call site cannot reintroduce the copy.
 
 ## Memory shape of an upload
 

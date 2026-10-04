@@ -1,7 +1,5 @@
 """Regression: a chat attachment is referenced by frame, and its bytes are never text.
 
-Phase 3 of `plans/2026-10-02-manual-test-round-2.md` (F4).
-
 The input bar read every attached file with `FileReader.readAsText` and the
 backend re-encoded it with `text.encode("utf-8")` before storing. That is
 correct for a `.txt` and corrupting for everything else: a PDF decoded as UTF-8

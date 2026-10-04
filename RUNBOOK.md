@@ -48,13 +48,56 @@
 
 ---
 
-## 4. Remove Old Completed Plan Docs
+## 4. Documentation Gate — Then Delete the Plan
 
-- A plan is deleted when its work ships. `/plans/` holds only **active** work.
+A plan is a **workspace**, not a home. It is where reasoning happens *before* the
+reasoning has a durable address. Deleting one loses nothing **iff the transfer
+already happened**, so the gate is a check, not an intention.
+
+### 4.1 Three homes, by what the information *is*
+
+| The information | Its home |
+|---|---|
+| A rule that governs code someone will change | `assistant/AGENTS.md` — with the rule, its reason, and its measurement |
+| How a subsystem behaves and is operated | `docs/<SUBSYSTEM>.md` |
+| Why *this line* is written the way it is | the code comment, at the point of use |
+| What shipped, and when | `docs/RELEASE_NOTES.md` |
+
+**The reason travels with the code.** A rule that exists only in a doc gets violated
+by someone who never opened the doc; a rule that exists only in a comment cannot be
+found by grep. For a rule with wide blast radius, both: the full statement in
+`AGENTS.md`, and the short reason at each site that depends on it.
+
+### 4.2 Before deleting, confirm
+
+1. **Every rule the plan introduced has a home** from the table above. Not "it is in
+   the code somewhere" — a specific line you can point at.
+2. **Every site that depends on a rule cites the rule's home**, not the plan. A
+   `See plans/<file>.md` in a comment is a promise that outlives the plan; when the
+   plan is deleted the promise breaks and the reader is left with a dead link.
+3. **Run the check**: `pytest assistant/tests/test_plan_citations.py`. It fails if
+   any tracked file cites a plan that is not in `plans/`. It is in the default gate
+   because this failure is silent — nothing breaks, the knowledge just quietly goes
+   missing at the next read.
+
+### 4.3 Then delete
+
+- A plan is deleted when its work ships. `plans/` holds only **active** work.
 - Do not keep shipped plans as history — git history and `docs/RELEASE_NOTES.md`
   are the record. Archive nothing (there is no `archived/` directory by design).
-- If a plan is abandoned rather than shipped, delete it too; the reasoning that
-  still matters belongs in a doc or a code comment, not a dead plan file.
+- If a plan is abandoned rather than shipped, delete it too.
+- **Delete the plan's cross-references with it.** A `supersedes:` field pointing at a
+  file you are deleting is the same dangling pointer, one directory over.
+
+### 4.4 Why this gate exists
+
+This is not ceremony. Fifteen comments across `main.py`, `store.py`,
+`tool_executor.py`, `orchestrator.py`, `runner.py`, `schema.py`, `AGENTS.md`,
+`docs/FILES.md` and four tests pointed at three plans that had already been deleted
+on ship. Every one of those comments turned out to state its rule and reason in
+full — **nothing was lost**, which is exactly why the rot went unnoticed for as long
+as it did. A dangling pointer produces no error; it just makes a reader doubt
+whether the comment above it is still true.
 
 ---
 

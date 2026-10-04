@@ -240,7 +240,7 @@ CREATE INDEX IF NOT EXISTS idx_wm_last_accessed ON working_memory(last_accessed_
 CREATE INDEX IF NOT EXISTS idx_wm_access_count ON working_memory(access_count);
 
 -- An alert is a frame of type 'alert', not a table. See store.ALERT_FRAME_TYPE
--- and plans/2026-09-30-alerts-as-memory.md.
+-- and assistant/AGENTS.md, "The presence rule".
 """
 
 

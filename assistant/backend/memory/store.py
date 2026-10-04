@@ -42,7 +42,7 @@ CHUNK_MIN_SLOTS = 6
 # An alert is memory of a type, not a row in a notifications table. Because it is
 # memory it participates in retrieval, so the agent can raise one when it is
 # contextually relevant rather than only when the user opens a bell. See
-# plans/2026-09-30-alerts-as-memory.md.
+# assistant/AGENTS.md, "The presence rule".
 ALERT_FRAME_TYPE = "alert"
 
 # Slot keys that hold file *content* rather than facts about the file.
@@ -52,8 +52,7 @@ ALERT_FRAME_TYPE = "alert"
 # frame and merely hidden at render time, which left a stale copy that the `read_file`
 # disk-failure fallback could serve in place of the real file — the model answered
 # from a truncated preview believing it had read the file. Refused at write time here
-# so no future writer can reintroduce it; see
-# plans/2026-10-01-file-support-diagnosis.md.
+# so no future writer can reintroduce it; see docs/FILES.md.
 FILE_CONTENT_HINT_SLOTS: tuple[str, ...] = ("file_content", "file_content_preview")
 
 
@@ -1310,8 +1309,7 @@ class MemoryStore:
             raise FileContentInMemoryError(
                 f"slot key {key!r} holds file content, which belongs in the sandbox, "
                 "not in memory. Store what the file IS (name, path, size); read what "
-                "it CONTAINS with read_file. See "
-                "plans/2026-10-01-file-support-diagnosis.md"
+                "it CONTAINS with read_file. See docs/FILES.md."
             )
         if not key or not str(key).strip():
             # A slot with no key is an object with no identity: nothing can look it

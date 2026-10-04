@@ -1,6 +1,6 @@
 """Regression: memory holds what a file *is*, never what it *contains*.
 
-The rule, and its reason, from `plans/2026-10-01-file-support-diagnosis.md`:
+The rule, and its reason (also in `docs/FILES.md`):
 
     Bytes live on disk and are read verbatim. Memory records identity (name, path,
     size, owner) and meaning (entities). Content belongs in neither.
