@@ -4,7 +4,6 @@ import { getYouTubeEmbedUrl, extractYouTubeId, hostnameOf, imageSrc } from '../.
 
 interface MediaCardProps {
   media: MediaContent
-  onOpenLightbox?: (media: MediaContent, index: number, allMedia: MediaContent[]) => void
 }
 
 export default function MediaCard(props: MediaCardProps) {
@@ -55,12 +54,6 @@ export default function MediaCard(props: MediaCardProps) {
     setImageError(false)
   }
 
-  const handleClick = () => {
-    if (props.onOpenLightbox && props.media.type === 'image') {
-      props.onOpenLightbox(props.media, 0, [props.media])
-    }
-  }
-
   // One branch per media type, selected by <Show> rather than an early return.
   // A Solid component body runs once, so the previous `if (media.type === ...)`
   // returns were evaluated a single time and the card could never switch branch
@@ -94,7 +87,7 @@ export default function MediaCard(props: MediaCardProps) {
       </Show>
 
       <Show when={!isYoutube() && !isVideo()}>
-        <div class="msg-media-hero" onClick={handleClick}>
+        <div class="msg-media-hero">
           <Show when={!imageError()}>
             <img
               src={displaySrc()}

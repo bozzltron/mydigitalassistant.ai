@@ -73,7 +73,9 @@ export interface OgPreviewResponse {
 }
 
 export interface MediaContent {
-  type: 'image' | 'video' | 'youtube' | 'preview-card'
+  // `preview-card` was dropped with the image grid: nothing constructs it, and
+  // `MediaCard` has no branch for it, so it silently rendered as an image.
+  type: 'image' | 'video' | 'youtube'
   /** Display URL (for search images, the reliable Brave-CDN thumbnail). */
   url: string
   /** Full-size image; often hotlink-blocked, so callers fall back to `url`. */
@@ -82,9 +84,6 @@ export interface MediaContent {
   title?: string
   description?: string
   sourceUrl?: string
-  aspectRatio?: number
-  width?: number
-  height?: number
 }
 
 export interface YouTubeVideo {

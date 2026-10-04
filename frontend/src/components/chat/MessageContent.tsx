@@ -1,12 +1,10 @@
-import { createMemo, Show } from 'solid-js'
+import { createMemo, For, Show } from 'solid-js'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
-import { searchMedia, getHeroMedia, getGridMedia, getExtraVideos } from '../../utils/media'
+import { searchMedia, getHeroMedia } from '../../utils/media'
 import { collectGroundingSlots, applyGrounding } from '../../utils/grounding'
 import MediaCard from './MediaCard'
-import MediaGrid from './MediaGrid'
-import VideoGallery from './VideoGallery'
-import type { ChatMessage, MediaContent } from '../../types/chat'
+import type { ChatMessage } from '../../types/chat'
 
 marked.use({
   renderer: {
@@ -20,27 +18,21 @@ marked.use({
 
 // The backend appends a `**Sources:**` footer to search answers. Render it after
 // the media so it ends the response, instead of sitting between the answer text
-// and the extra images/video.
+// and the hero.
 const SOURCES_MARKER = '\n\n**Sources:**'
 
-export default function MessageContent(props: {
-  message: () => ChatMessage
-  onOpenLightbox?: (media: MediaContent, index: number, allMedia: MediaContent[]) => void
-}) {
+export default function MessageContent(props: { message: () => ChatMessage }) {
   // Media comes only from the message's search results (see `searchMedia`).
   const media = createMemo(() => searchMedia(props.message()))
   const heroMedia = createMemo(() => getHeroMedia(media()))
-  const heroIsVideo = createMemo(() => {
+  // One hero, by URL rather than by type: when the hero is a video the extras are
+  // the other videos, and when it is an image they are all of them.
+  const extraVideos = createMemo(() => {
     const hero = heroMedia()
-    return hero?.type === 'youtube' || hero?.type === 'video'
-  })
-  const gridMedia = createMemo(() => getGridMedia(media(), heroMedia()))
-  // The gallery gets every video: the hero when the hero is a video (so the
-  // first is embedded and the rest are thumbnails), otherwise just the extras.
-  const videos = createMemo(() => {
-    const hero = heroMedia()
-    const extras = getExtraVideos(media(), hero)
-    return hero && (hero.type === 'youtube' || hero.type === 'video') ? [hero, ...extras] : extras
+    return media().filter(
+      (m) =>
+        (m.type === 'youtube' || m.type === 'video') && m.url !== hero?.url
+    )
   })
 
   const parts = createMemo(() => {
@@ -64,24 +56,31 @@ export default function MessageContent(props: {
 
   return (
     <div class="message-content">
-      {/* Dynamic content assembles in one order: the hero block — the video
-          gallery (player plus its thumbnails) when the query asked for video,
-          else the lead image — then the body, then the image grid, then the
-          sources. Each block owns its own top margin. */}
+      {/* Dynamic content assembles in one order: the hero block (the lead image,
+          or the one video that gets embedded), then the body, then the other
+          videos as links, then the sources. Each block owns its own top margin. */}
       <Show when={heroMedia()}>
-        <Show
-          when={heroIsVideo()}
-          fallback={<MediaCard media={heroMedia()!} onOpenLightbox={props.onOpenLightbox} />}
-        >
-          <VideoGallery videos={videos()} />
-        </Show>
+        <MediaCard media={heroMedia()!} />
       </Show>
 
       {/* eslint-disable-next-line solid/no-innerhtml -- sanitized by DOMPurify, then annotated */}
       <div class="msg-markdown" innerHTML={bodyHtml()} />
 
-      <Show when={gridMedia().length > 0}>
-        <MediaGrid media={gridMedia()} onOpenLightbox={props.onOpenLightbox} />
+      <Show when={extraVideos().length > 0}>
+        <div class="msg-video-links">
+          <div class="msg-video-links-heading">More videos</div>
+          <ul class="msg-video-links-list">
+            <For each={extraVideos()}>
+              {(video) => (
+                <li>
+                  <a href={video.url} target="_blank" rel="noopener">
+                    {video.title || video.url}
+                  </a>
+                </li>
+              )}
+            </For>
+          </ul>
+        </div>
       </Show>
 
       <Show when={parts().sources}>

@@ -1,12 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import {
-  searchMedia,
-  getHeroMedia,
-  getGridMedia,
-  getExtraVideos,
-  imageSrc,
-  extractYouTubeId,
-} from './media'
+import { searchMedia, getHeroMedia, imageSrc, extractYouTubeId } from './media'
 import type { ChatMessage } from '../types/chat'
 
 const msg = (meta: ChatMessage['meta']): ChatMessage => ({
@@ -44,7 +37,7 @@ describe('searchMedia', () => {
     expect(media[0]).toMatchObject({
       type: 'image',
       // Display URL is the reliable CDN thumbnail; the source image is kept for
-      // the hero/lightbox, which fall back to the thumbnail if it is blocked.
+      // the hero, which falls back to the thumbnail if the full image is blocked.
       url: 'https://img/a-s.png',
       thumbnail: 'https://img/a-s.png',
       fullUrl: 'https://img/a-o.png',
@@ -192,7 +185,10 @@ describe('extractYouTubeId', () => {
 })
 
 describe('composition', () => {
-  it('a video query heroes the video; the grid holds the images; the rest are extra videos', () => {
+  // A search answer renders one hero and nothing else: no grid, no lightbox. So
+  // the only thing `searchMedia` still has to get right is which item wins the
+  // hero slot — the rest of the list is discarded by the renderer, not here.
+  it('a video query heroes the video ahead of the images', () => {
     const m = msg({
       search_info: {
         backend: 'brave',
@@ -200,7 +196,6 @@ describe('composition', () => {
         results: [
           { title: 'A', url: 'https://page/a', snippet: '', engine: 'brave', thumbnail: 'https://img/a.png' },
           { title: 'B', url: 'https://page/b', snippet: '', engine: 'brave', thumbnail: 'https://img/b.png' },
-          { title: 'C', url: 'https://page/c', snippet: '', engine: 'brave' },
         ],
         video_results: [
           { video_id: 'abcdefghijk', title: 'V', thumbnail_url: 'https://img/v.png' },
@@ -209,10 +204,9 @@ describe('composition', () => {
       },
     })
     const media = searchMedia(m)
-    const hero = getHeroMedia(media)
-    expect(hero?.type).toBe('youtube')
-    expect(getGridMedia(media, hero)).toHaveLength(2)
-    expect(getExtraVideos(media, hero)).toHaveLength(1)
+    expect(getHeroMedia(media)?.type).toBe('youtube')
+    // The other video is still in the list — MessageContent renders it as a link.
+    expect(media.filter((x) => x.type === 'youtube')).toHaveLength(2)
   })
 
   it('an image query heroes the image and surfaces no videos', () => {
@@ -222,14 +216,18 @@ describe('composition', () => {
         query: 'machu picchu',
         results: [
           { title: 'A', url: 'https://page/a', snippet: '', engine: 'brave', thumbnail: 'https://img/a.png' },
+          { title: 'B', url: 'https://page/b', snippet: '', engine: 'brave', thumbnail: 'https://img/b.png' },
         ],
         video_results: [{ video_id: 'abcdefghijk', title: 'V', thumbnail_url: 'https://img/v.png' }],
       },
     })
     const media = searchMedia(m)
-    const hero = getHeroMedia(media)
-    expect(hero?.type).toBe('image')
-    expect(getExtraVideos(media, hero)).toHaveLength(0)
+    expect(getHeroMedia(media)?.type).toBe('image')
+    expect(media.every((x) => x.type === 'image')).toBe(true)
+  })
+
+  it('getHeroMedia is null for an empty list, never undefined', () => {
+    expect(getHeroMedia([])).toBeNull()
   })
 })
 

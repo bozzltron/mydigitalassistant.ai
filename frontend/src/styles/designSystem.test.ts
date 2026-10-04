@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs'
 import { join, relative } from 'node:path'
 
 // The `solid/style-prop` lint rule cannot enforce the AGENTS.md ban on inline
@@ -116,13 +116,18 @@ describe('design-system guards', () => {
     // blocks moved to AlertsPanel.module.css and components.css.
     const migrated = [
       'components/chat/MediaCard.tsx',
-      'components/chat/MediaGrid.tsx',
       'components/ui/AlertsPanel.tsx',
       'components/ui/EditModal.tsx',
       'components/chat/TrashCan.tsx',
     ]
-    const offenders = migrated
-      .map((rel) => join(SRC, rel))
+    // A component deleted while still listed here used to surface as a bare
+    // ENOENT from readFileSync, which reads as a broken test rather than a stale
+    // entry. Name the offender instead.
+    const paths = migrated.map((rel) => join(SRC, rel))
+    const gone = migrated.filter((_, i) => !existsSync(paths[i]))
+    expect(gone, `migrated list names a file that no longer exists:\n${gone.join('\n')}`).toEqual([])
+
+    const offenders = paths
       .filter((f) => /style=\{\{/.test(stripComments(read(f))))
       .map(show)
     expect(offenders, `inline styles reintroduced:\n${offenders.join('\n')}`).toEqual([])

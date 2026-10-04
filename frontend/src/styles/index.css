@@ -16,7 +16,7 @@
 @import './messages.css';
 
 /* 6. Media Grid - masonry, hero cards, video embeds, preview cards */
-@import './media-grid.css';
+@import './media.css';
 
 /* 7. Markdown - enhanced markdown rendering */
 @import './markdown.css';

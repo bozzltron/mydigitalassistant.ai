@@ -57,10 +57,7 @@
   --transition-slow: 300ms ease;
 
   /* Media specific */
-  --media-radius: var(--radius-md);
   --hero-image-max-height: 400px;
-  --masonry-gap: 0.5rem;
-  --masonry-column-width: 280px;
   --preview-card-image-size: 80px;
 
   /* Chat content column max width (shared by the transcript and input row). */

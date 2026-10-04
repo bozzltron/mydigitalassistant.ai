@@ -156,9 +156,9 @@ describe('MessageList source ordering', () => {
     setSessionId('session-order-1')
   })
 
-  it('renders the appended sources footer after the extra images', () => {
+  it('renders the appended sources footer after the hero image', () => {
     // The backend appends "**Sources:**" to the answer text; it must end the
-    // response, following the media rather than sitting between text and images.
+    // response, following the media rather than sitting between text and hero.
     const withSources = () => [
       {
         id: 'a1',
@@ -180,12 +180,12 @@ describe('MessageList source ordering', () => {
 
     render(() => <MessageList messages={withSources} />)
 
-    const grid = document.querySelector('.msg-media-grid')
+    const hero = document.querySelector('.msg-media-hero')
     const sources = document.querySelector('.msg-sources-block')
-    expect(grid, 'no media grid rendered').not.toBeNull()
+    expect(hero, 'no hero image rendered').not.toBeNull()
     expect(sources, 'no sources block rendered').not.toBeNull()
     expect(
-      grid!.compareDocumentPosition(sources!) & Node.DOCUMENT_POSITION_FOLLOWING,
+      hero!.compareDocumentPosition(sources!) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy()
   })
 })

@@ -49,15 +49,6 @@ export function hostnameOf(url: string | undefined | null): string {
   }
 }
 
-/** Best-effort pathname for display; `''` when the URL cannot be parsed. */
-export function pathnameOf(url: string | undefined | null, maxLength = 50): string {
-  if (!url) return ''
-  try {
-    return new URL(url).pathname.slice(0, maxLength)
-  } catch {
-    return ''
-  }
-}
 
 // Only surface video results when the query actually asks for video. Brave
 // attaches a `videos` section to many web responses (no extra request), but
@@ -112,8 +103,9 @@ function isJunkImage(imageUrl: string | undefined, resultUrl: string | undefined
  * Search is the only source of imagery: we do not store images, so nothing is
  * rendered from memory, slots, or markdown. Returns `[]` for non-search turns.
  *
- * Each image keeps both URLs: `thumbnail` (small, for the grid tile) and `url`
- * (the full image, for the hero and the lightbox).
+ * Each image keeps both URLs: `thumbnail` (Brave's small, reliable CDN copy) and
+ * `url` (the full image, which is what the hero prefers and what it falls back
+ * from when a source host blocks the fetch).
  */
 export function searchMedia(message: ChatMessage): MediaContent[] {
   const info = message.meta?.search_info
@@ -183,34 +175,6 @@ export function getHeroMedia(media: MediaContent[]): MediaContent | null {
   return media[0] ?? null
 }
 
-/** Images other than the hero; `MediaGrid` caps how many it displays. */
-export function getGridMedia(media: MediaContent[], hero?: MediaContent | null): MediaContent[] {
-  const heroUrl = hero?.url
-  return media.filter((m) => m.type === 'image' && m.url !== heroUrl)
-}
-
-/** Videos other than the hero (rare; usually there is at most one). */
-export function getExtraVideos(media: MediaContent[], hero?: MediaContent | null): MediaContent[] {
-  const heroUrl = hero?.url
-  return media.filter(
-    (m) => (m.type === 'youtube' || m.type === 'video') && m.url !== heroUrl
-  )
-}
-
 export function getYouTubeEmbedUrl(videoId: string): string {
   return `https://www.youtube-nocookie.com/embed/${videoId}?rel=0&modestbranding=1&enablejsapi=1`
-}
-
-export function getYouTubeThumbnailUrl(
-  videoId: string,
-  quality: 'default' | 'mq' | 'hq' | 'sd' | 'maxres' = 'maxres'
-): string {
-  const qualityMap = {
-    default: 'default',
-    mq: 'mqdefault',
-    hq: 'hqdefault',
-    sd: 'sddefault',
-    maxres: 'maxresdefault',
-  }
-  return `https://img.youtube.com/vi/${videoId}/${qualityMap[quality]}.jpg`
 }

@@ -1,0 +1,188 @@
+/* Media - the single hero block at the top of a search answer.
+   One image or one video, never a gallery: the grid and the lightbox were
+   removed because the imagery was not good enough to justify the screen space
+   they took. */
+
+/* ==========================================================================
+   HERO MEDIA CARD (single image/video at top of message)
+   ========================================================================== */
+
+.msg-media-hero {
+  margin: 0 0 var(--space-md);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  position: relative;
+}
+
+.msg-media-hero:only-child {
+  margin-bottom: 0;
+}
+
+.msg-media-hero img,
+.msg-media-hero video {
+  width: 100%;
+  height: auto;
+  max-height: var(--hero-image-max-height);
+  object-fit: cover;
+  display: block;
+}
+
+.msg-media-hero .media-hero-caption {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: var(--space-md);
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.8));
+  color: #fff;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.msg-media-hero .media-hero-caption a {
+  color: var(--accent2);
+  text-decoration: none;
+}
+
+.msg-media-hero .media-hero-caption a:hover {
+  text-decoration: underline;
+}
+
+.media-caption-title {
+  font-weight: 500;
+}
+
+.msg-media-hero .media-hero-caption .caption-description {
+  font-size: 0.75rem;
+  opacity: 0.8;
+}
+
+.msg-media-hero .media-hero-caption .caption-source {
+  display: inline-block;
+  font-size: 0.7rem;
+  margin-top: 4px;
+}
+
+/* The hero's broken-image placeholder fills the message width and keeps a floor
+   under its height, rather than sizing itself as a fixed square. */
+.msg-media-hero .msg-preview-card-placeholder {
+  width: 100%;
+  height: 100%;
+  min-height: 200px;
+}
+
+.msg-preview-card-placeholder {
+  width: var(--preview-card-image-size);
+  height: var(--preview-card-image-size);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface2);
+  color: var(--text-dim);
+  font-size: 1.5rem;
+}
+
+/* ==========================================================================
+   VIDEO EMBED (YouTube + direct video)
+   ========================================================================== */
+
+.msg-video-embed {
+  /* Aligned with the image hero — full width inside the bubble's padding — so a
+     video-led answer and an image-led one share the same left edge. */
+  margin: 0 0 var(--space-md);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: #000;
+}
+
+.msg-video-embed:only-child {
+  margin-bottom: 0;
+}
+
+.msg-video-embed iframe,
+.msg-video-embed video {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  min-height: 200px;
+  max-height: var(--hero-image-max-height);
+  display: block;
+  border: none;
+}
+
+/* ==========================================================================
+   OTHER VIDEOS (links, not embeds)
+   ========================================================================== */
+
+/* A video query can return several results and only one is embedded. The rest
+   are links: they were thumbnails that swapped the player, which is a second
+   image surface for imagery that did not earn it. */
+.msg-video-links {
+  margin: 0 0 var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  font-size: 0.85rem;
+}
+
+.msg-video-links-heading {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+}
+
+.msg-video-links-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.msg-video-links-list a {
+  color: var(--accent);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: block;
+}
+
+.msg-video-links-list a:hover {
+  text-decoration: underline;
+}
+
+/* ==========================================================================
+   RESPONSIVE ADJUSTMENTS
+   ========================================================================== */
+
+@media (max-width: 640px) {
+  :root {
+    --hero-image-max-height: 300px;
+  }
+
+  .msg-media-hero,
+  .msg-video-embed {
+    border-radius: var(--radius-md);
+  }
+
+  .msg-media-hero .msg-preview-card-placeholder {
+    width: 100%;
+    height: 160px;
+    aspect-ratio: 16 / 9;
+  }
+}
+
+/* ==========================================================================
+   PRINT STYLES
+   ========================================================================== */
+
+@media print {
+  .msg-media-hero,
+  .msg-video-embed {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}
