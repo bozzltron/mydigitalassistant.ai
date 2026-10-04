@@ -414,6 +414,58 @@ def test_correction_endpoint_requires_correction_text(client):
     assert r.status_code == 400
 
 
+def test_correction_endpoint_assistant_name_routes_to_identity(store, stub_llm, client):
+    """End-to-end: a rename correction with subject=assistant updates identity_name.
+
+    Regression for the live-brain swap: "I'm not Carl, you are" was applied to
+    user_identity under key `name`, while the user's own name sat on
+    identity_name. The endpoint must route by subject before writing.
+    """
+    stub_llm.set_extraction_result(
+        [{
+            "frame_name": "identity_name",
+            "slot_key": "name",       # alias; must normalize to full_name
+            "value": "Carl",
+            "subject": "assistant",
+        }]
+    )
+    r = client.post("/correction", json={
+        "message_id": "test-msg-name-1",
+        "correction_text": "I'm not Carl, you are Carl.",
+    })
+    assert r.status_code == 200
+    assert r.json()["slots_corrected"] == 1
+
+    identity = client.get("/assistant/name")
+    assert identity.json() == {"name": "Carl"}
+
+
+def test_correction_endpoint_user_name_does_not_rename_assistant(store, stub_llm, client):
+    """End-to-end: subject=user sets the user's frame and leaves the agent alone.
+
+    Regression for the v0.8.0 report: "My name is not Carl. I go by Boz." set
+    identity_name.full_name = "Boz" and the header renamed the assistant.
+    """
+    stub_llm.set_extraction_result(
+        [{
+            "frame_name": "user_identity",
+            "slot_key": "full_name",
+            "value": "Boz",
+            "subject": "user",
+        }]
+    )
+    r = client.post("/correction", json={
+        "message_id": "test-msg-name-2",
+        "correction_text": "My name is not Carl. I go by Boz.",
+    })
+    assert r.status_code == 200
+
+    # The assistant's name is untouched (still the default, no identity frame).
+    assert client.get("/assistant/name").json() == {"name": "Cognitive Assistant"}
+    user_frame = client.get("/memory/frames/by-name/user_identity")
+    assert user_frame.status_code == 200
+
+
 async def test_feedback_endpoint_positive_creates_record(client, store):
     """POST /feedback with kind=positive records the reaction.
 

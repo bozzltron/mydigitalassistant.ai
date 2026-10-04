@@ -441,3 +441,87 @@ async def test_search_extraction_never_creates_identity_frames(store):
     assert "identity_name" not in applied
     assert "user_identity" not in applied
     assert await store.get_frame_by_name("user_identity") is None
+
+
+# ---- correction routing: the model says who, the code says where ----
+# Regression: on the live brain the correction path wrote `user_identity.name =
+# "Carl"` (the assistant's name on the user's frame, unreadable key) while the
+# user's name sat on identity_name. The two names were swapped because the
+# correction writer used the model's frame/key verbatim.
+
+
+async def test_correction_subject_assistant_renames_the_assistant(store):
+    from assistant.backend.pipeline.extractor import CorrectionResult, apply_correction
+
+    await apply_correction(
+        CorrectionResult(
+            frame_name="user_identity",  # model's frame is ignored
+            slot_key="name",             # alias, normalized to full_name
+            new_value="Carl",
+            subject="assistant",
+        ),
+        store,
+    )
+
+    identity = await store.get_frame_by_name("identity_name")
+    assert identity is not None
+    slot = await store.get_slot(identity.id, "full_name")
+    assert slot is not None
+    assert slot.value == "Carl"
+    # The user's frame was not created or written.
+    assert await store.get_frame_by_name("user_identity") is None
+
+
+async def test_correction_subject_user_sets_the_users_name(store):
+    from assistant.backend.pipeline.extractor import CorrectionResult, apply_correction
+
+    await apply_correction(
+        CorrectionResult(
+            frame_name="name",
+            slot_key="full_name",
+            new_value="Boz",
+            subject="user",
+        ),
+        store,
+    )
+
+    identity = await store.get_frame_by_name("identity_name")
+    assert identity is None
+    user_frame = await store.get_frame_by_name("user_identity")
+    assert user_frame is not None
+    slot = await store.get_slot(user_frame.id, "full_name")
+    assert slot is not None
+    assert slot.value == "Boz"
+
+
+async def test_correction_topic_is_unchanged_apart_from_name_alias(store):
+    from assistant.backend.pipeline.extractor import CorrectionResult, apply_correction
+
+    await apply_correction(
+        CorrectionResult(frame_name="guitar", slot_key="strings", new_value="12"),
+        store,
+    )
+    guitar = await store.get_frame_by_name("guitar")
+    assert guitar is not None
+    assert (await store.get_slot(guitar.id, "strings")).value == "12"
+
+
+async def test_correction_assistant_name_alias_becomes_full_name(store):
+    """A `name` correction about the assistant must land on the slot /assistant/name reads."""
+    from assistant.backend.pipeline.extractor import CorrectionResult, apply_correction
+
+    await apply_correction(
+        CorrectionResult(
+            frame_name="identity_name",
+            slot_key="name",
+            new_value="Echo",
+            subject="assistant",
+        ),
+        store,
+    )
+
+    identity = await store.get_frame_by_name("identity_name")
+    assert (await store.get_slot(identity.id, "full_name")).value == "Echo"
+    # The alias did not create a second, unreadable slot.
+    assert await store.get_slot(identity.id, "name") is None
+

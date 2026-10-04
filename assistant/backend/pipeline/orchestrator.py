@@ -386,6 +386,12 @@ class Orchestrator:
             and correction.slot_key
             and correction.new_value is not None
         ):
+            # Route before the current-value read and validation: the subject
+            # decides the frame, so a rename must be checked against the identity
+            # frame it will actually be written to.
+            from assistant.backend.pipeline.extractor import route_correction
+
+            correction = route_correction(correction)
             frame = await self.store.get_frame_by_name(correction.frame_name)
             current_slot = (
                 await self.store.get_slot(frame.id, correction.slot_key) if frame else None

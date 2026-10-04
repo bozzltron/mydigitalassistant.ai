@@ -139,7 +139,7 @@ Snapshot: 2026-09-05. Full suite runs in both plain SQLite and SQLCipher-encrypt
 |---|---|---|
 | `test_memory_store.py` | 40 | Frame/slot/association CRUD, episode logging, slot history, conflict auto-resolution. |
 | `test_extractor.py` | 39 | JSON parse, retry on malformed, frame/slot/association creation, conflict integration. |
-| `test_api.py` | 34 | Health, users, chat, sessions, frames, conflicts, DB backup/restore endpoints. |
+| `test_api.py` | 38 | Health, users, chat, sessions, frames, conflicts, DB backup/restore endpoints, correction subject routing. |
 | `test_reasoner.py` | 28 | Intent classification, plan formatting, self-correction branches. |
 | `test_task_router.py` | 23 | Heuristic patterns (parametrized), LLM fallback paths, heuristic-first priority. |
 | `test_working_memory.py` | 21 | LRU cache, boost map, touch/lookup/eviction behavior. |
@@ -154,7 +154,7 @@ Snapshot: 2026-09-05. Full suite runs in both plain SQLite and SQLCipher-encrypt
 | `test_orchestrator.py` | 17 | Full cognitive loop, search injection, correction handling, scheduled-task chat flow. |
 | `test_memory_maintenance.py` | 3 | No time-based decay of idle facts; consolidation skips the backup when there is nothing to merge. |
 | `test_brain_portable.py` | 16 | Encrypted portable brain export/import. |
-| `test_identity_name.py` | 22 | Identity frame/slot behavior, self-description, user-authoritative rename, user-vs-assistant name routing. |
+| `test_identity_name.py` | 26 | Identity frame/slot behavior, self-description, user-authoritative rename, user-vs-assistant name routing, correction subject routing. |
 | `test_tools.py` | 12 | `fetch_url` tool, robots.txt, extraction from fetched documents. |
 | `test_daily_schedule.py` | 12 | Clock helpers, store semantics, create/list/delete/pause/resume chat flow. |
 | `test_phase9_memory_strength.py` | 11 | Memory strength reinforcement and slot priority. |

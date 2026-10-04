@@ -1553,6 +1553,12 @@ async def submit_correction(
     conflict = False
 
     if correction and correction.slot_key and correction.new_value:
+        # Route before reading the current value or validating: the subject decides
+        # the frame, so the lookup must use the routed frame, not the model's.
+        from assistant.backend.pipeline.extractor import route_correction
+
+        correction = route_correction(correction)
+
         frame = await store.get_frame_by_name(correction.frame_name)
         current_value = None
         if frame:

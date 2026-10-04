@@ -149,6 +149,8 @@ class StubLLMClient(OllamaClient):
                     "slot_key": first.get("slot_key"),
                     "new_value": first.get("value"),
                 }
+                if "subject" in first:
+                    payload["subject"] = first["subject"]
             return ChatResponse(
                 content=json.dumps(payload), model=self.utility_model, done=True
             )

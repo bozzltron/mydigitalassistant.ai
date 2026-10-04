@@ -322,6 +322,14 @@ The agent must confirm before performing actions that could expose sensitive inf
   same-turn cross-check drops an `identity_name.full_name` the user also claimed
   as their own. The `user_identity` frame is what a "what's my name?" query
   retrieves.
+- **Corrections route by subject, not by the model's frame/key.** The correction
+  schema carries a `subject` (`user` | `assistant` | `topic`) that the model
+  fills; the code maps it to the reserved frame and normalizes any name key to
+  `full_name`. The correction path was the one identity writer with no
+  extraction-side guard, and it used the model's frame/key verbatim — which is
+  how the assistant's name reached `user_identity.name` while the user's name sat
+  on `identity_name`. There is no list of model-invented frame names to maintain;
+  the model decides *who*, the code decides *where*.
 - Positive feedback: `bump_confidence(current)` = `min(1 - (1-current)*0.7, 0.99)`
   (same repeat-discount curve as reinforcement).
 - Negative feedback: `lower_confidence(current)` = `max(current - 0.15, INITIAL_CONFIDENCE)`.

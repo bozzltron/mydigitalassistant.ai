@@ -32,6 +32,15 @@ IDENTITY_NAME_SLOT = "full_name"
 USER_IDENTITY_FRAME = "user_identity"
 USER_IDENTITY_NAME_SLOT = "full_name"
 
+# Keys that mean "the name". The contract /assistant/name reads is `full_name`, so
+# a writer that says `name` (the correction prompt once did) must be normalized to
+# it rather than stored where no reader looks. This is the one static set, and it
+# is an invariant of the name contract, not a guess about model vocabulary.
+NAME_SLOT_ALIASES = frozenset({"full_name", "name", "short_name", "first_name"})
+
+# The two frames a name may live on. Used to keep them from fuzzy-merging.
+RESERVED_IDENTITY_FRAMES = frozenset({IDENTITY_FRAME, USER_IDENTITY_FRAME})
+
 # The assistant's name is the user's to choose, so a user-stated name is
 # authoritative and must always win over the value already stored -- however
 # entrenched that value is. A correction can leave `full_name` at
@@ -236,15 +245,23 @@ The user is pointing out that something in memory is wrong. Extract the correcti
 
 3. new_value: The correct value the user is providing.
 
+4. subject: WHO the corrected fact is about. One of:
+   - "user"      — a fact about the user themselves ("my name is Boz", "I live in Austin")
+   - "assistant" — a fact about you, the assistant ("your name is Carl", "call yourself Echo")
+   - "topic"     — anything else (a guitar, a meeting, a person, a place). Default.
+
 Rules:
 - Return nulls if the user doesn't identify what is wrong (e.g. just says "that's wrong"
   without specifying what).
 - If the correction is about something you didn't mention, still parse it — the user knows
   what they told you.
 - Be specific: "12" is better than "twelve". Prefer the user's exact wording for values.
+- A name correction is about a PERSON'S NAME, and its subject says which person: "my name
+  is Boz" is subject "user"; "your name is Carl" or "I'm not Carl, you are" is subject
+  "assistant". Use slot_key "full_name" for a name, whichever subject it has.
 
 Output ONLY valid JSON with this schema:
-{"frame_name": "...", "slot_key": "...", "new_value": "..."}
+{"frame_name": "...", "slot_key": "...", "new_value": "...", "subject": "topic"}
 
 Use null for any field you cannot determine."""
 
@@ -337,8 +354,8 @@ MIN_FUZZY_NAME_LENGTH = 4  # skip fuzzy matching for short names ("bo" vs "bob")
 # that one could absorb the other -- which would put the user's name back on the
 # assistant's frame through the back door. Stored in normalized form because that
 # is what the resolver compares (see normalize_frame_name).
-RESERVED_IDENTITY_FRAMES = frozenset(
-    normalize_frame_name(name) for name in (IDENTITY_FRAME, USER_IDENTITY_FRAME)
+RESERVED_IDENTITY_FRAME_KEYS = frozenset(
+    normalize_frame_name(name) for name in RESERVED_IDENTITY_FRAMES
 )
 
 
@@ -402,7 +419,7 @@ async def resolve_or_create_frame(
     if (
         embed_fn is not None
         and len(normalized) >= MIN_FUZZY_NAME_LENGTH
-        and normalized not in RESERVED_IDENTITY_FRAMES
+        and normalized not in RESERVED_IDENTITY_FRAME_KEYS
     ):
         try:
             query_embedding = await embed_fn(normalized)
@@ -420,7 +437,7 @@ async def resolve_or_create_frame(
             logger.warning("Canonicalization embedding lookup failed: %s", exc)
         else:
             for frame, _slots, similarity in matches:
-                if normalize_frame_name(frame.name) in RESERVED_IDENTITY_FRAMES:
+                if normalize_frame_name(frame.name) in RESERVED_IDENTITY_FRAME_KEYS:
                     continue
                 if frame.owner_user_id is not None:
                     continue
@@ -1171,7 +1188,7 @@ def drop_unstated_identity_slots(
         if slot.frame_name != IDENTITY_FRAME:
             kept.append(slot)
             continue
-        if slot.key == IDENTITY_NAME_SLOT:
+        if slot.key in NAME_SLOT_ALIASES:
             stated = value_stated_by_user(slot.value, user_message) and _is_name_like(
                 slot.value
             )
@@ -1203,7 +1220,7 @@ def drop_user_duplicated_identity_slots(
         slot.value.strip().lower()
         for slot in slots
         if slot.frame_name == USER_IDENTITY_FRAME
-        and slot.key == USER_IDENTITY_NAME_SLOT
+        and slot.key in NAME_SLOT_ALIASES
         and slot.value
     }
     if not user_names:
@@ -1213,7 +1230,7 @@ def drop_user_duplicated_identity_slots(
         for slot in slots
         if not (
             slot.frame_name == IDENTITY_FRAME
-            and slot.key == IDENTITY_NAME_SLOT
+            and slot.key in NAME_SLOT_ALIASES
             and slot.value
             and slot.value.strip().lower() in user_names
         )
@@ -1272,6 +1289,10 @@ class CorrectionResult(BaseModel):
     frame_name: str | None = None
     slot_key: str | None = None
     new_value: str | None = None
+    # Who the corrected fact is about. The model decides this; the code only maps
+    # the answer to a frame. `topic` is the default so an ordinary correction is
+    # unaffected.
+    subject: str = "topic"
 
 
 class CorrectionValidation(BaseModel):
@@ -1467,6 +1488,53 @@ Respond with ONLY valid JSON:
                 raise
 
 
+# Subject value -> the frame a name or self-fact for that subject lives on.
+_SUBJECT_FRAMES = {
+    "assistant": IDENTITY_FRAME,
+    "user": USER_IDENTITY_FRAME,
+}
+
+
+def route_correction(correction: CorrectionResult) -> CorrectionResult:
+    """Map a correction's model-decided `subject` to the frame it belongs on.
+
+    The correction path takes frame_name/slot_key straight from the model and
+    writes them, so it was an unguarded writer into the identity frames.
+    Measured on the live brain, "I'm not Carl. You are Carl." was parsed as
+    `user_identity.name = "Carl"` — the assistant's name written to the user's
+    frame under a key nothing reads — while a separate turn put the user's name
+    on `identity_name`. The names ended up swapped.
+
+    The model already knows who a correction is about; `subject` makes that
+    explicit. The code does not infer it from the key or the value, and holds no
+    list of frame names the model might invent. It only:
+
+    - maps subject "user" / "assistant" to the reserved frame for that subject,
+    - normalizes any name key to `full_name` (the contract /assistant/name reads),
+    - lets `topic` and any other subject through unchanged.
+
+    Always returns a usable correction: an unrecognized subject is treated as
+    `topic`, and a correction with no frame/key is rejected by the caller before
+    this runs, so there is nothing to guess at here.
+    """
+    subject = (correction.subject or "").strip().lower()
+    key = (correction.slot_key or "").strip().lower()
+
+    if subject not in _SUBJECT_FRAMES:
+        # Topic (or anything unrecognized): unchanged, except that a name key is
+        # still normalized so a corrected name is readable wherever it lands.
+        if key in NAME_SLOT_ALIASES:
+            return correction.model_copy(update={"slot_key": IDENTITY_NAME_SLOT})
+        return correction
+
+    return correction.model_copy(
+        update={
+            "frame_name": _SUBJECT_FRAMES[subject],
+            "slot_key": IDENTITY_NAME_SLOT if key in NAME_SLOT_ALIASES else key,
+        }
+    )
+
+
 async def apply_correction(
     correction: CorrectionResult,
     store: "MemoryStore",
@@ -1478,6 +1546,10 @@ async def apply_correction(
 
     The corrected slot is given high source_reliability (0.9) since it comes from the user.
     A conflict may be created if the existing value differs.
+
+    The correction's `subject` decides the frame first (`route_correction`), so a
+    corrected name lands on `full_name` of the right identity frame instead of on
+    whatever frame/key the model named.
 
     `embed_fn` and `embedding_model` re-index the corrected frame. A correction
     changes a value without changing how many slots the frame has, so the
@@ -1492,6 +1564,8 @@ async def apply_correction(
         or _is_blank(correction.new_value)
     ):
         return {"slots_corrected": 0}
+
+    correction = route_correction(correction)
 
     frame = await store.get_frame_by_name(correction.frame_name)
     if not frame:
