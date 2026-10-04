@@ -1,5 +1,75 @@
 # MyDigitalAssistant.ai — release notes
 
+## v0.7.0-alpha
+
+**One picture instead of six.** Search answers came with a strip of up to six
+images behind a lightbox, and the pictures were often the wrong ones. The gallery
+is gone. What is left is a single hero at the top of the answer: the video when
+you asked for video, the lead image otherwise, with any other videos as plain
+links.
+
+It also turns out the image vanished every time you reloaded the page.
+
+### One hero, no gallery
+
+The grid was 300 lines of component and 635 of stylesheet to show pictures that
+were not good enough to justify the screen space they took — one image in six was
+plausible, and you had to scan past the other five to find it.
+
+- A video query embeds one video; the remaining results are titled links, which
+  is what the row of thumbnails underneath was doing badly.
+- Any other image is no longer shown at all. Nothing is lost: the sources footer
+  at the bottom of the answer already lists every result as a link.
+- Net −720 lines, and the transcript renders fewer nodes than it used to.
+
+### The hero image never survived a refresh
+
+Media was persisted correctly in four places: the episodes column, the INSERT,
+the API response, and the mapping that restores a conversation. A fifth thing
+deleted it. The schema that parses a restored message declared three fields and
+`z.object()` strips any key it does not know — so `search_info` was removed by
+the parse, every time, after the backend had done all the work to send it.
+
+The intent was written down one file away, on the model the backend returns:
+"so images and video thumbnails survive a reload". One schema line overrode it.
+This is the second time that has happened in this codebase, which is why the fix
+carries a test that was checked to fail without it.
+
+It also explains a smaller oddity: the "Searched via Brave" badge disappeared on
+reload for the same reason.
+
+### Smaller things
+
+- Removed with the gallery: two components, four dead functions, three unused
+  custom properties, and a media type nothing constructed.
+- A test was reading a hardcoded list of component files that still named the
+  deleted one, so the deletion surfaced as an unexplained file-not-found. It now
+  reports the stale name instead.
+- Fifteen comments across the backend cited planning documents that have since
+  been deleted, so the rule each one was stating had nowhere to be read. They now
+  point at the rule's real home, and a test fails if a citation ever dangles
+  again — a comment pointing at nothing reads as "already handled", not "broken".
+
+### Known limits
+
+This release changes **how many** pictures you see. It does not change **which**
+one.
+
+- **The hero is still the search engine's first-ranked result.** Whether an image
+  is relevant is judged from its filename and the host it is served from: anything
+  named "logo", "banner", "sponsor" or "ad" is dropped, along with ad networks
+  and SVG logos. Nothing looks at what is in the picture, so a sponsored image
+  with a clean filename still wins, and a search for cats can still hand you a
+  brand. That is the honest reason a "cut it down to one" change is not by itself
+  a quality change.
+- The obvious fix — scoring images against the search the same way web results
+  are already scored, by embedding similarity — is not yet proven to work, so it
+  is being measured before anything is built on it rather than assumed.
+- **Old images can be dead.** Search thumbnails expire and some sites block
+  direct loads. An earlier answer whose image has since rotted still shows its
+  title and source as a link, with a placeholder above it, instead of quietly
+  dropping the evidence that a search happened.
+
 ## v0.6.0-alpha
 
 **Files actually work now.** The assistant could read a document at upload and
