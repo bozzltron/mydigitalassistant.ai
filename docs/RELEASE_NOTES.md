@@ -1,5 +1,53 @@
 # MyDigitalAssistant.ai — release notes
 
+## v0.8.1-alpha
+
+**The assistant stopped taking your name.** In v0.8.0 the assistant's name became
+yours to set. The first thing it did with that power was adopt the name you gave
+yourself: telling it "my name is not Carl, I go by Boz" renamed *the assistant*
+to Boz, and the header and browser tab followed.
+
+### Why it happened
+
+The extraction guard proves *where* a name came from — it must be in the user's
+message — but it cannot tell *who* the name is for. The naming rules described
+the assistant's name and the assistant's working style, and said nothing about
+the user's own name, so a first-person self-introduction had nowhere to go but
+the one name slot the model had. The same gap had already let "Jay Miles" (from a
+pasted email) and the pronoun "you" onto the assistant's name in earlier turns.
+
+v0.8.0 made the consequence visible: because a user-stated name now always wins,
+a misattribution is no longer quietly outvoted. It sticks.
+
+### What changed
+
+- **The user's own name has its own frame.** First-person self-identification
+  ("my name is X", "I go by X", "call me X") now extracts to
+  `user_identity.full_name`. The assistant's name goes to `identity_name.full_name`
+  only when you assign it to the assistant, in the second person. The distinction
+  is stated in the extraction prompt with the failing turns as worked examples.
+- **Names in pasted content are not identity facts.** An email thread or a list
+  of other people's names no longer produces an identity slot.
+- **A name cannot belong to both.** When the model claims the same name for the
+  user and the assistant in one turn, the user's own claim wins and the
+  assistant-side slot is dropped. This is a cross-check on the model's output,
+  not a list of approved phrasings — extraction stays model-first.
+- **The two name frames stay separate.** `user_identity` and `identity_name`
+  resolve by exact name only, so canonicalization cannot merge one into the other
+  by embedding similarity.
+- **"What is my name?" now works.** It retrieves the `user_identity` frame;
+  "what is your name?" still retrieves the assistant's.
+
+### Known limits
+
+- **Existing memory is not rewritten.** A brain that already holds the user's
+  name on `identity_name.full_name` keeps it until the next ordinary rename
+  ("your name is X"), which corrects it through the normal path.
+- **The name is still model-extracted.** The prompt and the same-turn cross-check
+  narrow the gap; they do not remove it. A first-person name that never co-occurs
+  with an assistant naming is the case the new routing is built for, and it is
+  covered by tests, but extraction remains the model's judgment.
+
 ## v0.8.0-alpha
 
 **A name that sticks.** You could tell the assistant its name, watch it
