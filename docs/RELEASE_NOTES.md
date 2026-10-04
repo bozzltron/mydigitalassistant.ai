@@ -1,5 +1,60 @@
 # MyDigitalAssistant.ai — release notes
 
+## v0.8.0-alpha
+
+**A name that sticks.** You could tell the assistant its name, watch it
+acknowledge you, and still find the old name on the tab and in the header. The
+name was never really yours to set: a value written once by a correction
+outranked every later statement, and the interface only ever asked memory for
+the name at startup.
+
+### The rename was decided against, not lost
+
+Telling it "your name is now Carl" reached the extraction pipeline and produced
+the slot. The store then ran it through the same confidence ladder every fact
+uses, and the ladder said no: a conversational fact carries source reliability
+0.5, the stored name had been left at 0.99 by an earlier correction, and the
+first rung keeps the higher-reliability value. The attempt was recorded — a
+`slot_history` row and an auto-resolved `conflicts` row, both reading `Echo` —
+so the brain looked like it had considered the change and chosen otherwise.
+
+That is the ladder working as designed. It is the wrong design for a name. The
+user is authoritative about their own world, and the assistant's name is the
+clearest case of it, so a user-stated `full_name` is now written at reliability
+1.0 — the value the manual-override path already used — and always supersedes
+the stored name. It is a reliability floor on one slot, not a shortcut around
+memory: the value still has to trace to the user's own message, and the write
+still goes through revise, `slot_history`, and the conflicts table.
+
+### The tab kept the old name
+
+The name endpoint was correct the whole time; it returned what memory held. The
+interface asked for it once, on mount, and never again, so a rename could only
+appear after a reload. A turn whose extraction reports `identity_name.full_name`
+now tells the app to re-read the name, and the header and browser tab follow
+memory within the same turn.
+
+### Names that are not names
+
+The name guard accepted any value the user had typed, including pronouns: a
+message containing "you" could land `you` as the assistant's name, and the live
+brain had done exactly that. A `full_name` whose every token is a function word
+is now rejected.
+
+### Known limits
+
+- **A mis-extracted name now sticks harder.** Because a user-stated name
+  supersedes the stored one, an extraction error — the model reading "I'm Carl"
+  as the assistant's name rather than the user's — is no longer quietly rejected
+  by the ladder. The guard filters the assistant's own self-description and bare
+  pronouns, and the extraction prompt is explicit that only assistant-naming
+  counts, but it is model output and not infallible. This is deliberate: the
+  project stays model-first, so the fix is a better guard, not a keyword list of
+  approved phrasings.
+- **Only the name is affected.** The special case is scoped to
+  `identity_name.full_name` on the conversational path. Other self-facts
+  (working agreements, traits) and every other slot keep the normal ladder.
+
 ## v0.7.0-alpha
 
 **One picture instead of six.** Search answers came with a strip of up to six
