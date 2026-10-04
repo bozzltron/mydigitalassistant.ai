@@ -330,3 +330,114 @@ async def test_correction_rename_overrides_entrenched_name(store):
     slot = await store.get_slot(frame.id, "full_name")
     assert slot is not None
     assert slot.value == "Carl"
+
+
+# ---- first-person self-naming belongs to the user, not the assistant ----
+# Regression: on the live brain "My name is not Carl. I go by Boz." set
+# identity_name.full_name = "Boz" -- the assistant took the user's own name.
+
+
+def test_cross_check_drops_assistant_claim_on_the_users_name():
+    from assistant.backend.pipeline.extractor import drop_user_duplicated_identity_slots
+
+    slots = [
+        _slot("user_identity", "full_name", "Boz"),
+        _slot("identity_name", "full_name", "Boz"),
+        _slot("identity_name", "working_agreement", "keep it short"),
+    ]
+    kept = drop_user_duplicated_identity_slots(slots)
+    assert [(s.frame_name, s.key, s.value) for s in kept] == [
+        ("user_identity", "full_name", "Boz"),
+        ("identity_name", "working_agreement", "keep it short"),
+    ]
+
+
+def test_cross_check_leaves_unrelated_assistant_name_alone():
+    from assistant.backend.pipeline.extractor import drop_user_duplicated_identity_slots
+
+    slots = [
+        _slot("user_identity", "full_name", "Boz"),
+        _slot("identity_name", "full_name", "Carl"),
+    ]
+    assert drop_user_duplicated_identity_slots(slots) == slots
+
+
+async def test_user_self_naming_does_not_rename_assistant(store, stub_llm):
+    """The user introducing themselves routes to user_identity, never identity_name."""
+    frame = await store.create_frame("identity_name", "entity")
+    await store.upsert_slot(
+        frame.id, "full_name", "Carl", source_type="user", source_reliability=1.0
+    )
+    user = await store.create_user("alice")
+    turn = "My name is not Carl. I go by Boz."
+    episode = await store.create_episode(user.id, "s1", "user", turn, frame_ids=[])
+    stub_llm.set_extraction_result(
+        [
+            {"frame_name": "user_identity", "frame_type": "entity",
+             "key": "full_name", "value": "Boz"},
+            {"frame_name": "identity_name", "frame_type": "entity",
+             "key": "full_name", "value": "Boz"},
+        ]
+    )
+
+    await extract_and_apply(turn, "Nice to meet you, Boz.", store, stub_llm, episode.id)
+
+    assistant_slot = await store.get_slot(frame.id, "full_name")
+    assert assistant_slot is not None
+    assert assistant_slot.value == "Carl"
+
+    user_frame = await store.get_frame_by_name("user_identity")
+    assert user_frame is not None
+    user_slot = await store.get_slot(user_frame.id, "full_name")
+    assert user_slot is not None
+    assert user_slot.value == "Boz"
+
+
+async def test_reserved_identity_frames_never_fuzzy_merge(store):
+    """user_identity must not canonicalize onto identity_name by embedding similarity."""
+    from assistant.backend.config import settings
+    from assistant.backend.pipeline.extractor import resolve_or_create_frame
+
+    identity = await store.create_frame("identity_name", "entity")
+    await store.store_frame_embedding(
+        identity.id, [1.0] + [0.0] * 767, settings.embedding_model
+    )
+
+    async def same_vector(_text: str) -> list[float]:
+        # A vector identical to identity_name's: without the reserved-frame guard
+        # the resolver would return identity.id for "user_identity".
+        return [1.0] + [0.0] * 767
+
+    new_id = await resolve_or_create_frame(
+        store,
+        "user_identity",
+        "entity",
+        embed_fn=same_vector,
+        embedding_model=settings.embedding_model,
+    )
+    assert new_id != identity.id
+    created = await store.get_frame_by_name("user_identity")
+    assert created is not None
+    assert created.id == new_id
+
+
+async def test_search_extraction_never_creates_identity_frames(store):
+    """A web page can never name the assistant or the user."""
+    from assistant.backend.pipeline.extractor import (
+        ExtractionResult,
+        apply_search_extraction,
+    )
+
+    extraction = ExtractionResult(
+        slots=[
+            _slot("identity_name", "full_name", "Carl"),
+            _slot("user_identity", "full_name", "Boz"),
+            _slot("guitar", "strings", "6"),
+        ]
+    )
+    summary = await apply_search_extraction(extraction, [], store)
+
+    applied = {s["frame_name"] for s in summary["slots"]}
+    assert "identity_name" not in applied
+    assert "user_identity" not in applied
+    assert await store.get_frame_by_name("user_identity") is None

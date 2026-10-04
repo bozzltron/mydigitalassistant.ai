@@ -590,6 +590,86 @@ async def test_retrieve_identity_query_does_not_duplicate_if_already_retrieved(s
     assert identity_frames[0].relevance == 1.0
 
 
+class TestIsUserIdentityQuery:
+    @staticmethod
+    def patterns():
+        return [
+            ("What is my name?", True),
+            ("what's my name", True),
+            ("who am I", True),
+            ("I go by Boz", True),
+            ("call me Boz", True),
+            ("what is your name?", False),
+            ("who are you", False),
+            ("search for guitars", False),
+        ]
+
+    def test_patterns(self):
+        for query, expected in self.patterns():
+            assert Retriever._is_user_identity_query(query) is expected, query
+
+
+async def test_retrieve_user_identity_query_boosts_user_frame(store):
+    """'What is my name?' must resolve from user_identity, not vector luck."""
+    user_frame = await store.create_frame("user_identity", "entity")
+    await store.upsert_slot(user_frame.id, "full_name", "Boz")
+    await store.store_frame_embedding(
+        user_frame.id, [0.5] + [0.5] + [0.0] * 766, settings.embedding_model
+    )
+
+    unrelated = await store.create_frame("guitar", "entity")
+    await store.store_frame_embedding(
+        unrelated.id, [1.0] + [0.0] * 767, settings.embedding_model
+    )
+
+    mock_llm = AsyncMock()
+    mock_llm.embed.return_value = EmbeddingResponse(
+        embedding=[0.9] + [0.1] * 767,
+        model=settings.embedding_model,
+    )
+
+    retriever = Retriever(store, mock_llm, min_relevance=0.1)
+    user = await store.create_user("alice")
+    ctx = await retriever.retrieve("What is my name?", user.id)
+
+    frames = [rf for rf in ctx.retrieved_frames if rf.frame.name == "user_identity"]
+    assert len(frames) == 1
+    assert frames[0].relevance == 1.0
+    full_name_slot = next(s for s in frames[0].slots if s.key == "full_name")
+    assert full_name_slot.value == "Boz"
+
+
+async def test_retrieve_user_identity_query_does_not_pull_assistant_name(store):
+    """The two identity frames stay distinct: 'my name' must not boost the agent's."""
+    user_frame = await store.create_frame("user_identity", "entity")
+    await store.upsert_slot(user_frame.id, "full_name", "Boz")
+    await store.store_frame_embedding(
+        user_frame.id, [0.9] + [0.1] * 767, settings.embedding_model
+    )
+    identity_frame = await store.create_frame("identity_name", "entity")
+    await store.upsert_slot(identity_frame.id, "full_name", "Carl")
+    await store.store_frame_embedding(
+        identity_frame.id, [0.8] + [0.2] * 767, settings.embedding_model
+    )
+
+    mock_llm = AsyncMock()
+    mock_llm.embed.return_value = EmbeddingResponse(
+        embedding=[0.9] + [0.1] * 767,
+        model=settings.embedding_model,
+    )
+
+    retriever = Retriever(store, mock_llm, min_relevance=0.1)
+    user = await store.create_user("alice")
+    ctx = await retriever.retrieve("What is my name?", user.id)
+
+    names = {rf.frame.name for rf in ctx.retrieved_frames}
+    assert "user_identity" in names
+    # identity_name may still surface by similarity, but only the user frame is
+    # forced to relevance 1.0 by the user-identity boost.
+    boosted = [rf for rf in ctx.retrieved_frames if rf.relevance == 1.0]
+    assert [rf.frame.name for rf in boosted] == ["user_identity"]
+
+
 def test_format_memory_context_truncates_really_long_episodes():
     """Episodes beyond `max_episode_digest_chars` become digests.
 

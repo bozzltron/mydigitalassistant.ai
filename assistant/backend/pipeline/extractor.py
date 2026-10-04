@@ -25,6 +25,13 @@ MAX_SOURCE_RELIABILITY = 0.99
 IDENTITY_FRAME = "identity_name"
 IDENTITY_NAME_SLOT = "full_name"
 
+# The USER's own name is a separate fact with its own frame. Routing first-person
+# self-identification here keeps it off the assistant's frame: measured on the
+# live brain, "My name is not Carl. I go by Boz." landed on
+# identity_name.full_name and renamed the assistant to the user's own name.
+USER_IDENTITY_FRAME = "user_identity"
+USER_IDENTITY_NAME_SLOT = "full_name"
+
 # The assistant's name is the user's to choose, so a user-stated name is
 # authoritative and must always win over the value already stored -- however
 # entrenched that value is. A correction can leave `full_name` at
@@ -138,22 +145,40 @@ Rules:
 - relation_type is a short snake_case verb phrase (e.g. "related_to",
   "part_of", "created_by", "located_in", "inspired_by").
 - Don't extract transient conversational content ("hello", "thanks").
-- AGENT IDENTITY (the assistant's own traits) may only come from USER speech.
-  If the user names, renames, or chooses a name for the assistant — including
-  imperatives like "your name is now Echo", "I'll call you X", "let's name you
-  X" — emit: {"frame_name": "identity_name", "frame_type": "entity",
-  "key": "full_name", "value": "<the name>"}.
-  If the user states how they want the assistant to behave or work with them
+- WHO A NAME BELONGS TO is the point of these rules. Two different frames:
+  * The ASSISTANT's name goes on identity_name.full_name, and ONLY when the user
+    assigns a name TO THE ASSISTANT (second person): "your name is Echo",
+    "I'll call you X", "let's name you X", "you are X", "I dub thee X".
+    {"frame_name": "identity_name", "frame_type": "entity",
+     "key": "full_name", "value": "<the name>"}
+  * The USER's own name goes on user_identity.full_name, when the user names
+    THEMSELVES in the first person: "my name is X", "I go by X", "I'm X",
+    "call me X".
+    {"frame_name": "user_identity", "frame_type": "entity",
+     "key": "full_name", "value": "<the name>"}
+  A first-person self-introduction is NEVER the assistant's name. "My name is
+  Boz" sets user_identity, not identity_name.
+- Names that appear only inside pasted content -- an email thread, a list, an
+  article, other people's names -- are not the assistant's name and not the
+  user's name. Emit no identity_name or user_identity slot for them.
+- If the user states how they want the assistant to behave or work with them
   ("always ask before acting", "keep answers short", "we work best when you
   confirm first"), emit identity_name slots with a descriptive snake_case key:
   e.g. {"key": "working_agreement", "value": "always ask before acting"}.
   Do NOT create a separate working_agreement frame — these belong directly on
   identity_name.
-  A user QUOTING a name back ("you said your name was Hermes") still counts: the
-  value came from the user's message.
+  A user QUOTING the assistant's name back ("you said your name was Hermes")
+  still counts as naming the assistant.
   NEVER take the assistant's identity from the Assistant side of the transcript.
   Generic self-descriptions ("my full name is cognitive digital assistant",
   "I am an AI language model") are not facts and must never be extracted.
+- Examples (User message -> slots to emit):
+  "My name is not Carl. I go by Boz."
+    -> user_identity.full_name = "Boz"  (the user, not the assistant)
+  "Your name is now Carl." / "I'm not Carl. You are Carl."
+    -> identity_name.full_name = "Carl"
+  "Planning a ski trip with Jay Miles and Sam." (or a pasted email)
+    -> no identity_name and no user_identity slot
 - If no facts to extract, return {"slots": [], "associations": []}.
 
 Respond with ONLY the JSON object, no commentary."""
@@ -307,6 +332,15 @@ _ENTITY_WILDCARD = "entity"
 
 MIN_FUZZY_NAME_LENGTH = 4  # skip fuzzy matching for short names ("bo" vs "bob")
 
+# Identity frames resolve by exact name only. Fuzzy canonicalization matches on
+# embedding similarity, and "user identity" / "identity name" are close enough
+# that one could absorb the other -- which would put the user's name back on the
+# assistant's frame through the back door. Stored in normalized form because that
+# is what the resolver compares (see normalize_frame_name).
+RESERVED_IDENTITY_FRAMES = frozenset(
+    normalize_frame_name(name) for name in (IDENTITY_FRAME, USER_IDENTITY_FRAME)
+)
+
 
 async def resolve_or_create_frame(
     store: "MemoryStore",
@@ -365,7 +399,11 @@ async def resolve_or_create_frame(
             logger.info("Resolved %r through alias to frame %d", name, alias_id)
             return alias_id
 
-    if embed_fn is not None and len(normalized) >= MIN_FUZZY_NAME_LENGTH:
+    if (
+        embed_fn is not None
+        and len(normalized) >= MIN_FUZZY_NAME_LENGTH
+        and normalized not in RESERVED_IDENTITY_FRAMES
+    ):
         try:
             query_embedding = await embed_fn(normalized)
             matches = await store.search_similar_frames(
@@ -382,6 +420,8 @@ async def resolve_or_create_frame(
             logger.warning("Canonicalization embedding lookup failed: %s", exc)
         else:
             for frame, _slots, similarity in matches:
+                if normalize_frame_name(frame.name) in RESERVED_IDENTITY_FRAMES:
+                    continue
                 if frame.owner_user_id is not None:
                     continue
                 if (
@@ -762,8 +802,13 @@ async def apply_search_extraction(
     Per-slot source_url is the corroborating URL (prefer .edu, Wikipedia, major news).
     High-stakes facts (financial, medical, legal, safety) require ≥2 unique domains.
     """
-    # The agent's name is never a web fact — drop any identity slots outright.
-    extraction.slots = [s for s in extraction.slots if s.frame_name != IDENTITY_FRAME]
+    # Names are never a web fact — drop any identity slots outright, for both the
+    # assistant's frame and the user's.
+    extraction.slots = [
+        s
+        for s in extraction.slots
+        if s.frame_name not in (IDENTITY_FRAME, USER_IDENTITY_FRAME)
+    ]
     if not extraction.slots and not extraction.associations:
         return {
             "slots_applied": 0,
@@ -1143,6 +1188,38 @@ def drop_unstated_identity_slots(
     return kept
 
 
+def drop_user_duplicated_identity_slots(
+    slots: list[ExtractedSlot],
+) -> list[ExtractedSlot]:
+    """Drop an identity_name.full_name the same turn also claims as the user's.
+
+    A name cannot be both the user's and the assistant's. When the extractor
+    emits the same value as `user_identity.full_name` and `identity_name.full_name`
+    (measured: "My name is not Carl. I go by Boz."), the user's own claim wins and
+    the assistant-side slot is discarded. This is a cross-check on the model's
+    own output, not a phrasing rule.
+    """
+    user_names = {
+        slot.value.strip().lower()
+        for slot in slots
+        if slot.frame_name == USER_IDENTITY_FRAME
+        and slot.key == USER_IDENTITY_NAME_SLOT
+        and slot.value
+    }
+    if not user_names:
+        return slots
+    return [
+        slot
+        for slot in slots
+        if not (
+            slot.frame_name == IDENTITY_FRAME
+            and slot.key == IDENTITY_NAME_SLOT
+            and slot.value
+            and slot.value.strip().lower() in user_names
+        )
+    ]
+
+
 async def extract_and_apply(
     user_message: str,
     assistant_response: str,
@@ -1155,6 +1232,7 @@ async def extract_and_apply(
         extraction = await extract_facts(user_message, assistant_response, llm_client)
         extraction.slots = normalize_self_frames(extraction.slots)
         extraction.slots = drop_unstated_identity_slots(extraction.slots, user_message)
+        extraction.slots = drop_user_duplicated_identity_slots(extraction.slots)
         if not extraction.slots and not extraction.associations:
             return {
                 "slots_applied": 0,

@@ -143,7 +143,7 @@ Snapshot: 2026-09-05. Full suite runs in both plain SQLite and SQLCipher-encrypt
 | `test_reasoner.py` | 28 | Intent classification, plan formatting, self-correction branches. |
 | `test_task_router.py` | 23 | Heuristic patterns (parametrized), LLM fallback paths, heuristic-first priority. |
 | `test_working_memory.py` | 21 | LRU cache, boost map, touch/lookup/eviction behavior. |
-| `test_retrieval.py` | 21 | Cosine similarity, frame→text, memory-context formatting, truncation. |
+| `test_retrieval.py` | 32 | Cosine similarity, frame→text, memory-context formatting, truncation, identity-frame boosts. |
 | `test_confidence.py` | 21 | Bump formula, bounded confidence, initial confidence, conflict resolution branches. |
 | `test_cli.py` | 20 | Chat, memory, users, status, DB backup/restore via API. |
 | `test_belief_revision.py` | 20 | Standalone AGM operators (expand/contract/revise). |
@@ -154,7 +154,7 @@ Snapshot: 2026-09-05. Full suite runs in both plain SQLite and SQLCipher-encrypt
 | `test_orchestrator.py` | 17 | Full cognitive loop, search injection, correction handling, scheduled-task chat flow. |
 | `test_memory_maintenance.py` | 3 | No time-based decay of idle facts; consolidation skips the backup when there is nothing to merge. |
 | `test_brain_portable.py` | 16 | Encrypted portable brain export/import. |
-| `test_identity_name.py` | 17 | Identity frame/slot behavior, self-description, user-authoritative rename. |
+| `test_identity_name.py` | 22 | Identity frame/slot behavior, self-description, user-authoritative rename, user-vs-assistant name routing. |
 | `test_tools.py` | 12 | `fetch_url` tool, robots.txt, extraction from fetched documents. |
 | `test_daily_schedule.py` | 12 | Clock helpers, store semantics, create/list/delete/pause/resume chat flow. |
 | `test_phase9_memory_strength.py` | 11 | Memory strength reinforcement and slot priority. |

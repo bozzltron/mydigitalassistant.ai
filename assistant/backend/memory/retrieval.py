@@ -322,6 +322,17 @@ class Retriever:
     )
     _AGENT_IDENTITY_RE = None  # compiled lazily
 
+    # Patterns that indicate a question about the USER's own name.
+    _USER_IDENTITY_PATTERNS = (
+        r"\bmy name\b",
+        r"\bwhat('s| is) my name\b",
+        r"\bwho am i\b",
+        r"\bi go by\b",
+        r"\bcall me\b",
+        r"\bmy identity\b",
+    )
+    _USER_IDENTITY_RE = None  # compiled lazily
+
     @staticmethod
     def _is_identity_query(query: str) -> bool:
         import re
@@ -331,6 +342,45 @@ class Retriever:
                 re.IGNORECASE,
             )
         return bool(Retriever._AGENT_IDENTITY_RE.search(query))
+
+    @staticmethod
+    def _is_user_identity_query(query: str) -> bool:
+        import re
+        if Retriever._USER_IDENTITY_RE is None:
+            Retriever._USER_IDENTITY_RE = re.compile(
+                "|".join(Retriever._USER_IDENTITY_PATTERNS),
+                re.IGNORECASE,
+            )
+        return bool(Retriever._USER_IDENTITY_RE.search(query))
+
+    async def _boost_named_frame(
+        self, frame_name: str, retrieved_frames: list[RetrievedFrame]
+    ) -> None:
+        """Ensure a reserved identity frame is retrieved at relevance 1.0.
+
+        A name query must be answered from the name frame even when its embedding
+        sits below the relevance gate, so identity frames are pulled in directly
+        rather than left to vector similarity.
+        """
+        frame = await self.store.get_frame_by_name(frame_name)
+        if frame is None:
+            return
+        for rf in retrieved_frames:
+            if rf.frame.id == frame.id:
+                rf.relevance = max(rf.relevance, 1.0)
+                return
+        slots = await self.store.get_slots_for_frame(frame.id)
+        assocs = await self.store.get_all_associations_for_frame(frame.id)
+        retrieved_frames.insert(
+            0,
+            RetrievedFrame(
+                frame=frame,
+                slots=slots,
+                associations=assocs,
+                relevance=1.0,
+                source="identity_boost",
+            ),
+        )
 
     async def retrieve(
         self,
@@ -464,29 +514,13 @@ class Retriever:
 
         await _resolve_assoc_names()
 
-         # 5b. For self-identity queries, always include identity_name frame at top relevance
+         # 5b. Identity queries must resolve from the identity frames directly:
+        # the assistant's own name for "what's your name", the user's own name
+        # for "what's my name".
         if self._is_identity_query(query):
-            identity_frame = await self.store.get_frame_by_name("identity_name")
-            if identity_frame:
-                existing_ids = {rf.frame.id for rf in retrieved_frames}
-                if identity_frame.id not in existing_ids:
-                    slots = await self.store.get_slots_for_frame(identity_frame.id)
-                    assocs = await self.store.get_all_associations_for_frame(identity_frame.id)
-                    retrieved_frames.insert(
-                        0,
-                        RetrievedFrame(
-                            frame=identity_frame,
-                            slots=slots,
-                            associations=assocs,
-                            relevance=1.0,
-                            source="identity_boost",
-                        ),
-                    )
-                else:
-                    for rf in retrieved_frames:
-                        if rf.frame.id == identity_frame.id:
-                            rf.relevance = max(rf.relevance, 1.0)
-                            break
+            await self._boost_named_frame("identity_name", retrieved_frames)
+        if self._is_user_identity_query(query):
+            await self._boost_named_frame("user_identity", retrieved_frames)
         # The identity frame brings associations the first pass never saw, so
         # its targets need naming too or its edges render nameless.
         await _resolve_assoc_names()

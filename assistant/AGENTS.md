@@ -315,6 +315,13 @@ The agent must confirm before performing actions that could expose sensitive inf
   user's message (the self-description guard runs first), and the write still
   goes through `revise` / `slot_history` / `conflicts`. Only the conversational
   path sets it; other identity slots keep the normal ladder.
+- **The user's own name has its own frame.** First-person self-identification
+  ("my name is X", "I go by X", "call me X") extracts to
+  `user_identity.full_name`, never `identity_name`; the two frames are reserved
+  against fuzzy canonicalization so they cannot absorb each other, and a
+  same-turn cross-check drops an `identity_name.full_name` the user also claimed
+  as their own. The `user_identity` frame is what a "what's my name?" query
+  retrieves.
 - Positive feedback: `bump_confidence(current)` = `min(1 - (1-current)*0.7, 0.99)`
   (same repeat-discount curve as reinforcement).
 - Negative feedback: `lower_confidence(current)` = `max(current - 0.15, INITIAL_CONFIDENCE)`.
