@@ -1,5 +1,42 @@
 # MyDigitalAssistant.ai — release notes
 
+## v0.10.0-alpha
+
+**The agent knows what day it is, and there is one loop instead of two.**
+
+### It knows the date and time
+
+The model had no clock, so "what's today's date?" was answered from its training
+cutoff. A current date/time line is now injected into the system prompt — in the
+user's timezone, resolved the same way the scheduler resolves it
+(`DAILY_TASKS_TZ` > `TZ` > host), so a US user asking at 19:00 is not told it is
+tomorrow. It is injected rather than exposed as a tool, so it costs no
+round-trip. The `.ics` writer now stamps the user's date too, not the container's
+UTC date.
+
+### One cognitive loop
+
+`chat()` and `chat_stream()` were two ~600-line copies of the same loop, kept in
+step by hand. They had drifted **six** times, each a user-visible bug: a stalled
+search gate that hung the live stream, a generation failure that escaped instead
+of degrading, a `compute` result shown and never stored, a missing sources
+footer, a missing learning summary, and a correction turn logged twice.
+`chat_stream()` is now a pass-through to one loop (`_run_turn`) and `chat()`
+drains it, so a change reaches both by construction. The best-tested path is now
+the one production runs.
+
+Closing the drift also fixed three parity gaps: the stream now carries
+`citations` and `memory_context` (so the CLI and `/chat` adapter lose nothing),
+scheduled-task and correction turns emit their metadata like every other turn,
+and a streamed turn's reasoning trace is persisted instead of dropped.
+
+### Known limits
+
+- **The date is a snapshot of the turn.** It is read when the prompt is built,
+  not per-token; a turn spanning midnight reports the day it started.
+- **`run_scheduled_task` is still its own path.** Deliberately simpler
+  (always-search, no routing/extraction); not folded into the one loop.
+
 ## v0.9.1-alpha
 
 **The suite and the docs stop drifting.** A maintenance release — no feature
