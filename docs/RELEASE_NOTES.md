@@ -1,5 +1,32 @@
 # MyDigitalAssistant.ai — release notes
 
+## v0.11.2-alpha
+
+**Voice mode listens like it should, and read-aloud actually reads.**
+
+Three voice-output defects and one structural listening gap, all found by
+tracing the settings and audio paths end to end.
+
+- **Read-aloud plays.** The spoken utterance was never retained, so a
+  garbage-collected utterance could stop mid-sentence and never fire
+  `onend` — which left the "agent is speaking" gate stuck true, keeping the
+  microphone shut. The utterance is now held until it finishes, and gets a
+  `lang` fallback for engines that drop one with neither voice nor lang set.
+- **Turning read-aloud on works.** A reply was marked "spoken" even when
+  read-aloud was off, so switching it on could not read the answer that
+  prompted the switch. It now marks only what it speaks.
+- **The voice setting sticks.** The voice `<select>` set its value before
+  Chrome's asynchronous `voiceschanged` populated the options, so the
+  browser dropped it to "" and the panel showed the wrong voice — looking
+  exactly like the setting had not persisted. It now re-applies the saved
+  value once the options exist. (Persistence itself was already correct.)
+- **Voice mode listens through transcription.** The microphone used to be
+  shut for the entire `/transcribe` round trip, so anything said between
+  utterances was dropped. It now stays open whenever voice mode is on and
+  the agent is not speaking; captures are queued and transcribed one at a
+  time, so order is preserved. A busy agent still queues the transcript,
+  and queued items remain removable while you wait.
+
 ## v0.11.1-alpha
 
 **Following through on v0.11.0: the task loop's edges are cleaned up.**
