@@ -2249,10 +2249,22 @@ async def upload_file(
 # --- File API Endpoints ---
 
 
+def _slot_int(value: str | None) -> int | None:
+    """A numeric slot as an int, or None when it is absent or not a number."""
+    if value in (None, ""):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 class FileFrameResponse(BaseModel):
     id: int
     name: str
     file_name: str | None = None
+    file_ext: str | None = None
+    file_size: int | None = None
     type: str
     confidence: float
     essential: int
@@ -2296,26 +2308,34 @@ async def list_files(
         if f.source_type in FILE_FRAME_SOURCE_TYPES and f.priority > 0
     ]
 
-    # Load the real uploaded filename (file_name slot) for display — the frame
-    # name is the internal handle, while file_name is what the user actually
-    # named the file.
-    file_names: dict[int, str] = {}
+    # Load the display metadata the frame itself does not carry: `file_name` is
+    # what the user named the file (the frame name is the internal handle),
+    # `file_ext` picks the icon, and `file_size` is shown in the grid. Without
+    # this the grid rendered the frame type as the extension and `NaN` as the size.
+    frame_slots: dict[int, dict[str, str]] = {}
     if file_frames:
         ids = [f.id for f in file_frames]
         placeholders = ",".join("?" * len(ids))
         async with store._connect() as db:
             rows = await db.execute_fetchall(
-                f"SELECT frame_id, value FROM slots "
-                f"WHERE frame_id IN ({placeholders}) AND key = 'file_name'",
+                f"SELECT frame_id, key, value FROM slots "
+                f"WHERE frame_id IN ({placeholders}) "
+                f"AND key IN ('file_name', 'file_ext', 'file_size')",
                 ids,
             )
-        file_names = {row[0]: row[1] for row in rows}
+        for row_frame_id, key, value in rows:
+            frame_slots.setdefault(row_frame_id, {})[key] = value
+
+    def slot(frame_id: int, key: str) -> str | None:
+        return frame_slots.get(frame_id, {}).get(key)
 
     return [
         FileFrameResponse(
             id=frame.id,
             name=frame.name,
-            file_name=file_names.get(frame.id),
+            file_name=slot(frame.id, "file_name"),
+            file_ext=slot(frame.id, "file_ext"),
+            file_size=_slot_int(slot(frame.id, "file_size")),
             type=frame.type,
             confidence=frame.confidence,
             essential=frame.essential,
@@ -2484,7 +2504,44 @@ async def _file_response(store: MemoryStore, frame_id: int) -> "FileContentRespo
         content=content,
         file_name=file_name,
         file_ext=file_ext,
-        file_size=int(file_size) if file_size else None,
+        file_size=_slot_int(file_size),
+    )
+
+
+# Download the stored file's original bytes
+@app.get("/files/{frame_id}/download")
+async def download_file(
+    frame_id: int,
+    store: MemoryStore = _Depends(get_store),
+):
+    """Serve the stored file's original bytes as an attachment.
+
+    The `/content` route reads the file as UTF-8 text, which is lossy for any
+    binary document (a PDF read as text is garbage), so downloading goes through
+    the bytes on disk instead.
+    """
+    frame = await store.get_frame(frame_id)
+    if not frame:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    slots_dict = await _file_slots_for_frame(store, frame_id)
+    file_safe_name = slots_dict.get("file_safe_name")
+    if not file_safe_name:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    from assistant.backend.pipeline.filesystem import PathTraversalError
+
+    try:
+        file_path = _contained_file_path(file_safe_name)
+    except (PathTraversalError, ValueError):
+        file_path = None
+    if file_path is None or not file_path.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+
+    return FileResponse(
+        file_path,
+        filename=slots_dict.get("file_name") or frame.name,
+        media_type="application/octet-stream",
     )
 
 

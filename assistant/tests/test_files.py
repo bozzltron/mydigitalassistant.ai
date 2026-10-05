@@ -1119,3 +1119,55 @@ class TestFileWriteParity:
         assert "visible_note.md" in names
         assert any(e["source_type"] == "file_create" for e in listed)
 
+
+class TestFileListMetadataAndDownload:
+    """The Files page needs a size and extension per row, and a real download.
+
+    Regression: `/files/list` returned only the frame, so the grid rendered the
+    frame type as the extension and `NaN` as the size, and there was no route
+    that served a file's original bytes -- the `/content` route decodes as UTF-8,
+    which is garbage for a binary document.
+    """
+
+    @pytest.mark.asyncio
+    async def test_list_includes_ext_and_size(self, client, store, tmp_path):
+        body = "# Hello\n"
+        test_file = tmp_path / "notes.md"
+        test_file.write_text(body)
+        with open(test_file, "rb") as f:
+            resp = client.post(
+                "/files/upload",
+                files={"file": ("notes.md", f.read(), "text/markdown")},
+            )
+        assert resp.status_code == 200
+        frame_id = resp.json()["frame_id"]
+
+        entries = client.get("/files/list").json()
+        entry = next(e for e in entries if e["id"] == frame_id)
+        assert entry["file_ext"] == "md"
+        assert entry["file_size"] == len(body.encode())
+
+    @pytest.mark.asyncio
+    async def test_download_returns_the_original_bytes(self, client, store, tmp_path):
+        body = "# Hello\n"
+        test_file = tmp_path / "notes.md"
+        test_file.write_text(body)
+        with open(test_file, "rb") as f:
+            resp = client.post(
+                "/files/upload",
+                files={"file": ("notes.md", f.read(), "text/markdown")},
+            )
+        assert resp.status_code == 200
+        frame_id = resp.json()["frame_id"]
+
+        download = client.get(f"/files/{frame_id}/download")
+        assert download.status_code == 200
+        assert download.content == body.encode()
+        disposition = download.headers["content-disposition"]
+        assert "attachment" in disposition
+        assert "notes.md" in disposition
+
+    @pytest.mark.asyncio
+    async def test_download_missing_file_is_404(self, client, store):
+        assert client.get("/files/999999/download").status_code == 404
+

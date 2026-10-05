@@ -165,6 +165,21 @@ Large files are never fully embedded; the frame embeds metadata only.
 - `forget_frame` (priority → 0) is an explicit memory forget, not file deletion.
 - Schedule, facts, episodes, and unrelated memory survive a file delete.
 
+## Files page (UI)
+
+- `GET /files/list` carries `file_name`, `file_ext`, and `file_size` (from slots)
+  alongside the frame. Without them the grid rendered the frame type as the
+  extension and `NaN` as the size — the size was simply never in the response.
+- `GET /files/{frame_id}/download` serves the **original bytes** with
+  `Content-Disposition: attachment`. Download must not go through
+  `GET /files/{frame_id}/content`: that route decodes as UTF-8 with
+  `errors="replace"`, so a binary document (PDF, docx) comes back as garbage.
+- The viewer previews only text extensions (`FileViewer.TEXT_EXTS`); anything
+  else shows "No preview" with a download link rather than decoding bytes as
+  text. `.md`/`.markdown` render as sanitized HTML (`marked` + `DOMPurify`).
+- Deleting goes through a confirmation modal — the row button opens it, the
+  modal's confirm calls `DELETE /files/{frame_id}`.
+
 ## Sandbox rules
 
 - All ops route through `pipeline/filesystem.py`: `SANDBOX_ROOT = /app/data`,
