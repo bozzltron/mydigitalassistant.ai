@@ -1,5 +1,24 @@
 # MyDigitalAssistant.ai — release notes
 
+## v0.11.3-alpha
+
+**Cleanup: the read-aloud code was fine — the browser tab was muted.**
+
+v0.11.2 bundled read-aloud changes that were chasing a symptom with no code
+cause. They are removed, so the diff only contains changes that fix something
+real.
+
+- **Kept — the voice setting "sticks".** The voice `<select>` re-applies the
+  stored value once Chrome's asynchronous voice list arrives. Verified against a
+  real browser: without it, a reload keeps `voiceUri` in storage but the dropdown
+  displays a different voice, which reads as "my setting didn't persist".
+- **Kept — voice mode listens through transcription.** Captures are queued and
+  sent serially, so speech between utterances is not lost.
+- **Removed — speculative read-aloud changes.** Utterance retention, the `lang`
+  fallback, the "mark only when enabled" rewrite of the read-aloud effect, and
+  the finite-value guard. None fixed a demonstrated bug; `ChatPage.tsx` and
+  `voice.ts` are back to their v0.11.1 state.
+
 ## v0.11.2-alpha
 
 **Voice mode listens like it should, and read-aloud actually reads.**
