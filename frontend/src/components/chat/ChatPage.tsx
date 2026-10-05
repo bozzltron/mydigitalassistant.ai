@@ -220,45 +220,40 @@ export default function ChatPage(props: {
   createEffect(() => {
     const msgs = messages()
     const lastMsg = msgs[msgs.length - 1]
-    // Only consider newly generated assistant messages that are FINALIZED (not
-    // streaming). Historical messages have IDs starting with "history-";
-    // streaming messages carry meta.isStreaming === true until finalize.
+    // Only speak newly generated assistant messages that are FINALIZED (not streaming)
+    // Historical messages have IDs starting with "history-"
+    // Streaming messages have meta.isStreaming === true - wait for finalize
     if (
-      !lastMsg ||
-      lastMsg.role !== 'assistant' ||
-      spokenMsgIds().has(lastMsg.id) ||
-      lastMsg.meta?.isStreaming
+      lastMsg &&
+      lastMsg.role === 'assistant' &&
+      !spokenMsgIds().has(lastMsg.id) &&
+      !lastMsg.meta?.isStreaming
     ) {
-      return
-    }
-    // Skip historical messages - they were already spoken in their original conversation.
-    if (lastMsg.id.startsWith('history-')) {
-      markAsSpoken(lastMsg.id)
-      return
-    }
-    // Mark only what we actually speak. Marking while read-aloud is off made the
-    // toggle look dead: turning it on re-ran this effect, found the latest reply
-    // already in the set, and stayed silent. Now enabling it speaks the newest
-    // answer, and the next turn speaks regardless.
-    if (!settings.ttsEnabled || !('speechSynthesis' in window)) return
-    if (!lastMsg.content.trim()) return
-    markAsSpoken(lastMsg.id)
-    // speakReplacing cancels anything still in flight rather than queueing
-    // behind it. speak() queues, so a second answer arriving mid-sentence left
-    // both playing and the speaking window growing with every queued message --
-    // while the single boolean gate opened in the gap between one utterance's
-    // onend and the next one's onstart.
-    speakReplacing(lastMsg.content, (utterance) => {
-      const voiceUri = settings.voiceUri
-      if (voiceUri) {
-        const voices = speechSynthesis.getVoices()
-        const selectedVoice = voices.find(v => v.voiceURI === voiceUri)
-        if (selectedVoice) utterance.voice = selectedVoice
+      // Skip historical messages - they were already spoken in their original conversation
+      if (lastMsg.id.startsWith('history-')) {
+        markAsSpoken(lastMsg.id)
+        return
       }
-      utterance.rate = settings.voiceSpeed
-      utterance.pitch = settings.voicePitch
-      utterance.volume = settings.voiceVolume
-    })
+      markAsSpoken(lastMsg.id)
+      if (settings.ttsEnabled && 'speechSynthesis' in window) {
+        // speakReplacing cancels anything still in flight rather than queueing
+        // behind it. speak() queues, so a second answer arriving mid-sentence
+        // left both playing and the speaking window growing with every queued
+        // message -- while the single boolean gate opened in the gap between one
+        // utterance's onend and the next one's onstart.
+        speakReplacing(lastMsg.content, (utterance) => {
+          const voiceUri = settings.voiceUri
+          if (voiceUri) {
+            const voices = speechSynthesis.getVoices()
+            const selectedVoice = voices.find(v => v.voiceURI === voiceUri)
+            if (selectedVoice) utterance.voice = selectedVoice
+          }
+          utterance.rate = settings.voiceSpeed
+          utterance.pitch = settings.voicePitch
+          utterance.volume = settings.voiceVolume
+        })
+      }
+    }
   })
 
   // The single auto-drain trigger. Every entrypoint (input bar, dictation,
