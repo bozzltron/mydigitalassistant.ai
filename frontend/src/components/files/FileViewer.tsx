@@ -1,4 +1,6 @@
-import { createSignal, Show, createEffect } from 'solid-js';
+import { createSignal, Show, createMemo, createEffect } from 'solid-js';
+import { marked } from 'marked';
+import DOMPurify from 'dompurify';
 import { api } from '../../services/api';
 import { Toast } from '../ui/Toast';
 import { FileIcon, fileKind } from '../ui/Icons';
@@ -11,6 +13,18 @@ interface FileContentResponse {
   file_ext: string | null;
   file_size: number | null;
 }
+
+// Extensions whose bytes are readable text. Anything else is treated as binary:
+// the content route decodes with errors="replace", so a PDF or .docx rendered as
+// text is noise, not a preview.
+const TEXT_EXTS = new Set([
+  'txt', 'csv', 'tsv', 'json', 'xml', 'html', 'htm', 'yaml', 'yml', 'toml',
+  'ini', 'cfg', 'conf', 'log', 'eml', 'ics', 'srt', 'vtt',
+  'py', 'js', 'jsx', 'ts', 'tsx', 'css', 'scss', 'sh', 'bash', 'zsh',
+  'sql', 'rs', 'go', 'java', 'c', 'h', 'cpp', 'hpp', 'rb', 'php', 'swift', 'kt',
+]);
+
+const MARKDOWN_EXTS = new Set(['md', 'markdown']);
 
 export const FileViewer = (props: { fileId?: string | null }) => {
   const [fileData, setFileData] = createSignal<FileContentResponse | null>(null);
@@ -51,6 +65,14 @@ export const FileViewer = (props: { fileId?: string | null }) => {
     }
   });
 
+  const ext = createMemo(() => (fileData()?.file_ext || '').toLowerCase());
+  const isMarkdown = createMemo(() => MARKDOWN_EXTS.has(ext()));
+  const isText = createMemo(() => TEXT_EXTS.has(ext()));
+  // Sanitized before it touches innerHTML, exactly like chat markdown.
+  const markdownHtml = createMemo(() =>
+    DOMPurify.sanitize(marked.parse(fileData()?.content || '') as string)
+  );
+
   const formatFileSize = (bytes: number | null | undefined) => {
     if (!bytes) return 'Unknown';
     if (bytes < 1024) return bytes + ' B';
@@ -75,8 +97,28 @@ export const FileViewer = (props: { fileId?: string | null }) => {
                 <span class="file-size">{formatFileSize(fileData()?.file_size)}</span>
               </div>
             </div>
+            <a
+              class="btn-secondary file-download"
+              href={`/files/${props.fileId}/download`}
+              download=""
+            >
+              Download
+            </a>
           </div>
-          <pre class="file-content-text">{fileData()?.content || '(empty file)'}</pre>
+
+          <Show when={isMarkdown()}>
+            {/* eslint-disable-next-line solid/no-innerhtml -- sanitized by DOMPurify */}
+            <div class="file-content-markdown" innerHTML={markdownHtml()} />
+          </Show>
+          <Show when={!isMarkdown() && isText()}>
+            <pre class="file-content-text">{fileData()?.content || '(empty file)'}</pre>
+          </Show>
+          <Show when={!isMarkdown() && !isText()}>
+            <div class="file-no-preview">
+              <p>No preview for this file type</p>
+              <p class="file-no-preview-hint">Download it to open it in the right app.</p>
+            </div>
+          </Show>
         </div>
       </Show>
 

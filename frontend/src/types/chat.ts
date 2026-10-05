@@ -183,7 +183,8 @@ export interface FileEntry {
   id: string
   name: string
   file_name?: string | null
-  size: number
+  file_ext?: string | null
+  file_size?: number | null
   type: string
   created_at: string
   updated_at: string

@@ -1,22 +1,16 @@
 import { createSignal, Show, For, createEffect, onCleanup } from 'solid-js';
 import { listFiles, deleteFile } from '../../services/api';
 import { Toast } from '../ui/Toast';
+import { Modal } from '../ui/Modal';
 import { FileIcon, fileKind } from '../ui/Icons';
-
-interface FileEntry {
-  id: string;
-  name: string;
-  file_name?: string | null;
-  size: number;
-  type: string;
-  created_at: string;
-  updated_at: string;
-}
+import type { FileEntry } from '../../types';
 
 export const FileGrid = (props: { onFileSelect?: (file: FileEntry) => void }) => {
   const [files, setFiles] = createSignal<FileEntry[]>([]);
   const [isLoading, setIsLoading] = createSignal(false);
   const [toast, setToast] = createSignal<{ message: string; type: 'success' | 'error' } | null>(null);
+  // The file a delete confirmation is open for, if any.
+  const [pendingDelete, setPendingDelete] = createSignal<FileEntry | null>(null);
 
   const showToast = (message: string, type: 'success' | 'error') => {
     setToast({ message, type });
@@ -52,10 +46,11 @@ export const FileGrid = (props: { onFileSelect?: (file: FileEntry) => void }) =>
     })
   })
 
-  const handleDelete = async (fileId: string) => {
+  const confirmDelete = async (file: FileEntry) => {
+    setPendingDelete(null);
     try {
-      await deleteFile(fileId);
-      setFiles(prev => prev.filter(f => f.id !== fileId));
+      await deleteFile(file.id);
+      setFiles(prev => prev.filter(f => f.id !== file.id));
       showToast('File deleted', 'success');
     } catch (error) {
       console.error('Failed to delete file:', error);
@@ -63,10 +58,15 @@ export const FileGrid = (props: { onFileSelect?: (file: FileEntry) => void }) =>
     }
   };
 
-  const formatFileSize = (bytes: number) => {
-    if (bytes < 1024) return bytes + ' B';
-    else if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
-    else return (bytes / 1048576).toFixed(1) + ' MB';
+  const displayName = (file: FileEntry) => file.file_name || file.name;
+
+  const formatFileSize = (bytes: number | null | undefined) => {
+    // The list response only carries a size once the backend supplies the
+    // `file_size` slot; guard so a missing value reads as "—", never "NaN MB".
+    if (bytes == null || Number.isNaN(bytes)) return '—';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / 1048576).toFixed(1)} MB`;
   };
 
   const formatDate = (dateStr: string) => {
@@ -79,7 +79,8 @@ export const FileGrid = (props: { onFileSelect?: (file: FileEntry) => void }) =>
   };
 
   return (
-    <div class="file-grid">      <div class="file-grid-header">
+    <div class="file-grid">
+      <div class="file-grid-header">
         <h3>Uploaded Files</h3>
         <button class="btn-secondary" onClick={loadFiles} disabled={isLoading()}>
           {isLoading() ? 'Refreshing...' : 'Refresh'}
@@ -92,7 +93,7 @@ export const FileGrid = (props: { onFileSelect?: (file: FileEntry) => void }) =>
 
       <Show when={!isLoading() && files().length > 0}>
         <div class="files-container">
-          <div class="files-header">
+          <div class="files-table-header">
             <span>Name</span>
             <span>Type</span>
             <span>Size</span>
@@ -103,20 +104,31 @@ export const FileGrid = (props: { onFileSelect?: (file: FileEntry) => void }) =>
             <For each={files()}>{file => (
               <div class="file-item" onClick={() => props.onFileSelect?.(file)}>
                 <div class="file-cell file-name-cell">
-                  <span class="file-icon"><FileIcon kind={fileKind(file.type)} /></span>
-                  <span class="file-name">{file.file_name || file.name}</span>
+                  <span class="file-icon"><FileIcon kind={fileKind(file.file_ext || file.type)} /></span>
+                  <span class="file-name" title={displayName(file)}>{displayName(file)}</span>
                 </div>
                 <div class="file-cell file-type-cell">
-                  <span class="file-type">{file.type}</span>
+                  <span class="file-type">{(file.file_ext || file.type || '').toUpperCase()}</span>
                 </div>
                 <div class="file-cell file-size-cell">
-                  <span class="file-size">{formatFileSize(file.size)}</span>
+                  <span class="file-size">{formatFileSize(file.file_size)}</span>
                 </div>
                 <div class="file-cell file-date-cell">
                   <span class="file-date">{formatDate(file.created_at)}</span>
                 </div>
                 <div class="file-cell file-actions-cell">
-                  <button class="btn-secondary" onClick={(e) => { e.stopPropagation(); handleDelete(file.id); }}>
+                  <a
+                    class="btn-secondary file-download"
+                    href={`/files/${file.id}/download`}
+                    download={displayName(file)}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    Download
+                  </a>
+                  <button
+                    class="btn-secondary danger"
+                    onClick={(e) => { e.stopPropagation(); setPendingDelete(file); }}
+                  >
                     Delete
                   </button>
                 </div>
@@ -132,6 +144,29 @@ export const FileGrid = (props: { onFileSelect?: (file: FileEntry) => void }) =>
           <p class="empty-hint">Drag & drop files in the upload zone above</p>
         </div>
       </Show>
+
+      <Modal
+        isOpen={!!pendingDelete()}
+        onClose={() => setPendingDelete(null)}
+        title="Delete file"
+        size="small"
+      >
+        <div class="modal-content">
+          <p>
+            Delete <strong>{pendingDelete() ? displayName(pendingDelete()!) : ''}</strong>?
+            {' '}This removes the file and its memory, and cannot be undone.
+          </p>
+          <div class="modal-actions">
+            <button class="btn-secondary" onClick={() => setPendingDelete(null)}>Cancel</button>
+            <button
+              class="btn-primary danger"
+              onClick={() => { const file = pendingDelete(); if (file) void confirmDelete(file); }}
+            >
+              Delete
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       <Show when={toast()}>
         <Toast message={toast()!.message} type={toast()!.type} />
