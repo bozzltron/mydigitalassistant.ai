@@ -2,9 +2,11 @@
 
 **Pre-registration:** `plan.md` (committed before data).
 **Verification:** `verification.md` (written before this file).
-**Raw run:** `result.json`. Writer library versions: `pypdf==6.19.0`,
-`python-docx==1.2.0`, `openpyxl==3.1.5`, `python-pptx==1.0.2`, `odfpy==1.4.1`,
-`xlrd==2.0.2`, `xlwt==1.3.0`, `icalendar==7.3.0`. `reportlab` absent.
+**Raw run:** `result.json` — now holds the **post-fix** run (see the addendum at
+the end). The tables below are the original pre-fix finding. Writer library
+versions: `pypdf==6.19.0`, `python-docx==1.2.0`, `openpyxl==3.1.5`,
+`python-pptx==1.0.2`, `odfpy==1.4.1`, `xlrd==2.0.2`, `xlwt==1.3.0`,
+`icalendar==7.3.0`; `reportlab` was absent at the original run and added after.
 
 ## Answer
 
@@ -111,3 +113,47 @@ The unification work is justified — as the plan said it would be if this held.
   is `False` for every format, but the arms use different base names, so this run
   does not isolate it (verification threat 3). It is a real divergence found by
   reading the code and needs a targeted test, not a claim from this data.
+
+---
+
+## Addendum (2026-10-05): fixes applied and re-measured
+
+The unification work above was implemented, and a follow-up live test found one
+more gap. Both are recorded here; `result.json` now holds the **post-fix** run,
+while the sections above are the original (pre-fix) finding.
+
+### Re-measurement after the fix
+
+All 13 target formats now write **valid** files (`valid=True`) and round-trip
+through `extract_file_content`. `csv` and `json` now report `slots_equal=True`
+(the entity/row parity gap is closed by the shared `apply_file_to_memory`). The
+pre-fix numbers in the tables above are the historical baseline, not the current
+state. `pdf` was closed earlier by adding `reportlab`.
+
+### H5 (UI visibility) — found by a live test, not by this experiment
+
+A user wrote a reading list, the agent reported success, and **the Files page did
+not show it**. The file was on disk and in the graph; `GET /files/list` filtered
+to `source_type == "file_upload"`, so every agent-written file
+(`file_create`) was invisible. The original experiment missed this because it
+compared *frames* the way the database sees them, never the view the user sees.
+
+Measured in one run (current filter vs the legacy predicate):
+
+| | value |
+|---|---|
+| `written_visible` (current) | **True** |
+| `written_visible_legacy_filter` | **False** |
+| `upload_visible` | True |
+| `source_types_listed` | `['file_create', 'file_upload']` |
+
+**Falsification:** the written file was absent from the legacy-filter response
+while present on disk and in memory — H5 held, and the bug was real. Fixed by
+using the shared `FILE_FRAME_SOURCE_TYPES`; a regression test
+(`test_files.py::TestFileWriteParity::test_agent_written_file_appears_in_files_list`)
+fails without the fix.
+
+**Coverage lesson:** "same data state" was measured at the wrong surface. A
+parity claim must be checked at the surface the user interacts with, not only at
+the storage layer.
+

@@ -124,6 +124,31 @@ scratch sandbox root, so no real file or frame is touched. For each format in
 No LLM calls. This is a code-path measurement, not a reasoning measurement, so it
 is deterministic and cheap to re-run.
 
+## Addendum (2026-10-05): H5, the Files-UI view
+
+**Added after the first run, before measuring it.** The original experiment
+compared frames the way the *database* sees them. A live test then showed that
+`/files/list` — what the user actually sees in the Files page — filtered to
+`source_type == "file_upload"` and so omitted every agent-written file
+(`file_create`). A file could therefore satisfy H3 (identical frame) and still be
+invisible to the user. That is a coverage gap in the original design: "same data
+state" was measured at the wrong surface.
+
+- **H5 (UI visibility).** An agent-written file appears in the response of
+  `GET /files/list` for its owner, the same as an uploaded one. Falsified if the
+  written file is absent from that response while present on disk and in memory.
+
+This is pre-registered before the H5 measurement is taken; it is *not* claimed to
+have been part of the original pre-registration, and `result.md` marks it as an
+addendum.
+
+### H5 method
+
+In the same scratch harness, after writing a file via `execute_write_file`,
+build a FastAPI `TestClient` with `get_store` overridden to the scratch store and
+call `GET /files/list?user_id=<owner>`. Record whether the written file's
+`file_name` appears. Compare against an uploaded file in the same store.
+
 ### Variables
 
 - **Independent:** format (17 upload exts + `md`), write path (upload vs tool).

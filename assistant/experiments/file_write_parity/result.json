@@ -48,7 +48,7 @@
       "safe_name_equal": false,
       "roundtrip_ok": null,
       "roundtrip_error": "",
-      "notes": "in agreed target set; NOT in SUPPORTED_UPLOAD_EXTS today (list disagreement to fix)"
+      "notes": ""
     },
     {
       "ext": "csv",
@@ -73,6 +73,10 @@
       ],
       "tool_slot_keys": [
         "columns",
+        "entity_name_Ada Lovelace",
+        "entity_name_Grace Hopper",
+        "entity_role_admiral",
+        "entity_role_engineer",
         "file_ext",
         "file_name",
         "file_safe_name",
@@ -83,7 +87,7 @@
         "row:role",
         "row_count"
       ],
-      "slots_equal": false,
+      "slots_equal": true,
       "upload_safe_name": "report.csv",
       "tool_safe_name": "agent_report.csv",
       "safe_name_equal": false,
@@ -105,12 +109,14 @@
         "file_size"
       ],
       "tool_slot_keys": [
+        "entity__Ada Lovelace",
+        "entity__analytical engine",
         "file_ext",
         "file_name",
         "file_safe_name",
         "file_size"
       ],
-      "slots_equal": false,
+      "slots_equal": true,
       "upload_safe_name": "report.json",
       "tool_safe_name": "agent_report.json",
       "safe_name_equal": false,
@@ -120,6 +126,32 @@
     },
     {
       "ext": "ics",
+      "tool_file_valid": true,
+      "tool_file_error": "",
+      "tool_recovered_text": "BEGIN:VCALENDAR VERSION:2.0 PRODID:-//mydigitalassistant//file_write//EN BEGIN:VEVENT SUMMARY:Quarterly Report DTSTART;V",
+      "upload_slot_keys": [
+        "file_ext",
+        "file_name",
+        "file_safe_name",
+        "file_size"
+      ],
+      "tool_slot_keys": [
+        "entity_event_Quarterly Report",
+        "file_ext",
+        "file_name",
+        "file_safe_name",
+        "file_size"
+      ],
+      "slots_equal": false,
+      "upload_safe_name": "report.ics",
+      "tool_safe_name": "agent_report.ics",
+      "safe_name_equal": false,
+      "roundtrip_ok": true,
+      "roundtrip_error": "recovered='Event: Trip to Rainier'",
+      "notes": ""
+    },
+    {
+      "ext": "pdf",
       "tool_file_valid": true,
       "tool_file_error": "",
       "tool_recovered_text": "Quarterly Report Ada Lovelace shipped the analytical engine in 1843.",
@@ -136,43 +168,18 @@
         "file_size"
       ],
       "slots_equal": true,
-      "upload_safe_name": "report.ics",
-      "tool_safe_name": "agent_report.ics",
-      "safe_name_equal": false,
-      "roundtrip_ok": true,
-      "roundtrip_error": "recovered='Event: Trip to Rainier'",
-      "notes": ""
-    },
-    {
-      "ext": "pdf",
-      "tool_file_valid": false,
-      "tool_file_error": "PdfStreamError: Stream has ended unexpectedly",
-      "tool_recovered_text": "",
-      "upload_slot_keys": [
-        "file_ext",
-        "file_name",
-        "file_safe_name",
-        "file_size"
-      ],
-      "tool_slot_keys": [
-        "file_ext",
-        "file_name",
-        "file_safe_name",
-        "file_size"
-      ],
-      "slots_equal": true,
       "upload_safe_name": "report.pdf",
       "tool_safe_name": "agent_report.pdf",
       "safe_name_equal": false,
-      "roundtrip_ok": false,
-      "roundtrip_error": "NO WRITER: reportlab absent (would be a new 1.9MB dep)",
+      "roundtrip_ok": true,
+      "roundtrip_error": "recovered='Quarterly Report'",
       "notes": ""
     },
     {
       "ext": "docx",
-      "tool_file_valid": false,
-      "tool_file_error": "PackageNotFoundError: Package not found at '/tmp/fw_scratch2/agent_report.docx'",
-      "tool_recovered_text": "",
+      "tool_file_valid": true,
+      "tool_file_error": "",
+      "tool_recovered_text": "Quarterly Report Ada Lovelace shipped the analytical engine in 1843.",
       "upload_slot_keys": [
         "file_ext",
         "file_name",
@@ -195,9 +202,9 @@
     },
     {
       "ext": "odt",
-      "tool_file_valid": false,
-      "tool_file_error": "BadZipFile: File is not a zip file",
-      "tool_recovered_text": "",
+      "tool_file_valid": true,
+      "tool_file_error": "",
+      "tool_recovered_text": "Quarterly Report Ada Lovelace shipped the analytical engine in 1843.",
       "upload_slot_keys": [
         "file_ext",
         "file_name",
@@ -220,9 +227,9 @@
     },
     {
       "ext": "xlsx",
-      "tool_file_valid": false,
-      "tool_file_error": "BadZipFile: File is not a zip file",
-      "tool_recovered_text": "",
+      "tool_file_valid": true,
+      "tool_file_error": "",
+      "tool_recovered_text": "name | role Ada Lovelace | engineer Grace Hopper | admiral",
       "upload_slot_keys": [
         "file_ext",
         "file_name",
@@ -245,9 +252,9 @@
     },
     {
       "ext": "xls",
-      "tool_file_valid": false,
-      "tool_file_error": "XLRDError: Unsupported format, or corrupt file: Expected BOF record; found b'name,rol'",
-      "tool_recovered_text": "",
+      "tool_file_valid": true,
+      "tool_file_error": "",
+      "tool_recovered_text": "name | role Ada Lovelace | engineer Grace Hopper | admiral",
       "upload_slot_keys": [
         "file_ext",
         "file_name",
@@ -270,9 +277,9 @@
     },
     {
       "ext": "ods",
-      "tool_file_valid": false,
-      "tool_file_error": "BadZipFile: File is not a zip file",
-      "tool_recovered_text": "",
+      "tool_file_valid": true,
+      "tool_file_error": "",
+      "tool_recovered_text": "name role Ada Lovelace engineer Grace Hopper admiral",
       "upload_slot_keys": [
         "file_ext",
         "file_name",
@@ -295,9 +302,9 @@
     },
     {
       "ext": "pptx",
-      "tool_file_valid": false,
-      "tool_file_error": "PackageNotFoundError: Package not found at '/tmp/fw_scratch2/agent_report.pptx'",
-      "tool_recovered_text": "",
+      "tool_file_valid": true,
+      "tool_file_error": "",
+      "tool_recovered_text": "Quarterly Report Ada Lovelace shipped the analytical engine in 1843.",
       "upload_slot_keys": [
         "file_ext",
         "file_name",
@@ -320,9 +327,9 @@
     },
     {
       "ext": "odp",
-      "tool_file_valid": false,
-      "tool_file_error": "BadZipFile: File is not a zip file",
-      "tool_recovered_text": "",
+      "tool_file_valid": true,
+      "tool_file_error": "",
+      "tool_recovered_text": "Quarterly Report",
       "upload_slot_keys": [
         "file_ext",
         "file_name",
@@ -347,21 +354,17 @@
   "supported_upload_exts": [
     "csv",
     "docx",
-    "eml",
-    "html",
     "ics",
     "json",
+    "md",
     "odp",
     "ods",
     "odt",
     "pdf",
     "pptx",
-    "rtf",
-    "tsv",
     "txt",
     "xls",
-    "xlsx",
-    "xml"
+    "xlsx"
   ],
   "text_exts": [
     "txt",
@@ -380,6 +383,16 @@
     "odp",
     "pptx"
   ],
-  "scratch": "/tmp/fw_scratch2",
-  "db": "/tmp/fw_scratch2/assistant.db"
+  "scratch": "/tmp/fw_h5",
+  "db": "/tmp/fw_h5/assistant.db",
+  "h5_files_ui": {
+    "written_visible": true,
+    "upload_visible": true,
+    "written_visible_legacy_filter": false,
+    "listed_count": 26,
+    "source_types_listed": [
+      "file_create",
+      "file_upload"
+    ]
+  }
 }

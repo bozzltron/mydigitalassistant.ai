@@ -370,6 +370,45 @@ async def _roundtrip_arm(ext: str) -> tuple[bool, str]:
         return False, f"{type(exc).__name__}: {exc}"
 
 
+async def _files_ui_arm(store: MemoryStore) -> dict:
+    """H5: does an agent-written file appear in GET /files/list?
+
+    The original experiment measured frames the database way; this measures what
+    the user sees. Calls the endpoint function directly (the filter is where the
+    bug lived) with the scratch store. The HTTP layer is covered by the
+    regression test in test_files.py::TestFileWriteParity.
+
+    Also computes the legacy predicate (`source_type == "file_upload"`) so the
+    before/after is visible in one run rather than asserted from memory.
+    """
+    from assistant.backend.main import list_files as list_files_endpoint
+
+    owner = (await store.get_user_by_name("exp_user")).id
+    listed = await list_files_endpoint(user_id=owner, store=store)
+
+    names = {entry.file_name for entry in listed}
+    source_types = sorted({entry.source_type for entry in listed})
+
+    # What the pre-fix filter would have returned.
+    frames = await store.list_frames(owner_user_id=owner)
+    legacy_names = {
+        next(
+            (s.value for s in await store.get_slots_for_frame(f.id) if s.key == "file_name"),
+            None,
+        )
+        for f in frames
+        if f.source_type == "file_upload" and f.priority > 0
+    }
+
+    return {
+        "written_visible": "agent_report.md" in names,
+        "upload_visible": "report.md" in names,
+        "written_visible_legacy_filter": "agent_report.md" in legacy_names,
+        "listed_count": len(listed),
+        "source_types_listed": source_types,
+    }
+
+
 async def run() -> None:
     await init_db(DB_PATH)
     store = MemoryStore(DB_PATH)
@@ -423,6 +462,7 @@ async def run() -> None:
         "binary_exts": BINARY_EXTS,
         "scratch": str(SCRATCH_DIR),
         "db": DB_PATH,
+        "h5_files_ui": await _files_ui_arm(store),
     }
     (OUT_DIR / "result.json").write_text(json.dumps(summary, indent=2))
     print(f"\nwrote {OUT_DIR / 'result.json'}")
