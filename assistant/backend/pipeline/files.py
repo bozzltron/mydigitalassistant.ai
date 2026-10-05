@@ -573,6 +573,8 @@ def _render_ics(content: str) -> bytes:
 
     from icalendar import Calendar, Event
 
+    from assistant.backend.timeutil import local_tz
+
     summary = next(
         (ln.strip() for ln in content.splitlines() if ln.strip()), "Note"
     )
@@ -581,7 +583,9 @@ def _render_ics(content: str) -> bytes:
     cal.add("version", "2.0")
     event = Event()
     event.add("summary", summary)
-    event.add("dtstart", datetime.date.today())
+    # The user's date, not the container's (which is UTC and can be a day ahead
+    # for a negative-offset zone late in the evening).
+    event.add("dtstart", datetime.datetime.now(local_tz()).date())
     event.add("description", content)
     cal.add_component(event)
     return cal.to_ical()

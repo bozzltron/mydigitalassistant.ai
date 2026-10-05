@@ -7,6 +7,7 @@ import httpx
 from pydantic import BaseModel
 
 from assistant.backend.retry import retry_transient
+from assistant.backend.timeutil import current_datetime_str
 
 logger = logging.getLogger(__name__)
 
@@ -794,19 +795,22 @@ def build_system_prompt(
     task_type: str,    # "functional" | "introspective"
     planinstructions: str = "",
     self_context: str = "",
+    current_datetime: str | None = None,
 ) -> str:
     """Build a system prompt that injects structured memory context.
 
     Sections are ordered stable-first, volatile-last: persona and task
-    guidance rarely change between turns, while memory state changes every
-    turn. Keeping the volatile material at the end lets Ollama's prompt
-    cache reuse the prefill of the stable prefix on consecutive turns,
-    which saves tens of seconds per turn on large local models.
+    guidance rarely change between turns, while the clock and memory state change
+    every turn. Keeping the volatile material at the end lets Ollama's prompt
+    cache reuse the prefill of the stable prefix on consecutive turns, which saves
+    tens of seconds per turn on large local models.
 
     planinstructions: additional instructions from the reasoner's Plan,
     e.g. citation requirements, memory-sufficiency caveats, search directives.
     self_context: the agent's own identity facts (name, working agreements),
     always included when available so responses stay consistent with them.
+    current_datetime: the current date/time line. ``None`` computes it (the
+    production default); a string pins it for tests; ``""`` omits the line.
     """
     if self_context:
         persona = f"""You are a personal cognitive assistant with a structured memory system.
@@ -906,6 +910,13 @@ Respond conversationally and helpfully.""")
 
     if planinstructions:
         parts.append(planinstructions)
+
+    # The clock, then memory: both change every turn, so both sit after the stable
+    # prefix. The datetime line is short and fixed-length, and it is what lets the
+    # model answer "what's today's date?" without a tool round-trip.
+    dt_line = current_datetime_str() if current_datetime is None else current_datetime
+    if dt_line:
+        parts.append(f"Current date and time: {dt_line}")
 
     # Memory goes last: it changes every turn, so it must sit after the
     # stable prefix for prompt caching to help.

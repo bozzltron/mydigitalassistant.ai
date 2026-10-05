@@ -12,7 +12,6 @@ import re
 import urllib.parse
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from datetime import datetime
 from html.parser import HTMLParser
 
 import httpx
@@ -100,14 +99,6 @@ class AssistantTool:
                 "parameters": self.parameters,
             },
         }
-
-
-def _current_datetime() -> str:
-    return datetime.now().astimezone().strftime("%Y-%m-%d %H:%M %A (%Z)")
-
-
-async def _handle_datetime(**_: object) -> str:
-    return _current_datetime()
 
 
 async def _read_capped(response: httpx.Response, limit: int) -> bytes:

@@ -9,23 +9,19 @@ themselves. No cron expressions anywhere.
 from __future__ import annotations
 
 import re
-from datetime import UTC, datetime, timedelta, timezone
-from zoneinfo import ZoneInfo
+from datetime import UTC, datetime, timedelta, tzinfo
 
 from assistant.backend.config import settings
+from assistant.backend.timeutil import local_tz
 
 
-def _tz() -> timezone | ZoneInfo:
-    """Resolve the configured timezone: explicit setting > TZ env > system local."""
-    name = settings.daily_tasks_tz.strip()
-    if name:
-        return ZoneInfo(name)
-    import os
+def _tz() -> tzinfo:
+    """Resolve the configured timezone.
 
-    name = os.environ.get("TZ", "").strip()
-    if name:
-        return ZoneInfo(name)
-    return datetime.now().astimezone().tzinfo  # type: ignore[return-value]
+    Delegates to the shared resolver so the scheduler and the system prompt agree
+    on the zone. See ``assistant.backend.timeutil``.
+    """
+    return local_tz()
 
 
 def parse_daily_time(value: str) -> tuple[int, int]:
