@@ -1,5 +1,24 @@
 # MyDigitalAssistant.ai — release notes
 
+## v0.11.4-alpha
+
+**The Files page grew up: real sizes, real downloads, real previews.**
+
+- **Sizes were `NaN`.** `GET /files/list` never returned the `file_size` slot,
+  so every row rendered `NaN MB`. The list now carries `file_name`, `file_ext`,
+  and `file_size`, so the grid shows a real size and the extension as the type.
+- **Download each file.** New `GET /files/{frame_id}/download` serves the
+  original bytes as an attachment, with a Download button on every row and in
+  the viewer. It goes through the bytes, not the `/content` route — that decodes
+  as UTF-8, which turns a PDF or docx into garbage.
+- **Binary files no longer "preview" as text.** Only text extensions are shown
+  as content; anything else shows "No preview" with a download link.
+- **Markdown previews as rendered HTML** (`marked` + `DOMPurify`), not raw text.
+- **Delete asks first.** A confirmation modal replaces the immediate delete.
+- **Filenames truncate with an ellipsis**, and the icon has room before the name.
+- Fixed a class collision: the grid's table header shared `.files-header` with
+  the page header, so the grid rules were overriding the page header's layout.
+
 ## v0.11.3-alpha
 
 **Cleanup: the read-aloud code was fine — the browser tab was muted.**
