@@ -171,7 +171,7 @@
     {
       "ext": "docx",
       "tool_file_valid": false,
-      "tool_file_error": "PackageNotFoundError: Package not found at '/tmp/fw_scratch/agent_report.docx'",
+      "tool_file_error": "PackageNotFoundError: Package not found at '/tmp/fw_scratch2/agent_report.docx'",
       "tool_recovered_text": "",
       "upload_slot_keys": [
         "file_ext",
@@ -296,7 +296,7 @@
     {
       "ext": "pptx",
       "tool_file_valid": false,
-      "tool_file_error": "PackageNotFoundError: Package not found at '/tmp/fw_scratch/agent_report.pptx'",
+      "tool_file_error": "PackageNotFoundError: Package not found at '/tmp/fw_scratch2/agent_report.pptx'",
       "tool_recovered_text": "",
       "upload_slot_keys": [
         "file_ext",
@@ -380,6 +380,6 @@
     "odp",
     "pptx"
   ],
-  "scratch": "/tmp/fw_scratch",
-  "db": "/tmp/fw_scratch/assistant.db"
+  "scratch": "/tmp/fw_scratch2",
+  "db": "/tmp/fw_scratch2/assistant.db"
 }
