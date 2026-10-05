@@ -778,6 +778,15 @@ async def _available_file_names(store: MemoryStore, user_id: str) -> str:
 # model `<h1>Title</h1>` or MIME boundaries instead of the content.
 PLAIN_TEXT_EXTS = frozenset({"txt", "md", "log", "yaml", "yml"})
 
+# Formats that are binary documents on disk. `read_file` *extracts* them to text,
+# but the bytes are not that text, so a find-and-replace can never match: the
+# model sees "Ada Lovelace" while the file is a zip. Editing one means read ->
+# rewrite (write_file re-renders real bytes). `edit_file` refuses these rather
+# than reporting a misleading "old_text not found".
+BINARY_DOCUMENT_EXTS = frozenset(
+    {"pdf", "docx", "xlsx", "xls", "pptx", "odt", "ods", "odp", "rtf"}
+)
+
 # How much extracted text a single read_file returns to the model. This is NOT a
 # file-size limit: the file is stored whole on disk and nothing is refused at any
 # size. It bounds only what can ride in one turn's context window, which is a
@@ -1190,8 +1199,49 @@ async def execute_write_file(args: dict, user_id: str, session_id: str) -> ToolR
         return ToolResult(success=False, error=str(e))
 
 
+def _flexible_whitespace_pattern(old_text: str) -> str:
+    """A regex for `old_text` where any run of whitespace matches any other.
+
+    The most common reason an otherwise-correct `old_text` fails to match is
+    whitespace: a collapsed blank line, a trailing space, tabs vs spaces. This
+    tolerates that and nothing else — words and punctuation must still be exact,
+    because replacing the wrong region is worse than failing.
+    """
+    parts = re.split(r"(\s+)", old_text)
+    return "".join(r"\s+" if part.isspace() else re.escape(part) for part in parts)
+
+
+def _closest_region(content: str, old_text: str, context: int = 3) -> str | None:
+    """A few lines of `content` nearest the best lexical match for `old_text`.
+
+    Returned in the failure message so the model can correct its `old_text`
+    instead of hitting a dead end (model-first recovery).
+    """
+    lines = content.splitlines()
+    target = old_text.strip().splitlines()
+    probe = target[0].strip() if target else old_text.strip()
+    probe_tokens = set(re.findall(r"[A-Za-z0-9]+", probe.lower()))
+    if not probe_tokens:
+        return None
+    best_index, best_score = None, 0
+    for index, line in enumerate(lines):
+        score = len(probe_tokens & set(re.findall(r"[A-Za-z0-9]+", line.lower())))
+        if score > best_score:
+            best_index, best_score = index, score
+    if best_index is None:
+        return None
+    lo = max(0, best_index - context)
+    hi = min(len(lines), best_index + context + 1)
+    return "\n".join(lines[lo:hi])
+
+
 async def execute_edit_file(args: dict, user_id: str, session_id: str) -> ToolResult:
-    """Make a surgical edit to an existing file."""
+    """Make a surgical edit to an existing text file.
+
+    Text only, and whitespace-tolerant. A binary document (`.docx`, `.pdf`, …)
+    cannot be edited in place — the bytes are not the text `read_file` shows — so
+    it is refused with a redirect to read + rewrite via `write_file`.
+    """
     try:
         from pathlib import Path
 
@@ -1208,20 +1258,45 @@ async def execute_edit_file(args: dict, user_id: str, session_id: str) -> ToolRe
 
         if not path:
             return ToolResult(success=False, error="path is required")
-        if old_text == "":
-            return ToolResult(success=False, error="old_text cannot be empty")
+        if not old_text.strip():
+            return ToolResult(success=False, error="old_text cannot be blank")
 
-        # Read current content
+        ext = path.rsplit(".", 1)[-1].lower() if "." in path else ""
+        if ext in BINARY_DOCUMENT_EXTS:
+            return ToolResult(
+                success=False,
+                error=(
+                    f".{ext} is a binary document and cannot be edited in place. "
+                    "Read it with read_file, then rewrite the whole file with "
+                    f"write_file (which re-renders a real .{ext})."
+                ),
+            )
+
         content = read_sandbox_file(path)
 
-        if old_text not in content:
-            return ToolResult(success=False, error="old_text not found in file")
+        # Exact first, then whitespace-tolerant. Never fuzzy beyond whitespace:
+        # matching the wrong region silently is worse than failing loudly.
+        pattern = re.escape(old_text)
+        count = content.count(old_text)
+        if count == 0:
+            pattern = _flexible_whitespace_pattern(old_text)
+            count = len(re.findall(pattern, content))
+
+        if count == 0:
+            message = (
+                f"old_text not found in {path} ({len(content)} chars). Read the "
+                "file and copy the exact text to replace."
+            )
+            region = _closest_region(content, old_text)
+            if region:
+                message += f"\nClosest region:\n{region}"
+            return ToolResult(success=False, error=message)
 
         if replace_all:
-            new_content = content.replace(old_text, new_text)
-            changes = content.count(old_text)
+            new_content = re.sub(pattern, lambda _m: new_text, content)
+            changes = count
         else:
-            new_content = content.replace(old_text, new_text, 1)
+            new_content = re.sub(pattern, lambda _m: new_text, content, count=1)
             changes = 1
 
         if new_content == content:

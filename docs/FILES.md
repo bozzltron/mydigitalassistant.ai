@@ -55,6 +55,26 @@ corrupt (a `.docx` containing `b'name,rol'`), which is the defect the parity
 experiment exists to prevent. **Do not add a fallback that writes text under a
 binary extension.**
 
+## Editing (agent changes to an existing file)
+
+`edit_file` is a surgical text replace: read the file, replace text, write it
+back. It is **whitespace-tolerant** (exact match first, then any run of
+whitespace matches any other) but never fuzzy beyond that — matching the wrong
+region silently is worse than failing.
+
+**Text only.** A binary document (`.docx`, `.pdf`, `.xlsx`, `.pptx`,
+`.odt`/`.ods`/`.odp`, `.rtf`) is refused with a redirect. `read_file` *extracts*
+a document to text, but the bytes on disk are not that text (a `.docx` is a zip),
+so an exact match can never be found. Editing a document means **read → rewrite
+with `write_file`**, which re-renders real bytes and re-runs extraction so memory
+stays in step. This asymmetry — read extracts, edit replaces bytes — is why the
+refusal exists; without it the model gets a misleading "old_text not found" and
+dead-ends.
+
+**A failed match is recoverable.** The error names the file size and the closest
+region, so the model can correct its `old_text` rather than hitting a wall. Do
+not replace this with a bare "not found".
+
 ## The two names of every file
 
 Every uploaded file has **two** names, and conflating them is the #1 source of

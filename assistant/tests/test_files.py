@@ -703,6 +703,79 @@ class TestFileSandboxTools:
         assert read_result.data["content"] == "foo BAR baz bar"
 
     @pytest.mark.asyncio
+    async def test_edit_file_refuses_a_binary_document(self, store, stub_llm):
+        """A .docx cannot be edited in place; the refusal redirects to rewrite.
+
+        `read_file` extracts a document to text, but `edit_file` operates on the
+        bytes (a zip), so an exact match can never be found. It used to report a
+        misleading "old_text not found"; it now names the real problem.
+        """
+        from assistant.backend.pipeline.tool_executor import (
+            execute_edit_file,
+            execute_write_file,
+        )
+
+        await execute_write_file({"path": "report.docx", "content": "Ada Lovelace"}, "1", "test")
+
+        result = await execute_edit_file(
+            {"path": "report.docx", "old_text": "Ada", "new_text": "Grace"},
+            "1", "test",
+        )
+        assert not result.success
+        assert "binary document" in result.error
+        assert "write_file" in result.error
+
+    @pytest.mark.asyncio
+    async def test_edit_file_tolerates_whitespace_differences(self, store, stub_llm):
+        """A collapsed blank line or trailing space must not defeat the edit.
+
+        The most common reason an otherwise-correct old_text fails to match.
+        """
+        from assistant.backend.pipeline.tool_executor import (
+            execute_edit_file,
+            execute_read_file,
+            execute_write_file,
+        )
+
+        await execute_write_file(
+            {"path": "notes_ws.md", "content": "line one\n\nline two  \nline three"},
+            "1", "test",
+        )
+
+        # old_text has the blank line collapsed to a single newline and no
+        # trailing spaces; it must still match.
+        result = await execute_edit_file(
+            {"path": "notes_ws.md", "old_text": "line one\nline two", "new_text": "CHANGED"},
+            "1", "test",
+        )
+        assert result.success, result.error
+
+        read_result = await execute_read_file({"path": "notes_ws.md"}, "1", "test")
+        assert read_result.data["content"].startswith("CHANGED")
+
+    @pytest.mark.asyncio
+    async def test_edit_file_failure_names_the_closest_region(self, store, stub_llm):
+        """A no-match failure must hand the model something to correct with."""
+        from assistant.backend.pipeline.tool_executor import (
+            execute_edit_file,
+            execute_write_file,
+        )
+
+        await execute_write_file(
+            {"path": "closest.md", "content": "alpha beta\ngamma delta\nepsilon zeta"},
+            "1", "test",
+        )
+
+        result = await execute_edit_file(
+            {"path": "closest.md", "old_text": "gamma omega", "new_text": "X"},
+            "1", "test",
+        )
+        assert not result.success
+        assert "old_text not found" in result.error
+        assert "Closest region" in result.error
+        assert "gamma delta" in result.error
+
+    @pytest.mark.asyncio
     async def test_delete_file_removes_file_and_frame(self, store, stub_llm):
         """delete_file removes physical file and prunes the memory frame."""
         from pathlib import Path

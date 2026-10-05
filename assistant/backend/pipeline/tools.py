@@ -382,8 +382,20 @@ class WriteFileArgs(BaseModel):
 
 
 class EditFileArgs(BaseModel):
-    path: str = Field(..., description="Relative path in sandbox")
-    old_text: str = Field(..., description="Exact text to replace")
+    path: str = Field(
+        ...,
+        description=(
+            "Relative path of a TEXT file in the sandbox (e.g. 'notes/todo.md'). "
+            "Binary documents (.docx, .pdf, .xlsx, ...) cannot be edited in place."
+        ),
+    )
+    old_text: str = Field(
+        ...,
+        description=(
+            "Exact text to replace. Read the file first and copy it verbatim; "
+            "whitespace differences are tolerated, but the words must match."
+        ),
+    )
     new_text: str = Field(..., description="Replacement text")
     replace_all: bool = Field(True, description="Replace all occurrences (default: true)")
 
@@ -493,10 +505,12 @@ def builtin_tools(
         ),
         _make_def(
             "edit_file",
-            "Make a surgical edit to an existing file by replacing exact text. "
-            "Use for: modifying config files, fixing code, updating documents, correcting typos. "
-            "Provide the exact old_text to replace and the new_text. "
-            "Set replace_all=false to replace only the first occurrence.",
+            "Make a surgical edit to an existing TEXT file by replacing exact "
+            "text. Use for small changes to text/markdown, configs, and code. "
+            "Read the file first and copy old_text verbatim (whitespace is "
+            "tolerated; the words must match). For a binary document (.docx, "
+            ".pdf, .xlsx, ...) read it and rewrite the whole file with write_file "
+            "instead — documents cannot be edited in place.",
             EditFileArgs,
         ),
         _make_def(
