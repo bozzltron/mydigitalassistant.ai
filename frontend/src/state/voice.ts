@@ -140,6 +140,13 @@ let generation = 0
 const [outputHeld, setOutputHeld] = createSignal(false)
 let tailTimer: number | null = null
 
+// The utterance currently in flight, held so it cannot be garbage-collected
+// while the platform is still speaking it. A GC'd utterance stops mid-sentence
+// and never fires onend/onerror, which leaves `isTtsSpeaking` stuck true -- the
+// output gate stays shut and the microphone never reopens. Browsers are not
+// required to keep a strong reference; holding one here is the documented fix.
+let currentUtterance: SpeechSynthesisUtterance | null = null
+
 /**
  * The platform's own view of whether it is emitting. Consulted imperatively at
  * decision points, because it is the one reading that is valid at the instant it
@@ -162,6 +169,7 @@ export const beginOutput = () => {
 
 export const endOutput = () => {
   generation += 1
+  currentUtterance = null
   setVoice('isTtsSpeaking', false)
   if (tailTimer !== null) clearTimeout(tailTimer)
   tailTimer = window.setTimeout(() => {
@@ -213,11 +221,17 @@ export const speakReplacing = (
   const tag = (beginOutput(), generation)
   const utterance = new SpeechSynthesisUtterance(text)
   configure?.(utterance)
+  // Some engines (notably Firefox) pick no voice at all when neither `voice`
+  // nor `lang` is set, and the utterance is silently dropped. The caller sets
+  // `voice` when it can resolve the saved URI; this is the fallback.
+  if (!utterance.lang) utterance.lang = navigator.language || 'en-US'
   const release = () => {
+    if (currentUtterance === utterance) currentUtterance = null
     if (generation === tag) endOutput()
   }
   utterance.onend = release
   utterance.onerror = release
+  currentUtterance = utterance
   window.speechSynthesis.speak(utterance)
   return tag
 }

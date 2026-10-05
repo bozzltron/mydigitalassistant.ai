@@ -96,6 +96,34 @@ describe('TopBar', () => {
     expect(localStorage.getItem('session_id')).toBe('conv-2')
   })
 
+  it('shows the stored voice in the select after voices load asynchronously', async () => {
+    const { updateSetting } = await import('../../state/settings')
+    updateSetting('voiceUri', 'uri-a')
+    vi.mocked(window.speechSynthesis.getVoices).mockReturnValue([
+      { name: 'Voice A', lang: 'en-US', localService: true, voiceURI: 'uri-a' } as SpeechSynthesisVoice,
+      { name: 'Voice B', lang: 'en-US', localService: true, voiceURI: 'uri-b' } as SpeechSynthesisVoice,
+    ])
+
+    render(() => <TopBar {...defaultProps} />)
+
+    await vi.waitFor(() => {
+      const select = document.getElementById('voice-select') as HTMLSelectElement
+      expect(select.value).toBe('uri-a')
+    })
+  })
+
+  it('persists the read-aloud toggle to localStorage', async () => {
+    const { settings } = await import('../../state/settings')
+    render(() => <TopBar {...defaultProps} />)
+
+    const toggle = document.getElementById('tts-enabled') as HTMLInputElement
+    fireEvent.click(toggle)
+
+    expect(settings.ttsEnabled).toBe(false)
+    const saved = JSON.parse(localStorage.getItem('assistant_settings')!) as { ttsEnabled: boolean }
+    expect(saved.ttsEnabled).toBe(false)
+  })
+
   it('orders the right side Alerts, Let\'s talk, Files, Brain, Settings, Trash', () => {
     render(() => <TopBar {...defaultProps} />)
     const labels = Array.from(

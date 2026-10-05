@@ -89,6 +89,33 @@ describe('ChatPage chat wiring', () => {
     expect(markdown?.textContent).toContain('Streamed reply')
   })
 
+  it('speaks the finalized assistant reply when read-aloud is on', async () => {
+    let onEvent: ((e: api.StreamEvent) => void) | undefined
+    vi.mocked(api.postChatStream).mockImplementation(
+      async (_message, _session, _files, _turn, _consent, _maxness, callback) => {
+        onEvent = callback
+        return { response: 'Streamed reply', task_type: 'functional', session_id: 'session-cp-1' }
+      }
+    )
+
+    render(() => <ChatPage conversation={null} />)
+
+    const textarea = screen.getByPlaceholderText('Type a message...')
+    fireEvent.input(textarea, { target: { value: 'Hello' } })
+    fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: false })
+
+    await vi.waitFor(() => expect(onEvent).toBeDefined())
+    onEvent!({ type: 'finalize', answer: 'Streamed reply' })
+
+    await vi.waitFor(() =>
+      expect(window.speechSynthesis.speak).toHaveBeenCalled()
+    )
+    const spoken = vi.mocked(window.speechSynthesis.speak).mock.calls.at(-1)![0] as unknown as {
+      text: string
+    }
+    expect(spoken.text).toBe('Streamed reply')
+  })
+
   it('sends the message even when an attachment fails to upload', async () => {
     // The input bar uploads bytes through the multipart endpoint and references
     // the stored file by frame. If that upload throws — the backend 400s an

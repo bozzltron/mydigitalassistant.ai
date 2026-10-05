@@ -44,6 +44,9 @@ export default function TopBar(props: TopBarProps) {
   // imperatively with innerHTML/appendChild against a DOM ref.
   const [voices, setVoices] = createSignal<SpeechSynthesisVoice[]>([])
 
+  // The voice <select> element, so its value can be re-applied once options exist.
+  let voiceSelectEl: HTMLSelectElement | undefined
+
   // Draft values for the sliders so the label follows the thumb during a drag
   // without writing to localStorage on every input event; onChange persists.
   const [speedDraft, setSpeedDraft] = createSignal(settings.voiceSpeed)
@@ -87,6 +90,17 @@ export default function TopBar(props: TopBarProps) {
     if (settings.voiceUri || list.length === 0) return
     const preferred = list.find(v => PREFERRED_VOICE_NAMES.some(p => v.name.includes(p))) ?? list[0]
     if (preferred) updateSetting('voiceUri', preferred.voiceURI)
+  })
+
+  // Re-apply the stored voice after the options exist. Chrome returns an empty
+  // list from getVoices() until `voiceschanged` fires, so on first paint the
+  // <select> has no option matching settings.voiceUri and the browser drops the
+  // value to "". The reactive `value` binding does not re-run when options are
+  // added, so the panel showed the wrong voice (looking like the setting had not
+  // persisted) until the user re-picked it.
+  createEffect(() => {
+    voices()
+    if (voiceSelectEl) voiceSelectEl.value = settings.voiceUri
   })
 
   // Keep the draft sliders in sync when settings load or change externally.
@@ -392,7 +406,12 @@ export default function TopBar(props: TopBarProps) {
           </div>
           <div class="settings-section">
             <label for="voice-select">Voice</label>
-            <select id="voice-select" value={settings.voiceUri} onChange={handleVoiceSelectChange}>
+            <select
+              id="voice-select"
+              ref={(el) => { voiceSelectEl = el; }}
+              value={settings.voiceUri}
+              onChange={handleVoiceSelectChange}
+            >
               <Show when={voices().length === 0}>
                 <option value="">Loading voices...</option>
               </Show>
