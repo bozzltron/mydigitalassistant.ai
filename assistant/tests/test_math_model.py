@@ -373,16 +373,5 @@ class TestSandboxedExecution:
         assert "6" in result
 
 
-class TestOrchestratorMathIntegration:
-    """Test orchestrator integration with math computation."""
-
-    @pytest.mark.asyncio
-    async def test_math_result_injected_into_prompt(self):
-        """Test that math computation result is injected into system prompt."""
-        # This would require a more complex integration test with a real LLM
-        # For now, we test the intent detection which is the trigger
-        pass
-
-
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

@@ -136,7 +136,11 @@ def test_cmd_users_add_duplicate_shows_message():
     error = httpx.HTTPStatusError("conflict", request=MagicMock(), response=response)
     client.create_user.side_effect = error
     args = make_args(name="alice")
-    cmd_users_add(args, client)
+    with patch("assistant.cli.app.console") as mock_console:
+        cmd_users_add(args, client)
+    printed = " ".join(str(c.args[0]) for c in mock_console.print.call_args_list)
+    assert "already exists" in printed
+    assert "alice" in printed
 
 
 def test_cmd_users_add_other_error_exits():
@@ -154,7 +158,10 @@ def test_cmd_users_list_empty_shows_message():
     client = MagicMock(spec=BackendClient)
     client.list_users.return_value = []
     args = make_args()
-    cmd_users_list(args, client)
+    with patch("assistant.cli.app.console") as mock_console:
+        cmd_users_list(args, client)
+    printed = " ".join(str(c.args[0]) for c in mock_console.print.call_args_list)
+    assert "No users" in printed
 
 
 def test_cmd_status_calls_health():

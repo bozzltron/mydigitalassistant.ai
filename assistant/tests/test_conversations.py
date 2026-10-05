@@ -52,21 +52,21 @@ async def client(store, stub_llm, stub_search):
 
 
 @pytest.fixture
-async def test_user(store):
+async def conversation_user(store):
     """Create a test user directly in the store and return it."""
     user = await store.create_user("testuser")
     return user
 
 
 @pytest.mark.asyncio
-async def test_create_session_appears_in_list(store: MemoryStore, test_user):
+async def test_create_session_appears_in_list(store: MemoryStore, conversation_user):
     """New session created via API appears in user's session list immediately."""
     # Create new session
     session_id = "test_conv_new_123"
-    await store.create_session(session_id, test_user.id, title="Test Session")
+    await store.create_session(session_id, conversation_user.id, title="Test Session")
 
     # List sessions - should include the new one
-    sessions = await store.get_sessions_for_user(test_user.id)
+    sessions = await store.get_sessions_for_user(conversation_user.id)
     session_ids = [s["id"] for s in sessions]
     assert session_id in session_ids
 
@@ -77,16 +77,20 @@ async def test_create_session_appears_in_list(store: MemoryStore, test_user):
 
 
 @pytest.mark.asyncio
-async def test_session_label_falls_back_to_first_message(store: MemoryStore, test_user):
+async def test_session_label_falls_back_to_first_message(store: MemoryStore, conversation_user):
     """Session with no title uses first user message as label."""
     session_id = "test_conv_fallback_456"
-    await store.create_session(session_id, test_user.id, title=None)
+    await store.create_session(session_id, conversation_user.id, title=None)
 
     # Add an episode
-    await store.create_episode(test_user.id, session_id, "user", "Hello world", frame_ids=[])
-    await store.create_episode(test_user.id, session_id, "assistant", "Hi there", frame_ids=[])
+    await store.create_episode(
+        conversation_user.id, session_id, "user", "Hello world", frame_ids=[]
+    )
+    await store.create_episode(
+        conversation_user.id, session_id, "assistant", "Hi there", frame_ids=[]
+    )
 
-    sessions = await store.get_sessions_for_user(test_user.id)
+    sessions = await store.get_sessions_for_user(conversation_user.id)
     session = next(s for s in sessions if s["id"] == session_id)
 
     assert session["episode_count"] == 2
@@ -94,40 +98,42 @@ async def test_session_label_falls_back_to_first_message(store: MemoryStore, tes
 
 
 @pytest.mark.asyncio
-async def test_update_session_title(store: MemoryStore, test_user):
+async def test_update_session_title(store: MemoryStore, conversation_user):
     """Session title can be updated and reflects in listing."""
     session_id = "test_conv_update_789"
-    await store.create_session(session_id, test_user.id, title="Original Title")
+    await store.create_session(session_id, conversation_user.id, title="Original Title")
 
     # Update title
-    await store.update_session_title(session_id, test_user.id, "Updated Title")
+    await store.update_session_title(session_id, conversation_user.id, "Updated Title")
 
-    sessions = await store.get_sessions_for_user(test_user.id)
+    sessions = await store.get_sessions_for_user(conversation_user.id)
     session = next(s for s in sessions if s["id"] == session_id)
     assert session["last_message"] == "Updated Title"
 
 
 @pytest.mark.asyncio
-async def test_sessions_sorted_by_last_activity(store: MemoryStore, test_user):
+async def test_sessions_sorted_by_last_activity(store: MemoryStore, conversation_user):
     """Sessions are sorted by most recent activity first."""
     # Create multiple sessions with NO titles (so label falls back to first message)
-    await store.create_session("sess_a", test_user.id, title=None)
-    await store.create_session("sess_b", test_user.id, title=None)
-    await store.create_session("sess_c", test_user.id, title=None)
+    await store.create_session("sess_a", conversation_user.id, title=None)
+    await store.create_session("sess_b", conversation_user.id, title=None)
+    await store.create_session("sess_c", conversation_user.id, title=None)
 
     # Add activity to B (most recent)
-    await store.create_episode(test_user.id, "sess_b", "user", "Activity in B", frame_ids=[])
+    await store.create_episode(
+        conversation_user.id, "sess_b", "user", "Activity in B", frame_ids=[]
+    )
 
-    sessions = await store.get_sessions_for_user(test_user.id)
+    sessions = await store.get_sessions_for_user(conversation_user.id)
     # First session should be B (most recent activity)
     assert sessions[0]["id"] == "sess_b"
     assert sessions[0]["last_message"] == "Activity in B"
 
 
 @pytest.mark.asyncio
-async def test_conversation_api_create_and_list(client, test_user):
+async def test_conversation_api_create_and_list(client, conversation_user):
     """Full API test: create session via POST, verify it appears in GET /sessions."""
-    user_id = test_user.id
+    user_id = conversation_user.id
     # Create new conversation
     resp = client.post(f"/conversations/new?user_id={user_id}")
     assert resp.status_code == 200
@@ -144,9 +150,9 @@ async def test_conversation_api_create_and_list(client, test_user):
 
 
 @pytest.mark.asyncio
-async def test_conversation_api_update_title(client, test_user):
+async def test_conversation_api_update_title(client, conversation_user):
     """Full API test: update session title via PATCH."""
-    user_id = test_user.id
+    user_id = conversation_user.id
     # Create session
     resp = client.post(f"/conversations/new?user_id={user_id}")
     session_id = resp.json()["session_id"]
@@ -169,9 +175,10 @@ async def test_conversation_api_update_title(client, test_user):
 @pytest.mark.asyncio
 async def test_switch_conversation_loads_correct_history(store: MemoryStore):
     """Switching conversations loads the correct message history."""
-    user = await store.get_user(1)
-    if not user:
-        pytest.skip("User 1 not found")
+    # Create the user this test needs. It used to read `get_user(1)` from the
+    # fresh fixture DB and skip when absent — which was always, so the test never
+    # ran (test-suite audit finding).
+    user = await store.create_user("switch_user")
 
     # Create two sessions with different messages
     await store.create_session("sess_switch_1", user.id, title="First")

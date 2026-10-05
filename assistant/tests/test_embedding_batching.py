@@ -171,30 +171,5 @@ class TestEmbedFramesBatch:
         assert hasattr(MemoryStore, "embed_frames_batch")
 
 
-class TestConsolidationBatching:
-    """Test consolidation uses batched embeddings."""
-
-    @pytest.mark.asyncio
-    async def test_consolidation_uses_batch_embedding(self):
-        """Test that consolidation fills missing embeddings in batch."""
-        from unittest.mock import AsyncMock, MagicMock
-
-        # Mock embed_fn to track calls
-        embed_calls = []
-
-        async def mock_embed_fn(texts):
-            embed_calls.append(texts)
-            if isinstance(texts, list):
-                return [[0.1] * 384 for _ in texts]
-            return [0.1] * 384
-
-        # Mock store
-        mock_store = MagicMock()
-        mock_store.get_all_frame_embeddings = AsyncMock(return_value={})
-
-        # This test requires more setup - skipping for now
-        pass
-
-
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

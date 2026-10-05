@@ -1,7 +1,5 @@
 """Tests for cross-source corroboration (Phase 5)."""
 
-from unittest.mock import AsyncMock, MagicMock
-
 import pytest
 
 
@@ -22,43 +20,6 @@ class TestCorroborationGate:
         )
         assert slot.source_urls == ["http://example.com"]
         assert slot.source_domains == ["example.com"]
-
-    @pytest.mark.asyncio
-    async def test_categorize_fact_financial(self):
-        """Test financial fact categorization."""
-
-        # Access the internal _categorize_fact function via module
-
-        # The function is internal, test via apply_search_extraction behavior
-        # This is a structural test
-
-    @pytest.mark.asyncio
-    async def test_high_stakes_facts_flagged(self):
-        """Test that high-stakes facts with <2 domains are flagged."""
-        from assistant.backend.pipeline.extractor import (
-            ExtractedSlot,
-            ExtractionResult,
-        )
-
-        ExtractionResult(
-            slots=[
-                ExtractedSlot(
-                    frame_name="investment_xyz",
-                    key="npv",
-                    value="100",
-                )
-            ],
-            associations=[],
-        )
-
-        mock_store = MagicMock()
-        mock_store.list_live_frame_stubs = AsyncMock(return_value=[])
-        mock_store.upsert_slot = AsyncMock(return_value=(MagicMock(), None))
-        mock_store.create_association = AsyncMock()
-        mock_store.resolve_or_create_frame = AsyncMock(return_value=1)
-
-        # This would require more complex mocking - skip full integration
-        pass
 
 
 class TestExtractedSlotSchema:
@@ -105,41 +66,13 @@ class TestExtractedSlotSchema:
         assert slot.source_domains == ["a.com", "b.com"]
 
 
-class TestCorroborationCategories:
-    """Test fact categorization for corroboration."""
-
-    @pytest.mark.asyncio
-    async def test_financial_keywords(self):
-        """Test financial keyword detection."""
-        for _kw in ["price", "cost", "revenue", "profit", "npv", "irr", "investment"]:
-            pass
-
-    @pytest.mark.asyncio
-    async def test_medical_keywords(self):
-        """Test medical keyword detection."""
-        for _kw in ["dose", "medication", "diagnosis", "symptom", "treatment", "drug", "therapy"]:
-            pass
-
-    @pytest.mark.asyncio
-    async def test_legal_keywords(self):
-        """Test legal keyword detection."""
-        for _kw in ["law", "regulation", "compliance", "contract", "liability", "statute"]:
-            pass
-
-    @pytest.mark.asyncio
-    async def test_safety_keywords(self):
-        """Test safety keyword detection."""
-        for _kw in ["hazard", "danger", "warning", "recall", "toxic", "explosive", "flammable"]:
-            pass
-
-
 class TestApplySearchExtractionCorroboration:
     """Test apply_search_extraction with corroboration logic."""
 
     @pytest.mark.asyncio
     async def test_return_includes_corroboration_status(self):
         """Test that apply_search_extraction returns corroboration_status."""
-        from unittest.mock import AsyncMock
+        from unittest.mock import AsyncMock, MagicMock
 
         from assistant.backend.pipeline.extractor import ExtractionResult, apply_search_extraction
 

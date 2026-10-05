@@ -133,10 +133,32 @@ If 5: write the integration test instead.
 When deleting a test, don't just comment it out — remove it. A commented-out test is a code smell, not a safety net.
 
 ## 7. Current state of the test suite
-Snapshot: 2026-09-05. Full suite runs in both plain SQLite and SQLCipher-encrypted modes.
+Snapshot: 2026-10-05. Full suite runs in both plain SQLite and SQLCipher-encrypted modes.
+
+**The table below lists selected files, not the whole suite, and per-file counts
+drift.** The suite is now ~1180 tests across 97 files; the rows here are a
+long-standing sample and several counts are stale. Treat them as a map of *what
+is covered*, not as authoritative numbers — the `Total` is for the listed rows
+only. (A 2026-10-05 audit found this table claiming 501 while the suite was
+1180.)
+
+### Suite hygiene (2026-10-05 audit)
+
+A test that cannot fail is not a test. The audit found and removed eight empty
+stubs (bodies of `pass`), fixed one test that always skipped (it read a
+non-existent user and bailed), renamed one fixture that was misnamed as a test,
+and strengthened tests whose only check was "does not raise" or a
+name-without-assertion.
+
+To stop regrowth, `test_suite_hygiene.py` fails the suite if any `test_*`
+function contains no assertion construct (assert / `pytest.raises` / mock
+assertion), or if a fixture is named like a test. A test that genuinely cannot
+assert needs an explicit `# no-assert-ok: <reason>` marker — deliberately noisy
+so it is not used casually.
 
 | File | Tests | Covers |
 |---|---|---|
+| `test_suite_hygiene.py` | 2 | Guard: every test asserts something; no fixture named like a test. |
 | `test_memory_store.py` | 40 | Frame/slot/association CRUD, episode logging, slot history, conflict auto-resolution. |
 | `test_extractor.py` | 39 | JSON parse, retry on malformed, frame/slot/association creation, conflict integration. |
 | `test_api.py` | 38 | Health, users, chat, sessions, frames, conflicts, DB backup/restore endpoints, correction subject routing. |

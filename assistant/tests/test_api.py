@@ -319,11 +319,17 @@ def test_chat_ui_returns_html(client):
 
 
 def test_static_files_served(client):
-    """Static files should be served (skipped in test env without built assets)."""
-    # Static files are built during docker build, not available in test env
-    # This test would pass in the built docker image
-    import pytest
-    pytest.skip("Static files only available in built docker image")
+    """The /static mount serves the tracked static assets.
+
+    This used to skip unconditionally ("not available in test env") and so never
+    ran anywhere (test-suite audit finding). It now checks a *tracked* asset,
+    which is present in every environment, so the mount is actually verified.
+    (The built `index.html` is a gitignored artifact and is covered by
+    test_html_endpoints.py instead.)
+    """
+    r = client.get("/static/favicon.svg")
+    assert r.status_code == 200
+    assert "<svg" in r.text.lower()
 
 
 def test_correction_endpoint_applies_correction(client, stub_llm):

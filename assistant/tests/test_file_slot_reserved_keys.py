@@ -191,6 +191,10 @@ class TestFileEndpointContainment:
         If this ever fails, the denylist is not the only thing standing between a
         model and a path -- the writer itself would be producing escapes.
         """
-        from assistant.backend.pipeline.filesystem import resolve_sandbox_path
+        from assistant.backend.pipeline.filesystem import (
+            get_sandbox_root,
+            resolve_sandbox_path,
+        )
 
-        resolve_sandbox_path("upload_20260928_ab12.csv")  # must not raise
+        resolved = resolve_sandbox_path("upload_20260928_ab12.csv")
+        assert resolved == get_sandbox_root() / "upload_20260928_ab12.csv"
