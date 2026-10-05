@@ -26,7 +26,7 @@
 
 **Architecture:**
 - `assistant-backend` - Python FastAPI server + **built frontend assets**
-- `caddy` - TLS reverse proxy (port 8443 published to 127.0.0.1:8443)
+- `caddy` - TLS reverse proxy (port 8444 published to 127.0.0.1:8444)
 - `searxng` - Local search engine
 - **No solid-dev-server**
 
@@ -51,8 +51,8 @@ compiled SPA rather than a placeholder.
 | Compose file | `docker-compose.yml` | `docker-compose.prod.yml` |
 | Frontend server | Vite dev server (separate container) | FastAPI static files (same container) |
 | Hot reload | ✅ Yes | ❌ No |
-| Port published | 8443 (Caddy) | 8443 (Caddy) |
-| API endpoint | `https://localhost:8443` | `https://localhost:8443` |
+| Port published | 8443 (Caddy) | 8444 (Caddy) |
+| API endpoint | `https://localhost:8443` | `https://localhost:8444` |
 | Frontend edits | Instant | Requires rebuild |
 
 ---

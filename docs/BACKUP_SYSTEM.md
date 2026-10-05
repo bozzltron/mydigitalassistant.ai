@@ -50,23 +50,18 @@ assistant db backup-encrypted -o my-backup.enc.json
 assistant db restore-encrypted my-backup.enc.json -y
 ```
 
-#### SQL Dump Export/Import (For Migration)
-```bash
-# Export
-assistant db export brain-export-20260909.sql.gz
-
-# Import into new DB (requires DB_KEY for encryption)
-assistant db import brain-export-20260909.sql.gz --new-db /app/data/assistant.db
-```
-
 ### 3. Automatic Backups (Scheduler)
 
-The scheduler creates **pre-consolidation backups** every 12 hours (configurable via `CONSOLIDATION_INTERVAL_HOURS`):
+The scheduler snapshots the brain every `BACKUP_INTERVAL_HOURS` (default 12), on
+its own clock so backup frequency does not scale with how often merges happen.
+A consolidation merge that runs **without** a fresh snapshot takes one first, so
+a merge is never applied unprotected; a merge coinciding with the 12h snapshot
+takes no extra copy.
 
 - Location: `/app/data/backups/`
-- Naming: `assistant-pre-consolidation-{timestamp}-{uuid}.db`
-- Pruned: Keeps last 10 per consolidation run
-- Trigger: Before each memory consolidation run
+- Naming: `<db>-pre-<label>-<timestamp>-<uuid>.db` (`label` is `scheduled` for the
+  12h snapshot, `consolidation` for a merge-time one)
+- Pruned to a bounded ring per label
 
 ### 4. Pre-Operation Backups (Safety)
 
@@ -80,7 +75,7 @@ Automatically created before destructive operations:
 **Before running any of these, create a backup:**
 - `assistant db migrate` / `assistant db reembed`
 - `assistant db consolidate --execute`
-- `assistant db import` / `assistant db restore-encrypted`
+- `assistant db restore-encrypted`
 - Schema upgrades: `assistant db upgrade`
 - Manual DB file manipulation
 - Container recreation with volume changes

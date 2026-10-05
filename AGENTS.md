@@ -157,7 +157,9 @@ silently.
 - End-to-end tests must cover: learn-a-fact-then-recall, and contradiction-then-auto-resolve.
 - Critical path tests (voice, run_now, correction, search extraction) must pass before any merge.
 - Run `pytest assistant/tests/test_daily_schedule.py assistant/tests/test_review_fixes.py` before considering any change done.
-- The full suite (`pytest assistant/tests/`) must pass before merge — excluding known environment issues (test_api.py needs python-multipart, test_identity_name.py shares this dependency).
+- The full suite (`pytest assistant/tests/`) must pass before merge. `python-multipart`
+  is a declared dependency, so the API tests run in the standard image; there is no
+  longer a known-exceptions carve-out.
 
 ## Working with the memory system
 - The SQLite DB is the agent's brain. Never wipe it in tests without explicit backup.

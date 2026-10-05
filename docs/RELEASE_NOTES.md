@@ -2,830 +2,253 @@
 
 ## v0.9.0-alpha
 
-**When you ask it to save something, you get a file.** And you can find it. Two
-things were broken and both were invisible: the assistant could not actually
-produce a document, and the Files page did not list what it did produce.
+**When you ask it to save something, you get a file — and you can find it.**
 
-### "Save that as a docx" made a broken file
+`write_file` wrote the text with a document extension: a `.docx` was the literal
+string and the owning library called it corrupt (`PackageNotFoundError`;
+`BadZipFile` for xlsx/odt/ods/odp; `.xls` found the raw CSV text where a
+spreadsheet header belongs). The agent now renders a real file for all 13
+supported formats and refuses one it cannot produce. Separately, the Files page
+listed only *uploaded* files, so everything the agent wrote was invisible though
+it was on disk and in memory; both kinds are listed now.
 
-`write_file` wrote the text with a document extension. A `.docx` was the literal
-string `"Quarterly Report\n..."`, and Word — or any library that opened it —
-called it corrupt. Measured across the whole format set, every binary format
-failed the same way: `docx`/`pptx` gave `PackageNotFoundError`, `xlsx`/`odt`/
-`ods`/`odp` gave `BadZipFile`, and `.xls` gave `XLRDError ... found b'name,rol'`
-— the reader finding the raw CSV text where a spreadsheet header should be.
+- **One path, not two.** An upload recorded extracted entities and rows; an
+  agent-written file recorded only its name and size. Both now run the same
+  memory step.
+- **Format set:** thirteen, the same for reading and writing. `.md` added;
+  `.rtf`/`.eml`/`.tsv`/`.html`/`.xml` dropped from upload (files already saved
+  still read).
 
-The agent now renders a real file for all 13 supported formats: `.txt`, `.md`,
-`.csv`, `.json`, `.ics`, `.pdf`, `.docx`, `.odt`, `.xlsx`, `.xls`, `.ods`,
-`.pptx`, `.odp`. It refuses a format it cannot actually produce rather than
-handing you a file that will not open.
-
-### The agent's files were invisible
-
-The assistant wrote files correctly and reported success, but the Files page
-never showed them. It listed only *uploaded* files; anything the agent wrote
-carried a different internal type and was filtered out — on disk, in memory, and
-nowhere you could see it. This is the one you hit: a reading list written,
-confirmed, and then absent from the Files page. Both kinds are listed now.
-
-### One path, not two
-
-Uploads and agent-written files are meant to be the same thing, and were not:
-an upload recorded the entities and rows it extracted from the file, an
-agent-written file recorded nothing but its name and size. They now run the same
-step, so a file you write and a file you upload produce the same memory.
-
-### Format set
-
-Thirteen formats, the same for reading and writing. Markdown (`.md`) is now
-officially supported. Five formats were dropped from *upload* — `.rtf`, `.eml`,
-`.tsv`, `.html`, `.xml` — because they were rarely used; files already saved in
-them still read normally.
-
-### Known limits
-
-- **PDF is generated, not designed.** reportlab produces clean text and tables,
-  not layout. A user wanting a designed document is not served by this.
-- **A calendar file is one event.** Writing `.ics` turns your text into a single
-  event; a multi-event calendar is out of scope.
-- **`.json` wraps prose.** If the agent writes prose to a `.json`, it is stored as
-  `{"content": "..."}` so the file is valid JSON.
+**Known limits:** PDF is generated text, not layout; an `.ics` write is a single
+event; prose written to `.json` is wrapped as `{"content": ...}` to stay valid.
 
 ## v0.8.2-alpha
 
-**The names are not swapped any more.** v0.8.1 gave the user's name its own frame
-and taught the extractor which name belongs to whom. It did not touch the other
-way a name gets written — a correction — and that path had been quietly swapping
-the two.
-
-### Where the fix stopped short
-
-The correction pipeline takes a `frame_name` and `slot_key` from the model and
-writes them verbatim. It was the one writer into the identity frames with no
-guard. So *"I'm not Carl. You are Carl."* was applied as
+**The names are not swapped any more.** v0.8.1 fixed the extractor's routing but
+not the correction pipeline, which took the model's frame and key verbatim and was
+the other road a name travels. *"I'm not Carl. You are Carl."* was applied as
 `user_identity.name = "Carl"` — the assistant's name on the user's frame, under a
 key nothing reads — while *"My name is not Carl. I go by Boz."* left the user's
-name on `identity_name`. Both names were stored, in each other's place, and
-`/assistant/name` returned the user's name as the agent's.
+name on `identity_name`. Both were stored, in each other's place.
 
-The extractor's routing fixed one road in; the correction pipeline was another
-road the same names travel.
+- **The correction model says who.** `CorrectionResult` gains `subject`
+  (`user` | `assistant` | `topic`); the prompt asks for it.
+- **The code maps that answer to a frame.** `route_correction` sends
+  `user`/`assistant` to the reserved frame, normalises any name key to
+  `full_name`, and leaves `topic` alone. No frame-name list, no value guessing.
+- **Routing runs before validation**, so a correction is checked against the
+  frame it will be written to.
 
-### What changed
-
-- **The correction model says who a correction is about.** `CorrectionResult`
-  gains a `subject` field (`user` | `assistant` | `topic`), and the correction
-  prompt asks for it, with the naming cases as examples. The model already knew
-  the answer — it had no field to put it in.
-- **The code only maps that answer to a frame.** `route_correction` sends
-  subject `user` / `assistant` to the reserved frame for that subject, normalises
-  any name key to `full_name`, and leaves `topic` (or anything unrecognised)
-  alone. There is no list of frame names to maintain and no guessing from the
-  value — the model decides *who*, the code decides *where*. `subject` defaults
-  to `topic`, so ordinary corrections are unaffected.
-- **Routing happens before validation.** The endpoint and the orchestrator now
-  route before reading the current value, so a correction is checked against the
-  frame it will actually be written to, not the one the model named.
-
-### Known limits
-
-- **Existing memory is still wrong.** This release fixes the path, not the
-  stored values. A brain that already holds the user's name on the assistant's
-  frame keeps it until the next ordinary rename ("your name is X") corrects it;
-  the orphaned `user_identity.name` slot is inert because readers use
-  `full_name`.
-- **The subject is still model-judged.** The prompt makes the distinction
-  explicit and the routing is deterministic once it is given, but a model that
-  mislabels a first-person name as `assistant` will still route it there. The
-  extractor-side cross-check does not cover the correction path.
+**Known limits:** existing memory is not rewritten (a rename corrects it); the
+subject is still the model's judgment, and the correction path has no cross-check.
 
 ## v0.8.1-alpha
 
-**The assistant stopped taking your name.** In v0.8.0 the assistant's name became
-yours to set. The first thing it did with that power was adopt the name you gave
-yourself: telling it "my name is not Carl, I go by Boz" renamed *the assistant*
-to Boz, and the header and browser tab followed.
+**The assistant stopped taking your name.** v0.8.0 made the assistant's name
+yours to set; the first thing it did was adopt the name you gave yourself. The
+extraction guard proves *where* a name came from, not *who* it is for, and the
+naming rules said nothing about the user's own name — so "my name is not Carl, I
+go by Boz" renamed the assistant to Boz. The same gap had already let "Jay Miles"
+(from a pasted email) and the pronoun "you" onto the assistant's name.
 
-### Why it happened
+- **The user's own name has its own frame:** first-person self-identification
+  extracts to `user_identity.full_name`; the assistant's name only when you
+  assign it to the assistant.
+- **Names in pasted content are not identity facts.**
+- **A name cannot belong to both:** a same-turn claim for user and assistant
+  keeps the user's and drops the assistant's.
+- **The two frames resolve by exact name only**, so canonicalization cannot merge
+  them; "what is my name?" retrieves `user_identity`.
 
-The extraction guard proves *where* a name came from — it must be in the user's
-message — but it cannot tell *who* the name is for. The naming rules described
-the assistant's name and the assistant's working style, and said nothing about
-the user's own name, so a first-person self-introduction had nowhere to go but
-the one name slot the model had. The same gap had already let "Jay Miles" (from a
-pasted email) and the pronoun "you" onto the assistant's name in earlier turns.
-
-v0.8.0 made the consequence visible: because a user-stated name now always wins,
-a misattribution is no longer quietly outvoted. It sticks.
-
-### What changed
-
-- **The user's own name has its own frame.** First-person self-identification
-  ("my name is X", "I go by X", "call me X") now extracts to
-  `user_identity.full_name`. The assistant's name goes to `identity_name.full_name`
-  only when you assign it to the assistant, in the second person. The distinction
-  is stated in the extraction prompt with the failing turns as worked examples.
-- **Names in pasted content are not identity facts.** An email thread or a list
-  of other people's names no longer produces an identity slot.
-- **A name cannot belong to both.** When the model claims the same name for the
-  user and the assistant in one turn, the user's own claim wins and the
-  assistant-side slot is dropped. This is a cross-check on the model's output,
-  not a list of approved phrasings — extraction stays model-first.
-- **The two name frames stay separate.** `user_identity` and `identity_name`
-  resolve by exact name only, so canonicalization cannot merge one into the other
-  by embedding similarity.
-- **"What is my name?" now works.** It retrieves the `user_identity` frame;
-  "what is your name?" still retrieves the assistant's.
-
-### Known limits
-
-- **Existing memory is not rewritten.** A brain that already holds the user's
-  name on `identity_name.full_name` keeps it until the next ordinary rename
-  ("your name is X"), which corrects it through the normal path.
-- **The name is still model-extracted.** The prompt and the same-turn cross-check
-  narrow the gap; they do not remove it. A first-person name that never co-occurs
-  with an assistant naming is the case the new routing is built for, and it is
-  covered by tests, but extraction remains the model's judgment.
+**Known limits:** existing memory is not rewritten; extraction remains the model's
+judgment.
 
 ## v0.8.0-alpha
 
 **A name that sticks.** You could tell the assistant its name, watch it
-acknowledge you, and still find the old name on the tab and in the header. The
-name was never really yours to set: a value written once by a correction
-outranked every later statement, and the interface only ever asked memory for
-the name at startup.
+acknowledge you, and still find the old name on the tab. The name was never
+really yours to set: a conversational fact carries source reliability 0.5, the
+stored name had been left at 0.99 by an earlier correction, and the confidence
+ladder keeps the higher-reliability value. The attempt was recorded as an
+auto-resolved conflict, so the brain looked like it had chosen otherwise.
 
-### The rename was decided against, not lost
+- **The assistant's name is authoritative.** A user-stated `full_name` is written
+  at reliability 1.0 and always supersedes the stored name — still through
+  `revise`, `slot_history`, and the conflicts table, not around them.
+- **The tab follows memory.** The name endpoint was right; the UI asked once on
+  mount. A turn that reports `identity_name.full_name` now makes the app re-read
+  it, so the header and tab update in the same turn.
+- **A name made only of function words is rejected** (the live brain had mined
+  "you" as the name).
 
-Telling it "your name is now Carl" reached the extraction pipeline and produced
-the slot. The store then ran it through the same confidence ladder every fact
-uses, and the ladder said no: a conversational fact carries source reliability
-0.5, the stored name had been left at 0.99 by an earlier correction, and the
-first rung keeps the higher-reliability value. The attempt was recorded — a
-`slot_history` row and an auto-resolved `conflicts` row, both reading `Echo` —
-so the brain looked like it had considered the change and chosen otherwise.
-
-That is the ladder working as designed. It is the wrong design for a name. The
-user is authoritative about their own world, and the assistant's name is the
-clearest case of it, so a user-stated `full_name` is now written at reliability
-1.0 — the value the manual-override path already used — and always supersedes
-the stored name. It is a reliability floor on one slot, not a shortcut around
-memory: the value still has to trace to the user's own message, and the write
-still goes through revise, `slot_history`, and the conflicts table.
-
-### The tab kept the old name
-
-The name endpoint was correct the whole time; it returned what memory held. The
-interface asked for it once, on mount, and never again, so a rename could only
-appear after a reload. A turn whose extraction reports `identity_name.full_name`
-now tells the app to re-read the name, and the header and browser tab follow
-memory within the same turn.
-
-### Names that are not names
-
-The name guard accepted any value the user had typed, including pronouns: a
-message containing "you" could land `you` as the assistant's name, and the live
-brain had done exactly that. A `full_name` whose every token is a function word
-is now rejected.
-
-### Known limits
-
-- **A mis-extracted name now sticks harder.** Because a user-stated name
-  supersedes the stored one, an extraction error — the model reading "I'm Carl"
-  as the assistant's name rather than the user's — is no longer quietly rejected
-  by the ladder. The guard filters the assistant's own self-description and bare
-  pronouns, and the extraction prompt is explicit that only assistant-naming
-  counts, but it is model output and not infallible. This is deliberate: the
-  project stays model-first, so the fix is a better guard, not a keyword list of
-  approved phrasings.
-- **Only the name is affected.** The special case is scoped to
-  `identity_name.full_name` on the conversational path. Other self-facts
-  (working agreements, traits) and every other slot keep the normal ladder.
+**Known limits:** a mis-extracted name now sticks harder — the guard filters
+self-description and pronouns but is not infallible, by design (the project stays
+model-first). Only `identity_name.full_name` is affected.
 
 ## v0.7.0-alpha
 
 **One picture instead of six.** Search answers came with a strip of up to six
-images behind a lightbox, and the pictures were often the wrong ones. The gallery
-is gone. What is left is a single hero at the top of the answer: the video when
-you asked for video, the lead image otherwise, with any other videos as plain
-links.
+images behind a lightbox, and the pictures were often wrong. The gallery is gone:
+one hero at the top — the video when you asked for video, the lead image
+otherwise — with other videos as links. It also turns out the image vanished on
+every reload.
 
-It also turns out the image vanished every time you reloaded the page.
+- **The gallery was 300 lines of component and 635 of stylesheet** for pictures
+  not good enough to earn the space. Net −720 lines.
+- **The hero never survived a refresh** because the schema parsing a restored
+  message declared three fields and `z.object()` strips undeclared keys — so
+  `search_info` was deleted after the backend had sent it, taking the "Searched
+  via Brave" badge with it. The fix carries a test checked to fail without it.
+- **Dangling doc citations:** fifteen comments cited deleted planning documents;
+  they now point at the rule's real home, and a test fails if a citation dangles.
 
-### One hero, no gallery
-
-The grid was 300 lines of component and 635 of stylesheet to show pictures that
-were not good enough to justify the screen space they took — one image in six was
-plausible, and you had to scan past the other five to find it.
-
-- A video query embeds one video; the remaining results are titled links, which
-  is what the row of thumbnails underneath was doing badly.
-- Any other image is no longer shown at all. Nothing is lost: the sources footer
-  at the bottom of the answer already lists every result as a link.
-- Net −720 lines, and the transcript renders fewer nodes than it used to.
-
-### The hero image never survived a refresh
-
-Media was persisted correctly in four places: the episodes column, the INSERT,
-the API response, and the mapping that restores a conversation. A fifth thing
-deleted it. The schema that parses a restored message declared three fields and
-`z.object()` strips any key it does not know — so `search_info` was removed by
-the parse, every time, after the backend had done all the work to send it.
-
-The intent was written down one file away, on the model the backend returns:
-"so images and video thumbnails survive a reload". One schema line overrode it.
-This is the second time that has happened in this codebase, which is why the fix
-carries a test that was checked to fail without it.
-
-It also explains a smaller oddity: the "Searched via Brave" badge disappeared on
-reload for the same reason.
-
-### Smaller things
-
-- Removed with the gallery: two components, four dead functions, three unused
-  custom properties, and a media type nothing constructed.
-- A test was reading a hardcoded list of component files that still named the
-  deleted one, so the deletion surfaced as an unexplained file-not-found. It now
-  reports the stale name instead.
-- Fifteen comments across the backend cited planning documents that have since
-  been deleted, so the rule each one was stating had nowhere to be read. They now
-  point at the rule's real home, and a test fails if a citation ever dangles
-  again — a comment pointing at nothing reads as "already handled", not "broken".
-
-### Known limits
-
-This release changes **how many** pictures you see. It does not change **which**
-one.
-
-- **The hero is still the search engine's first-ranked result.** Whether an image
-  is relevant is judged from its filename and the host it is served from: anything
-  named "logo", "banner", "sponsor" or "ad" is dropped, along with ad networks
-  and SVG logos. Nothing looks at what is in the picture, so a sponsored image
-  with a clean filename still wins, and a search for cats can still hand you a
-  brand. That is the honest reason a "cut it down to one" change is not by itself
-  a quality change.
-- The obvious fix — scoring images against the search the same way web results
-  are already scored, by embedding similarity — is not yet proven to work, so it
-  is being measured before anything is built on it rather than assumed.
-- **Old images can be dead.** Search thumbnails expire and some sites block
-  direct loads. An earlier answer whose image has since rotted still shows its
-  title and source as a link, with a placeholder above it, instead of quietly
-  dropping the evidence that a search happened.
+**Known limits:** this changes **how many** pictures you see, not **which** one.
+The hero is still the search engine's first-ranked result, judged from filename
+and host — a sponsored image with a clean filename still wins. Scoring images by
+embedding similarity is being measured before it is built on.
 
 ## v0.6.0-alpha
 
-**Files actually work now.** The assistant could read a document at upload and
-not at read — two paths that disagreed about what a file is — and a large one was
-refused outright. It also printed raw database ids at you, and its For You bell
-filled with things that were never questions. This release fixes the reading, the
-limits, the ids, and the bell.
+**Files actually work now.** The assistant could read a document at upload and not
+at read, a large one was refused outright, it printed raw database ids, and its
+For You bell filled with things that were never questions.
 
-### Documents are read, not decoded as text
-
-`read_file` bypassed the extractor entirely and decoded every file as UTF-8. For
-a PDF or a `.docx` that is binary noise, and past 1 MB it was refused before it
-got that far. A 6.7 MB press kit extracted to 9,213 clean characters at upload
-and was unreadable at read — which is what "the file was too large" actually
-meant.
-
-- Every document format now reads through the same extractor upload uses: PDF,
-  docx, xlsx, pptx, xls, rtf, odt/ods/odp. Text formats are still read directly.
-- A scanned PDF with no text layer says so, instead of looking like an empty
-  file. A corrupt file is not reported as missing.
-- The input bar had its own bug: it read files as text before sending them, so
-  even a correctly-extracted PDF arrived corrupted. It now uploads the bytes
-  (multipart, the same path the files page uses) and references the stored file
-  by frame.
-- Its format list was six entries while the files page offered seventeen, so the
-  attach button silently refused PDFs and Office documents. Both now derive from
-  one list, and a test reads the backend's Python source and fails if they drift.
-
-### No file-size limits
-
-A local, disk-backed project should be limited by the disk, not by a constant
-someone picked. Removed: the 1 MB read cap, the 10 MB write cap, and three 10 MB
-upload guards, along with `SizeLimitError` and its config knobs. The only bound
-left is the model's context window on what `read_file` returns, marked honestly
-with the true character total so the agent can say it saw a fragment.
-
-### No database ids in replies
-
-The memory context rendered graph edges as `related_to→frame:4832`, and alert
-messages printed `What this concerns: 4593.` — numbers that mean nothing to you,
-which the model then repeated back. Relations now render the target's **name**
-(`label→mozworth`), and an alert names the frame it concerns. An edge whose
-target cannot be named is omitted rather than shown as an id.
-
-### For You can be cleared
-
-The bell was full of items that were not questions: "Correction applied" fired
-during the conversation you were in, announcing something already on screen.
-There was nothing to reply to, so they could never be resolved.
-
-- The two correction writers are gone; alerts are now raised only by scheduled
-  work, when you were not there to hear it.
-- The alerts those writers already raised are closed — a scoped repair, not a
-  blanket clear, so your genuine task alerts are untouched.
-- **The green stripe was not "resolved".** `info` severity used the mint brand
-  colour, which read as a state rather than a severity. It is neutral now;
-  warning and important are unchanged.
-- `is_read` and `read_at` were served but read by nothing, and `is_read` meant
-  "resolved" while resolved rows are filtered out of the list. Removed.
-
-### Container resilience
-
-`restart: unless-stopped` was already there and Docker already backs off
-exponentially, so a crash cannot hot-loop. What was missing was the hung-process
-case, which never exits and so is never restarted.
-
-- The healthcheck probed `/health`, which calls Ollama and can block for up to
-  600s when Ollama is down — so an Ollama outage marked the app unhealthy and
-  restarted a container a restart cannot fix. It now probes `/healthz`, a
-  liveness route that does no I/O.
-- `autoheal` (prod) restarts unhealthy containers, scoped by label — never
-  `all`, which on this host would restart unrelated stacks.
-- Caddy waits for a healthy backend; SQLite gets a grace period on stop; logs are
-  rotated (Docker's default is unbounded).
-
-### Smaller things
-
-- Modal width was fixed at 400px for every dialog because the `size` prop had no
-  CSS behind it; Trash Can and For You now get 800px.
-- The dev/prod rebuild flow is documented: they are separate projects on
-  different ports, and a change is not verified until **both** are rebuilt.
+- **Documents are read, not decoded as text.** `read_file` bypassed the extractor
+  and decoded every file as UTF-8 — binary noise for a PDF or `.docx` — and past
+  1 MB it was refused first. Every document format now reads through the same
+  extractor upload uses; a scanned PDF with no text layer says so; a corrupt file
+  is not reported as missing.
+- **The input bar uploaded bytes**, not text, so a correctly-extracted PDF no
+  longer arrived corrupted. Its format list was six entries against the files
+  page's seventeen; both now derive from one list, pinned by a test.
+- **No file-size limits.** Removed the 1 MB read cap, the 10 MB write cap, and
+  three upload guards. The only bound is the model's context window on a read,
+  marked with the true total.
+- **No database ids in replies.** Graph edges render the target's name, not
+  `frame:4832`; an unnameable edge is omitted.
+- **For You can be cleared.** The bell was full of "Correction applied" notices
+  fired during the conversation you were in. Those writers are gone; alerts come
+  only from scheduled work. The green stripe was not "resolved" — `info` now uses
+  a neutral colour — and the never-read `is_read`/`read_at` fields are removed.
+- **Container resilience.** The healthcheck probed `/health`, which calls Ollama
+  and can block when it is down — so an Ollama outage restarted a container a
+  restart cannot fix. It probes `/healthz` (liveness, no I/O) now; `autoheal` is
+  label-scoped; logs are rotated.
 
 ## v0.5.0-alpha
 
-**The alerts channel stops looking like a warning.** These are things the agent
-wants to bring up and discuss, not errors — so the bell is now **For You**, in
-mint, and resolving one actually puts it in the conversation you chose.
+**The alerts channel stops looking like a warning.** These are things to bring up
+and discuss, not errors — so the bell is **For You**, in mint, and resolving one
+puts it in the conversation you chose.
 
-### "For You", not "Alerts"
-
-- The bell, its badge and its hover are **mint** (`--accent2`) instead of red.
-  Severity is unchanged: an `important` item still carries its red stripe,
-  because that is a signal about the item, not the feature.
-- The control is labelled **For You**; under the hood these stay `alert` frames.
-
-### Resolving an alert puts it in the conversation
-
-- **The alert is posted**, whether or not the conversation already had history.
-  It used to be written only into an *empty* session, so picking any conversation
-  you had used before showed nothing — indistinguishable from broken.
-- The posted message is the **question** (the alert's short title), not the whole
-  task report. Posted once per conversation; re-opening does not stack duplicates.
-- **One modal, not two.** The alert shows its question and **Resolve…** expands
-  the conversation selector inline. The wall of text is gone.
-- An alert attached *before* this behaviour existed (its `session_id` slot set,
-  no message) now posts when resolved, rather than silently declining.
-
-### The stale frontend that made rebuilds look broken
-
-The Dockerfile copied the freshly built Vite bundle, then `COPY assistant/`
-re-copied the **stale committed** `static/index.html` and `assets/` over it — so
-prod served a frontend from before the top-bar work and none of the UI fixes
-reached it. The build output is excluded from the build context now and the
-on-disk copies are gone. Verified: a marker added to the source survives a
-rebuild and reaches the served page.
-
-### Class collisions across global stylesheets
-
-A bare class defined in two global stylesheets collides: the later import wins
-the properties it sets, and the earlier one's remaining properties still apply.
-`.empty-state` (brain.css's absolute overlay vs files.css's flex box) left the
-file viewer's empty state floating; `.voice-dot` dimmed the top bar's dot; and
-`.file-icon` plus a dead `.welcome*` block overrode live rules. All scoped or
-removed, with a guard that fails if a bare class is defined twice.
-
-### Dev frontend mount
-
-`solid-dev` mounted seven individual files. A file bind mount pins an inode, so
-any `git checkout` or `stash` left Vite reading a deleted file (`ENOENT:
-/app/frontend/index.html`) and showing its error overlay. It mounts the
-`frontend/` directory now, with a named volume over `node_modules`.
-
-### Housekeeping
-
-The SPA routes return a minimal HTML page when the bundle has not been built,
-rather than 404-ing a deep link.
+- **Resolving posts the alert's question** into the chosen conversation, whether
+  or not it had history (it was written only into empty sessions, so picking a
+  used conversation showed nothing). One modal, not two; the wall of text is gone.
+- **The stale frontend that made rebuilds look broken:** the Dockerfile copied
+  the fresh bundle, then `COPY assistant/` re-copied the committed `static/` over
+  it, so prod served a pre-top-bar frontend. The build output is excluded now.
+- **Class collisions across global stylesheets** (`.empty-state`, `.voice-dot`,
+  `.file-icon`) are scoped or removed, with a guard against a bare class defined
+  twice.
+- **Dev frontend mount:** a file bind mount pins an inode, so any checkout left
+  Vite reading a deleted file; it mounts the `frontend/` directory now.
 
 ## v0.4.0-alpha
 
-**One top bar, and the small lies it was telling.** This release makes the
-header a single coherent control strip, and fixes two places where the UI showed
-a state that was not true — a voice turn that said "Listening" while it was
-transcribing, and an alert that looked unresolved after it had been resolved.
+**One top bar, and the small lies it was telling.** The header is a single
+coherent control strip, and two places that showed an untrue state are fixed.
 
-### The top bar is one set
-
-The header mixed four button styles, three corner radii (6px, 20px, bare) and
-four controls with no icon. Now:
-
-- **One shared style.** Every control uses `.topbar-btn` — same radius, padding,
-  font and hover.
-- **Every control has an inline SVG icon**, coloured by `currentColor` so it
-  matches its label. New gains a `+`, Let's talk a microphone, Files a folder,
-  Brain a brain; Settings is icon-only.
-- **A deliberate order:** Alerts, Let's talk, Files, Brain, Settings, Trash. New
-  stays after the conversation switcher.
-- **The voice status bar takes Let's talk's place** while a turn is live — it
-  already carried the same stop/cancel actions, so showing both was redundant.
-
-### Two UI states that were lying
-
-- **"Transcribing…" now appears during a conversation turn.** The conversation
-  capture hook kept its own private state and never advanced the global voice
-  status, so the indicator read "Listening…" through the whole transcription.
-- **Resolving an alert into the conversation you are already viewing now shows
-  it.** The message-loading effect tracked the active conversation's id, so
-  re-opening the same conversation was a no-op: the seeded message was written
-  server-side and never appeared, making the alert look unresolved.
-
-### One dependency source
-
-`pyproject.toml` omitted `sqlcipher3`, `cryptography`, `faster-whisper` and
-`python-multipart`, so the documented `pip install -e .` produced an install with
-no SQLCipher — no encrypted brain. They are declared now, the Dockerfile builds
-its wheels from `.[dev]` instead of a hand-maintained second list, and the stale
-`assistant/pyproject.toml` is gone.
-
-### Icons are SVG, not emoji
-
-The file browser, frame detail and the modal close buttons used emoji and text
-glyphs as icons. They are inline SVG now, from one shared set. The design-system
-guard reads `.ts` files too — it only scanned `.tsx`, so a literal inline style
-emitted in an HTML string slipped past it, which is how the tooltip's
-`style="color:…"` survived; it is a custom property now.
-
-### Clean ship
-
-Dead CSS from the pre-Solid voice UI removed; stale build artifacts untracked and
-gitignored; `.env.example` gained the one key it was missing; two experiment
-plans now state whether they are pending or superseded.
+- **One shared style** (`.topbar-btn`), an inline SVG icon per control coloured by
+  `currentColor`, a deliberate order, and the voice status bar taking Let's talk's
+  place while a turn is live.
+- **"Transcribing…" now appears during a conversation turn** (the capture hook
+  never advanced the global voice status, so it read "Listening…" throughout).
+- **Resolving an alert into the conversation you are viewing now shows it** (the
+  message-loading effect tracked the active id, so re-opening was a no-op).
+- **One dependency source:** `pyproject.toml` omitted `sqlcipher3`,
+  `cryptography`, `faster-whisper`, `python-multipart`, so `pip install -e .`
+  produced no encrypted brain. Declared now; the Dockerfile builds from `.[dev]`.
+- **Icons are inline SVG, not emoji.**
 
 ## v0.3.0-alpha
 
-**It reads your documents, and it remembers what it showed you.** This release
-opens the assistant to the files a household actually has — PDFs, Word, Excel,
-PowerPoint, and the legacy formats around them — and stops the chat losing its
-imagery on reload. Along the way it fixes a summary frame that was never indexed,
-the alerts that flickered, and a conversation that hid below the fold.
+**It reads your documents, and it remembers what it showed you.** The assistant
+opens to the files a household actually has — PDF, Word, Excel, PowerPoint and
+the legacy formats around them — and stops the chat losing its imagery on reload.
 
-### It reads documents
-
-The upload path accepted text and structured files and nothing else; a PDF or a
-`.docx` was either rejected or decoded as UTF-8 noise. It now reads:
-
-- **PDF** (`pypdf`, first 50 pages), **Word** (`.docx`), **Excel** (`.xlsx`) and
-  **PowerPoint** (`.pptx`) — the modern Office set.
-- **The business long tail:** `.rtf`, OpenDocument (`.odt`/`.ods`/`.odp`), legacy
-  Excel (`.xls`), saved email (`.eml`) and tab-separated data (`.tsv`).
-- **iCal via `icalendar`**, replacing a regex that missed line folding and TZIDs.
-
-Every reader is offline and pure-Python (no system binaries), extraction runs off
-the event loop so a large document cannot stall a request, and XML is parsed with
-`defusedxml` so a hostile file cannot expand entities. Legacy `.doc`/`.ppt` have
-no good offline reader and say so, pointing at `.docx`/`.pdf`.
-
-### The chat remembers its media
-
-Message imagery came only from a live search turn, so a refresh dropped every
-image and video. A search turn now stores a compact projection of its results on
-the assistant episode — titles, URLs, thumbnails and video fields, never page
-bodies — and reload restores it.
-
-- **Image-only grid tiles.** The small images dropped their hover caption; the
-  details live in the lightbox, while the response hero keeps its overlay.
-- **The hero follows the query.** A video query leads with the video.
-- **One embed, the rest thumbnails.** A multi-video answer loads a single iframe
-  and swaps the clicked thumbnail into it.
-- **Full-resolution tiles**, falling back to the thumbnail when a host blocks
-  hotlinking or the image exceeds the proxy's 5 MB cap.
-
-### Links ask first
-
-Clicking a link that leaves the assistant now names the host and asks before
-opening a new tab — including the links markdown renders inside an answer, which
-a per-link handler could never reach. Modals also close on Escape.
-
-### Two UI defects from the manual pass
-
-- **Alerts stopped flickering.** The 30s poll toggled a loading state, swapping
-  the list for a spinner every half minute, and the initial fetch ran before the
-  user was known and never retried — so a refresh showed an empty bell. Both fixed.
-- **A new conversation is no longer buried.** The switcher sorted every never-used
-  conversation last, so a just-created one sat below the fold; it is now ordered by
-  creation time. ("Corrections" moved from 31st of 32 to 7th.)
-
-### Accuracy and resilience
-
-- **The summary frame was never indexed.** The summarizer handed `embed_frames` an
-  `EmbeddingResponse` instead of a bare vector; `json.dumps` rejected it for every
-  frame and the failure was swallowed. Summary frames are now embedded.
-- **Idempotent hops retry; side effects do not.** Ollama, search, `fetch_url` and
-  the read-only tools retry the transient class; writes, deletes and `compute` get
-  a single attempt.
-- **The encrypted DB retries the transient key-derivation read** that could fail a
-  turn under I/O contention.
-
-### Housekeeping
-
-- **Dev and prod are separate Compose projects** — distinct container names,
-  networks and databases — so both can run at once and dev no longer writes to the
-  production brain.
-- Two long-standing test defects are fixed: a missing `DB_KEY` marker on an
-  encrypted-only test, and a store reused across event loops.
+- **It reads documents:** PDF (`pypdf`, first 50 pages), `.docx`, `.xlsx`,
+  `.pptx`, plus `.rtf`, OpenDocument (`.odt`/`.ods`/`.odp`), legacy `.xls`,
+  `.eml`, `.tsv`, and iCal via `icalendar`. All offline and pure-Python; XML is
+  parsed with `defusedxml`; extraction runs off the event loop. Legacy `.doc`/
+  `.ppt` say to re-save as `.docx`/`.pdf`.
+- **The chat remembers its media:** a search turn stores a compact projection of
+  its results (titles, URLs, thumbnails, video fields — never page bodies) so a
+  reload restores it.
+- **Links ask first** — a link leaving the assistant names the host and confirms,
+  including links rendered inside an answer.
+- **Two UI defects:** alerts stopped flickering (a 30s poll swapped the list for
+  a spinner), and a new conversation is no longer buried below the fold.
+- **Accuracy:** the summary frame was never indexed (the summarizer passed an
+  `EmbeddingResponse` where a vector was expected); idempotent hops retry while
+  side effects do not; the encrypted DB retries a transient key-derivation read.
 
 ## v0.2.0-alpha
 
-**The brain stops lying to itself.** This release is about accuracy: memory that
-recorded decisions as undecided, files that duplicated their own contents, and a bell
-full of notices nobody could act on. Four plans shipped, one closed on measurement.
+**The brain stops lying to itself.** Four plans shipped, one closed on
+measurement: memory that recorded decisions as undecided, files that duplicated
+their own contents, and a bell full of notices nobody could act on.
 
-### Alerts are memory
+- **Alerts are memory** — a frame of type `alert`, not a notifications row, so
+  retrieval can raise one when it is contextually relevant. The **presence rule**
+  decides when: an alert is warranted when the agent learned something and the
+  user was **not there to hear it**. A task completion is not an alert; a task
+  *failure* is. An alert closes by being answered in a conversation, not by being
+  read — there is no read flag, and none is coming back.
+- **Files: memory holds what a file *is*, never what it *contains*.** Four sites
+  still wrote content, including `read_file` on every read, and a missing file
+  returned a stale truncated copy the model answered from. Content keys are now
+  refused at write time by `upsert_slot`.
+- **Write-path hygiene:** blank frame names / slot keys / values are refused at
+  `upsert_slot` (the one funnel); the summarizer writes its counters directly
+  instead of "conflicting" with itself; `POST /tasks/run-due` returns
+  immediately; embeddings migrated to a single model.
+- **Conflicts: the ladder works.** A long-held belief that it never
+  discriminated was wrong — a user fact (0.99) beats a search attempt (0.5), and
+  the apparent recency-always-wins came from *ties* resolving by recency.
+  `EXISTING_WINS` is recorded as decided (`auto_resolved` with `resolved_value`),
+  not deferred, and every conflict records its decision inputs. Plan D (a model
+  that reasons over conflicts) was closed: it would duplicate a working comparator.
+- **Supplied content is registered as memory** (a pasted list used to survive one
+  turn); `web_search` stays available on every turn — three static-rule fixes were
+  tried and reverted. The model decides.
+- **Process:** plans are wiped when shipped; experiments are pre-registered with
+  falsification conditions fixed before data.
 
-An alert is now a **frame of type `alert`**, not a row in a notifications table, and
-the `alerts` table is gone. The bell is a view over memory, which means retrieval can
-raise an alert *when it is contextually relevant* — not only when the user opens it.
-
-- **The presence rule.** An alert is warranted when the agent learned something and
-  the user **was not there to hear it**. In practice that means a task completion is
-  not an alert (its output is already an episode), a search result learned mid-turn is
-  not an alert (the user was watching), and a task **failure** is — the user asked for
-  a recurring task and it is silently broken. Before this rule was enforced the bell
-  was dominated by mechanism: task-completion notices, search notices fired during the
-  conversation, and auto-resolved conflicts announced to the user watching them resolve.
-- **An alert closes by being answered, not by being read.** There is no read flag, and
-  none is coming back — a read flag is a status that changes nothing, which is why the
-  old notification rows accumulated unread. Resolution happens in a conversation the
-  user picks; the alert closes when they reply there. A new thread per alert is the
-  fallback, not the default, so alert threads do not accumulate.
-- **A task failure still alerts** (`task_failure`), and a task *completion* does not.
-  That is the presence rule applied, not an exception to it.
-- **The bell resolves rather than dismisses.** Open it, pick the conversation to
-  settle an alert in, and go there. Inline SVG icons and a colour change on the trigger
-  replace the emoji and the read badge.
-
-### Files: memory holds what a file *is*, never what it *contains*
-
-The code had already decided this and enforced it only at render time, so four sites
-kept writing file content into memory — including `read_file`, which wrote a preview
-on **every read**. The cost was not the wasted rows:
-
-```
-except FileNotFoundError:
-    pass  # Not on disk — fall back to memory slots.
-if not content:
-    content = slots_dict.get("file_content_preview") or ""
-```
-
-A missing file returned a stale truncated copy and the model answered believing it had
-read the file. Content keys are now **refused at write time** by `upsert_slot`
-(`FileContentInMemoryError`), a missing file is reported as missing, and existing
-preview rows are removed.
-
-### Write-path hygiene
-
-- **No blank records.** Frame names, slot keys, and slot values are validated at every
-  write path, so a frame with no name and a slot with no key or value cannot be
-  created. The extraction paths had a guard already; it was not enough, because CSV row
-  ingestion writes one slot per column — including empty cells — and three other
-  writers bypassed it. The refusal now sits in `upsert_slot`, where every writer
-  funnels. An empty cell is an **absent** fact, so not writing a slot for it is the
-  accurate representation, not a loss.
-- **The summarizer stopped arguing with itself.** Counters (`turn_count`, `date_end`)
-  were written as beliefs and "conflicted" with the previous run every time, making the
-  summarizer the largest single source of conflict rows in the ledger — on zero
-  disagreements. Counters are now written directly rather than through the belief path.
-- **`POST /tasks/run-due` returns immediately** instead of timing out at Caddy's 300s
-  while its work completed. It hands off to the scheduler loop — one execution path
-  instead of two.
-- **Embeddings migrated to a single model**, with frames that had none under the
-  configured model re-indexed so they are retrievable again.
-
-### Conflicts: measured, and the ladder works
-
-A long-held belief that the confidence ladder never discriminated was **wrong**, and
-the correction is the point of this release.
-
-- **The ladder fires.** A user-stated fact (source reliability 0.99) against a search
-  attempt (0.5) resolves to the user's value. A long-standing reading that the ladder
-  never discriminated was wrong: the appearance of recency-always-winning came from
-  *ties* resolving by recency, which is what a tiebreak is for, and the `grok`
-  near-rename was rung 1 working — it read as luck only because the record called
-  itself undecided.
-- **`EXISTING_WINS` is recorded as decided**, not deferred: `auto_resolved` with
-  `resolved_value` set. It previously wrote `pending`, which made a decision
-  indistinguishable from a deferral and inflated the apparent review queue roughly
-  tenfold.
-- **Every conflict records its decision inputs** — source reliability, confidence, and
-  priority for both sides. `slot_history` keeps a conflict's values but no provenance,
-  so before these columns a past decision could not be audited at all.
-- **Plan D closed.** A model that reasons over conflicts would duplicate a working
-  comparator. The gate was met in the negative.
-
-### Web search and content the user supplies
-
-- Supplied content (a pasted list, and the class generally) is registered as memory —
-  it previously produced nothing at all, so a pasted list survived one turn and was
-  unreachable after. It reaches the prompt on both orchestrator paths.
-- `web_search` stays available on every turn, including when the user supplies content
-  and asks for it to be researched. Three attempts were made to fix a follow-up failure
-  with a static rule (a router flag, a prompt line, and withholding the tool); all
-  three were reverted. The model decides.
-
-### Process
-
-- **Plans are transient and now wiped when shipped.** Only active work remains in
-  `/plans/`. Git history is the record.
-- **Experiments are pre-registered** with falsification conditions fixed before data,
-  and read-only against a brain copy. Two this cycle were disproved rather than
-  confirmed, and both are written up as such.
-
-### Clean ship
-
-Dead code removed, verified by deletion rather than by inspection: eleven public
-functions had no caller outside their own definition, and the full suite passed after
-each removal — which is what proves they were dead. Eight were pre-existing (an AGM
-entrenchment helper the ladder never used, unused store readers, abandoned file
-generators writing to a hardcoded temp path, an encryption-migration function the CLI
-does not call). One was introduced and removed in the same cycle.
-
-### Known gaps
-
-- The **journal** (Plan E phase 3) is not started — alerts may already cover the need.
-- **Conflicts the ladder declines to settle** remain in `pending`, now distinguishable
-  from the ones it decided (those record `auto_resolved` with a `resolved_value`).
-  Reviewing the genuinely open set is a review, not a subsystem.
-- **Portable brains are implemented but not wired.** `export_portable_brain` /
-  `import_portable_brain` exist in `backend/memory/backup.py` with tests, but no API
-  endpoint and no CLI command reach them. `AGENTS.md` now says so accurately rather
-  than describing them as available.
+**Known gaps:** the journal (Plan E phase 3) is not started; conflicts the ladder
+declines to settle remain `pending` (now distinguishable from decided ones);
+portable brains are implemented and tested but reachable by no endpoint or CLI
+command.
 
 ## v0.1.1-alpha
 
-**Memory is never forgotten on a timer.** This release removes the background
-garbage collector and makes the maintenance that remains cheaper and more
-predictable.
+**Memory is never forgotten on a timer.** The background garbage collector is
+gone, and the maintenance that remains is cheaper and more predictable.
 
-- **Time-based decay is gone.** The scheduler used to lower slot priority and
-  soft-delete "stale" frames weekly, dropping their embedding vectors. It could
-  only ever act on rows already below the default priority — i.e. data the user
-  had already forgotten — so it was a timer that re-forgot things on a delay.
-  Memory now leaves only through an explicit `forget` or a deliberate deletion.
-- **Merging is ad hoc; backups are not.** Near-duplicate frames merge as soon as
-  duplicates are found (the 6-hour consolidation tick is a *look* cadence, not a
-  merge cadence). The brain snapshot moved to its own predictable 12-hour clock,
-  so snapshot count no longer scales with merge frequency. A merge that runs
-  without a fresh snapshot takes one first, so a merge is never unprotected.
-- **Faster re-indexing.** Embedding top-up (turns and frames with missing/stale
-  embeddings) runs every 6 hours as its own job, with no backup attached.
-- **Removed:** the `assistant db gc` CLI command, and the `/plans/` archive
-  convention (plans are transient now — git history is the record).
-- **Docs:** `ARCHITECTURE.md` now documents the scheduler; several stale docs
-  were removed and drifted claims corrected.
-
-Full validation: `./run_ci.sh` green (dead-code check, frontend lint/test/build,
-critical-path tests, backend suite in plain and encrypted modes).
-
----
+- **Time-based decay is gone.** It only ever lowered priority on rows already
+  below the default — data the user had already forgotten — so it re-forgot
+  things on a delay. Memory leaves only through an explicit `forget` or deletion.
+- **Merging is ad hoc; backups are not.** Duplicates merge as soon as found (the
+  6-hour tick is a *look* cadence). The snapshot moved to its own 12-hour clock;
+  a merge without a fresh snapshot takes one first.
+- **Faster re-indexing:** embedding top-up runs every 6 hours as its own job.
+- **Removed:** the `assistant db gc` command and the `/plans/` archive convention.
 
 ## v0.1.0-alpha
 
 **The first alpha.** A privacy-first cognitive digital assistant that remembers
 what you tell it, learns over time, and corrects itself when it is wrong. All
-inference runs locally through Ollama. Nothing leaves your machine unless you
+inference runs locally through Ollama; nothing leaves your machine unless you
 explicitly opt into an external search backend.
 
-This is alpha software for a **single household**. It is not hardened for
-untrusted multi-user input or for exposure beyond localhost.
-
----
-
-## What it does
-
-- **Remembers.** Facts are stored as frames (entities/concepts/events) with
-  key/value slots, a confidence score, and a source episode. It recalls them by
-  semantic search plus a graph walk over typed associations.
-- **Learns from every turn.** A utility model extracts facts before the answer is
-  generated, so what it just learned can be acknowledged truthfully in its own
-  words.
-- **Corrects itself.** You can contradict it. The correction is parsed,
-  validated against sources, and applied through a belief-revision ladder; the
-  old value is preserved in an audit trail rather than overwritten.
-- **Reacts to feedback.** Positive feedback reinforces the facts behind a turn,
-  negative feedback weakens them.
-- **Searches the web, locally.** Default search is a local SearXNG instance, so
-  no query leaves the machine. Results are retrieval-only unless they pass
-  extraction as high-signal, corroborated facts.
-- **Runs scheduled tasks.** "Add an AI briefing to my mornings" creates a real
-  memory frame; the agent runs it on a daily clock and the output is ordinary
-  memory you can ask about later.
-- **Talks.** Hands-free voice mode with silence detection and local
-  transcription (faster-whisper).
-- **Shows its work.** A Brain Observatory visualizes the frame graph; a trace
-  panel shows what was searched, learned, and conflicted.
-
-## Privacy posture
-
-This is the point of the project, so it is worth stating plainly what is
-enforced (there is a checked-in verifier — `assistant-verify-security` — that
-asserts each of these):
-
-- **All LLM inference is local** via Ollama on `127.0.0.1:11434`. There is no
-  cloud LLM provider in the codebase.
-- **Web search defaults to a local SearXNG instance.** No query leaves the
-  machine in the default configuration.
-- **The only permitted external backend is Brave Search**, and only with
-  explicit opt-in (`BRAVE_ENABLED=true` + `BRAVE_API_KEY`). When enabled,
-  sanitized query text and your IP address are sent to Brave. Nothing else.
-- **No telemetry, analytics, or phone-home code of any kind.**
-- **Everything binds to localhost.** FastAPI and SearXNG never listen on a public
-  interface; the only published port is Caddy on `127.0.0.1:8443`.
-- **The brain is a local SQLite database**, optionally encrypted at rest with
-  SQLCipher (`DB_KEY`; AES-256).
-- **Secrets live in `.env`** (gitignored). Only `.env.example` is committed.
-
-## What's new in this alpha
-
-This release is the product of a full principal-level review of the Python
-backend, and the fixes that came out of it. Every non-trivial fix ships with a
-regression test proven to fail against the pre-fix code.
-
-**Security**
-- `fetch_url` and `/og-preview` now resolve and validate the host on **every**
-  redirect hop and reject private/loopback/link-local/reserved addresses, with a
-  real streaming byte cap. Previously the host was checked once and redirects
-  were followed unchecked.
-- The math sandbox is honest about what it enforces: it runs off the event loop,
-  passes a minimal environment (no `DB_KEY`/`BRAVE_API_KEY` leakage), and kills
-  the whole process group on timeout.
-- Model-authored `file_*` slot keys can no longer become filesystem paths.
-
-**Correctness**
-- Fixed a 500 on the scheduled-task search path (`skip_route`), the most common
-  `merge_frames` shape raising `IntegrityError`, frame resurrection discarding
-  every field but `name`, three registered tools that could never succeed, name/id
-  confusion in `upsert_association`, an inverted `source_episode_id` ternary, and
-  Brave returning a bare list where callers unpack a tuple.
-- The web feedback buttons now actually reinforce or weaken memory; they were a
-  silent no-op.
-- `/chat/stream` (the path the UI uses) now matches `chat()`: bounded search
-  relevance gate, graceful generation failure, compute results stored, learning
-  alerts raised, sources footer present, and corrections no longer re-run the
-  whole turn.
-
-**Hygiene**
-- Bounded `?limit=` endpoints, bounded extraction output, tolerant ragged-CSV
-  ingestion, stable scheduler-heartbeat ids, and the frontend/backend API contract
-  reconciled (the frontend Zod schemas now actually parse responses).
-
-## Requirements
-
-- Docker and Docker Compose
-- Ollama on the host, with these models pulled:
-
-  ```bash
-  ollama pull qwen3.5:9b            # chat + tools
-  ollama pull qwen3.5:4b            # extraction + routing
-  ollama pull qwen3-embedding:0.6b  # embeddings
-  ollama pull qwen3.8:27b           # on-demand escalation + math (optional but recommended)
-  ```
-
-- Recommended host environment so large models stay warm between turns
-  (reloading a 27B model costs tens of seconds):
-  `OLLAMA_KEEP_ALIVE=-1` and `OLLAMA_MAX_LOADED_MODELS=4`.
-
-## Quick start
-
-See `README.md` for the full first-run walkthrough. In short:
-
-```bash
-cp .env.example .env      # then set TZ, and optionally DB_KEY
-docker compose up -d
-```
-
-Open the assistant at **https://localhost:8443**.
-
-## What this alpha is not
-
-- **Not multi-user hardened.** User isolation exists, but the release target is a
-  single household. Do not expose it beyond localhost or treat it as safe for
-  untrusted users yet.
-- **Not feature-frozen.** Interfaces and data shapes may change between alphas.
-- **Answers do not stream token-by-token** on the default tool path; you see
-  progress stages, then the complete answer. This is a known, documented gap.
-
-## Known issues
-
-- `docs/TODO.md` — the open items from the memory/pipeline audit that are **not**
-  addressed in this alpha (brain-import provenance, consolidation frame-id
-  rewrite, search-fact episode linkage, and smaller debt).
-
-## License
-
-See `LICENSE`.
-
-## Acknowledgements
-
-Built on Ollama, FastAPI, SQLite + sqlite-vec, SolidJS, SearXNG, and Caddy.
+This is alpha software for a **single household**, not hardened for untrusted
+multi-user input or exposure beyond localhost.

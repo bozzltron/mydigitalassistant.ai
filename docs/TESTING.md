@@ -132,74 +132,55 @@ If 5: write the integration test instead.
 
 When deleting a test, don't just comment it out — remove it. A commented-out test is a code smell, not a safety net.
 
-## 7. Current state of the test suite
-Snapshot: 2026-10-05. Full suite runs in both plain SQLite and SQLCipher-encrypted modes.
+## 7. What the suite covers
 
-**The table below lists selected files, not the whole suite, and per-file counts
-drift.** The suite is now ~1180 tests across 97 files; the rows here are a
-long-standing sample and several counts are stale. Treat them as a map of *what
-is covered*, not as authoritative numbers — the `Total` is for the listed rows
-only. (A 2026-10-05 audit found this table claiming 501 while the suite was
-1180.)
+Full suite runs in both plain SQLite and SQLCipher-encrypted modes. It is
+described **by area, not by file or count** — file lists and per-file counts go
+stale the moment the suite changes, and a number in a doc is a claim nobody
+re-measures.
 
-### Suite hygiene (2026-10-05 audit)
+- **Memory store** — frame/slot/association CRUD, episode logging, slot history,
+  conflict auto-resolution, merges and aliases, ownership isolation, blank-value
+  refusal, slot-write atomicity.
+- **Extraction & correction** — JSON parse and retry, frame/slot/association
+  creation, degenerate-record dropping, identity routing, correction subject
+  routing, user-content registration.
+- **Confidence & belief revision** — bump/lower formulas, the conflict ladder and
+  its recorded provenance, AGM expand/contract/revise.
+- **Retrieval** — cosine similarity, frame→text, memory-context formatting and
+  truncation, graph walk, identity-frame boosts, episode recall.
+- **Pipeline** — task router, reasoner, orchestrator (full loop, search
+  injection, correction, scheduled tasks), prompt assembly, streaming events,
+  turn timings.
+- **Search** — SearXNG backend, relevance filter, backend selection, Brave gating,
+  `fetch_url`, URL safety.
+- **Files** — extractors, upload/agent-write parity, sandbox safety, reserved
+  keys, read resolution.
+- **Scheduler** — daily clock, run-now, consolidation, summarization, alerts.
+- **API & CLI** — endpoints, sessions, backup/restore, encrypted-DB paths.
+- **Security & ops** — local-only bindings, Dockerfile/compose config, subprocess
+  safety.
+- **Meta** — `test_suite_hygiene.py` (every test asserts something; no fixture
+  named like a test), `test_plan_citations.py` (docs cite files that exist).
 
-A test that cannot fail is not a test. The audit found and removed eight empty
-stubs (bodies of `pass`), fixed one test that always skipped (it read a
-non-existent user and bailed), renamed one fixture that was misnamed as a test,
-and strengthened tests whose only check was "does not raise" or a
-name-without-assertion.
+The integration tests — learn-then-recall, contradiction-then-auto-resolve,
+multi-user privacy, the full cognitive loop — are the highest-signal tests in the
+suite; they exercise whole paths rather than units.
 
-To stop regrowth, `test_suite_hygiene.py` fails the suite if any `test_*`
-function contains no assertion construct (assert / `pytest.raises` / mock
-assertion), or if a fixture is named like a test. A test that genuinely cannot
-assert needs an explicit `# no-assert-ok: <reason>` marker — deliberately noisy
-so it is not used casually.
+### Suite hygiene
 
-| File | Tests | Covers |
-|---|---|---|
-| `test_suite_hygiene.py` | 2 | Guard: every test asserts something; no fixture named like a test. |
-| `test_memory_store.py` | 40 | Frame/slot/association CRUD, episode logging, slot history, conflict auto-resolution. |
-| `test_extractor.py` | 39 | JSON parse, retry on malformed, frame/slot/association creation, conflict integration. |
-| `test_api.py` | 38 | Health, users, chat, sessions, frames, conflicts, DB backup/restore endpoints, correction subject routing. |
-| `test_reasoner.py` | 28 | Intent classification, plan formatting, self-correction branches. |
-| `test_task_router.py` | 23 | Heuristic patterns (parametrized), LLM fallback paths, heuristic-first priority. |
-| `test_working_memory.py` | 21 | LRU cache, boost map, touch/lookup/eviction behavior. |
-| `test_retrieval.py` | 32 | Cosine similarity, frame→text, memory-context formatting, truncation, identity-frame boosts. |
-| `test_confidence.py` | 21 | Bump formula, bounded confidence, initial confidence, conflict resolution branches. |
-| `test_cli.py` | 20 | Chat, memory, users, status, DB backup/restore via API. |
-| `test_belief_revision.py` | 20 | Standalone AGM operators (expand/contract/revise). |
-| `test_search_tool.py` | 19 | SearXNG backend, relevance filter, backend selection, Brave gating. |
-| `test_llm_client.py` | 19 | Chat/embed requests, response parsing, system prompts, error handling. |
-| `test_security.py` | 18 | Security verification script, local-only bindings, Brave endpoint gating. |
-| `test_docker.py` | 18 | Dockerfile security, compose config, CLI service, shell wrapper. |
-| `test_orchestrator.py` | 17 | Full cognitive loop, search injection, correction handling, scheduled-task chat flow. |
-| `test_memory_maintenance.py` | 3 | No time-based decay of idle facts; consolidation skips the backup when there is nothing to merge. |
-| `test_brain_portable.py` | 16 | Encrypted portable brain export/import. |
-| `test_identity_name.py` | 26 | Identity frame/slot behavior, self-description, user-authoritative rename, user-vs-assistant name routing, correction subject routing. |
-| `test_tools.py` | 12 | `fetch_url` tool, robots.txt, extraction from fetched documents. |
-| `test_daily_schedule.py` | 12 | Clock helpers, store semantics, create/list/delete/pause/resume chat flow. |
-| `test_phase9_memory_strength.py` | 11 | Memory strength reinforcement and slot priority. |
-| `test_phase9_consolidation.py` | 10 | Frame merge planning and execution. |
-| `test_episode_recall.py` | 8 | Semantic episode recall across sessions. |
-| `test_backup_restore.py` | 8 | Full-DB JSON backup/restore. |
-| `test_review_fixes.py` | 7 | Regression fixes for frame tombstones, aliases, retrieval. |
-| `test_phase9_scheduler_consolidation.py` | 6 | Scheduler-driven consolidation integration. |
-| `test_brain_search.py` | 6 | Brain Observatory memory search endpoint. |
-| `test_self_context.py` | 3 | Agent self-description in system prompt. |
-| `test_search_learn_recall.py` | 3 | Search → learn → recall integration. |
-| `test_introspective_recall.py` | 3 | Introspective query handling. |
-| `test_schema.py` | 2 | Pydantic model validation (low signal; candidates for removal). |
-| `test_conflict_resolution.py` | 2 | **Integration:** contradiction → auto-resolve across confidence pairings. |
-| `test_user_isolation.py` | 1 | **Integration:** multi-user episodic privacy. |
-| `test_learning_loop.py` | 1 | **Integration:** learn a fact, verify recall on a fresh request. |
-| `test_learning_exam.py` | 1 | **Integration:** broader learn-and-recall scenario. |
-| `test_cognitive_loop.py` | 1 | **Integration:** full chat → learn → recall; turns 1 + 2 of a session. |
-| **Total** | **501** | |
-
-The integration files — `test_learning_loop.py`, `test_conflict_resolution.py`, `test_user_isolation.py`, `test_cognitive_loop.py`, `test_learning_exam.py`, and `test_search_learn_recall.py` — are the highest-signal tests in the suite.
+A test that cannot fail is not a test. `test_suite_hygiene.py` fails the suite if
+any `test_*` function contains no assertion construct (assert / `pytest.raises` /
+mock assertion), or if a fixture is named like a test. A test that genuinely
+cannot assert needs an explicit `# no-assert-ok: <reason>` marker — deliberately
+noisy so it is not used casually.
 
 ### Known gaps to close
-- **Scheduled-task execution:** No integration test actually fires a due task through the scheduler and asserts the output episode + daily-run frame + associations are created.
-- **Schema-only tests:** `test_schema.py` validates Pydantic models, which is framework behavior per section 4. Consider removing or replacing with behavior that exercises the models through real store/pipeline code.
-- **Belief-revision operators:** `test_belief_revision.py` covers `expand`/`contract`, which are standalone operators not used in production. Keep only if the operators are documented as public utilities; otherwise move to tests that exercise `revise()`.
+- **Scheduled-task execution:** No integration test fires a due task through the
+  scheduler and asserts the output episode + daily-run frame + associations.
+- **Schema-only tests:** `test_schema.py` validates Pydantic models, which is
+  framework behavior per section 4. Consider removing or replacing with behavior
+  that exercises the models through real store/pipeline code.
+- **Belief-revision operators:** `test_belief_revision.py` covers `expand`/
+  `contract`, standalone operators not used in production. Keep only if they are
+  documented as public utilities; otherwise test `revise()` instead.

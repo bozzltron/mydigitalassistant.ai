@@ -371,10 +371,13 @@ the assessment criteria, memory budget, and re-evaluation process.
 - Tools model (default `qwen3.5:9b`): drives the tool loop; same brain as chat so
   tool calls + final answer share the hot KV cache.
 - Embedding model (default `qwen3-embedding:0.6b`, 1024-dim): frame/query embeddings.
-- Max model (default `qwen3.8:27b`): on-demand escalation tier (auto reasoner or
-  "Max" UI toggle); think on, `keep_alive=10m`, never resident next to the warm set.
-- Math model (default `qwen3.8:27b`): on-demand `compute` tool — writes Python for
-  sandboxed execution; shares weights with the max model.
+- Max model (opt-in; empty by default — set `MAX_MODEL`, e.g. `qwen3.8:27b`):
+  on-demand escalation tier (auto reasoner or "Max" UI toggle); think on,
+  `keep_alive=10m`, never resident next to the warm set. Empty means escalation
+  falls back to thinking-mode on the chat model.
+- Math model (opt-in; empty by default — set `MATH_MODEL`, e.g. `qwen3.8:27b`,
+  which shares weights with the max model): on-demand `compute` tool — writes
+  Python for sandboxed execution. Empty disables the `compute` tool entirely.
 - Coder model: reserved for tool codegen; falls back to chat model.
 - No separate router/reasoning models: routing reuses utility; reasoning is a thinking-mode
   escalation on the chat model.
