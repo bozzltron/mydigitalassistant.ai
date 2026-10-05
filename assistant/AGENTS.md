@@ -279,8 +279,10 @@ have caught the bug before the fix ships. This builds the suite in the direction
 real bugs rather than abstract coverage.
 Critical paths that need regression tests (in priority order):
 1. **Voice recording flow**: silence detection → stopRecording → transcription → sendMessage.
-   *Note: No automated tests exist for this path. Voice/audio I/O with silence detection
-   and transcription is inherently flaky in CI. Manual verification recommended.*
+   Covered by `frontend/src/hooks/useConversationVoiceRecording.test.tsx`,
+   `useVoiceRecording.test.tsx`, and `state/voiceOutputGate.test.ts`. The mic stays
+   open through a `/transcribe` round trip — captures are queued and sent serially so
+   speech between utterances is not lost — and shuts only while the agent is speaking.
 2. **run_now**: scheduled task found by name → executed → last_run updated → once disabled.
 3. **Correction pipeline**: parse → validate → apply → response.
 4. **Search extraction + merge**: snippet extract → deduplication → document extract → merge.

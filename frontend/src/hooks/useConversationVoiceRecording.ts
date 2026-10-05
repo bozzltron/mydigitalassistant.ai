@@ -1,4 +1,4 @@
-import { createSignal, createEffect, onCleanup, batch } from 'solid-js';
+import { createSignal, createEffect, onCleanup } from 'solid-js';
 import { debug } from '../services/logger';
 import { enqueue, isProcessing } from '../state/messageQueue';
 import { triggerDrain } from '../services/queueDrainer';
@@ -29,10 +29,30 @@ export function useConversationVoiceRecording({
 }: UseConversationVoiceRecordingOptions): UseConversationVoiceRecordingReturn {
   const [convState, setConvState] = createSignal<ConvVoiceState>('idle');
 
-  // True while a /transcribe request is outstanding. The policy must not resume
-  // recording until this clears, otherwise it reopens the mic the moment we set
-  // 'transcribing' and catches the tail of the sentence just transcribed.
-  const [transcriptionInFlight, setTranscriptionInFlight] = createSignal(false);
+  // Captured utterances waiting to be transcribed. A /transcribe round trip must
+  // not shut the microphone -- doing so dropped anything said between utterances,
+  // which is the whole failure this queue exists to fix. Captures are queued here
+  // and sent one at a time, so the transcript order matches the order spoken.
+  const pendingSends: Array<{ blob: Blob; mime: string }> = [];
+  let drainingSends = false;
+
+  function queueSend(blob: Blob, mime: string) {
+    pendingSends.push({ blob, mime });
+    void drainSends();
+  }
+
+  async function drainSends() {
+    if (drainingSends) return;
+    drainingSends = true;
+    try {
+      while (pendingSends.length > 0) {
+        const next = pendingSends.shift()!;
+        await sendForTranscription(next.blob, next.mime);
+      }
+    } finally {
+      drainingSends = false;
+    }
+  }
 
   // Set when opening the microphone fails, cleared by a single retry below.
   // Retrying on every policy tick is a hot loop that re-prompts forever, so one
@@ -62,7 +82,7 @@ export function useConversationVoiceRecording({
   const capture = createVoiceCapture({
     label: '[convVoice]',
     shouldCapture: () => isVoiceMode(),
-    onCapture: (blob, mime) => sendForTranscription(blob, mime),
+    onCapture: (blob, mime) => queueSend(blob, mime),
     onDiscard: (reason) => debug('[convVoice] discarded:', reason),
     onStarted: () => {
       consecutiveDrops = 0;
@@ -92,22 +112,22 @@ export function useConversationVoiceRecording({
 
   // The whole capture policy, as one rule instead of a transition table.
   //
-  // The mic is open when voice mode is on and the agent is not speaking, and at
-  // no other time. Everything else follows from those preconditions:
+  // The mic is open whenever voice mode is on and the agent is not speaking.
+  // Everything else follows from those preconditions:
   //
   //   !voiceMode          -> shut
   //   agent speaking      -> shut, and drop what was captured
-  //   transcription open  -> shut, so the mic does not catch the user's tail
+  //   recorder settling   -> wait for the blob to be assembled, then reopen
   //   otherwise           -> open
   //
-  // An active turn deliberately does NOT close the mic. Shutting it for the
-  // duration of a turn made hands-free conversation impossible -- the user could
-  // not say anything while the agent worked, which is the entire reason the
-  // queue exists.
+  // A turn in flight and a /transcribe in flight both deliberately leave the mic
+  // OPEN. Shutting it for a turn made hands-free conversation impossible; shutting
+  // it for the transcription round trip dropped whatever was said between
+  // utterances. Captures are queued and sent serially instead (see `pendingSends`),
+  // so listening never costs ordering.
   createEffect(() => {
     const voiceMode = isVoiceMode();
     const output = isOutputActive();
-    const inFlight = transcriptionInFlight();
     const recording = capture.isRecording();
     const blocked = captureBlocked();
     // Read only so the trace shows it. A turn is not part of this policy.
@@ -115,7 +135,7 @@ export function useConversationVoiceRecording({
     // Re-decide whenever a capture starts, ends, or is handed back.
     capture.epoch();
 
-    debug('[convVoice] policy', { voiceMode, output, inFlight, recording, blocked, turnActive });
+    debug('[convVoice] policy', { voiceMode, output, recording, blocked, turnActive });
 
     if (!voiceMode) {
       if (recording) capture.stop();
@@ -131,10 +151,10 @@ export function useConversationVoiceRecording({
       return;
     }
 
-    // A capture is still being read or a /transcribe is outstanding. Reopening
-    // now would both clobber the pending chunks and catch the tail of the user's
-    // own sentence.
-    if (inFlight || capture.isSettling()) {
+    // The recorder is closing and its blob is being assembled. This is the only
+    // window that blocks capture: a /transcribe in flight does NOT, so speech
+    // between utterances is heard instead of dropped.
+    if (capture.isSettling()) {
       setConvState('transcribing');
       // The global status is what the top-bar indicator reads, and this hook
       // never advanced it: during a conversation turn it stayed 'listening', so
@@ -161,16 +181,9 @@ export function useConversationVoiceRecording({
   });
 
   async function sendForTranscription(blob: Blob, mime: string) {
-    if (!isVoiceMode()) return;
-
-    // These two writes must be atomic. Solid flushes effects after each
-    // individual signal write, so without batch() the policy would observe
-    // 'transcribing' with inFlight still false and reopen the mic.
-    batch(() => {
-      setTranscriptionInFlight(true);
-      setConvState('transcribing');
-      startProcessing();
-    });
+    // No `!isVoiceMode()` guard: the audio was captured while listening, so it is
+    // transcribed and queued even if voice mode ended meanwhile. Dropping it here
+    // was silent data loss.
     playEarcon('stop');
 
     try {
@@ -222,12 +235,7 @@ export function useConversationVoiceRecording({
 
     } catch (err) {
       console.error('Transcription error:', err);
-      if (isVoiceMode()) {
-        debug('[convVoice] discarded: transcription failed');
-      }
-    } finally {
-      // Release the mic gate; the policy may now resume recording.
-      setTranscriptionInFlight(false);
+      debug('[convVoice] discarded: transcription failed');
     }
   }
 

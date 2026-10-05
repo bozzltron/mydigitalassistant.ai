@@ -354,12 +354,11 @@ describe('useConversationVoiceRecording', () => {
     dispose();
   });
 
-  it('shows the transcribing status while a conversation turn is transcribed (regression: the top-bar bar stayed on "listening")', async () => {
-    // The conversation hook kept its own 'transcribing' state and never advanced
-    // the global voice status, so the indicator read "Listening..." through the
-    // whole /transcribe round-trip. It must follow the same signal it always had.
+  it('stays in "listening" while a /transcribe is in flight, because the mic is open', async () => {
+    // The mic must not be held shut for the transcription round trip, so the
+    // honest status during a request is "listening" -- the user can keep talking.
     const voiceMode = voiceModeSignal(true);
-    const { dispose } = mountHook({ isVoiceMode: voiceMode.is, isTurnActive: () => false });
+    const { hook, dispose } = mountHook({ isVoiceMode: voiceMode.is, isTurnActive: () => false });
     await flush();
     expect(voice.status).toBe('listening');
 
@@ -370,14 +369,13 @@ describe('useConversationVoiceRecording', () => {
 
     await speakThenPause();
 
-    // The request is in flight and the status reflects it.
     expect(global.fetch).toHaveBeenCalledTimes(1);
-    expect(voice.status).toBe('processing');
+    expect(voice.status).toBe('listening');
+    expect(hook.isRecording()).toBe(true);
 
     resolveFetch({ ok: true, status: 200, json: async () => ({ text: 'hello there' }) });
     await flush(20);
 
-    // Back to listening once the turn's text is queued.
     expect(voice.status).toBe('listening');
     dispose();
   });
@@ -528,7 +526,7 @@ describe('useConversationVoiceRecording', () => {
     dispose();
   });
 
-  it('holds the mic closed while /transcribe is in flight (regression: reopened mid-request)', async () => {
+  it('keeps listening while /transcribe is in flight (regression: the mic was shut for the whole round trip, dropping speech between utterances)', async () => {
     const voiceMode = voiceModeSignal(true);
     let resolveFetch: ((v: unknown) => void) | null = null;
     const fetchPromise = new Promise((r) => {
@@ -547,20 +545,54 @@ describe('useConversationVoiceRecording', () => {
     expect(mr).toBeDefined();
     await speakThenPause();
 
-    // Request outstanding: must be transcribing, NOT recording.
-    expect(hook.state()).toBe('transcribing');
-    expect(hook.isRecording()).toBe(false);
-
-    const countWhilePending = recorderInstances.length;
+    // Request outstanding: the microphone is already open for the next utterance.
+    expect(hook.state()).toBe('recording');
+    expect(hook.isRecording()).toBe(true);
 
     resolveFetch!({});
     await flush(50);
 
-    // Only now may the mic reopen.
-    expect(hook.state()).toBe('recording');
-    expect(recorderInstances.length).toBeGreaterThan(countWhilePending);
+    // The in-flight transcript still lands, in order.
+    expect(getQueue().map((m) => m.content)).toContain('slow response');
     dispose();
   });
+
+  it('queues a second utterance captured while the first is still transcribing, in order', async () => {
+    const voiceMode = voiceModeSignal(true);
+    const resolvers: Array<(v: unknown) => void> = [];
+    global.fetch = vi.fn(
+      () => new Promise((r) => { resolvers.push(r); }),
+    ) as unknown as typeof fetch;
+
+    const { hook, dispose } = mountHook({ isVoiceMode: voiceMode.is, isTurnActive: () => false });
+    await flush();
+
+    // First utterance: silence fires, the blob is sent, and the request hangs.
+    await speakThenPause();
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(hook.isRecording()).toBe(true); // mic reopened immediately
+
+    // Second utterance, captured while the first /transcribe is still in flight.
+    speak();
+    await flush(600);
+    goQuiet();
+    await flush(2100);
+    await flush(20);
+
+    // Captured, but not sent yet: sends are serialized so order is preserved.
+    expect(hook.isRecording()).toBe(true);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+
+    resolvers[0]({ ok: true, status: 200, json: async () => ({ text: 'first' }) });
+    await flush(20);
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+
+    resolvers[1]({ ok: true, status: 200, json: async () => ({ text: 'second' }) });
+    await flush(20);
+
+    expect(getQueue().map((m) => m.content)).toEqual(['first', 'second']);
+    dispose();
+  }, 20000);
 
   it('leaves the processing flag clear so later utterances can still drain', async () => {
     const voiceMode = voiceModeSignal(true);

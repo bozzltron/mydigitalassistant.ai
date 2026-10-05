@@ -237,7 +237,7 @@ export function createVoiceCapture(cb: VoiceCaptureCallbacks): VoiceCapture {
         }
       }
 
-      mr.onstop = async () => {
+      mr.onstop = () => {
         try {
           if (discardNextCapture) {
             // Cleared here rather than in discard() so it cannot leak into a
@@ -260,7 +260,15 @@ export function createVoiceCapture(cb: VoiceCaptureCallbacks): VoiceCapture {
           setAudioChunks([])
           if (submittedCapture) return
           submittedCapture = true
-          await cb.onCapture(blob, mime)
+          // Hand the blob off without awaiting the handler. The handler runs the
+          // /transcribe round trip, and awaiting it here held `isSettling` true
+          // for the whole request -- which kept the mic shut and dropped anything
+          // said between utterances. Settling now covers only the recorder
+          // teardown; the caller serializes its own sends so order is preserved.
+          void Promise.resolve(cb.onCapture(blob, mime)).catch((err) => {
+            console.error(`${cb.label} capture handler error:`, err)
+            cb.onDiscard('Processing error')
+          })
         } catch (err) {
           console.error(`${cb.label} recording stop error:`, err)
           cb.onDiscard('Processing error')
