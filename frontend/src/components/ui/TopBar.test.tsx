@@ -124,6 +124,29 @@ describe('TopBar', () => {
     expect(saved.ttsEnabled).toBe(false)
   })
 
+  it('persists a changed voice selection and speed to localStorage', async () => {
+    vi.mocked(window.speechSynthesis.getVoices).mockReturnValue([
+      { name: 'Voice A', lang: 'en-US', localService: true, voiceURI: 'uri-a' } as SpeechSynthesisVoice,
+      { name: 'Voice B', lang: 'en-US', localService: true, voiceURI: 'uri-b' } as SpeechSynthesisVoice,
+    ])
+
+    render(() => <TopBar {...defaultProps} />)
+
+    const select = document.getElementById('voice-select') as HTMLSelectElement
+    await vi.waitFor(() => expect(select.options.length).toBeGreaterThan(1))
+    fireEvent.change(select, { target: { value: 'uri-b' } })
+
+    const speed = document.getElementById('voice-speed') as HTMLInputElement
+    fireEvent.change(speed, { target: { value: '1.6' } })
+
+    const saved = JSON.parse(localStorage.getItem('assistant_settings')!) as {
+      voiceUri: string
+      voiceSpeed: number
+    }
+    expect(saved.voiceUri).toBe('uri-b')
+    expect(saved.voiceSpeed).toBe(1.6)
+  })
+
   it('orders the right side Alerts, Let\'s talk, Files, Brain, Settings, Trash', () => {
     render(() => <TopBar {...defaultProps} />)
     const labels = Array.from(
