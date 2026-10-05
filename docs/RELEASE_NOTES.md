@@ -1,5 +1,29 @@
 # MyDigitalAssistant.ai — release notes
 
+## v0.11.1-alpha
+
+**Following through on v0.11.0: the task loop's edges are cleaned up.**
+
+Running tasks through the real loop was right, and it surfaced three rough edges
+at the seams — each a small correctness issue rather than a redesign.
+
+- **An alert no longer swallows the sources footer.** Because a task's report now
+  carries the loop's own footers, a `**Sources:**` list (or the "answered from
+  memory" marker) landed *after* the `ALERT:` line — and the parser treats
+  everything from that line on as the alert body. The sources became the alert's
+  "reason" and dropped out of the stored summary. Footers are now stripped before
+  the alert is parsed.
+- **Scheduling a task is consent.** A scheduled task used to hit Brave's
+  sensitivity gate and, finding no one present to answer, would replace its
+  output with a "do you want to proceed?" prompt. The user asked for the search
+  when they created the task, so the task's request now carries `search_consent`
+  and the gate is skipped.
+- **Run-now has room to finish.** The `run_scheduled_task` tool had a 60s cap,
+  but a run-now executes the whole loop (routing + forced search + tool loop +
+  generation) and a single LLM call may take 600s. A big task was cut off
+  mid-run. The ceiling is now `SCHEDULED_TASK_TIMEOUT_SECONDS` (default 900s);
+  the scheduler's own firing path still has no cap.
+
 ## v0.11.0-alpha
 
 **Scheduled tasks run the real loop now.** The daily list was executing through a
