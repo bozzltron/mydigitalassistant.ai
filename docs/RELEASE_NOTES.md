@@ -1,5 +1,14 @@
 # MyDigitalAssistant.ai — release notes
 
+## v0.11.5-alpha
+
+**Files table: dropped the Type column.**
+
+The column showed the frame type — `entity` for every row — which told the user
+nothing, and the extension is already part of the filename. The table is now
+Name (icon + filename), Size, Date, Actions. The Size column stays: it is no
+longer complicated, since `/files/list` returns `file_size`.
+
 ## v0.11.4-alpha
 
 **The Files page grew up: real sizes, real downloads, real previews.**
