@@ -1,5 +1,56 @@
 # MyDigitalAssistant.ai — release notes
 
+## v0.9.0-alpha
+
+**When you ask it to save something, you get a file.** And you can find it. Two
+things were broken and both were invisible: the assistant could not actually
+produce a document, and the Files page did not list what it did produce.
+
+### "Save that as a docx" made a broken file
+
+`write_file` wrote the text with a document extension. A `.docx` was the literal
+string `"Quarterly Report\n..."`, and Word — or any library that opened it —
+called it corrupt. Measured across the whole format set, every binary format
+failed the same way: `docx`/`pptx` gave `PackageNotFoundError`, `xlsx`/`odt`/
+`ods`/`odp` gave `BadZipFile`, and `.xls` gave `XLRDError ... found b'name,rol'`
+— the reader finding the raw CSV text where a spreadsheet header should be.
+
+The agent now renders a real file for all 13 supported formats: `.txt`, `.md`,
+`.csv`, `.json`, `.ics`, `.pdf`, `.docx`, `.odt`, `.xlsx`, `.xls`, `.ods`,
+`.pptx`, `.odp`. It refuses a format it cannot actually produce rather than
+handing you a file that will not open.
+
+### The agent's files were invisible
+
+The assistant wrote files correctly and reported success, but the Files page
+never showed them. It listed only *uploaded* files; anything the agent wrote
+carried a different internal type and was filtered out — on disk, in memory, and
+nowhere you could see it. This is the one you hit: a reading list written,
+confirmed, and then absent from the Files page. Both kinds are listed now.
+
+### One path, not two
+
+Uploads and agent-written files are meant to be the same thing, and were not:
+an upload recorded the entities and rows it extracted from the file, an
+agent-written file recorded nothing but its name and size. They now run the same
+step, so a file you write and a file you upload produce the same memory.
+
+### Format set
+
+Thirteen formats, the same for reading and writing. Markdown (`.md`) is now
+officially supported. Five formats were dropped from *upload* — `.rtf`, `.eml`,
+`.tsv`, `.html`, `.xml` — because they were rarely used; files already saved in
+them still read normally.
+
+### Known limits
+
+- **PDF is generated, not designed.** reportlab produces clean text and tables,
+  not layout. A user wanting a designed document is not served by this.
+- **A calendar file is one event.** Writing `.ics` turns your text into a single
+  event; a multi-event calendar is out of scope.
+- **`.json` wraps prose.** If the agent writes prose to a `.json`, it is stored as
+  `{"content": "..."}` so the file is valid JSON.
+
 ## v0.8.2-alpha
 
 **The names are not swapped any more.** v0.8.1 gave the user's name its own frame
