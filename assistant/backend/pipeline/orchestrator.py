@@ -42,7 +42,7 @@ from assistant.backend.pipeline.search import (
     search_info_payload,
 )
 from assistant.backend.pipeline.task_router import TaskType, route
-from assistant.backend.pipeline.tools import builtin_tools, run_tool_loop
+from assistant.backend.pipeline.tools import builtin_tools
 from assistant.backend.pipeline.user_content import CONTENT_SLOT_KEY
 from assistant.backend.retry import retry_transient
 
@@ -116,6 +116,30 @@ def _finalize_event(answer: str, reasoning_trace: str | None = None) -> str:
             }
         )
         + "\n\n"
+    )
+
+
+def _meta_event_from_response(session_id: str | None, response: "ChatResponse"):
+    """A `meta` SSE event carrying a ChatResponse's full transparency payload.
+
+    Used by the early-return branches (scheduled task, correction) that produce a
+    ChatResponse via a non-streaming handler: without this they returned after
+    `finalize` and never emitted `meta`, so a stream consumer got no summaries,
+    search_info, confidence, or citations for those turns. Imports lazily to avoid
+    the orchestrator<->streaming circular import.
+    """
+    from assistant.backend.pipeline.streaming import MetaEvent
+
+    return MetaEvent(
+        session_id=session_id,
+        task_type=response.task_type,
+        extraction_summary=response.extraction_summary,
+        search_extraction_summary=response.search_extraction_summary,
+        search_info=response.search_info,
+        confidence=response.confidence,
+        confidence_basis=response.confidence_basis,
+        citations=response.citations,
+        memory_context=response.memory_context,
     )
 
 
@@ -933,625 +957,46 @@ class Orchestrator:
         progress: "Callable[[str, str], Awaitable[None]] | None" = None,
         skip_route: bool = False,
     ) -> ChatResponse:
-        """Run the full cognitive loop for a chat turn.
+        """Run the full cognitive loop for a chat turn (non-streaming).
 
-        progress: optional async callback (stage, detail) for live UI status;
-        stage is a stable key, detail is human-readable phrasing.
+        An adapter over ``_run_turn``, the single implementation of the loop: it
+        drains the same SSE events the UI receives and rebuilds a ``ChatResponse``
+        from the terminal ``finalize`` and ``meta`` events. This method used to be
+        a second, ~600-line copy of the loop that drifted from the streaming path
+        six times (see ``test_stream_parity.py``); the copy is gone, so there is
+        one loop to change.
 
-        skip_route: when True, skip the task-type router and treat the message
-        as functional. Used by internal callers (e.g. scheduled-task management
+        progress: optional async callback (stage, detail) for live UI status.
+        skip_route: when True, skip the task-type router and treat the message as
+        functional. Used by internal callers (e.g. scheduled-task management
         responses) that already know the intent.
         """
-        # 1. Session
-        session_id = request.session_id or str(uuid.uuid4())
-        turn_start = time.monotonic()
-
-        # 2. Log user episode
-        user_episode = await self._log_episode(
-            request.user_id,
-            session_id,
-            role="user",
-            content=request.message,
-        )
-        episode_log_time = time.monotonic() - turn_start
-        logger.debug("Episode logging: %.3fs", episode_log_time)
-
-        # 2b. Deterministic alert backstop. If this session is an alert's
-        # conversation, the user has now engaged with it, so it closes. The model
-        # decides what to settle; this guarantees the close, because relying only
-        # on the model remembering to mark its own alert resolved is the failure
-        # we have already been bitten by. Cheap: one query filtered to open alerts.
-        try:
-            await self.store.resolve_alerts_for_session(session_id)
-        except Exception as exc:
-            logger.warning("Alert backstop failed: %s", exc)
-
-        # 3. Classify task type + search intent AND Retrieve memory context IN PARALLEL
-        # Router doesn't need memory; retrieval doesn't need router result.
-        await self._report(progress, "routing", "reading your message")
-        await self._report(progress, "recall", "checking my memory")
-        
-        routing_start = time.monotonic()
-        recall_start = time.monotonic()
-        
-        if skip_route:
-            task_type = TaskType.FUNCTIONAL
-            classification = None
-            # Still need retrieval even when skipping route
-            memory_context = await self.retriever.retrieve(
-                query=request.message,
-                user_id=request.user_id,
-                session_id=session_id,
-            )
-        else:
-            # Run routing and retrieval concurrently
-            route_task = asyncio.create_task(route(request.message, self.llm_client))
-            retrieve_task = asyncio.create_task(
-                self.retriever.retrieve(
-                    query=request.message,
-                    user_id=request.user_id,
-                    session_id=session_id,
-                )
-            )
-            classification, memory_context = await asyncio.gather(route_task, retrieve_task)
-            task_type = classification.task_type
-        
-        routing_time = time.monotonic() - routing_start
-        recall_time = time.monotonic() - recall_start
-        logger.debug("Routing: %.3fs, Memory recall: %.3fs (parallel)", routing_time, recall_time)
-
-        # 3b. Handle scheduled task intent
-        if task_type == TaskType.SCHEDULED and not skip_route:
-            return await self._handle_scheduled_task(request, session_id)
-
-        # 5. Reason: decide action based on memory sufficiency
-        # 6. Extract user-stated facts BEFORE generation (parallel with reasoner)
-        # Both need memory_context, but extraction only needs
-        # user_message + empty assistant_response
-        plan_start = time.monotonic()
-        extraction_start = time.monotonic()
-        
-        plan_task = asyncio.create_task(asyncio.to_thread(
-            classify_intent,
-            query=request.message,
-            task_type=task_type.value,
-            memory=memory_context,
-        ))
-        # Report learning stage before parallel extraction
-        await self._report(progress, "learning", "learning from our conversation")
-        extraction_task = asyncio.create_task(
-            store_turn_memory(
-                user_message=request.message,
-                assistant_response="",
-                store=self.store,
-                llm_client=self.llm_client,
-                source_episode_id=user_episode.id,
-            )
-        )
-        
-        plan, extraction_summary = await asyncio.gather(plan_task, extraction_task)
-        
-        plan_time = time.monotonic() - plan_start
-        extraction_time = time.monotonic() - extraction_start
-        logger.debug("Reasoner: %.3fs, Extraction: %.3fs (parallel)", plan_time, extraction_time)
-
-        # 5a. Storage statements must not trigger external search: the user is
-        # giving information, not requesting a lookup. The router's wants_search
-        # judgment vetoes the reasoner's memory-sufficiency heuristic here.
-        if (
-            plan.search_needed
-            and task_type != TaskType.SEARCH
-            and not skip_route
-            and classification is not None
-            and classification.wants_search is False
-        ):
-            logger.info("Search vetoed by router for storage-style turn")
-            plan.action = Action.ANSWER
-            plan.search_needed = False
-
-        # 5a-bis. A turn that supplies content the user wants transformed (ranked,
-        # sorted, summarised) must not have search become the subject of the
-        # answer. This is the failure Plan A exists for: the user pasted 45 URLs
-        # and asked for them ranked, the router read "search about them if we need
-        # to" as an intent to search, and the answer became a web essay about
-        # submission platforms rather than a ranking of the user's own list.
-        #
-        # Search is not forbidden here -- enriching the content with context is
-        # legitimate. But it must not pre-empt the content, so the turn answers
-        # from what the user supplied and the prompt's authority rule governs what
-        # search may add.
-        supplied_content = extraction_summary.get("user_content")
-        if plan.search_needed and supplied_content:
-            logger.info(
-                "Search de-prioritised: turn transforms user-supplied content "
-                "(frame=%s, %s items)",
-                supplied_content.get("frame_name"),
-                supplied_content.get("item_count"),
-            )
-            plan.search_needed = False
-
-        # 5b. Handle correction intent: extract + validate + apply
-        if plan.action == Action.CORRECT:
-            return await self._run_correction(
-                request, session_id, user_episode.id, memory_context, progress
-            )
-
-        stored_slots = extraction_summary.get("slots") or []
-
-        # 7. Build system prompt with memory context + reasoner guidance
-        prompt_with_memory, plan_instructions, self_context = await self._assemble_prompt(
-            plan, memory_context, task_type=task_type.value
-        )
-        system_prompt = prompt_with_memory
-
-        # DEBUG: Log system prompt for file tools visibility
-        logger.info("DEBUG system_prompt contains file tools guidance: %s", 
-            "list_files" in system_prompt and "read_file" in system_prompt)
-        logger.debug("DEBUG system_prompt (first 500 chars): %s", system_prompt[:500])
-
-        if stored_slots:
-            lines = [f"- {s['frame_name']}.{s['key']} = {s['value']}" for s in stored_slots]
-            system_prompt += (
-                "\n\n**Facts you just stored this turn:**\n"
-                + "\n".join(lines)
-                + "\nAcknowledge these naturally, in your own words."
-            )
-
-        system_prompt = await self._render_supplied_content(
-            system_prompt, extraction_summary
-        )
-
-        # Math computation path
-        computation_result = None
-        if await self._detect_math_intent(request.message):
-            if self.llm_client.math_model:
-                try:
-                    await self._report(progress, "computing", "running mathematical computation")
-                    computation_result = await self.llm_client.execute_python(
-                        f"Solve this step by step: {request.message}"
-                    )
-                    logger.info("Math computation completed: %d chars", len(computation_result))
-                except Exception as e:
-                    logger.warning("Math computation failed: %s", e)
-
-        if computation_result:
-            system_prompt += (
-                f"\n\n**Computed Result (verified via Python execution):**\n"
-                f"{computation_result}\n"
-                f"Incorporate this result into your response. Cite as 'computed'."
-            )
-            await self._remember_computation(computation_result)
-
-        # 7b. Execute search if reasoner says it's needed
-        search_results: list[SearchResult] = []
-        search_extraction_summary: dict = {}
-        search_info: SearchInfo | None = None
-        search_start = time.monotonic() if plan.search_needed else None
-        # Defined up front so the timing log can report it unconditionally; 0.0
-        # means "no search ran", which is the common case and worth seeing.
-        search_time = 0.0
-        if plan.search_needed:
-            await self._report(progress, "searching", "searching the web")
-            # Prefer the router's keyword query; fall back to a sanitized
-            # version of the raw message (never raw conversational text).
-            #
-            # `classification` is None when skip_route=True, so it must be
-            # guarded here. The router's wants_search veto above cannot cover
-            # this case: it explicitly requires `classification is not None`,
-            # so on a skip_route turn the veto never fires and this line is
-            # reached. Four _handle_scheduled_task fallbacks rewrite the message
-            # to an agent-authored string and re-enter with skip_route=True;
-            # those strings match no _NON_INFO_PATTERNS, so classify_intent
-            # always plans a search for them. See test_skip_route_crash.py.
-            from assistant.backend.pipeline.search import (
-                filter_relevant,
-                sanitize_query,
-            )
-
-            routed_query = classification.search_query if classification else None
-            query = routed_query or sanitize_query(request.message)
-            logger.info("Reasoner triggered search for: %s", query[:80])
-            backend_name = self.search_tool.backend_name
-            extraction_budget = self.search_tool.max_results_for_extraction
-            relevance_threshold = (
-                settings.brave_search_min_relevance
-                if backend_name == "brave"
-                else settings.search_min_relevance
-            )
-            
-            # If user gave consent for sensitive search, pass it to skip sensitivity check
-            user_consent = getattr(request, 'search_consent', False)
+        answer = ""
+        meta: dict = {}
+        async for frame in self._run_turn(request, progress, skip_route):
+            if not frame.startswith("data: "):
+                continue
             try:
-                search_results, search_info = await self.search_tool.search_with_info(
-                    query, 
-                    num_results=extraction_budget, 
-                    llm_client=self.llm_client,
-                    user_consent=user_consent
-                )
-            except Exception as e:
-                logger.warning("Search failed, continuing without results: %s", e)
-                search_results = []
-                search_info = None
+                event = json.loads(frame[len("data: "):].strip())
+            except (json.JSONDecodeError, ValueError):
+                continue
+            event_type = event.get("type")
+            if event_type == "finalize":
+                answer = event.get("answer", answer)
+            elif event_type == "meta":
+                meta = event
 
-            # Check if user consent is required for sensitive query
-            if search_info and search_info.consent_required:
-                # Return early with a response asking for consent
-                sensitivity = search_info.sensitivity
-                categories = (
-                    ", ".join(sensitivity.categories)
-                    if sensitivity.categories
-                    else "general"
-                )
-                consent_msg = (
-                    f"This search query may contain sensitive information "
-                    f"({sensitivity.level.value}: {sensitivity.reason}). "
-                    f"Categories: {categories}. "
-                    f"Search via Brave would send this query to their servers. "
-                    f"Do you want to proceed?"
-                )
-                return ChatResponse(
-                    session_id=request.session_id or "",
-                    response=consent_msg,
-                    task_type="search_consent_required",
-                    memory_context="",
-                    citations=[],
-                    extraction_summary=None,
-                    search_extraction_summary=None,
-                    search_info=search_info,
-                )
-
-            # Relevance gate: drop links that don't belong to the query
-            # before they can pollute the system prompt or citations.
-            # Add overall timeout to prevent search pipeline from hanging
-            try:
-                search_results = await asyncio.wait_for(
-                    filter_relevant(
-                        search_results, query, self.embed_fn(), min_relevance=relevance_threshold
-                    ),
-                    timeout=settings.search_timeout,
-                )
-            except TimeoutError:
-                logger.warning(
-                "filter_relevant timed out after %.1fs; keeping all results",
-                settings.search_timeout,
-            )
-
-            if search_results:
-                display_results = search_results[: settings.max_search_results_in_prompt]
-                search_text = "\n".join(
-                    f"- [{r.title}]({r.url}) - {r.snippet}" for r in display_results
-                )
-                system_prompt += f"\n\n**Search Results:**\n{search_text}"
-
-                # Extract facts from search results and store in memory.
-                # Drop slots duplicating what conversational extraction just
-                # stored (same fact often lands under a different key).
-                from assistant.backend.pipeline.extractor import (
-                    apply_search_extraction,
-                    extract_facts_from_document,
-                    extract_facts_from_search,
-                    filter_duplicate_slots,
-                    merge_extractions,
-                )
-
-                # Extract facts from search snippets with timeout
-                try:
-                    snippet_extraction = await asyncio.wait_for(
-                        extract_facts_from_search(
-                            request.message, search_results, self.llm_client
-                        ),
-                        timeout=settings.search_timeout,
-                    )
-                except TimeoutError:
-                    logger.warning(
-                "extract_facts_from_search timed out after %.1fs",
-                settings.search_timeout,
-            )
-                    from assistant.backend.pipeline.extractor import ExtractionResult
-                    snippet_extraction = ExtractionResult()
-
-                # Brave: fetch top result bodies in parallel for richer extraction
-                if backend_name == "brave" and search_results:
-                    try:
-                        bodies = await asyncio.gather(
-                            *[
-                                _fetch_url_body(r.url)
-                                for r in search_results[: settings.max_search_results_in_prompt]
-                            ],
-                            return_exceptions=True,
-                        )
-                        # Parallelize document extraction with timeout
-                        extraction_tasks = [
-                            asyncio.wait_for(
-                                extract_facts_from_document(body, result.url, self.llm_client),
-                                timeout=settings.search_timeout,
-                            )
-                            for result, body in zip(
-                                search_results[: settings.max_search_results_in_prompt],
-                                bodies,
-                                strict=True,
-                            )
-                            if not isinstance(body, Exception) and body
-                        ]
-                        if extraction_tasks:
-                            document_extractions = await asyncio.gather(
-                                *extraction_tasks, return_exceptions=True
-                            )
-                            valid_extractions = [
-                                ext for ext in document_extractions
-                                if not isinstance(ext, Exception) and ext
-                            ]
-                            if valid_extractions:
-                                snippet_extraction = merge_extractions(
-                                    snippet_extraction, *valid_extractions
-                                )
-                    except Exception as e:
-                        logger.warning("Brave full-page fetch failed: %s", e)
-
-                search_extraction = filter_duplicate_slots(
-                    snippet_extraction,
-                    stored_slots,
-                )
-                # Apply search extraction with timeout
-                try:
-                    search_extraction_summary = await asyncio.wait_for(
-                        apply_search_extraction(
-                            search_extraction,
-                            search_results,
-                            self.store,
-                            embed_fn=self.embed_fn(),
-                            backend_name=backend_name,
-                            embedding_model=self.llm_client.embedding_model,
-                        ),
-                        timeout=settings.search_timeout,
-                    )
-                except TimeoutError:
-                    logger.warning(
-                "apply_search_extraction timed out after %.1fs",
-                settings.search_timeout,
-            )
-                    search_extraction_summary = {}
-
-                logger.info(
-                    "Search extraction: %d slots, %d assocs",
-                    search_extraction_summary.get("slots_applied", 0),
-                    search_extraction_summary.get("associations_created", 0),
-                )
-
-                if search_extraction_summary.get("frame_ids"):
-
-                    async def get_embedding(text: str) -> list[float]:
-                        resp = await self.llm_client.embed(text)
-                        return resp.embedding
-
-                    try:
-                        await asyncio.wait_for(
-                            self.store.embed_frames(
-                                search_extraction_summary["frame_ids"],
-                                get_embedding,
-                                self.llm_client.embedding_model,
-                            ),
-                            timeout=settings.search_timeout,
-                        )
-                    except TimeoutError:
-                        logger.warning(
-                "embed_frames timed out after %.1fs",
-                settings.search_timeout,
-            )
-
-                search_time = (
-                time.monotonic() - search_start
-                if search_start is not None
-                else 0.0
-            )
-                logger.debug("Search pipeline: %.3fs", search_time)
-
-                if search_extraction_summary.get("slots_applied", 0) > 0:
-                    conflicts = search_extraction_summary.get("conflicts_created", 0)
-                    if conflicts > 0:
-                        fact_word = "fact was" if conflicts == 1 else "facts were"
-                        conflict_note = (
-                            f" {conflicts} conflicting {fact_word} auto-resolved — "
-                            "the new value is stored and the old is preserved in history."
-                        )
-                    else:
-                        conflict_note = ""
-                    system_prompt += (
-                        f"\n\n**Learned from search:** "
-                        f"{search_extraction_summary['slots_applied']} new facts stored in memory."
-                        f"{conflict_note}"
-                    )
-            else:
-                system_prompt += (
-                    "\n\n**Search Status: No results or SearXNG unavailable.**\n"
-                    "You MUST NOT fabricate facts. Say you couldn't fetch current information "
-                    "and offer to try again later or answer from memory only."
-                )
-
-        # Nothing has been emitted to the user yet, so this span is exactly what
-        # they wait through before the first word. Search is included because it
-        # also happens before generation -- logging before it would understate
-        # the wait on precisely the slowest turns.
-        logger.info(
-            "turn_pregen: pregen_ms=%.0f routing_ms=%.0f recall_ms=%.0f "
-            "plan_ms=%.0f extraction_ms=%.0f search_ms=%.0f",
-            (time.monotonic() - turn_start) * 1000,
-            routing_time * 1000, recall_time * 1000,
-            plan_time * 1000, extraction_time * 1000,
-            search_time * 1000,
-        )
-
-        # Collect citations from search results only (not from memory slots).
-        # Memory source_urls may not be verifiable - only cite from search.
-        citations: list[str] = []
-        for result in search_results:
-            if result.url:
-                citations.append(result.url)
-
-        # Build conversation history: up to 6 prior turns from this session.
-        # Session ids are client-supplied — filter by owner so two household
-        # members sharing a session string never see each other's turns.
-        history_messages: list[ChatMessage] = []
-        if session_id:
-            # Owner-scoped in SQL now, so no cross-member filter is needed here.
-            # Bound the read to the tail we can actually use: 6 prior turns plus
-            # the current one, which `[:-1]` drops.
-            session_episodes = await self.store.get_episodes_for_session(
-                session_id, user_id=request.user_id, limit=7
-            )
-            prior_turns = session_episodes[:-1]  # exclude current user episode
-            max_turns = min(len(prior_turns), 6)
-            prior_turns = prior_turns[-max_turns:] if max_turns > 0 else []
-            for ep in prior_turns:
-                history_messages.append(ChatMessage(role=ep.role, content=ep.content))
-
-        # Hard limit on system prompt to prevent OOM/timeout
-        system_prompt, truncated = self._fit_prompt_to_cap(
-            prompt_with_memory,
-            system_prompt,
-            memory_context,
-            task_type.value,
-            plan_instructions,
-            self_context,
-        )
-
-        # Structured logging for context transparency
-        logger.info(
-            "context_stats: prompt_chars=%d frames=%d episodes=%d search_results=%d truncated=%s",
-            len(system_prompt),
-            len(memory_context.retrieved_frames),
-            len(memory_context.recent_episodes),
-            len(search_results),
-            truncated,
-        )
-
-        # Call LLM — fast path uses configured default (think off for
-        # thinking-capable models); escalated plans flip thinking on with a
-        # token cap (Phase 6 plan §6.2). With tools enabled, the model may
-        # call local tools (datetime, calculator, private web search) before
-        # answering (Phase 6 M5).
-        messages = [ChatMessage(role="system", content=system_prompt)]
-        messages.extend(history_messages)
-        messages.append(ChatMessage(role="user", content=request.message))
-
-        gen_model, think = await self._select_generation(request, plan)
-        num_predict = settings.think_num_predict_cap if think else None
-        if gen_model:
-            await self._report(progress, "reasoning", "applying maximum intelligence")
-        elif think:
-            await self._report(progress, "reasoning", "thinking it through")
-        else:
-            await self._report(progress, "responding", "writing a reply")
-        try:
-            if settings.tools_enabled:
-                logger.info("DEBUG: tools_enabled=True, building tools list")
-                tools = builtin_tools(
-                    self.search_tool,
-                    store=self.store,
-                    llm_client=self.llm_client,
-                    embed_fn=self.embed_fn(),
-                )
-                tool_names = [t["function"]["name"] for t in tools]
-                logger.info("DEBUG: Available tools: %s", tool_names)
-                llm_response = await run_tool_loop(
-                    self.llm_client,
-                    messages,
-                    tools,
-                    user_id=str(request.user_id),
-                    session_id=request.session_id,
-                    model=gen_model,
-                    think=think,
-                    num_predict=num_predict,
-                )
-            else:
-                logger.info("DEBUG: tools_enabled=False, skipping tool loop")
-                llm_response = await self.llm_client.chat(
-                    messages,
-                    model=gen_model,
-                    think=think,
-                    num_predict=num_predict,
-                )
-        except Exception as e:
-            # Local inference can be slow (large prefill, model load) or the
-            # backend briefly unreachable — degrade gracefully instead of 500.
-            logger.error("Generation failed: %s", e)
-            fallback = _GENERATION_FAILURE_MESSAGE
-            await self._log_episode(
-                request.user_id,
-                session_id,
-                role="assistant",
-                content=fallback,
-            )
-            return ChatResponse(
-                response=fallback,
-                session_id=session_id,
-                task_type=task_type.value,
-                memory_context=memory_context.formatted,
-                extraction_summary=extraction_summary,
-                search_extraction_summary=search_extraction_summary,
-                citations=[],
-                search_info=None,
-            )
-
-        # 8. Log assistant episode
-        # run_tool_loop returns dict, llm_client.chat returns ChatResponse
-        if isinstance(llm_response, dict):
-            answer = llm_response.get("answer", "")
-            reasoning_trace = llm_response.get("reasoning_trace")
-            _ = llm_response.get("memory_updated", False)
-        else:
-            answer = llm_response.content
-            reasoning_trace = llm_response.thinking
-
-        await self._log_episode(
-            request.user_id,
-            session_id,
-            role="assistant",
-            content=answer,
-            reasoning_trace=reasoning_trace,
-            search_info=search_info_payload(search_info),
-        )
-
-        # 9. Append sources / memory provenance to the response
-        response_text = self._append_response_footers(
-            answer,
-            citations,
-            task_type.value,
-            len(memory_context.retrieved_frames),
-        )
-
-        # Create alerts for learning events
-        await self._create_learning_alerts(
-            request.user_id, extraction_summary, search_extraction_summary
-        )
-
-        # Return response
-        self._log_turn_timings(
-            turn_start,
-            episode_ms=episode_log_time,
-            routing_ms=routing_time,
-            recall_ms=recall_time,
-            plan_ms=plan_time,
-            extraction_ms=extraction_time,
-            # search_time only exists when the search branch ran; 0.0 otherwise.
-            search_ms=search_time,
-            ttft_ms=None,  # non-streaming: the response arrives whole, so there
-                           # is no first token to measure. pregen_ms governs.
-        )
-        confidence, confidence_basis = compute_answer_confidence(
-            memory_context.retrieved_frames, search_info
-        )
         return ChatResponse(
-            response=response_text,
-            session_id=session_id,
-            task_type=task_type.value,
-            memory_context=memory_context.formatted,
-            extraction_summary=extraction_summary or None,
-            search_extraction_summary=search_extraction_summary or None,
-            citations=citations,
-            search_info=search_info,
-            confidence=confidence,
-            confidence_basis=confidence_basis,
+            response=answer,
+            session_id=meta.get("session_id") or request.session_id or "",
+            task_type=meta.get("task_type") or "functional",
+            memory_context=meta.get("memory_context") or "",
+            extraction_summary=meta.get("extraction_summary"),
+            search_extraction_summary=meta.get("search_extraction_summary"),
+            citations=meta.get("citations") or [],
+            search_info=meta.get("search_info"),
+            confidence=meta.get("confidence") or 0.0,
+            confidence_basis=meta.get("confidence_basis") or "none",
         )
 
     async def _handle_scheduled_task(
@@ -1957,9 +1402,30 @@ class Orchestrator:
         progress: "Callable[[str, str], Awaitable[None]] | None" = None,
         skip_route: bool = False,
     ) -> AsyncGenerator[str, None]:
-        """Run the cognitive loop with streaming response (SSE format).
+        """Run the cognitive loop as an SSE event stream (the UI path).
 
-        Yields SSE-formatted events for real-time UI updates.
+        A thin pass-through over `_run_turn`, the single implementation of the
+        loop. Output is byte-identical to what this method produced when it held
+        the loop itself.
+        """
+        async for event in self._run_turn(request, progress, skip_route):
+            yield event
+
+    async def _run_turn(
+        self,
+        request: ChatRequest,
+        progress: "Callable[[str, str], Awaitable[None]] | None" = None,
+        skip_route: bool = False,
+    ) -> AsyncGenerator[str, None]:
+        """The single cognitive loop, emitted as serialized SSE events.
+
+        Both public paths consume this: `chat_stream()` re-yields it to the UI,
+        and `chat()` drains it to build a `ChatResponse`. It was previously
+        duplicated in full by `chat()`, which is how the two drifted six times
+        (see test_stream_parity.py).
+
+        Yields SSE-formatted events (`stage` … `finalize` … `meta`) for real-time
+        UI updates.
         """
         # Import here to avoid circular imports
         from assistant.backend.pipeline.llm_client import ChatMessage
@@ -1980,6 +1446,7 @@ class Orchestrator:
             role="user",
             content=request.message,
         )
+        episode_log_time = time.monotonic() - turn_start
 
         # 2b. Deterministic alert backstop (see chat() for the full note). The
         # streaming path is the one the frontend uses, so this is the copy that
@@ -2024,14 +1491,13 @@ class Orchestrator:
 
         # 3b. Handle scheduled task intent
         if task_type == TaskType.SCHEDULED and not skip_route:
-            # For scheduled tasks, fall back to non-streaming
+            # The non-streaming handler does the work; re-emit its response as
+            # stream events. The meta event is required (parity gap G2): this
+            # branch used to return after finalize, so the response shape never
+            # reached a stream consumer.
             response = await self._handle_scheduled_task(request, session_id)
-            event = {
-                'type': 'finalize',
-                'answer': response.response,
-                'reasoning_trace': None
-            }
-            yield f"data: {json.dumps(event)}\n\n"
+            yield _finalize_event(response.response)
+            yield serialize_event(_meta_event_from_response(session_id, response))
             return
 
         # 5. Reason: decide action based on memory sufficiency
@@ -2101,12 +1567,9 @@ class Orchestrator:
             response = await self._run_correction(
                 request, session_id, user_episode.id, memory_context, progress
             )
-            event = {
-                'type': 'finalize',
-                'answer': response.response,
-                'reasoning_trace': None
-            }
-            yield f"data: {json.dumps(event)}\n\n"
+            # meta is required here too (parity gap G2), as in the scheduled branch.
+            yield _finalize_event(response.response)
+            yield serialize_event(_meta_event_from_response(session_id, response))
             return
 
         stored_slots = extraction_summary.get("slots") or []
@@ -2566,6 +2029,10 @@ class Orchestrator:
                     session_id,
                     role="assistant",
                     content=final_answer,
+                    # G4: the stream captured `final_reasoning` and emitted it to
+                    # the client but never stored it, so a streamed turn's
+                    # reasoning trace was lost. chat() has always persisted it.
+                    reasoning_trace=final_reasoning,
                     search_info=search_info_payload(search_info),
                 )
             except Exception as e:
@@ -2593,6 +2060,7 @@ class Orchestrator:
 
         self._log_turn_timings(
             turn_start,
+            episode_ms=episode_log_time,
             routing_ms=routing_time,
             recall_ms=recall_time,
             plan_ms=plan_time,
@@ -2616,6 +2084,8 @@ class Orchestrator:
                 search_info=search_info,
                 confidence=confidence,
                 confidence_basis=confidence_basis,
+                citations=citations,
+                memory_context=memory_context.formatted,
             )
         )
 

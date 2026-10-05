@@ -201,106 +201,72 @@ def _stop_patches(patches: dict) -> None:
         patches[key].stop()
 
 
+def _patch_stream_tool_loop(captured: dict):
+    """Patch the loop's generation with an async-gen fake that records kwargs.
+
+    `_run_turn` calls `stream_tool_loop` (an async generator yielding SSE frames),
+    not the old `run_tool_loop` (which returned a dict). Now that `chat()` drains
+    the loop, this is the interception point for the think/model kwargs.
+    """
+    import assistant.backend.pipeline.streaming as streaming
+
+    async def _fake(*args, **kwargs):
+        captured.update(kwargs)
+        yield streaming.serialize_event(streaming.FinalizeEvent("test", ""))
+
+    return patch.object(streaming, "stream_tool_loop", _fake)
+
+
+def _request(message: str = "test message", max_intelligence: bool = False):
+    request = MagicMock()
+    request.user_id = 1
+    request.message = message
+    request.session_id = "test_session"
+    request.attached_files = []
+    request.search_consent = False
+    request.max_intelligence = max_intelligence
+    return request
+
+
 class TestOrchestratorThinkLogic:
     """Test orchestrator think flag logic."""
 
     @pytest.mark.asyncio
     async def test_think_disabled_for_non_thinking_chat_model(self):
         orchestrator, patches, _ = _setup_orchestrator("qwen2.5:7b", False, True)
-
-        # Create a mock response object with content attribute
-        mock_response = MagicMock()
-        mock_response.content = "test"
-        mock_response.thinking = ""
-
-        with patch(
-            "assistant.backend.pipeline.orchestrator.run_tool_loop",
-            new_callable=AsyncMock,
-        ) as mock_loop:
-            mock_loop.return_value = mock_response
-
+        captured: dict = {}
+        with _patch_stream_tool_loop(captured):
             try:
-                request = MagicMock()
-                request.user_id = 1
-                request.message = "test message"
-                request.session_id = "test_session"
-                request.attached_files = []
-                request.search_consent = False
-                request.max_intelligence = False
-
-                await orchestrator.chat(request)
-
-                call_args = mock_loop.call_args
-                assert call_args is not None
-                assert call_args[1].get("think") is False
+                await orchestrator.chat(_request())
+                assert captured.get("think") is False
             finally:
                 _stop_patches(patches)
 
     @pytest.mark.asyncio
     async def test_think_enabled_for_thinking_chat_model(self):
         orchestrator, patches, _ = _setup_orchestrator("qwen3:27b", True, True)
-
-        mock_response = MagicMock()
-        mock_response.content = "test"
-        mock_response.thinking = ""
-
-        with patch(
-            "assistant.backend.pipeline.orchestrator.run_tool_loop",
-            new_callable=AsyncMock,
-        ) as mock_loop:
-            mock_loop.return_value = mock_response
-
+        captured: dict = {}
+        with _patch_stream_tool_loop(captured):
             try:
-                request = MagicMock()
-                request.user_id = 1
-                request.message = "test message"
-                request.session_id = "test_session"
-                request.attached_files = []
-                request.search_consent = False
-                request.max_intelligence = False
-
-                await orchestrator.chat(request)
-
-                call_args = mock_loop.call_args
-                assert call_args is not None
-                assert call_args[1].get("think") is True
+                await orchestrator.chat(_request())
+                assert captured.get("think") is True
             finally:
                 _stop_patches(patches)
 
     @pytest.mark.asyncio
     async def test_think_defaults_to_false_when_not_in_plan(self):
         orchestrator, patches, _ = _setup_orchestrator("qwen3:27b", True, False)
-
-        mock_response = MagicMock()
-        mock_response.content = "test"
-        mock_response.thinking = ""
-
-        with patch(
-            "assistant.backend.pipeline.orchestrator.run_tool_loop",
-            new_callable=AsyncMock,
-        ) as mock_loop:
-            mock_loop.return_value = mock_response
-
+        captured: dict = {}
+        with _patch_stream_tool_loop(captured):
             try:
-                request = MagicMock()
-                request.user_id = 1
-                request.message = "test message"
-                request.session_id = "test_session"
-                request.attached_files = []
-                request.search_consent = False
-                request.max_intelligence = False
-
-                await orchestrator.chat(request)
-
-                call_args = mock_loop.call_args
-                assert call_args is not None
-                assert call_args[1].get("think") is True
+                await orchestrator.chat(_request())
+                assert captured.get("think") is True
             finally:
                 _stop_patches(patches)
 
 
 class TestOrchestratorMaxIntelligence:
-    """Phase 6 M6: max-intelligence escalation routing in orchestrator.chat()."""
+    """Phase 6 M6: max-intelligence escalation routing in the loop."""
 
     @pytest.mark.asyncio
     async def test_explicit_max_toggle_routes_tool_loop_to_max_model(self):
@@ -308,30 +274,12 @@ class TestOrchestratorMaxIntelligence:
         orchestrator.llm_client.max_model = "max-model"
         orchestrator.llm_client.supports_tools = AsyncMock(return_value=True)
 
-        mock_response = MagicMock()
-        mock_response.content = "max answer"
-        mock_response.thinking = ""
-
-        with patch(
-            "assistant.backend.pipeline.orchestrator.run_tool_loop",
-            new_callable=AsyncMock,
-        ) as mock_loop:
-            mock_loop.return_value = mock_response
+        captured: dict = {}
+        with _patch_stream_tool_loop(captured):
             try:
-                request = MagicMock()
-                request.user_id = 1
-                request.message = "compute the answer"
-                request.session_id = "test_session"
-                request.attached_files = []
-                request.search_consent = False
-                request.max_intelligence = True
-
-                await orchestrator.chat(request)
-
-                call_args = mock_loop.call_args
-                assert call_args is not None
-                assert call_args[1].get("model") == "max-model"
-                assert call_args[1].get("think") is True
+                await orchestrator.chat(_request("compute the answer", max_intelligence=True))
+                assert captured.get("model") == "max-model"
+                assert captured.get("think") is True
             finally:
                 _stop_patches(patches)
 
@@ -340,28 +288,23 @@ class TestOrchestratorMaxIntelligence:
         orchestrator, patches, mocks = _setup_orchestrator("chat-model", True, False)
         orchestrator.llm_client.max_model = "max-model"
 
-        # tools disabled -> llm_client.chat path with explicit model
+        # tools disabled -> the loop's no-tools branch, which streams deltas
         mocks["settings"].tools_enabled = False
 
         # Reasoner auto-escalated: plan.max_intelligence=True
         mocks["plan"].max_intelligence = True
 
+        captured: dict = {}
+
+        async def _fake_chat_stream(messages, **kwargs):  # noqa: ANN001, ANN002, ANN003, ANN201
+            captured.update(kwargs)
+            yield MagicMock(content="test", thinking="", done=True)
+
+        orchestrator.llm_client.chat_stream = _fake_chat_stream
         try:
-            request = MagicMock()
-            request.user_id = 1
-            request.message = "plan escalated query"
-            request.session_id = "test_session"
-            request.attached_files = []
-            request.search_consent = False
-            request.max_intelligence = False
-
-            await orchestrator.chat(request)
-
-            llm_client = orchestrator.llm_client
-            assert llm_client.chat.await_count >= 1
-            chat_call = llm_client.chat.await_args
-            assert chat_call.kwargs.get("model") == "max-model"
-            assert chat_call.kwargs.get("think") is True
+            await orchestrator.chat(_request("plan escalated query"))
+            assert captured.get("model") == "max-model"
+            assert captured.get("think") is True
         finally:
             _stop_patches(patches)
 
@@ -371,31 +314,13 @@ class TestOrchestratorMaxIntelligence:
         orchestrator.llm_client.max_model = "max-model"
         orchestrator.llm_client.supports_tools = AsyncMock(return_value=False)
 
-        mock_response = MagicMock()
-        mock_response.content = "fallback answer"
-        mock_response.thinking = ""
-
-        with patch(
-            "assistant.backend.pipeline.orchestrator.run_tool_loop",
-            new_callable=AsyncMock,
-        ) as mock_loop:
-            mock_loop.return_value = mock_response
+        captured: dict = {}
+        with _patch_stream_tool_loop(captured):
             try:
-                request = MagicMock()
-                request.user_id = 1
-                request.message = "max query"
-                request.session_id = "test_session"
-                request.attached_files = []
-                request.search_consent = False
-                request.max_intelligence = True
-
-                await orchestrator.chat(request)
-
+                await orchestrator.chat(_request("max query", max_intelligence=True))
                 # Falls back to the role-default (None) model with thinking on.
-                call_args = mock_loop.call_args
-                assert call_args is not None
-                assert call_args[1].get("model") is None
-                assert call_args[1].get("think") is True
+                assert captured.get("model") is None
+                assert captured.get("think") is True
             finally:
                 _stop_patches(patches)
 
@@ -405,30 +330,12 @@ class TestOrchestratorMaxIntelligence:
         orchestrator.llm_client.max_model = "max-model"
         orchestrator.llm_client.supports_tools = AsyncMock(return_value=True)
 
-        mock_response = MagicMock()
-        mock_response.content = "normal answer"
-        mock_response.thinking = ""
-
-        with patch(
-            "assistant.backend.pipeline.orchestrator.run_tool_loop",
-            new_callable=AsyncMock,
-        ) as mock_loop:
-            mock_loop.return_value = mock_response
+        captured: dict = {}
+        with _patch_stream_tool_loop(captured):
             try:
-                request = MagicMock()
-                request.user_id = 1
-                request.message = "normal query"
-                request.session_id = "test_session"
-                request.attached_files = []
-                request.search_consent = False
-                request.max_intelligence = False
-
-                await orchestrator.chat(request)
-
-                call_args = mock_loop.call_args
-                assert call_args is not None
+                await orchestrator.chat(_request("normal query"))
                 # No max escalation: tool loop keeps role default (None -> tools_model)
-                assert call_args[1].get("model") is None
+                assert captured.get("model") is None
             finally:
                 _stop_patches(patches)
 

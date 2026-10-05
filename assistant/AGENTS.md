@@ -153,14 +153,16 @@ Search-derived facts enter memory only when they are accurate and useful:
    generation so just-stored facts can be injected into the system prompt.
 5. LLM call (chat model): system prompt injects structured memory context + task-type guidance.
    Sections are ordered stable-first, volatile-last (persona → task guidance → plan
-   instructions → memory) so Ollama's prompt cache reuses the stable prefix across
-   consecutive turns. Recent episodes appear in memory context as 240-char digests;
+   instructions → **current date/time** → memory) so Ollama's prompt cache reuses the
+   stable prefix across consecutive turns. The date/time line is in the user's zone
+   (`timeutil`), injected rather than exposed as a tool, so "what's today's date?"
+   costs no round-trip. Recent episodes appear in memory context as 240-char digests;
    the last 6 turns still arrive verbatim as message history.
 6. Response to user (`ChatResponse` with `extraction_summary` + `search_extraction_summary`).
 7. Search extraction (utility model): runs only when a search actually happened; deduped
    against conversational slots by (frame_name, value).
 
-Actual ordering inside `orchestrator.chat()`:
+Actual ordering inside `Orchestrator._run_turn()` — **the single cognitive loop**:
 - Router (with wants_search) → retrieval → reasoner plan (search vetoed if
   `wants_search is False` and task_type != search) → correction branch if needed.
 - Conversational extraction runs BEFORE generation; just-stored facts are injected
@@ -169,6 +171,26 @@ Actual ordering inside `orchestrator.chat()`:
 - Search extraction runs only when a search actually happened, and is deduped
   against conversational slots by (frame_name, value) — cross-key duplicates like
   "strings"/"number_of_strings" are dropped in favor of the earlier channel's key.
+
+### One loop, two consumers (do not re-duplicate)
+
+`Orchestrator._run_turn()` is the only implementation of the loop. It emits the
+SSE event stream. `chat_stream()` is a one-line pass-through to the UI, and
+`chat()` is an adapter that drains the same stream and rebuilds a `ChatResponse`
+from the terminal `finalize` and `meta` events. There is no second copy.
+
+This replaced two ~600-line copies that drifted **six** times (see
+`test_stream_parity.py`), each a user-visible bug: a stalled relevance gate that
+hung the stream, a swallowed generation failure, a dropped `compute` result, a
+missing sources footer, a missing learning summary, and a double-logged
+correction turn. A new feature added to the loop reaches both paths by
+construction; do not add a second loop. `run_scheduled_task()` is a separate,
+deliberately simpler path (always-search, no routing/extraction); leave it
+distinct unless a plan says otherwise.
+
+`MetaEvent` carries the full `ChatResponse` shape — including `citations` and
+`memory_context` — so the adapter loses no field. Every terminal branch (normal,
+scheduled, correction, consent, generation-failure) emits exactly one `meta`.
 
 ## Design principles
 
@@ -614,8 +636,9 @@ Endpoint: `POST /summarize` with body `{"session_id": "..."}`
 - `backend/pipeline/reasoner.py` — planning + self-correction (`Action.CORRECT`).
 - `backend/pipeline/orchestrator.py` — coordinates full cognitive loop; scheduled tasks
   execute via `chat()`.
-- `backend/pipeline/llm_client.py` — Ollama client (chat + embeddings).
-- `backend/scheduler/schedule.py` — the daily clock (tick computation, tz handling).
+- `backend/pipeline/llm_client.py` — Ollama client (chat + embeddings); `build_system_prompt` injects the current date/time (see `timeutil`).
+- `backend/timeutil.py` — the one clock. `local_tz()` resolves `DAILY_TASKS_TZ` > `TZ` env > host local; `current_datetime_str()` formats the line the system prompt carries. The scheduler, the prompt, and the `.ics` writer all use it so "today" means the same thing everywhere. The container runs UTC; the user does not.
+- `backend/scheduler/schedule.py` — the daily clock (tick computation; delegates its timezone to `timeutil`).
 - `backend/scheduler/runner.py` — scheduler loop (daily-list firing + housekeeping timers).
 - `backend/main.py` — FastAPI app with all endpoints.
 - `cli/app.py` — CLI entry point.

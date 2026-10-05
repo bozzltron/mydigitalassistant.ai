@@ -85,12 +85,12 @@ class TestTurnTimingFormat:
 
 @pytest.fixture(scope="module")
 def streaming_source() -> str:
-    """Source of the streaming path, the one the UI actually uses."""
+    """Source of the single loop, the one the UI actually uses."""
     import inspect
 
     from assistant.backend.pipeline import orchestrator as orch_module
 
-    return inspect.getsource(orch_module.Orchestrator.chat_stream)
+    return inspect.getsource(orch_module.Orchestrator._run_turn)
 
 
 class TestStreamingPathIsInstrumented:
@@ -133,14 +133,23 @@ class TestStreamingPathIsInstrumented:
 
 
 class TestNonStreamingPathIsInstrumented:
-    def test_chat_logs_turn_timings(self):
+    def test_chat_routes_through_the_instrumented_loop(self):
+        """chat() no longer logs itself; it drains the loop that does.
+
+        Before unification chat() carried its own timing logging; now both public
+        paths go through `_run_turn`, so instrumentation lives in one place and
+        the adapter is only a consumer.
+        """
         import inspect
 
         from assistant.backend.pipeline import orchestrator as orch_module
 
-        source = inspect.getsource(orch_module.Orchestrator.chat)
-        assert "turn_pregen:" in source
-        assert "_log_turn_timings" in source
-        # Search is logged inside the pre-generation span on both paths, so a
-        # slow search turn cannot hide behind a low pregen_ms.
-        assert "search_ms" in source
+        chat_source = inspect.getsource(orch_module.Orchestrator.chat)
+        assert "_run_turn(" in chat_source, "chat() no longer drains the shared loop"
+
+        loop_source = inspect.getsource(orch_module.Orchestrator._run_turn)
+        assert "turn_pregen:" in loop_source
+        assert "_log_turn_timings" in loop_source
+        # Search is logged inside the pre-generation span, so a slow search turn
+        # cannot hide behind a low pregen_ms.
+        assert "search_ms" in loop_source

@@ -95,7 +95,7 @@ async def _tools_for(store, stub_llm, message: str, user=None) -> list[str]:
     `user` may be passed in so a test that calls this more than once against the
     same store does not try to create the same user twice.
     """
-    import assistant.backend.pipeline.orchestrator as mod
+    import assistant.backend.pipeline.streaming as streaming
     from assistant.backend.pipeline.orchestrator import ChatRequest
 
     orch = await _orch(store, stub_llm, await _enabled_search())
@@ -103,20 +103,22 @@ async def _tools_for(store, stub_llm, message: str, user=None) -> list[str]:
         user = await store.create_user("alice")
 
     captured: dict = {}
-    orig = mod.run_tool_loop
 
     async def _spy(*args, **kwargs):
         tools = args[2] if len(args) > 2 else kwargs.get("tools")
         captured["tools"] = [t["function"]["name"] for t in tools]
-        return await orig(*args, **kwargs)
+        # `_run_turn` calls `stream_tool_loop` (an async generator), not the old
+        # dict-returning `run_tool_loop`; yield one finalize so the turn completes.
+        yield streaming.serialize_event(streaming.FinalizeEvent("test", ""))
 
-    mod.run_tool_loop = _spy
+    original = streaming.stream_tool_loop
+    streaming.stream_tool_loop = _spy
     try:
         await orch.chat(
             ChatRequest(message=message, user_id=user.id, session_id="s_tools")
         )
     finally:
-        mod.run_tool_loop = orig
+        streaming.stream_tool_loop = original
     return captured.get("tools", [])
 
 

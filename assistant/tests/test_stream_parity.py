@@ -364,3 +364,140 @@ async def test_streamed_correction_logs_the_user_turn_once(store, stub_llm):
     assistant_turns = [e for e in episodes if e.role == "assistant"]
     assert len(user_turns) == 1, f"user turn logged {len(user_turns)}x"
     assert len(assistant_turns) == 1, f"assistant turn logged {len(assistant_turns)}x"
+
+
+# 7. chat() is an adapter over the same loop ----------------------------------
+
+@pytest.mark.asyncio
+async def test_chat_returns_citations_and_memory_context(store, stub_llm):
+    """G1: the two ChatResponse fields the stream did not carry now round-trip.
+
+    `chat()` is now an adapter that drains the stream and rebuilds ChatResponse,
+    so it can only return these if the stream's meta event carries them.
+    """
+    add_embedding_cluster("capital", "texas", "austin")
+    results = [
+        SearchResult(
+            title="Capital of Texas",
+            url="https://en.wikipedia.org/wiki/Texas",
+            snippet="Austin is the capital of Texas",
+            engine="wikipedia",
+        )
+    ]
+    orchestrator = _build_orchestrator(store, stub_llm, _search_tool(results))
+    user = await store.create_user("alice")
+    original = _install_llm(stub_llm)
+    try:
+        resp = await orchestrator.chat(
+            ChatRequest(user_id=user.id, message="What is the capital of Texas?",
+                        session_id="s-g1")
+        )
+    finally:
+        stub_llm.chat = original
+
+    assert "https://en.wikipedia.org/wiki/Texas" in resp.citations
+    assert resp.memory_context, "memory_context did not survive the adapter"
+
+
+@pytest.mark.asyncio
+async def test_correction_turn_emits_a_meta_event(store, stub_llm):
+    """G2: the correction branch must emit meta, not just finalize.
+
+    It used to `yield finalize; return`, so a stream consumer got no summaries,
+    search_info, confidence, or citations for a correction turn.
+    """
+    orchestrator = _build_orchestrator(store, stub_llm, _search_tool([]))
+    user = await store.create_user("alice")
+    original = _install_llm(stub_llm, task_type="correction", wants_search=False)
+
+    from assistant.backend.pipeline import extractor as extractor_mod
+
+    async def failing_extract(*args, **kwargs):  # noqa: ANN002, ANN003
+        return None
+
+    real_extract = extractor_mod.extract_correction
+    extractor_mod.extract_correction = failing_extract
+    try:
+        events = await _collect(
+            orchestrator.chat_stream(
+                ChatRequest(user_id=user.id, message="actually the guitar has 12 strings",
+                            session_id="s-g2")
+            )
+        )
+    finally:
+        stub_llm.chat = original
+        extractor_mod.extract_correction = real_extract
+
+    assert any(e["type"] == "finalize" for e in events)
+    meta = [e for e in events if e["type"] == "meta"]
+    assert meta, "the correction branch emitted no meta event"
+
+
+@pytest.mark.asyncio
+async def test_streamed_turn_persists_its_reasoning_trace(store, stub_llm, monkeypatch):
+    """G4: the stream captured `final_reasoning` but never stored it.
+
+    `chat()` always persisted the reasoning trace; the stream dropped it, so a
+    streamed turn's trace was lost. Both now persist it.
+    """
+    async def fake_loop(llm_client, messages, tools, **kwargs):  # noqa: ANN001, ANN002, ANN003, ANN201
+        yield streaming.serialize_event(streaming.FinalizeEvent("answer text", "THE TRACE"))
+
+    monkeypatch.setattr(streaming, "stream_tool_loop", fake_loop)
+
+    orchestrator = _build_orchestrator(store, stub_llm, _search_tool([]))
+    user = await store.create_user("alice")
+    original = _install_llm(stub_llm, task_type="functional", wants_search=False)
+    try:
+        await _collect(
+            orchestrator.chat_stream(
+                ChatRequest(user_id=user.id, message="hello", session_id="s-g4")
+            )
+        )
+    finally:
+        stub_llm.chat = original
+
+    episodes = await store.get_episodes_for_session("s-g4", user_id=user.id)
+    assert [e for e in episodes if e.role == "assistant"], "no assistant episode was logged"
+    # `Episode` does not expose reasoning_trace, so read the column directly.
+    async with store._connect() as db:
+        rows = await db.execute_fetchall(
+            "SELECT reasoning_trace FROM episodes "
+            "WHERE session_id = ? AND role = 'assistant' ORDER BY id",
+            ("s-g4",),
+        )
+    assert rows, "no assistant episode row"
+    assert rows[-1][0] == "THE TRACE", "the streamed reasoning trace was not persisted"
+
+
+@pytest.mark.asyncio
+async def test_chat_and_stream_agree_on_one_turn(store, stub_llm):
+    """The adapter and the stream must report the same shape for the same turn."""
+    add_embedding_cluster("capital", "texas", "austin")
+    results = [
+        SearchResult(title="T", url="https://example.com/a", snippet="Austin", engine="e")
+    ]
+    orchestrator = _build_orchestrator(store, stub_llm, _search_tool(results))
+    user = await store.create_user("alice")
+    original = _install_llm(stub_llm)
+    try:
+        events = await _collect(
+            orchestrator.chat_stream(
+                ChatRequest(user_id=user.id, message="What is the capital of Texas?",
+                            session_id="s-parity-a")
+            )
+        )
+        resp = await orchestrator.chat(
+            ChatRequest(user_id=user.id, message="What is the capital of Texas?",
+                        session_id="s-parity-b")
+        )
+    finally:
+        stub_llm.chat = original
+
+    meta = [e for e in events if e["type"] == "meta"][-1]
+    assert resp.task_type == meta["task_type"]
+    assert resp.confidence == meta["confidence"]
+    assert resp.confidence_basis == meta["confidence_basis"]
+    # Citations reach both surfaces.
+    assert "https://example.com/a" in resp.citations
+    assert "https://example.com/a" in meta["citations"]

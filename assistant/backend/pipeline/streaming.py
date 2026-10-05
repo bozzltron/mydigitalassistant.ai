@@ -85,6 +85,8 @@ class MetaEvent(ToolLoopEvent):
         search_info: object | None = None,
         confidence: float | None = None,
         confidence_basis: str | None = None,
+        citations: list[str] | None = None,
+        memory_context: str | None = None,
     ):
         self.type = "meta"
         self.session_id = session_id
@@ -94,6 +96,11 @@ class MetaEvent(ToolLoopEvent):
         self.search_info = search_info
         self.confidence = confidence
         self.confidence_basis = confidence_basis
+        # The last two ChatResponse fields the stream did not carry, so a
+        # consumer that needs the full response shape (the `chat()` adapter, and
+        # the CLI) can rebuild it from the stream alone.
+        self.citations = citations or []
+        self.memory_context = memory_context or ""
 
 
 def _event_json_default(obj: object) -> object:
@@ -145,6 +152,8 @@ def serialize_event(event: ToolLoopEvent) -> str:
             'search_info': event.search_info,
             'confidence': event.confidence,
             'confidence_basis': event.confidence_basis,
+            'citations': event.citations,
+            'memory_context': event.memory_context,
         }
         return f"data: {json.dumps(data, default=_event_json_default)}\n\n"
     else:

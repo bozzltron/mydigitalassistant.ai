@@ -35,20 +35,22 @@ def _function_source(fn) -> str:
 
 
 class TestPromptAssemblyIsShared:
-    def test_all_three_paths_delegate_to_the_helper(self):
-        """No path may re-inline the memory-sizing + build sequence."""
+    def test_all_paths_delegate_to_the_single_loop(self):
+        """No path may re-inline the pipeline; both consume `_run_turn`."""
         paths = {
             "chat": Orchestrator.chat,
             "chat_stream": Orchestrator.chat_stream,
         }
         for name, fn in paths.items():
             source = _function_source(fn)
-            assert "_assemble_prompt(" in source, f"{name} does not use the shared helper"
-            # The inlined form is what the helper exists to replace. Its absence
-            # is the actual guarantee; the assertion above only says "also uses".
+            assert "_run_turn(" in source, f"{name} does not use the single loop"
             assert (
-                "memory_context=format_memory_context(" not in source
-            ), f"{name} still inlines prompt assembly instead of calling _assemble_prompt"
+                "format_memory_context(" not in source
+            ), f"{name} inlines prompt assembly instead of using the shared loop"
+        # The loop is where assembly lives now, and it must use the helper.
+        loop = _function_source(Orchestrator._run_turn)
+        assert "_assemble_prompt(" in loop
+        assert "memory_context=format_memory_context(" not in loop
 
     def test_scheduled_path_delegates_to_the_helper(self):
         """The scheduled runner is the third path and the one that drifted."""
@@ -108,15 +110,15 @@ class TestPromptAssemblyIsShared:
                     f"_assemble_prompt call at line {node.lineno} must pass "
                     "task_type by keyword, not positionally"
                 )
-        # Three paths: chat, scheduled, streaming. If this drops, a path stopped
-        # going through the helper and the test above is no longer covering it.
-        assert n == 3, f"expected 3 prompt-assembly call sites, found {n}"
+        # Two call sites now: the shared `_run_turn` loop (chat + chat_stream) and
+        # the scheduled-task path. It was three when chat() carried its own copy.
+        assert n == 2, f"expected 2 prompt-assembly call sites, found {n}"
 
 
 class TestFittingStaysCentralised:
-    """The appends differ per path, so the fit stays at 3 sites -- but only 3."""
+    """The appends differ per path, so the fit stays at 2 sites -- but only 2."""
 
-    def test_fit_prompt_to_cap_has_exactly_three_call_sites(self):
+    def test_fit_prompt_to_cap_has_exactly_two_call_sites(self):
         src = inspect.getsource(orch_module)
         tree = ast.parse(src)
         sites = [
@@ -126,7 +128,7 @@ class TestFittingStaysCentralised:
             and isinstance(node.func, ast.Attribute)
             and node.func.attr == "_fit_prompt_to_cap"
         ]
-        assert len(sites) == 3, f"_fit_prompt_to_cap called at {sites}"
+        assert len(sites) == 2, f"_fit_prompt_to_cap called at {sites}"
 
     def test_no_raw_flat_character_cut_survives(self):
         """The system prompt must never be sliced by the cap outside the helper.
@@ -189,19 +191,24 @@ class TestFittingStaysCentralised:
 
 @pytest.mark.parametrize(
     "fn",
-    [Orchestrator.chat, Orchestrator.chat_stream, Orchestrator.run_scheduled_task],
-    ids=["chat", "chat_stream", "scheduled"],
+    [Orchestrator.chat, Orchestrator.chat_stream],
+    ids=["chat", "chat_stream"],
 )
-def test_each_path_sizes_memory_before_building_the_prompt(fn):
-    """Every path must pass a budget into the memory render, not render unbounded.
+def test_each_public_path_delegates_to_the_loop(fn):
+    """Every public path must go through `_run_turn`, not render memory itself.
 
-    Sizing and rendering were separate steps in the copies, which is what let a
-    path forget the sizing. Routing both through `_assemble_prompt` makes the
-    unbounded render unrepresentable from these call sites.
+    Sizing and rendering were separate steps in the old copies, which is what let
+    a path forget the sizing. Both public methods now delegate to one loop.
     """
     source = _function_source(fn)
-    assert "_assemble_prompt(" in source
-    # Unbounded render would be format_memory_context(ctx) with no budget.
+    assert "_run_turn(" in source
     assert "format_memory_context(" not in source, (
-        f"{fn.__name__} renders memory directly; sizing must go through the helper"
+        f"{fn.__name__} renders memory directly; sizing must go through the loop"
     )
+
+
+def test_the_loop_sizes_memory_before_building_the_prompt():
+    """The single loop sizes memory and builds the prompt through the helper."""
+    source = _function_source(Orchestrator._run_turn)
+    assert "_assemble_prompt(" in source
+    assert "format_memory_context(" not in source
