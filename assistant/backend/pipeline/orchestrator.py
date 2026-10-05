@@ -194,6 +194,13 @@ class ChatRequest(BaseModel):
     search_consent: bool = False
     # Explicit user "Max" toggle (UI) — escalate generation to MAX_MODEL.
     max_intelligence: bool = False
+    # Scheduled-task mode: a standing task always checks for new information, so
+    # search is forced and the router's storage-style veto must not suppress it.
+    force_search: bool = False
+    # Scheduled-task mode: the directive delivered as the user turn (the task's
+    # script plus the ALERT contract), while `message` (the script) drives routing
+    # and retrieval. None for ordinary turns.
+    user_turn_override: str | None = None
 
 
 class ChatResponse(BaseModel):
@@ -1236,165 +1243,32 @@ class Orchestrator:
     async def run_scheduled_task(
         self, prompt: str, user_id: int, task_name: str
     ) -> str:
-        """Execute a scheduled task: full cognitive loop, output as string.
+        """Execute a scheduled task through the single cognitive loop.
 
-        Called by the scheduler for due tasks and by _handle_scheduled_task
-        for run-now requests. Logs an assistant episode so the output is
-        queryable memory. The task's own instruction is delivered to the
-        model as the user message — never just folded into the system prompt,
-        where it gets drowned by memory context.
+        The task is memory: a `scheduled_task` frame whose `prompt` slot is the
+        script. That script drives routing and retrieval, and is delivered to the
+        model as the user turn (via the directive, which carries the ALERT
+        contract). Search is forced — a standing task must check for new
+        information — and the full loop runs, so the model has its tools.
+
+        This used to be a third, partial copy of the pipeline: no router, no tool
+        loop, its own search with the instruction as the query, and facts mined
+        from its own report. The instruction-as-query was the measured cause of
+        `job_postings_monitor` returning tool documentation instead of postings.
+
+        Returns the assistant's answer. The scheduler parses any `ALERT:` footer
+        and records the run (episode, daily-run frame, associations, alerts).
         """
         date_str = datetime.now(UTC).strftime("%Y_%m_%d")
-        session_id = f"scheduled-{task_name}-{date_str}"
-
-        memory_context = await self.retriever.retrieve(
-            query=prompt,
+        request = ChatRequest(
             user_id=user_id,
-            session_id=session_id,
+            message=prompt,
+            session_id=f"scheduled-{task_name}-{date_str}",
+            force_search=True,
+            user_turn_override=build_scheduled_task_directive(prompt),
         )
-
-        plan = classify_intent(
-            query=prompt,
-            task_type="functional",
-            memory=memory_context,
-        )
-        # A scheduled task is a standing instruction to CHECK FOR NEW
-        # information. Never let memory sufficiency suppress the search —
-        # an AI-news monitor must not answer purely from yesterday's frames.
-        plan.search_needed = True
-
-        prompt_with_memory, plan_instructions, self_context = await self._assemble_prompt(
-            plan, memory_context, task_type="functional"
-        )
-        system_prompt = prompt_with_memory
-
-        search_results: list[SearchResult] = []
-        if plan.search_needed:
-            from assistant.backend.pipeline.search import (
-                filter_relevant,
-                sanitize_query,
-            )
-
-            query = sanitize_query(prompt)
-            logger.info("Scheduled task triggering search: %s", query[:80])
-            try:
-                search_results, _search_info = await self.search_tool.search_with_info(
-                    query, num_results=5, llm_client=self.llm_client
-                )
-            except Exception as e:
-                logger.warning("Task search failed: %s", e)
-                search_results = []
-
-            # Timed out like the other two paths: a stalled embedder must not
-            # hang the scheduler's daily tick either.
-            try:
-                search_results = await asyncio.wait_for(
-                    filter_relevant(search_results, query, self.embed_fn()),
-                    timeout=settings.search_timeout,
-                )
-            except TimeoutError:
-                logger.warning(
-                    "filter_relevant timed out after %.1fs; keeping all results",
-                    settings.search_timeout,
-                )
-
-            if search_results:
-                display_results = search_results[: settings.max_search_results_in_prompt]
-                search_text = "\n".join(
-                    f"- [{r.title}]({r.url}) - {r.snippet}" for r in display_results
-                )
-                system_prompt += f"\n\n**Search Results:**\n{search_text}"
-
-                from assistant.backend.pipeline.extractor import (
-                    apply_search_extraction,
-                    extract_facts_from_search,
-                )
-
-                try:
-                    extraction = await extract_facts_from_search(
-                        prompt, search_results, self.llm_client
-                    )
-                    await apply_search_extraction(
-                        extraction, search_results, self.store,
-                        embed_fn=self.embed_fn(),
-                        embedding_model=self.llm_client.embedding_model,
-                    )
-                except Exception as e:
-                    logger.error("Search extraction failed: %s", e)
-
-        system_prompt, truncated = self._fit_prompt_to_cap(
-            prompt_with_memory,
-            system_prompt,
-            memory_context,
-            "functional",
-            plan_instructions,
-            self_context,
-        )
-
-        logger.info(
-            "context_stats: prompt_chars=%d frames=%d episodes=%d search_results=%d truncated=%s",
-            len(system_prompt),
-            0,  # no frames in this path
-            0,  # no episodes in this path
-            len(search_results),
-            truncated,
-        )
-
-        messages = [
-            ChatMessage(role="system", content=system_prompt),
-            ChatMessage(role="user", content=build_scheduled_task_directive(prompt)),
-        ]
-        use_thinking = await self.llm_client.supports_thinking(self.llm_client.chat_model)
-        llm_response = await self.llm_client.chat(
-            messages,
-            think=use_thinking,
-            num_predict=settings.think_num_predict_cap if use_thinking else None,
-        )
-
-        response_text = (
-            llm_response.content
-            or llm_response.thinking
-            or "Task completed."
-        )
-
-        episode = await self._log_episode(
-            user_id,
-            session_id,
-            role="assistant",
-            content=response_text,
-        )
-
-        try:
-            from assistant.backend.pipeline.extractor import (
-                apply_extraction,
-                extract_facts_from_document,
-            )
-
-            extraction = await extract_facts_from_document(
-                response_text,
-                f"scheduled_task: {prompt[:100]}",
-                self.llm_client,
-            )
-            if extraction.slots or extraction.associations:
-                result = await apply_extraction(
-                    extraction,
-                    self.store,
-                    source_type="scheduled_task",
-                    source_url=None,
-                    source_reliability=0.6,
-                )
-                await self.store.update_episode_frame_ids(
-                    episode.id, result.get("frame_ids", [])
-                )
-                logger.info(
-                    "run_scheduled_task: extracted %d slots, %d assocs",
-                    len(extraction.slots),
-                    len(extraction.associations),
-                )
-        except Exception as e:
-            logger.warning("Scheduled task extraction failed: %s", e)
-
-        return response_text
+        response = await self.chat(request)
+        return response.response
 
     async def chat_stream(
         self,
@@ -1489,8 +1363,12 @@ class Orchestrator:
         recall_time = time.monotonic() - recall_start
         logger.debug("Routing: %.3fs, Memory recall: %.3fs (parallel)", routing_time, recall_time)
 
-        # 3b. Handle scheduled task intent
-        if task_type == TaskType.SCHEDULED and not skip_route:
+        # 3b. Handle scheduled task intent. Guarded against re-entry: when the
+        # router is running *inside* a task's execution (force_search), the script
+        # must be executed, not treated as another management request — otherwise
+        # run_scheduled_task -> chat -> _handle_scheduled_task -> run_scheduled_task
+        # recurses forever.
+        if task_type == TaskType.SCHEDULED and not skip_route and not request.force_search:
             # The non-streaming handler does the work; re-emit its response as
             # stream events. The meta event is required (parity gap G2): this
             # branch used to return after finalize, so the response shape never
@@ -1535,8 +1413,12 @@ class Orchestrator:
         stream_search_s = 0.0
         ttft_s: float | None = None
 
-        # 5a. Storage statements must not trigger external search
-        if (
+        # 5a. Storage statements must not trigger external search. A scheduled
+        # task is exempt: it is a standing instruction to CHECK FOR NEW
+        # information, so its search is forced and the veto must not suppress it.
+        if request.force_search:
+            plan.search_needed = True
+        elif (
             plan.search_needed
             and task_type != TaskType.SEARCH
             and not skip_route
@@ -1880,7 +1762,12 @@ class Orchestrator:
         # Build messages
         messages = [ChatMessage(role="system", content=system_prompt)]
         messages.extend(history_messages)
-        messages.append(ChatMessage(role="user", content=request.message))
+        messages.append(
+            ChatMessage(
+                role="user",
+                content=request.user_turn_override or request.message,
+            )
+        )
 
         # Convert to dict format for streaming
         messages_dict = [m.model_dump() for m in messages]

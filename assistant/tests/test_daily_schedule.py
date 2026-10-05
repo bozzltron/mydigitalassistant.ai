@@ -19,7 +19,7 @@ from assistant.backend.pipeline.orchestrator import (
     Orchestrator,
     OrchestratorDeps,
 )
-from assistant.backend.pipeline.search import WebSearchTool
+from assistant.backend.pipeline.search import SearchInfo, WebSearchTool
 from assistant.backend.scheduler.schedule import (
     format_next_run,
     next_daily_run,
@@ -287,17 +287,17 @@ async def test_run_scheduled_task_episode_has_frame_ids(env):
     )
     assert result == "ok"
 
-    # Find the episode created for this task
+    # The task now runs the full loop: it logs the script as a user turn and the
+    # answer as an assistant turn (the old partial path logged only the answer).
+    # Extracted frames attach to the turn that stated them, as in chat — the user
+    # turn here.
     episodes = await store.get_episodes_for_user(user_id)
     task_episodes = [e for e in episodes if e.session_id.startswith("scheduled-test_briefing-")]
-    assert len(task_episodes) == 1
-    episode = task_episodes[0]
-    assert episode.role == "assistant"
-    # frame_ids should be populated with extracted frames
-    assert episode.frame_ids is not None
-    assert len(episode.frame_ids) >= 1
+    assert {e.role for e in task_episodes} == {"user", "assistant"}
+    user_episode = next(e for e in task_episodes if e.role == "user")
+    assert user_episode.frame_ids
     # Verify the frame was created
-    frame = await store.get_frame(episode.frame_ids[0])
+    frame = await store.get_frame(user_episode.frame_ids[0])
     assert frame is not None
     assert frame.name == "ai_news"
 
@@ -321,6 +321,102 @@ async def test_run_scheduled_task_delivers_task_prompt_to_model(env):
     ]
     assert len(user_turns) >= 1
     assert any("Keep an eye on AI in the news" in t for t in user_turns)
+
+
+async def test_scheduled_task_searches_with_the_routers_query(env, monkeypatch):
+    """The task's search uses the router's query, not the raw instruction.
+
+    Regression: run_scheduled_task searched `sanitize_query(prompt)` — the
+    instruction itself — and Brave matched that how-to phrasing to job-search
+    *tool* documentation (Scoutify, JobScan, PitchMeAI) rather than postings.
+    """
+    from types import SimpleNamespace
+
+    from assistant.backend.pipeline import orchestrator as orch_mod
+    from assistant.backend.pipeline.task_router import TaskType
+
+    orch, llm, store, user_id = env
+
+    async def fake_route(message, llm_client):  # noqa: ANN001, ANN002
+        return SimpleNamespace(
+            task_type=TaskType.FUNCTIONAL,
+            wants_search=True,
+            search_query="music industry jobs austin",
+        )
+
+    monkeypatch.setattr(orch_mod, "route", fake_route)
+
+    captured: dict = {}
+
+    async def fake_search(query, num_results=5, llm_client=None, user_consent=False):  # noqa: ANN001
+        captured["query"] = query
+        return [], SearchInfo(backend="test", query=query, results=[])
+
+    monkeypatch.setattr(orch.search_tool, "search_with_info", fake_search)
+
+    await orch.run_scheduled_task(
+        prompt="Scan for new job postings matching the user's criteria",
+        user_id=user_id,
+        task_name="job_scan",
+    )
+    assert captured["query"] == "music industry jobs austin"
+
+
+async def test_scheduled_task_search_is_not_vetoed(env, monkeypatch):
+    """A standing task always searches, even when the router says wants_search=False.
+
+    The storage-style veto (a fact the user is *giving*, not asking about) must not
+    suppress a task's search; the task exists to check for new information.
+    """
+    from types import SimpleNamespace
+
+    from assistant.backend.pipeline import orchestrator as orch_mod
+    from assistant.backend.pipeline.task_router import TaskType
+
+    orch, llm, store, user_id = env
+
+    async def fake_route(message, llm_client):  # noqa: ANN001, ANN002
+        return SimpleNamespace(
+            task_type=TaskType.FUNCTIONAL, wants_search=False, search_query="q"
+        )
+
+    monkeypatch.setattr(orch_mod, "route", fake_route)
+
+    called = {"n": 0}
+
+    async def fake_search(query, num_results=5, llm_client=None, user_consent=False):  # noqa: ANN001
+        called["n"] += 1
+        return [], SearchInfo(backend="test", query=query, results=[])
+
+    monkeypatch.setattr(orch.search_tool, "search_with_info", fake_search)
+
+    await orch.run_scheduled_task(
+        prompt="Check the news", user_id=user_id, task_name="news"
+    )
+    assert called["n"] == 1, "a scheduled task's search was vetoed"
+
+
+async def test_scheduled_task_runs_the_tool_loop(env, monkeypatch):
+    """The task executes through the full loop, so the model has its tools.
+
+    Regression: the old partial path called `llm_client.chat` with no tools, so a
+    task could not refine its search or read a file while running.
+    """
+    import assistant.backend.pipeline.streaming as streaming
+
+    orch, llm, store, user_id = env
+    captured: dict = {}
+
+    async def fake_loop(llm_client, messages, tools, **kwargs):  # noqa: ANN001, ANN002, ANN003, ANN201
+        captured["tools"] = [t["function"]["name"] for t in tools]
+        yield streaming.serialize_event(streaming.FinalizeEvent("done", ""))
+
+    monkeypatch.setattr(streaming, "stream_tool_loop", fake_loop)
+
+    await orch.run_scheduled_task(
+        prompt="Do the thing", user_id=user_id, task_name="t"
+    )
+    assert captured.get("tools"), "the task ran without the tool loop"
 
 
 async def test_daily_run_frame_accumulates_task_names(store):

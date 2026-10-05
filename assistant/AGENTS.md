@@ -172,25 +172,36 @@ Actual ordering inside `Orchestrator._run_turn()` — **the single cognitive loo
   against conversational slots by (frame_name, value) — cross-key duplicates like
   "strings"/"number_of_strings" are dropped in favor of the earlier channel's key.
 
-### One loop, two consumers (do not re-duplicate)
+### One loop, three consumers (do not re-duplicate)
 
 `Orchestrator._run_turn()` is the only implementation of the loop. It emits the
-SSE event stream. `chat_stream()` is a one-line pass-through to the UI, and
-`chat()` is an adapter that drains the same stream and rebuilds a `ChatResponse`
-from the terminal `finalize` and `meta` events. There is no second copy.
+SSE event stream. `chat_stream()` is a one-line pass-through to the UI, `chat()`
+is an adapter that drains the same stream and rebuilds a `ChatResponse`, and
+`run_scheduled_task()` is a thin wrapper that runs a task's script through the
+same loop (see below). There is no second copy.
 
-This replaced two ~600-line copies that drifted **six** times (see
-`test_stream_parity.py`), each a user-visible bug: a stalled relevance gate that
-hung the stream, a swallowed generation failure, a dropped `compute` result, a
-missing sources footer, a missing learning summary, and a double-logged
-correction turn. A new feature added to the loop reaches both paths by
-construction; do not add a second loop. `run_scheduled_task()` is a separate,
-deliberately simpler path (always-search, no routing/extraction); leave it
-distinct unless a plan says otherwise.
+This replaced three ~600-line copies that drifted repeatedly (see
+`test_stream_parity.py` and the scheduled-task history), each a user-visible bug:
+a stalled relevance gate that hung the stream, a swallowed generation failure, a
+dropped `compute` result, a missing sources footer, a missing learning summary, a
+double-logged correction turn, and — in the scheduled copy — a task that searched
+with its own instruction as the query and returned tool documentation instead of
+results. A new feature added to the loop reaches every path by construction; do
+not add a second loop.
 
 `MetaEvent` carries the full `ChatResponse` shape — including `citations` and
 `memory_context` — so the adapter loses no field. Every terminal branch (normal,
 scheduled, correction, consent, generation-failure) emits exactly one `meta`.
+
+**Scheduled tasks run the loop too.** `run_scheduled_task(prompt, …)` builds a
+`ChatRequest` with `force_search=True` (a standing task always checks for new
+information; the router's storage-style veto must not suppress it) and
+`user_turn_override=build_scheduled_task_directive(prompt)` (the script plus the
+`ALERT:` contract, delivered as the user turn while `message` drives routing and
+retrieval). The loop must **not** re-enter the scheduled-task management branch
+while executing a task's script — guard it with `not request.force_search`, or
+`run_scheduled_task → chat → _handle_scheduled_task → run_scheduled_task`
+recurses forever.
 
 ## Design principles
 
@@ -415,13 +426,16 @@ the assessment criteria, memory budget, and re-evaluation process.
 - **Tasks are memory.** Each task is a `scheduled_task` frame with slots for `prompt`,
   `frequency` (`daily`/`once`), `enabled`, `next_run`, `last_run`, and `description`.
   No hidden scheduler-only columns.
-- **Execution uses the full cognitive loop.** When a task fires, the scheduler
-  calls `orchestrator.run_scheduled_task(prompt, …)`, which retrieves memory,
-  runs the reasoner, **always searches for the latest information** (a monitor
-  task must not answer purely from yesterday's frames), and delivers the task's
-  own instruction to the model as the explicit user message — never folded only
-  into the system prompt, where a small local model drifts and regurgitates old
-  episodes instead of doing the task.
+- **Execution uses the full cognitive loop — the same `_run_turn` as chat.**
+  When a task fires, the scheduler calls `orchestrator.run_scheduled_task(prompt, …)`,
+  which runs the task's script through the one loop: the script drives routing and
+  retrieval, is delivered as the explicit user turn (the directive, carrying the
+  `ALERT:` contract), and search is **forced** (a monitor task must not answer
+  purely from yesterday's frames). Because it is the full loop, the model has its
+  **tools** during a task — it can `recall` the user's criteria, `web_search` a
+  targeted query, and read/write files. It previously ran a partial copy with no
+  router and no tools, and searched with the instruction itself as the query,
+  which returned tool documentation instead of results.
 - **Agent-raised alerts.** While executing a task the model may flag something
   genuinely important by ending its report with `ALERT: <short title>` plus a
   one-sentence reason. The runner parses that footer into a high-visibility

@@ -225,6 +225,10 @@ def _request(message: str = "test message", max_intelligence: bool = False):
     request.attached_files = []
     request.search_consent = False
     request.max_intelligence = max_intelligence
+    # Explicit, because a MagicMock attribute is truthy: without these the loop
+    # would read force_search=True and a MagicMock user_turn_override.
+    request.force_search = False
+    request.user_turn_override = None
     return request
 
 

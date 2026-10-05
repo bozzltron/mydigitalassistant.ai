@@ -52,13 +52,14 @@ class TestPromptAssemblyIsShared:
         assert "_assemble_prompt(" in loop
         assert "memory_context=format_memory_context(" not in loop
 
-    def test_scheduled_path_delegates_to_the_helper(self):
-        """The scheduled runner is the third path and the one that drifted."""
+    def test_scheduled_path_delegates_to_the_single_loop(self):
+        """The scheduled path now runs the one loop, not its own copy."""
         source = _function_source(Orchestrator.run_scheduled_task)
-        assert "_assemble_prompt(" in source, "scheduled path bypasses the shared helper"
-        assert (
-            "memory_context=format_memory_context(" not in source
-        ), "scheduled path still inlines prompt assembly"
+        # It delegates to chat() (which drains `_run_turn`); it must not inline
+        # prompt assembly or a second pipeline of its own.
+        assert "self.chat(" in source or "_run_turn(" in source
+        assert "_assemble_prompt(" not in source
+        assert "format_memory_context(" not in source
 
     def test_task_type_literal_cannot_survive(self):
         """`_memory_char_budget` and `build_system_prompt` must get the same value.
@@ -110,15 +111,15 @@ class TestPromptAssemblyIsShared:
                     f"_assemble_prompt call at line {node.lineno} must pass "
                     "task_type by keyword, not positionally"
                 )
-        # Two call sites now: the shared `_run_turn` loop (chat + chat_stream) and
-        # the scheduled-task path. It was three when chat() carried its own copy.
-        assert n == 2, f"expected 2 prompt-assembly call sites, found {n}"
+        # One call site now: the single `_run_turn` loop. It was three when chat()
+        # and run_scheduled_task each carried their own copy.
+        assert n == 1, f"expected 1 prompt-assembly call site, found {n}"
 
 
 class TestFittingStaysCentralised:
-    """The appends differ per path, so the fit stays at 2 sites -- but only 2."""
+    """The appends differ per path, so the fit stays at 1 site -- the loop."""
 
-    def test_fit_prompt_to_cap_has_exactly_two_call_sites(self):
+    def test_fit_prompt_to_cap_has_exactly_one_call_site(self):
         src = inspect.getsource(orch_module)
         tree = ast.parse(src)
         sites = [
@@ -128,7 +129,7 @@ class TestFittingStaysCentralised:
             and isinstance(node.func, ast.Attribute)
             and node.func.attr == "_fit_prompt_to_cap"
         ]
-        assert len(sites) == 2, f"_fit_prompt_to_cap called at {sites}"
+        assert len(sites) == 1, f"_fit_prompt_to_cap called at {sites}"
 
     def test_no_raw_flat_character_cut_survives(self):
         """The system prompt must never be sliced by the cap outside the helper.
