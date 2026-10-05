@@ -150,7 +150,10 @@ TOOL_TIMEOUTS: dict[str, float] = {
     "delete_file": 10.0,
     "glob": 10.0,
     "list_files": 10.0,
-    "run_scheduled_task": 60.0,
+    # A run-now executes the full loop (router + forced search + tool loop +
+    # generation), so it can outlast a single LLM call; the old 60s cap cut off
+    # big tasks mid-run. The scheduler's own firing path has no cap.
+    "run_scheduled_task": settings.scheduled_task_timeout_seconds,
     "compute": 60.0,
     "upsert_slot": 10.0,
     "upsert_association": 10.0,

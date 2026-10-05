@@ -461,6 +461,51 @@ async def test_extract_agent_alert_parses_footer(env):
     assert cleaned2 == "Nothing special today"
 
 
+async def test_extract_agent_alert_strips_orchestrator_footers(env):
+    """The loop appends a Sources footer *after* the answer, so on a
+    search-classified task it lands after the ALERT line. It must not become the
+    alert body or leak into the stored summary."""
+    from assistant.backend.scheduler.runner import _extract_agent_alert
+
+    report = (
+        "Two new postings at KEXP today.\n\n"
+        "ALERT: KEXP is hiring\n"
+        "A music director role just opened.\n\n"
+        "**Sources:**\n"
+        "- https://kexp.org/jobs\n"
+        "- https://example.com/jobs"
+    )
+    title, message, cleaned = _extract_agent_alert(report, "job_postings_monitor")
+    assert title == "KEXP is hiring"
+    assert message == "A music director role just opened."
+    assert "Sources" not in message and "kexp.org" not in message
+    assert "Sources" not in cleaned
+    assert "Two new postings" in cleaned
+
+    # The introspective "answered from memory" marker is stripped the same way.
+    marker = (
+        "Nothing new.\n\n"
+        "ALERT: Quiet week\n"
+        "No postings matched.\n\n"
+        "<small>_(Answered from memory · 4 facts retrieved)_</small>"
+    )
+    _title, message2, cleaned2 = _extract_agent_alert(marker, "t")
+    assert message2 == "No postings matched."
+    assert "Answered from memory" not in cleaned2
+
+
+def test_run_now_tool_timeout_is_generous():
+    """A run-now executes the full loop; the old 60s cap cut off big tasks."""
+    from assistant.backend.config import settings
+    from assistant.backend.pipeline.tool_executor import TOOL_TIMEOUTS
+
+    assert (
+        TOOL_TIMEOUTS["run_scheduled_task"]
+        == settings.scheduled_task_timeout_seconds
+    )
+    assert TOOL_TIMEOUTS["run_scheduled_task"] >= 300
+
+
 async def test_execute_task_creates_agent_alert(env):
     """A task report ending in ALERT: raises an 'important' alert and the
     stored summary stays clean of the footer."""

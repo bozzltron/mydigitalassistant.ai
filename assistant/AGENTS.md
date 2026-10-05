@@ -198,7 +198,10 @@ scheduled, correction, consent, generation-failure) emits exactly one `meta`.
 information; the router's storage-style veto must not suppress it) and
 `user_turn_override=build_scheduled_task_directive(prompt)` (the script plus the
 `ALERT:` contract, delivered as the user turn while `message` drives routing and
-retrieval). The loop must **not** re-enter the scheduled-task management branch
+retrieval) and `search_consent=True` — **scheduling the task is the user's
+consent to search for it**: nobody is present at the daily tick to answer a
+Brave consent prompt, and the user asked for the search when they created the
+task. The loop must **not** re-enter the scheduled-task management branch
 while executing a task's script — guard it with `not request.force_search`, or
 `run_scheduled_task → chat → _handle_scheduled_task → run_scheduled_task`
 recurses forever.
@@ -441,6 +444,15 @@ the assessment criteria, memory budget, and re-evaluation process.
   one-sentence reason. The runner parses that footer into a high-visibility
   `task_alert` (severity `important`) in the user's alert bell, and strips the
   footer from the stored task summary so it does not pollute the output memory.
+  Because a task now runs the loop, its report can also carry the loop's own
+  footers (a `**Sources:**` list on a search-classified task, or the "answered
+  from memory" marker). Those land *after* the `ALERT:` line, so the runner
+  strips them before parsing — otherwise they become the alert body and are lost
+  from the summary.
+- **Run-now has a generous ceiling.** The `run_scheduled_task` tool wraps a full
+  loop, so its timeout is `SCHEDULED_TASK_TIMEOUT_SECONDS` (default 900s), not
+  the 60s default that cut big tasks off mid-run. The scheduler's own firing path
+  has no cap.
 
 ## Alerts — the agent's channel to the user
 
@@ -501,7 +513,11 @@ conversation list with one-off threads.
   name), so the frame answers "what did my morning run cover?".
 - **Outputs are queryable.** The assistant's response from a task run is a normal
   assistant episode. The user can later ask "What did my morning briefing find?"
-  and retrieval will surface it.
+  and retrieval will surface it. Because the run is the full loop, the script is
+  also logged as the **user** turn — the user authored it, so "user" is honest,
+  and the run is still distinguishable in memory by its session id
+  (`scheduled-<task>-<date>`), so a reader can tell a scheduled run from a live
+  conversation.
 - **Task kinds:** `daily` (runs every tick until stopped) and `once` (next tick, then
   disabled). No cron expressions — one shared daily tick.
 - **Extraction:** utility model returns `{intent, name, description, prompt, repeat}`

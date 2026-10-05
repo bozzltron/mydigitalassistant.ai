@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import shutil
 import sys
 from datetime import UTC, datetime
@@ -141,6 +142,24 @@ def _signal_handler(signum, frame):
     SHUTDOWN = True
 
 
+# Footers the orchestrator appends to an answer. A scheduled task's report can
+# carry one (a search-classified task gets a Sources list; an introspective one
+# gets the memory marker), and they land *after* the ALERT line. Left in place
+# they become the alert's body and are lost from the stored summary, so they are
+# removed before the alert is parsed.
+_FOOTER_PATTERNS = (
+    re.compile(r"\n*<small>_\(Answered from memory[^\n]*</small>\s*$"),
+    re.compile(r"\n+\*\*Sources:\*\*.*\Z", re.DOTALL),
+)
+
+
+def _strip_response_footers(text: str) -> str:
+    """Remove orchestrator-appended footers from a task report."""
+    for pattern in _FOOTER_PATTERNS:
+        text = pattern.sub("", text)
+    return text.rstrip()
+
+
 def _extract_agent_alert(
     response: str, task_name: str
 ) -> tuple[str | None, str | None, str]:
@@ -151,7 +170,11 @@ def _extract_agent_alert(
     treats everything from that line onward as the alert footer: it returns
     the title, the body, and the remaining report text (footer stripped) so
     the alert does not get daisy-chained into the stored task summary.
+
+    Orchestrator footers (sources, memory marker) are stripped first so they do
+    not end up inside the alert body or the stored summary.
     """
+    response = _strip_response_footers(response)
     prefix = SCHEDULED_TASK_ALERT_PREFIX
     for idx, line in enumerate(response.splitlines()):
         stripped = line.strip()

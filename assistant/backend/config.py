@@ -214,5 +214,13 @@ class Settings(BaseSettings):
     daily_tasks_time: str = "09:00"  # HH:MM, 24h
     daily_tasks_tz: str = ""  # IANA zone; empty = TZ env or host-local
 
+    # Ceiling for one interactive run-now (the `run_scheduled_task` tool), which
+    # executes the full cognitive loop: routing, a forced search, the tool loop,
+    # and generation. A single LLM call may take `ollama_timeout` (600s), so a
+    # multi-call task can legitimately outlast the old 60s cap. The scheduler's
+    # own firing path has no cap — this bounds only the user-facing run-now, and
+    # the user chose to wait for it. Configurable for slower or faster hardware.
+    scheduled_task_timeout_seconds: float = 900.0
+
 
 settings = Settings()

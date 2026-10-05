@@ -1266,6 +1266,12 @@ class Orchestrator:
             session_id=f"scheduled-{task_name}-{date_str}",
             force_search=True,
             user_turn_override=build_scheduled_task_directive(prompt),
+            # Scheduling the task *is* the user's consent to search for it: there
+            # is no one present at the daily tick to answer a consent prompt, and
+            # the user asked for this search when they created the task. Without
+            # this the loop's Brave sensitivity gate would replace the task's
+            # output with a "do you want to proceed?" prompt nobody will see.
+            search_consent=True,
         )
         response = await self.chat(request)
         return response.response
