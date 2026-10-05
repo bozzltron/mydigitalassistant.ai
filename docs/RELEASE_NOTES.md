@@ -1,5 +1,53 @@
 # MyDigitalAssistant.ai — release notes
 
+## v0.8.2-alpha
+
+**The names are not swapped any more.** v0.8.1 gave the user's name its own frame
+and taught the extractor which name belongs to whom. It did not touch the other
+way a name gets written — a correction — and that path had been quietly swapping
+the two.
+
+### Where the fix stopped short
+
+The correction pipeline takes a `frame_name` and `slot_key` from the model and
+writes them verbatim. It was the one writer into the identity frames with no
+guard. So *"I'm not Carl. You are Carl."* was applied as
+`user_identity.name = "Carl"` — the assistant's name on the user's frame, under a
+key nothing reads — while *"My name is not Carl. I go by Boz."* left the user's
+name on `identity_name`. Both names were stored, in each other's place, and
+`/assistant/name` returned the user's name as the agent's.
+
+The extractor's routing fixed one road in; the correction pipeline was another
+road the same names travel.
+
+### What changed
+
+- **The correction model says who a correction is about.** `CorrectionResult`
+  gains a `subject` field (`user` | `assistant` | `topic`), and the correction
+  prompt asks for it, with the naming cases as examples. The model already knew
+  the answer — it had no field to put it in.
+- **The code only maps that answer to a frame.** `route_correction` sends
+  subject `user` / `assistant` to the reserved frame for that subject, normalises
+  any name key to `full_name`, and leaves `topic` (or anything unrecognised)
+  alone. There is no list of frame names to maintain and no guessing from the
+  value — the model decides *who*, the code decides *where*. `subject` defaults
+  to `topic`, so ordinary corrections are unaffected.
+- **Routing happens before validation.** The endpoint and the orchestrator now
+  route before reading the current value, so a correction is checked against the
+  frame it will actually be written to, not the one the model named.
+
+### Known limits
+
+- **Existing memory is still wrong.** This release fixes the path, not the
+  stored values. A brain that already holds the user's name on the assistant's
+  frame keeps it until the next ordinary rename ("your name is X") corrects it;
+  the orphaned `user_identity.name` slot is inert because readers use
+  `full_name`.
+- **The subject is still model-judged.** The prompt makes the distinction
+  explicit and the routing is deterministic once it is given, but a model that
+  mislabels a first-person name as `assistant` will still route it there. The
+  extractor-side cross-check does not cover the correction path.
+
 ## v0.8.1-alpha
 
 **The assistant stopped taking your name.** In v0.8.0 the assistant's name became
