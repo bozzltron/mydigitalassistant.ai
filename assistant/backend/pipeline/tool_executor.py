@@ -1109,16 +1109,25 @@ async def execute_read_file(args: dict, user_id: str, session_id: str) -> ToolRe
 
 
 async def execute_write_file(args: dict, user_id: str, session_id: str) -> ToolResult:
-    """Create or overwrite a file in the sandbox."""
-    try:
-        import csv
-        import json
-        import re
+    """Create or overwrite a file in the sandbox.
 
+    The content is rendered into real bytes for the file's format (docx/pdf/xlsx/
+    …, not a string with a document extension) and the memory frame is built by
+    ``apply_file_to_memory`` — the same step upload uses, so an agent-written file
+    and an uploaded one produce the same memory. An extension with no writer is
+    refused rather than written as a fake file. See the file_write_parity
+    experiment.
+    """
+    try:
+        from assistant.backend.pipeline.files import (
+            apply_file_to_memory,
+            render_file_bytes,
+        )
         from assistant.backend.pipeline.filesystem import (
             PathTraversalError,
             get_sandbox_root,
-            write_sandbox_file,
+            resolve_sandbox_path,
+            write_sandbox_bytes,
         )
 
         path = args.get("path", "")
@@ -1128,102 +1137,49 @@ async def execute_write_file(args: dict, user_id: str, session_id: str) -> ToolR
         if not path:
             return ToolResult(success=False, error="path is required")
 
-        written_path = write_sandbox_file(path, content, overwrite)
+        # Resolve first so a traversal attempt is reported as such, before any
+        # extension complaint masks it.
+        resolved = resolve_sandbox_path(path)
 
-        # Create/update memory frame
+        ext = path.rsplit(".", 1)[-1].lower() if "." in path else ""
+        if not ext:
+            return ToolResult(
+                success=False,
+                error="path must include a file extension (e.g. report.md)",
+            )
+
+        data, render_error = render_file_bytes(ext, content)
+        if data is None:
+            return ToolResult(success=False, error=render_error)
+
+        written_path = write_sandbox_bytes(path, data, overwrite)
+
         if _store is not None:
-            frame_name = f"file_{written_path.name}"
-            frame = await _store.get_frame_by_name(frame_name)
-            if not frame:
-                try:
-                    user_id_int = int(user_id)
-                except ValueError:
-                    user_id_int = 1
-                frame = await _store.create_frame(
-                    frame_name, "entity",
-                    source_type="file_create", owner_user_id=user_id_int, source_reliability=0.8
-                )
-
-            await _store.upsert_slot(
-                frame.id, "file_name", written_path.name, source_type="file_create"
-            )
-            await _store.upsert_slot(
-                frame.id, "file_ext", written_path.suffix.lstrip("."), source_type="file_create"
-            )
-            await _store.upsert_slot(
-                frame.id, "file_size", str(len(content)), source_type="file_create"
-            )
-            await _store.upsert_slot(
-                frame.id,
-                "file_safe_name",
-                str(written_path.relative_to(get_sandbox_root())),
+            try:
+                user_id_int = int(user_id)
+            except (ValueError, TypeError):
+                user_id_int = 1
+            # The sandbox-relative path (not just the basename): a nested file
+            # 'notes/x.txt' must resolve by its stored name. read_file maps frame
+            # name -> this value.
+            safe_name = str(written_path.relative_to(get_sandbox_root()))
+            summary = await apply_file_to_memory(
+                _store,
+                frame_name=f"file_{written_path.name}",
+                safe_filename=safe_name,
+                ext=ext,
+                content_bytes=data,
+                user_id=user_id_int,
                 source_type="file_create",
+                source_reliability=0.8,
             )
-            # No content slot. Memory holds what a file *is*, never what it
-            # *contains*: the bytes are on disk and read verbatim via read_file.
-            # The preview used to be written here and excluded at render time
-            # (retrieval.py FILE_CONTENT_HINT_SLOTS), which left a stale copy that
-            # the read_file disk-failure fallback could serve in place of the real
-            # file. See docs/FILES.md.
-
-            # CSV special handling: create row frames (capped — past
-            # CSV_MAX_ROW_FRAMES only row_count/columns metadata is stored;
-            # row data stays on disk for read_file, so memory cannot explode).
-            if written_path.suffix.lower() == ".csv":
-                try:
-                    reader = csv.reader(content.splitlines())
-                    rows = list(reader)
-                    if rows:
-                        headers = rows[0]
-                        row_count = len(rows) - 1
-                        row_frame_cap = settings.csv_max_row_frames
-                        if row_count <= row_frame_cap:
-                            for i, row in enumerate(rows[1:], 1):
-                                row_frame = await _store.create_frame(
-                                    f"file_{written_path.name}_row_{i}", "record",
-                                    source_type="csv_row", owner_user_id=user_id_int
-                                )
-                                for col_idx, col in enumerate(headers):
-                                    # Tolerate ragged rows: pad short rows and
-                                    # ignore extra cells instead of raising in
-                                    # zip(strict=True) and orphaning the frames
-                                    # already written for this file.
-                                    val = row[col_idx] if col_idx < len(row) else ""
-                                    slot_key = re.sub(
-                                        r"[^a-zA-Z0-9_]", "_", col.lower().strip()
-                                    )
-                                    if not slot_key:
-                                        slot_key = f"col_{col_idx}"
-                                    # A padded or empty cell is an ABSENT fact. Skip it:
-                                    # the store refuses blank values, and letting that
-                                    # raise here would abort the whole row — which is
-                                    # precisely the ragged-row failure this padding
-                                    # exists to tolerate.
-                                    if val is None or not str(val).strip():
-                                        continue
-                                    await _store.upsert_slot(
-                                        row_frame.id, slot_key, val, source_type="csv_row"
-                                    )
-                                await _store.create_association(frame.id, row_frame.id, "part_of")
-                        else:
-                            logger.warning(
-                                "write_file %s has %d rows; storing metadata only "
-                                "(CSV_MAX_ROW_FRAMES=%d)",
-                                written_path.name, row_count, row_frame_cap,
-                            )
-                        await _store.upsert_slot(
-                            frame.id, "row_count", str(row_count), source_type="file_create"
-                        )
-                        await _store.upsert_slot(
-                            frame.id, "columns", json.dumps(headers), source_type="file_create"
-                        )
-                except Exception as e:
-                    logger.warning(f"CSV row frame creation failed: {e}")
+        else:
+            summary = {"frame_id": None}
 
         return ToolResult(success=True, data={
-            "path": str(written_path.relative_to(get_sandbox_root())),
-            "size": len(content),
-            "frame_id": frame.id if _store and frame else None
+            "path": str(resolved.relative_to(get_sandbox_root())),
+            "size": len(data),
+            "frame_id": summary.get("frame_id"),
         })
     except PathTraversalError as e:
         return ToolResult(success=False, error=str(e))

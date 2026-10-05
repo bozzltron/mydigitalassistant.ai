@@ -3,6 +3,8 @@
 Tests for Files tab UI: upload, view, delete, cascade cleanup, bulk delete.
 """
 
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -789,14 +791,21 @@ class TestFileSandboxTools:
         assert len(part_of) == 2
 
     @pytest.mark.asyncio
-    async def test_large_csv_write_keeps_metadata_only(self, store, stub_llm, monkeypatch):
-        """write_file CSV past CSV_MAX_ROW_FRAMES stores metadata only — no row frames."""
-        from assistant.backend.pipeline.tool_executor import execute_write_file
+    async def test_large_csv_write_caps_row_frames(self, store, stub_llm, monkeypatch):
+        """write_file CSV past CSV_MAX_ROW_FRAMES creates only the first `cap` rows.
 
+        Regression: upload created `cap` row frames while the tool created NONE —
+        a silent divergence. Both now create up to the cap; the rest stays on disk
+        for read_file, so memory cannot explode per-row.
+        """
+        from assistant.backend.pipeline.tool_executor import execute_write_file, init_store
+
+        user = await store.create_user("big_csv_user")
+        init_store(store.db_path, embed_fn=stub_llm.embed, embedding_model="nomic-embed-text")
         monkeypatch.setattr(settings, "csv_max_row_frames", 2)
         csv_content = "name,email\n" + "".join(f"u{i},u{i}@x.com\n" for i in range(4))
         result = await execute_write_file(
-            {"path": "big.csv", "content": csv_content}, "1", "test"
+            {"path": "big.csv", "content": csv_content}, str(user.id), "test"
         )
         assert result.success
 
@@ -807,9 +816,10 @@ class TestFileSandboxTools:
         assert row_count is not None and row_count.value == "4"
         assert columns is not None and "email" in columns.value
 
-        # No per-row part_of frames past the cap — row data stays on disk.
+        # Exactly `cap` row frames — the rest stays on disk.
         associations = await store.get_all_associations_for_frame(frame.id)
-        assert not [a for a in associations if a.relation_type == "part_of"]
+        part_of = [a for a in associations if a.relation_type == "part_of"]
+        assert len(part_of) == 2
 
     @pytest.mark.asyncio
     async def test_csv_delete_cascades_to_row_frames(self, store, stub_llm):
@@ -849,3 +859,190 @@ class TestFileSandboxTools:
         assert result.data["count"] >= 1
         paths = [f.get("path") for f in result.data["files"]]
         assert "notes/list_test.txt" in paths
+
+
+class TestFileWriteParity:
+    """Regression tests for assistant/experiments/file_write_parity/.
+
+    The experiment found write_file could not produce a valid binary document
+    (it wrote the string into a .docx and Word/its library refused it), and that
+    memory diverged from upload for csv/json. These pin the fixes.
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "ext",
+        ["docx", "xlsx", "xls", "odt", "ods", "odp", "pptx", "pdf"],
+    )
+    async def test_write_file_produces_a_real_document(self, store, stub_llm, ext):
+        """write_file writes bytes the owning library can open, not a string.
+
+        Regression: `write_file` used `write_text`, so a `.docx` was the literal
+        string and python-docx raised PackageNotFoundError.
+        """
+        import io
+
+        from assistant.backend.pipeline.tool_executor import execute_write_file, init_store
+
+        user = await store.create_user(f"parity_doc_{ext}")
+        init_store(store.db_path, embed_fn=stub_llm.embed, embedding_model="nomic-embed-text")
+
+        result = await execute_write_file(
+            {"path": f"parity_doc.{ext}", "content": "Quarterly Report\nAda Lovelace.",
+             "overwrite": True},
+            str(user.id), "test",
+        )
+        assert result.success, result.error
+
+        data = Path(f"/app/data/parity_doc.{ext}").read_bytes()
+        # Zip-based Office/ODF formats must start with the PK signature; PDF with
+        # %PDF; legacy xls with the OLE header. A text file fails all of these —
+        # which is exactly the bug.
+        if ext in ("docx", "xlsx", "odt", "ods", "odp", "pptx"):
+            assert data[:2] == b"PK", f"{ext} is not a zip container"
+        elif ext == "pdf":
+            assert data[:4] == b"%PDF"
+        elif ext == "xls":
+            assert data[:4] == b"\xd0\xcf\x11\xe0"
+
+        # And the owning library actually opens it.
+        if ext == "docx":
+            from docx import Document
+
+            assert "Ada Lovelace" in "\n".join(
+                p.text for p in Document(io.BytesIO(data)).paragraphs
+            )
+        elif ext == "pdf":
+            from pypdf import PdfReader
+
+            text = " ".join(
+                (p.extract_text() or "") for p in PdfReader(io.BytesIO(data)).pages
+            )
+            assert "Ada Lovelace" in text
+
+    @pytest.mark.asyncio
+    async def test_write_file_refuses_unwritable_extension(self, store, stub_llm):
+        """An extension with no writer is refused, not written as a fake file."""
+        from assistant.backend.pipeline.tool_executor import execute_write_file
+
+        result = await execute_write_file(
+            {"path": "parity_script.py", "content": "print('hi')"}, "1", "test"
+        )
+        assert not result.success
+        assert "no writer" in result.error
+
+    @pytest.mark.asyncio
+    async def test_write_file_csv_matches_upload_memory(self, store, stub_llm):
+        """Agent-written and uploaded CSV produce the same frame slot set.
+
+        Regression: upload wrote entity_* slots and row frames; write_file wrote
+        neither, so identical bytes produced two different memories.
+        """
+        from assistant.backend.main import upload_file_to_memory
+        from assistant.backend.pipeline.tool_executor import execute_write_file, init_store
+
+        user = await store.create_user("parity_csv_user")
+        init_store(store.db_path, embed_fn=stub_llm.embed, embedding_model="nomic-embed-text")
+        csv = "name,role\nAda Lovelace,engineer\nGrace Hopper,admiral\n"
+
+        await execute_write_file(
+            {"path": "parity.csv", "content": csv}, str(user.id), "test"
+        )
+        written = await store.get_frame_by_name("file_parity.csv")
+
+        uploaded_result = await upload_file_to_memory(
+            "parity.csv", csv.encode(), "csv", store, user_id=user.id
+        )
+        uploaded = await store.get_frame(uploaded_result["frame_id"])
+
+        async def slot_keys(frame_id):
+            return sorted(s.key for s in await store.get_slots_for_frame(frame_id))
+
+        async def safe_name(frame_id):
+            slot = await store.get_slot(frame_id, "file_safe_name")
+            return slot.value if slot else None
+
+        assert written is not None and uploaded is not None
+        assert await slot_keys(written.id) == await slot_keys(uploaded.id)
+        # Values too, not just keys: file_safe_name must agree between the paths,
+        # or read_file resolves one of them to the wrong on-disk location.
+        assert await safe_name(written.id) == await safe_name(uploaded.id)
+        # Entity slots now exist on the written frame (they did not before).
+        assert any(k.startswith("entity_") for k in await slot_keys(written.id))
+
+    @pytest.mark.asyncio
+    async def test_write_file_json_matches_upload_memory(self, store, stub_llm):
+        """Agent-written and uploaded JSON produce the same frame slot set."""
+        import json
+
+        from assistant.backend.main import upload_file_to_memory
+        from assistant.backend.pipeline.tool_executor import execute_write_file, init_store
+
+        user = await store.create_user("parity_json_user")
+        init_store(store.db_path, embed_fn=stub_llm.embed, embedding_model="nomic-embed-text")
+        payload = json.dumps({"lead": "Ada Lovelace", "project": "engine"})
+
+        await execute_write_file(
+            {"path": "parity.json", "content": payload}, str(user.id), "test"
+        )
+        written = await store.get_frame_by_name("file_parity.json")
+
+        uploaded_result = await upload_file_to_memory(
+            "parity.json", payload.encode(), "json", store, user_id=user.id
+        )
+        uploaded = await store.get_frame(uploaded_result["frame_id"])
+
+        async def slot_keys(frame_id):
+            return sorted(s.key for s in await store.get_slots_for_frame(frame_id))
+
+        assert written is not None and uploaded is not None
+        assert await slot_keys(written.id) == await slot_keys(uploaded.id)
+
+    @pytest.mark.asyncio
+    async def test_write_file_nested_path_keeps_relative_safe_name(self, store, stub_llm):
+        """A nested file stores its sandbox-relative path, so read resolves it."""
+        from assistant.backend.pipeline.tool_executor import execute_write_file, init_store
+
+        user = await store.create_user("parity_nested_user")
+        init_store(store.db_path, embed_fn=stub_llm.embed, embedding_model="nomic-embed-text")
+
+        await execute_write_file(
+            {"path": "parity_notes/weekly.md", "content": "hello"},
+            str(user.id), "test",
+        )
+        frame = await store.get_frame_by_name("file_weekly.md")
+        assert frame is not None, "frame is named from the basename"
+        safe = await store.get_slot(frame.id, "file_safe_name")
+        assert safe is not None
+        assert safe.value == "parity_notes/weekly.md"
+
+    @pytest.mark.asyncio
+    async def test_write_file_requires_extension(self, store, stub_llm):
+        """A path with no extension is refused (no writer can be chosen)."""
+        from assistant.backend.pipeline.tool_executor import execute_write_file
+
+        result = await execute_write_file({"path": "noext", "content": "x"}, "1", "test")
+        assert not result.success
+        assert "extension" in result.error
+
+    @pytest.mark.asyncio
+    async def test_agent_written_file_appears_in_files_list(self, client, store):
+        """A write_file'd file shows up in GET /files/list.
+
+        Regression: /files/list filtered to source_type=='file_upload', so every
+        agent-written file (file_create) was invisible in the Files page even
+        though it was on disk and in the graph. The user saw an empty list after
+        asking the agent to save something.
+        """
+        from assistant.backend.pipeline.tool_executor import execute_write_file
+
+        user_id = client.post("/users", params={"name": "lister"}).json()["id"]
+        await execute_write_file(
+            {"path": "visible_note.md", "content": "# hi"}, str(user_id), "sess"
+        )
+
+        listed = client.get("/files/list", params={"user_id": user_id}).json()
+        names = {entry["file_name"] for entry in listed}
+        assert "visible_note.md" in names
+        assert any(e["source_type"] == "file_create" for e in listed)
+

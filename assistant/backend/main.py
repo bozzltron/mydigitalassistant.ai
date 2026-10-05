@@ -32,7 +32,7 @@ from assistant.backend.memory.models import (
     Slot,
     User,
 )
-from assistant.backend.memory.retrieval import Retriever
+from assistant.backend.memory.retrieval import FILE_FRAME_SOURCE_TYPES, Retriever
 from assistant.backend.memory.store import (
     MemoryStore,
     merge_match_scores,
@@ -2176,222 +2176,43 @@ async def upload_file_to_memory(
     user_id: int = 1,
 ) -> dict:
     """Upload a file to memory and disk. Returns file metadata and frame info.
-    
-    This is the core file upload logic shared by /files/upload endpoint and chat attached files.
+
+    Writes the bytes, then delegates to ``apply_file_to_memory`` — the same memory
+    step the agent's ``write_file`` tool uses, so an upload and an agent-authored
+    file of identical content produce identical memory (regression:
+    assistant/experiments/file_write_parity/).
     """
     import re
     from pathlib import Path
 
-    from assistant.backend.pipeline.files import extract_file_content
+    from assistant.backend.pipeline.files import apply_file_to_memory
 
-    # Store file in data directory
     data_dir = Path("/app/data")
     data_dir.mkdir(exist_ok=True)
-    
+
     # Preserve the uploaded file's own name on disk — no timestamp rewrite.
-    # Sanitize only filesystem-unsafe characters; the copy keeps the name the
-    # user gave it. Same-name re-uploads overwrite the same single copy (and
-    # merge at the frame level), so no orphaned timestamped duplicates.
+    # Sanitize only filesystem-unsafe characters; same-name re-uploads overwrite
+    # the same single copy and merge at the frame level.
     original_base = filename.rsplit(".", 1)[0] if "." in filename else filename
     sanitized_base = re.sub(r'[^a-zA-Z0-9_.-]', '_', original_base)[:100]
     safe_filename = f"{sanitized_base}.{ext}"
     file_path = data_dir / safe_filename
-    
-    # Save file
+
     with open(file_path, "wb") as f:
         f.write(content)
-    
-    # Extract content based on type
-    extraction_result = await extract_file_content(file_path, ext, content)
-    
-    # Create a frame for this file — named from the file's own name so it stays
-    # readable in the Files page and brain graph. The on-disk copy keeps the
-    # same name (file_safe_name slot); nothing is renamed on upload.
-    frame_name = f"file_{sanitized_base}.{ext}"
-    existing_frame = await store.get_frame_by_name(frame_name)
-    
-    if not existing_frame:
-        frame = await store.create_frame(
-            frame_name,
-            "entity",
-            source_type="file_upload",
-            owner_user_id=user_id,
-            source_reliability=0.7,
-        )
-    else:
-        frame = existing_frame
-        # Same-name re-upload merges into the existing frame (frame names are
-        # UNIQUE); rebuild its CSV row frames so rows don't accumulate.
-        stale_rows = [
-            a.to_frame_id
-            for a in await store.get_all_associations_for_frame(frame.id)
-            if a.relation_type == "part_of"
-        ]
-        if stale_rows:
-            await store.prune_frames(stale_rows)
-    
-    # Memory records what the file *is*; the content stays on disk and is read
-    # verbatim. The preview used to be stored here and excluded at render time,
-    # which left a stale copy that could be served in place of the real file when
-    # a disk read failed. See docs/FILES.md.
-    #
-    # This preview is for the upload *response* only — so the UI can show what was
-    # received — and is never written to a slot.
-    content_text = extraction_result.text
-    content_preview = content_text[:200] + ("..." if len(content_text) > 200 else "")
 
-    await store.upsert_slot(
-        frame_id=frame.id,
-        key="file_name",
-        value=filename,
-        essential=0,
-        priority=0.5,
-        source_type="file_upload",
-        source_reliability=0.8,
-    )
-    
-    await store.upsert_slot(
-        frame_id=frame.id,
-        key="file_size",
-        value=str(len(content)),
-        essential=0,
-        priority=0.5,
-        source_type="file_upload",
-        source_reliability=0.8,
-    )
-    
-    await store.upsert_slot(
-        frame_id=frame.id,
-        key="file_ext",
-        value=ext,
-        essential=0,
-        priority=0.5,
-        source_type="file_upload",
-        source_reliability=0.8,
-    )
-    
-    # Store the safe filename for file lookup
-    await store.upsert_slot(
-        frame_id=frame.id,
-        key="file_safe_name",
-        value=safe_filename,
-        essential=0,
-        priority=0.5,
+    return await apply_file_to_memory(
+        store,
+        frame_name=f"file_{sanitized_base}.{ext}",
+        safe_filename=safe_filename,
+        ext=ext,
+        content_bytes=content,
+        user_id=user_id,
         source_type="file_upload",
         source_reliability=0.7,
+        display_name=filename,
     )
-    
-    # Store extracted facts/slots if any — capped so large CSVs don't dump one
-    # entity_* slot per unique cell onto the file frame (FILE_MAX_ENTITY_SLOTS).
-    entity_cap = settings.file_max_entity_slots
-    if extraction_result.key_entities:
-        if len(extraction_result.key_entities) > entity_cap:
-            logger.info(
-                "File %s extracted %d entities; storing first %d only "
-                "(FILE_MAX_ENTITY_SLOTS=%d)",
-                filename, len(extraction_result.key_entities), entity_cap, entity_cap,
-            )
-        for entity in extraction_result.key_entities[:entity_cap]:
-            await store.upsert_slot(
-                frame_id=frame.id,
-                key=f"entity_{entity}",
-                value=entity,
-                essential=0,
-                priority=0.5,
-                source_type="file_upload",
-                source_reliability=0.8,
-            )
-    
-    # For CSV files, create row frames
-    row_frame_ids = []
-    if ext == "csv" and extraction_result.row_data:
-        row_count = len(extraction_result.row_data)
-        await store.upsert_slot(
-            frame_id=frame.id,
-            key="row_count",
-            value=str(row_count),
-            essential=0,
-            priority=0.5,
-            source_type="file_upload",
-            source_reliability=0.8,
-        )
-        
-        # Store columns slot
-        if extraction_result.row_data:
-            columns = list(extraction_result.row_data[0].keys())
-            import json
-            await store.upsert_slot(
-                frame_id=frame.id,
-                key="columns",
-                value=json.dumps(columns),
-                essential=0,
-                priority=0.5,
-                source_type="file_upload",
-                source_reliability=0.8,
-            )
-        
-        # Create row frames (capped: past CSV_MAX_ROW_FRAMES the file frame
-        # keeps row_count/columns metadata only — row data lives on disk and is
-        # read via read_file, so memory never explodes per-row).
-        row_frame_cap = settings.csv_max_row_frames
-        for i, row in enumerate(extraction_result.row_data[:row_frame_cap]):
-            row_frame_name = f"file_{sanitized_base}_row_{i+1}"
-            row_frame = await store.create_frame(
-                row_frame_name,
-                "record",
-                source_type="csv_row",
-                owner_user_id=user_id,
-            )
-            row_frame_ids.append(row_frame.id)
-            
-            # Store each column as a slot
-            for col, val in row.items():
-                slot_key = re.sub(r'[^a-zA-Z0-9_]', '_', col.lower().strip())
-                slot_key = re.sub(r'_+', '_', slot_key).strip('_')
-                if not slot_key:
-                    slot_key = f"col_{i}"
-                # An empty cell is an absent fact, not a fact with an empty value.
-                # Writing it created 65 blank-value slots in a single day; skipping
-                # it is the accurate representation. The store refuses blanks too,
-                # so this is the courteous half of the same rule.
-                if val is None or not str(val).strip():
-                    continue
-                await store.upsert_slot(
-                    frame_id=row_frame.id,
-                    key=slot_key,
-                    value=str(val),
-                    essential=0,
-                    priority=0.5,
-                    source_type="csv_row",
-                    source_reliability=0.8,
-                )
-            
-            # Link parent -> row
-            await store.create_association(frame.id, row_frame.id, "part_of")
 
-        if row_count > row_frame_cap:
-            logger.info(
-                "CSV %s has %d rows; created row frames for first %d only "
-                "(CSV_MAX_ROW_FRAMES=%d)",
-                filename, row_count, row_frame_cap, row_frame_cap,
-            )
-    else:
-        row_count = 0
-    
-    return {
-        "status": "ok",
-        "file_name": filename,
-        "file_size": len(content),
-        "file_ext": ext,
-        "content_preview": content_preview,
-        "key_entities": extraction_result.key_entities[: settings.file_max_entity_slots],
-        "open_questions": extraction_result.open_questions,
-        "frame_name": frame_name,
-        "frame_id": frame.id,
-        "parent_frame_id": frame.id,
-        "row_count": row_count,
-        "row_frame_ids": row_frame_ids,
-    }
 
 
 @app.post("/files/upload", response_model=dict)
@@ -2401,22 +2222,23 @@ async def upload_file(
 ):
     """Upload and process a file.
 
-    Supported formats: .txt, .csv, .tsv, .json, .xml, .html, .ics, .eml, .pdf,
-    .docx, .xlsx, .pptx, .xls, .rtf, .odt/.ods/.odp. Legacy .doc/.ppt are rejected
-    — re-save as .docx/.pdf. Returns file metadata and extracted content.
+    Supported formats come from SUPPORTED_UPLOAD_EXTS (the single source of
+    truth), mirrored by the frontend. Legacy .doc/.ppt are rejected — re-save as
+    .docx/.pdf. Returns file metadata and extracted content.
     """
     # Validate file type
     filename = file.filename or "unknown"
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
     allowed_types = SUPPORTED_UPLOAD_EXTS
-    
+
     if ext not in allowed_types:
+        # Derive the message from the list so it cannot drift from the rule.
+        allowed = ", ".join(f".{e}" for e in sorted(allowed_types))
         raise HTTPException(
             status_code=400,
             detail=(
-                f"Unsupported file type: .{ext}. Allowed: .txt, .csv, .tsv, .json, "
-                ".xml, .html, .ics, .eml, .pdf, .docx, .xlsx, .pptx, .xls, .rtf, "
-                ".odt, .ods, .odp. For legacy .doc/.ppt, re-save as .docx/.pdf."
+                f"Unsupported file type: .{ext}. Allowed: {allowed}. "
+                "For legacy .doc/.ppt, re-save as .docx/.pdf."
             ),
         )
     
@@ -2464,8 +2286,15 @@ async def list_files(
 ):
     """List all file frames for a user."""
     frames = await store.list_frames(owner_user_id=user_id)
-    # Filter to only file upload frames that are not forgotten (priority > 0)
-    file_frames = [f for f in frames if f.source_type == "file_upload" and f.priority > 0]
+    # Both kinds of file frame, not just uploads: an agent-written file
+    # (source_type="file_create") is the same user-facing object as an upload and
+    # must appear here. Filtering to "file_upload" alone hid every file the agent
+    # wrote — the file was on disk and in memory but invisible in the UI.
+    # FILE_FRAME_SOURCE_TYPES is the shared set the read path already uses.
+    file_frames = [
+        f for f in frames
+        if f.source_type in FILE_FRAME_SOURCE_TYPES and f.priority > 0
+    ]
 
     # Load the real uploaded filename (file_name slot) for display — the frame
     # name is the internal handle, while file_name is what the user actually

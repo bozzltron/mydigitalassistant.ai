@@ -12,24 +12,24 @@
  * Legacy Word/PowerPoint binaries (`.doc`/`.ppt`) are deliberately absent: there
  * is no good offline pure-Python reader, and the backend asks the user to
  * re-save as `.docx`/`.pdf`. Legacy Excel (`.xls`) is supported, via xlrd.
+ *
+ * Formats dropped from this set (`.rtf`, `.eml`, `.tsv`, `.html`, `.xml`) remain
+ * READABLE by the backend for files already on disk — they are simply no longer
+ * accepted for new uploads. This list is the upload allowlist, not the read set.
  */
 export const SUPPORTED_UPLOAD_EXTS = [
   'txt',
+  'md',
   'csv',
-  'tsv',
   'json',
-  'xml',
-  'html',
   'ics',
-  'eml',
   'pdf',
   'docx',
-  'xlsx',
-  'pptx',
-  'xls',
-  'rtf',
   'odt',
+  'xlsx',
+  'xls',
   'ods',
+  'pptx',
   'odp',
 ] as const
 

@@ -4,6 +4,57 @@ How uploaded files, tool-created files, and their memory frames work — and the
 sharp edges discovered while building it. Read this before touching file
 handling code.
 
+## Two paths, one memory shape
+
+A file enters memory two ways, and they must produce the **same** data state:
+
+1. **Upload** — `/files/upload`, or a chat attachment (`upload_file_to_memory`).
+2. **Agent-authored** — the `write_file` tool.
+
+Both funnel through `apply_file_to_memory` (`pipeline/files.py`), which owns the
+frame, the `file_*` slots, the `entity_*` slots, and CSV row frames. Before this
+shared step existed the two diverged: upload extracted entities and row frames,
+the tool wrote neither, so identical bytes produced two different memories
+(measured in `assistant/experiments/file_write_parity/`). **Do not add a third
+file writer that builds its own frame** — call `apply_file_to_memory`.
+
+## Supported formats
+
+**Uploadable + writable (13):** `txt`, `md`, `csv`, `json`, `ics`, `pdf`, `docx`,
+`odt`, `xlsx`, `xls`, `ods`, `pptx`, `odp`. The single source of truth is
+`SUPPORTED_UPLOAD_EXTS` (`pipeline/files.py`), mirrored by the frontend
+(`frontend/src/utils/uploadFormats.ts`) and pinned by a test that parses the
+backend file.
+
+**Dropped from upload, still readable:** `rtf`, `eml`, `tsv`, `html`, `xml`. These
+are no longer *accepted* for new uploads, but their extractors stay in
+`extract_file_content` because files already on disk must remain readable.
+Removing the extractors would orphan existing files. The upload list and the read
+set are deliberately different.
+
+**Never supported:** `.doc`, `.ppt` (no offline pure-Python reader).
+
+## Writing (agent-authored files)
+
+`write_file` renders the agent's text into **real bytes** for the file's
+extension via `render_file_bytes` (`pipeline/files.py`), then writes with
+`write_sandbox_bytes` (atomic, traversal-checked). The writer table is
+`FILE_WRITERS`; every `SUPPORTED_UPLOAD_EXTS` entry has one.
+
+- Text-ish (`txt`, `md`, `csv`) are the content verbatim; `json` is wrapped so it
+  is valid JSON if the agent passed prose.
+- `ics` builds a real VEVENT (prose-as-text extracts to `''` — the parser rejects
+  a bare line).
+- Binary formats use their encoder library (`python-docx`, `openpyxl`, `xlwt`,
+  `odfpy`, `python-pptx`, `reportlab`).
+
+**Refusal rule.** `write_file` refuses an extension with no writer
+(`ToolResult(success=False, error="cannot write .x: no writer …")`). It must
+never write the string with a document extension: that produced files Word calls
+corrupt (a `.docx` containing `b'name,rol'`), which is the defect the parity
+experiment exists to prevent. **Do not add a fallback that writes text under a
+binary extension.**
+
 ## The two names of every file
 
 Every uploaded file has **two** names, and conflating them is the #1 source of

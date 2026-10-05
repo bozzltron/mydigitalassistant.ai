@@ -162,8 +162,46 @@ def read_sandbox_file(relative_path: str) -> str:
     return path.read_text(encoding="utf-8", errors="replace")
 
 
+def write_sandbox_bytes(relative_path: str, data: bytes, overwrite: bool = False) -> Path:
+    """Write bytes to the sandbox atomically.
+
+    The bytes counterpart of ``write_sandbox_file``. Binary documents (docx, pdf,
+    xlsx, …) cannot survive ``write_text``, so every writer funnels through here;
+    text writers pass already-encoded bytes. One atomic-write implementation and
+    one place for the traversal/symlink checks.
+
+    Raises PathTraversalError, FileExistsError.
+    """
+    path = resolve_sandbox_path(relative_path)
+    validate_path_safety(path)
+
+    if path.exists() and not overwrite:
+        raise FileExistsError(f"File exists: {relative_path} (use overwrite=True)")
+
+    # Atomic write: write to temp file then rename.
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+
+    try:
+        tmp_path.write_bytes(data)
+        tmp_path.rename(path)
+    except Exception:
+        # Cleanup temp file on failure.
+        try:
+            tmp_path.unlink(missing_ok=True)
+        except Exception:
+            pass
+        raise
+
+    return path
+
+
 def write_sandbox_file(relative_path: str, content: str, overwrite: bool = False) -> Path:
-    """Write a file to the sandbox atomically.
+    """Write a UTF-8 text file to the sandbox atomically.
+
+    Delegates to ``write_sandbox_bytes``. Callers writing a binary document must
+    use ``write_sandbox_bytes`` directly (or, better, ``files.render_file_bytes``,
+    which dispatches on the extension); this text path is for plain formats only.
 
     Args:
         relative_path: Path relative to sandbox root
@@ -176,28 +214,7 @@ def write_sandbox_file(relative_path: str, content: str, overwrite: bool = False
     Raises:
         PathTraversalError, FileExistsError
     """
-    path = resolve_sandbox_path(relative_path)
-    validate_path_safety(path)
-
-    if path.exists() and not overwrite:
-        raise FileExistsError(f"File exists: {relative_path} (use overwrite=True)")
-
-    # Atomic write: write to temp file then rename
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_path = path.with_suffix(path.suffix + ".tmp")
-
-    try:
-        tmp_path.write_text(content, encoding="utf-8")
-        tmp_path.rename(path)
-    except Exception:
-        # Cleanup temp file on failure
-        try:
-            tmp_path.unlink(missing_ok=True)
-        except Exception:
-            pass
-        raise
-
-    return path
+    return write_sandbox_bytes(relative_path, content.encode("utf-8"), overwrite)
 
 
 def delete_sandbox_file(relative_path: str) -> Path:

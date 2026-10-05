@@ -376,7 +376,16 @@ class ListFilesArgs(BaseModel):
 # File sandbox tool args
 class WriteFileArgs(BaseModel):
     path: str = Field(
-        ..., description="Relative path in sandbox (e.g., 'notes/todo.txt', 'scripts/analyze.py')")
+        ...,
+        description=(
+            "Relative path in sandbox, WITH an extension (e.g. 'notes/todo.md', "
+            "'report.docx', 'budget.xlsx'). The extension selects the format and "
+            "the content is written as a real file of that type. Writable: txt, "
+            "md, csv, json, ics, pdf, docx, odt, xlsx, xls, ods, pptx, odp. For a "
+            "spreadsheet, pass comma-separated rows; for a calendar (.ics), the "
+            "first line becomes the event title."
+        ),
+    )
     content: str = Field(..., description="File content to write")
     overwrite: bool = Field(False, description="Allow overwriting existing file")
 

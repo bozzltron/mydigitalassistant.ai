@@ -237,7 +237,28 @@ def test_legacy_word_and_powerpoint_are_not_accepted():
     for ext in ("doc", "ppt"):
         assert ext not in SUPPORTED_UPLOAD_EXTS
     for ext in (
-        "txt", "csv", "tsv", "json", "xml", "html", "ics", "eml",
-        "pdf", "docx", "xlsx", "pptx", "xls", "rtf", "odt", "ods", "odp",
+        "txt", "md", "csv", "json", "ics",
+        "pdf", "docx", "odt", "xlsx", "xls", "ods", "pptx", "odp",
     ):
         assert ext in SUPPORTED_UPLOAD_EXTS
+
+
+def test_dropped_formats_are_not_uploadable_but_still_readable():
+    """rtf/eml/tsv/html/xml left the upload allowlist but stay readable.
+
+    Files already on disk in those formats must still extract — deleting their
+    extractors would orphan existing files. See docs/FILES.md.
+    """
+    for ext in ("rtf", "eml", "tsv", "html", "xml"):
+        assert ext not in SUPPORTED_UPLOAD_EXTS
+
+
+async def test_dropped_html_still_extracts():
+    """The read path still handles a format no longer accepted for upload."""
+    from assistant.backend.pipeline.files import extract_file_content
+
+    html = b"<html><body><h1>Kept</h1><p>still readable</p></body></html>"
+    result = await extract_file_content("legacy.html", "html", html)
+    assert "Kept" in result.text
+    assert "still readable" in result.text
+
