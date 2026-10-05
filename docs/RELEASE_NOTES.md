@@ -1,5 +1,33 @@
 # MyDigitalAssistant.ai — release notes
 
+## v0.11.0-alpha
+
+**Scheduled tasks run the real loop now.** The daily list was executing through a
+third, partial copy of the pipeline — and it showed: the job-postings monitor
+searched with its own instruction as the query, so Brave returned documentation
+for job-search *tools* instead of postings.
+
+- **One loop, three consumers.** `run_scheduled_task` is now a thin wrapper over
+  the same loop as chat and the UI stream. A task's script drives routing and
+  retrieval, is delivered as the explicit user turn, and search is forced. The
+  ~160-line duplicate pipeline is gone.
+- **Tasks can search properly, and use tools.** Because it is the full loop, the
+  model can `recall` the user's criteria and `web_search` a targeted query while
+  a task runs — it had **no tools at all** before. The search query is the
+  router's, not the instruction.
+- **The agent's cry for help was correct.** "Search results surface tool
+  documentation" was the presence rule working: it could not settle the task and
+  said so. It can now do better — and still alerts when it genuinely cannot.
+
+### Behaviour changes
+
+- A task run logs its script as a **user** turn as well as the answer (the full
+  loop logs both turns). The answer is still the assistant episode the scheduler
+  links to the daily-run frame.
+- Facts are **no longer mined from the task's own report**
+  (`extract_facts_from_document` on the output). That was self-referential and
+  redundant with search extraction; the report is already an episode.
+
 ## v0.10.1-alpha
 
 **Editing an existing file works, and failing to edit tells you why.**
