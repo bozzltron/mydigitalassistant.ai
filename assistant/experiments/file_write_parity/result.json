@@ -1,0 +1,385 @@
+{
+  "formats": [
+    {
+      "ext": "txt",
+      "tool_file_valid": true,
+      "tool_file_error": "",
+      "tool_recovered_text": "Quarterly Report Ada Lovelace shipped the analytical engine in 1843.",
+      "upload_slot_keys": [
+        "file_ext",
+        "file_name",
+        "file_safe_name",
+        "file_size"
+      ],
+      "tool_slot_keys": [
+        "file_ext",
+        "file_name",
+        "file_safe_name",
+        "file_size"
+      ],
+      "slots_equal": true,
+      "upload_safe_name": "report.txt",
+      "tool_safe_name": "agent_report.txt",
+      "safe_name_equal": false,
+      "roundtrip_ok": null,
+      "roundtrip_error": "",
+      "notes": ""
+    },
+    {
+      "ext": "md",
+      "tool_file_valid": true,
+      "tool_file_error": "",
+      "tool_recovered_text": "Quarterly Report Ada Lovelace shipped the analytical engine in 1843.",
+      "upload_slot_keys": [
+        "file_ext",
+        "file_name",
+        "file_safe_name",
+        "file_size"
+      ],
+      "tool_slot_keys": [
+        "file_ext",
+        "file_name",
+        "file_safe_name",
+        "file_size"
+      ],
+      "slots_equal": true,
+      "upload_safe_name": "report.md",
+      "tool_safe_name": "agent_report.md",
+      "safe_name_equal": false,
+      "roundtrip_ok": null,
+      "roundtrip_error": "",
+      "notes": "in agreed target set; NOT in SUPPORTED_UPLOAD_EXTS today (list disagreement to fix)"
+    },
+    {
+      "ext": "csv",
+      "tool_file_valid": true,
+      "tool_file_error": "",
+      "tool_recovered_text": "name,role Ada Lovelace,engineer Grace Hopper,admiral",
+      "upload_slot_keys": [
+        "columns",
+        "entity_name_Ada Lovelace",
+        "entity_name_Grace Hopper",
+        "entity_role_admiral",
+        "entity_role_engineer",
+        "file_ext",
+        "file_name",
+        "file_safe_name",
+        "file_size",
+        "row:name",
+        "row:name",
+        "row:role",
+        "row:role",
+        "row_count"
+      ],
+      "tool_slot_keys": [
+        "columns",
+        "file_ext",
+        "file_name",
+        "file_safe_name",
+        "file_size",
+        "row:name",
+        "row:name",
+        "row:role",
+        "row:role",
+        "row_count"
+      ],
+      "slots_equal": false,
+      "upload_safe_name": "report.csv",
+      "tool_safe_name": "agent_report.csv",
+      "safe_name_equal": false,
+      "roundtrip_ok": null,
+      "roundtrip_error": "",
+      "notes": ""
+    },
+    {
+      "ext": "json",
+      "tool_file_valid": true,
+      "tool_file_error": "",
+      "tool_recovered_text": "{\"lead\": \"Ada Lovelace\", \"project\": \"analytical engine\"}",
+      "upload_slot_keys": [
+        "entity__Ada Lovelace",
+        "entity__analytical engine",
+        "file_ext",
+        "file_name",
+        "file_safe_name",
+        "file_size"
+      ],
+      "tool_slot_keys": [
+        "file_ext",
+        "file_name",
+        "file_safe_name",
+        "file_size"
+      ],
+      "slots_equal": false,
+      "upload_safe_name": "report.json",
+      "tool_safe_name": "agent_report.json",
+      "safe_name_equal": false,
+      "roundtrip_ok": null,
+      "roundtrip_error": "",
+      "notes": ""
+    },
+    {
+      "ext": "ics",
+      "tool_file_valid": true,
+      "tool_file_error": "",
+      "tool_recovered_text": "Quarterly Report Ada Lovelace shipped the analytical engine in 1843.",
+      "upload_slot_keys": [
+        "file_ext",
+        "file_name",
+        "file_safe_name",
+        "file_size"
+      ],
+      "tool_slot_keys": [
+        "file_ext",
+        "file_name",
+        "file_safe_name",
+        "file_size"
+      ],
+      "slots_equal": true,
+      "upload_safe_name": "report.ics",
+      "tool_safe_name": "agent_report.ics",
+      "safe_name_equal": false,
+      "roundtrip_ok": true,
+      "roundtrip_error": "recovered='Event: Trip to Rainier'",
+      "notes": ""
+    },
+    {
+      "ext": "pdf",
+      "tool_file_valid": false,
+      "tool_file_error": "PdfStreamError: Stream has ended unexpectedly",
+      "tool_recovered_text": "",
+      "upload_slot_keys": [
+        "file_ext",
+        "file_name",
+        "file_safe_name",
+        "file_size"
+      ],
+      "tool_slot_keys": [
+        "file_ext",
+        "file_name",
+        "file_safe_name",
+        "file_size"
+      ],
+      "slots_equal": true,
+      "upload_safe_name": "report.pdf",
+      "tool_safe_name": "agent_report.pdf",
+      "safe_name_equal": false,
+      "roundtrip_ok": false,
+      "roundtrip_error": "NO WRITER: reportlab absent (would be a new 1.9MB dep)",
+      "notes": ""
+    },
+    {
+      "ext": "docx",
+      "tool_file_valid": false,
+      "tool_file_error": "PackageNotFoundError: Package not found at '/tmp/fw_scratch/agent_report.docx'",
+      "tool_recovered_text": "",
+      "upload_slot_keys": [
+        "file_ext",
+        "file_name",
+        "file_safe_name",
+        "file_size"
+      ],
+      "tool_slot_keys": [
+        "file_ext",
+        "file_name",
+        "file_safe_name",
+        "file_size"
+      ],
+      "slots_equal": true,
+      "upload_safe_name": "report.docx",
+      "tool_safe_name": "agent_report.docx",
+      "safe_name_equal": false,
+      "roundtrip_ok": true,
+      "roundtrip_error": "recovered='Quarterly Report Ada Lovelace shipped the analytical engine in 1843.'",
+      "notes": ""
+    },
+    {
+      "ext": "odt",
+      "tool_file_valid": false,
+      "tool_file_error": "BadZipFile: File is not a zip file",
+      "tool_recovered_text": "",
+      "upload_slot_keys": [
+        "file_ext",
+        "file_name",
+        "file_safe_name",
+        "file_size"
+      ],
+      "tool_slot_keys": [
+        "file_ext",
+        "file_name",
+        "file_safe_name",
+        "file_size"
+      ],
+      "slots_equal": true,
+      "upload_safe_name": "report.odt",
+      "tool_safe_name": "agent_report.odt",
+      "safe_name_equal": false,
+      "roundtrip_ok": true,
+      "roundtrip_error": "recovered='Quarterly Report Ada Lovelace shipped the analytical engine in 1843.'",
+      "notes": ""
+    },
+    {
+      "ext": "xlsx",
+      "tool_file_valid": false,
+      "tool_file_error": "BadZipFile: File is not a zip file",
+      "tool_recovered_text": "",
+      "upload_slot_keys": [
+        "file_ext",
+        "file_name",
+        "file_safe_name",
+        "file_size"
+      ],
+      "tool_slot_keys": [
+        "file_ext",
+        "file_name",
+        "file_safe_name",
+        "file_size"
+      ],
+      "slots_equal": true,
+      "upload_safe_name": "report.xlsx",
+      "tool_safe_name": "agent_report.xlsx",
+      "safe_name_equal": false,
+      "roundtrip_ok": true,
+      "roundtrip_error": "recovered='# Sheet Ada Lovelace'",
+      "notes": ""
+    },
+    {
+      "ext": "xls",
+      "tool_file_valid": false,
+      "tool_file_error": "XLRDError: Unsupported format, or corrupt file: Expected BOF record; found b'name,rol'",
+      "tool_recovered_text": "",
+      "upload_slot_keys": [
+        "file_ext",
+        "file_name",
+        "file_safe_name",
+        "file_size"
+      ],
+      "tool_slot_keys": [
+        "file_ext",
+        "file_name",
+        "file_safe_name",
+        "file_size"
+      ],
+      "slots_equal": true,
+      "upload_safe_name": "report.xls",
+      "tool_safe_name": "agent_report.xls",
+      "safe_name_equal": false,
+      "roundtrip_ok": true,
+      "roundtrip_error": "recovered='# S Ada Lovelace'",
+      "notes": ""
+    },
+    {
+      "ext": "ods",
+      "tool_file_valid": false,
+      "tool_file_error": "BadZipFile: File is not a zip file",
+      "tool_recovered_text": "",
+      "upload_slot_keys": [
+        "file_ext",
+        "file_name",
+        "file_safe_name",
+        "file_size"
+      ],
+      "tool_slot_keys": [
+        "file_ext",
+        "file_name",
+        "file_safe_name",
+        "file_size"
+      ],
+      "slots_equal": true,
+      "upload_safe_name": "report.ods",
+      "tool_safe_name": "agent_report.ods",
+      "safe_name_equal": false,
+      "roundtrip_ok": true,
+      "roundtrip_error": "recovered='Quarterly Report Ada Lovelace shipped the analytical engine in 1843.'",
+      "notes": ""
+    },
+    {
+      "ext": "pptx",
+      "tool_file_valid": false,
+      "tool_file_error": "PackageNotFoundError: Package not found at '/tmp/fw_scratch/agent_report.pptx'",
+      "tool_recovered_text": "",
+      "upload_slot_keys": [
+        "file_ext",
+        "file_name",
+        "file_safe_name",
+        "file_size"
+      ],
+      "tool_slot_keys": [
+        "file_ext",
+        "file_name",
+        "file_safe_name",
+        "file_size"
+      ],
+      "slots_equal": true,
+      "upload_safe_name": "report.pptx",
+      "tool_safe_name": "agent_report.pptx",
+      "safe_name_equal": false,
+      "roundtrip_ok": true,
+      "roundtrip_error": "recovered='# Slide 1 Quarterly Report'",
+      "notes": ""
+    },
+    {
+      "ext": "odp",
+      "tool_file_valid": false,
+      "tool_file_error": "BadZipFile: File is not a zip file",
+      "tool_recovered_text": "",
+      "upload_slot_keys": [
+        "file_ext",
+        "file_name",
+        "file_safe_name",
+        "file_size"
+      ],
+      "tool_slot_keys": [
+        "file_ext",
+        "file_name",
+        "file_safe_name",
+        "file_size"
+      ],
+      "slots_equal": true,
+      "upload_safe_name": "report.odp",
+      "tool_safe_name": "agent_report.odp",
+      "safe_name_equal": false,
+      "roundtrip_ok": true,
+      "roundtrip_error": "recovered='Quarterly Report Ada Lovelace shipped the analytical engine in 1843.'",
+      "notes": ""
+    }
+  ],
+  "supported_upload_exts": [
+    "csv",
+    "docx",
+    "eml",
+    "html",
+    "ics",
+    "json",
+    "odp",
+    "ods",
+    "odt",
+    "pdf",
+    "pptx",
+    "rtf",
+    "tsv",
+    "txt",
+    "xls",
+    "xlsx",
+    "xml"
+  ],
+  "text_exts": [
+    "txt",
+    "md",
+    "csv",
+    "json",
+    "ics"
+  ],
+  "binary_exts": [
+    "docx",
+    "pdf",
+    "xlsx",
+    "xls",
+    "odt",
+    "ods",
+    "odp",
+    "pptx"
+  ],
+  "scratch": "/tmp/fw_scratch",
+  "db": "/tmp/fw_scratch/assistant.db"
+}
