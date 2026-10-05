@@ -34,12 +34,9 @@ describe('FileGrid', () => {
     expect(screen.queryByText(/NaN/)).not.toBeInTheDocument()
   })
 
-  it('shows the extension as the type and links each row to the download endpoint', async () => {
+  it('links each row to the download endpoint', async () => {
     render(() => <FileGrid />)
     await screen.findByText('notes.md')
-
-    expect(screen.getByText('MD')).toBeInTheDocument()
-    expect(screen.getByText('PDF')).toBeInTheDocument()
 
     const downloadLinks = screen.getAllByText('Download').map((el) => el.closest('a'))
     expect(downloadLinks[0]?.getAttribute('href')).toBe('/files/1/download')

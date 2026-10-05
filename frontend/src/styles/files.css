@@ -185,7 +185,7 @@
 
 .files-table-header {
   display: grid;
-  grid-template-columns: 2fr 1fr 1fr 1.5fr 170px;
+  grid-template-columns: 2fr 1fr 1.5fr 170px;
   padding: 0.75rem 1rem;
   background: var(--bg);
   border-bottom: 1px solid var(--border);
@@ -203,7 +203,7 @@
 
 .file-item {
   display: grid;
-  grid-template-columns: 2fr 1fr 1fr 1.5fr 170px;
+  grid-template-columns: 2fr 1fr 1.5fr 170px;
   align-items: center;
   padding: 0.75rem 1rem;
   border-bottom: 1px solid var(--border);
@@ -274,12 +274,6 @@
 .btn-primary.danger {
   color: var(--error);
   border-color: var(--error);
-}
-
-.file-type {
-  font-size: 0.75rem;
-  color: var(--text-dim);
-  white-space: nowrap;
 }
 
 .file-meta {
@@ -519,11 +513,11 @@
   }
   
   .files-table-header {
-    grid-template-columns: 2fr 0.8fr 0.8fr 1fr 150px;
+    grid-template-columns: 2fr 0.8fr 1fr 150px;
   }
   
   .file-item {
-    grid-template-columns: 2fr 0.8fr 0.8fr 1fr 150px;
+    grid-template-columns: 2fr 0.8fr 1fr 150px;
   }
 }
 

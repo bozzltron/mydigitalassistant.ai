@@ -168,8 +168,10 @@ Large files are never fully embedded; the frame embeds metadata only.
 ## Files page (UI)
 
 - `GET /files/list` carries `file_name`, `file_ext`, and `file_size` (from slots)
-  alongside the frame. Without them the grid rendered the frame type as the
-  extension and `NaN` as the size — the size was simply never in the response.
+  alongside the frame. `file_ext` picks the row icon, `file_size` is the Size
+  column. Without them every size rendered as `NaN` — it was simply never in
+  the response. The table is Name (icon + filename), Size, Date, Actions; there
+  is no Type column, because the extension is already in the filename.
 - `GET /files/{frame_id}/download` serves the **original bytes** with
   `Content-Disposition: attachment`. Download must not go through
   `GET /files/{frame_id}/content`: that route decodes as UTF-8 with

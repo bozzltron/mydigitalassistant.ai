@@ -95,7 +95,6 @@ export const FileGrid = (props: { onFileSelect?: (file: FileEntry) => void }) =>
         <div class="files-container">
           <div class="files-table-header">
             <span>Name</span>
-            <span>Type</span>
             <span>Size</span>
             <span>Date</span>
             <span>Actions</span>
@@ -106,9 +105,6 @@ export const FileGrid = (props: { onFileSelect?: (file: FileEntry) => void }) =>
                 <div class="file-cell file-name-cell">
                   <span class="file-icon"><FileIcon kind={fileKind(file.file_ext || file.type)} /></span>
                   <span class="file-name" title={displayName(file)}>{displayName(file)}</span>
-                </div>
-                <div class="file-cell file-type-cell">
-                  <span class="file-type">{(file.file_ext || file.type || '').toUpperCase()}</span>
                 </div>
                 <div class="file-cell file-size-cell">
                   <span class="file-size">{formatFileSize(file.file_size)}</span>
