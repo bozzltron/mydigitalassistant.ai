@@ -1,5 +1,28 @@
 # MyDigitalAssistant.ai — release notes
 
+## v0.10.1-alpha
+
+**Editing an existing file works, and failing to edit tells you why.**
+
+The agent could create files but not reliably change them — found when it tried
+to update a release document and reported "the edit didn't find the exact text
+to replace."
+
+- **A binary document could not be edited at all.** `read_file` shows a `.docx`'s
+  text, but `edit_file` replaces bytes on disk — and a `.docx` is a zip — so the
+  text could never match, and the error was a misleading "old_text not found".
+  `edit_file` now refuses a binary document and says what to do instead: read it,
+  then rewrite the whole file with `write_file` (which re-renders a real document
+  and refreshes memory).
+- **A near-miss edit dead-ended.** A collapsed blank line or a trailing space was
+  enough to defeat an otherwise-correct edit, with nothing to correct it with.
+  Matching is now whitespace-tolerant (words must still match exactly), and a
+  failure names the file size and the closest region so the model can retry
+  precisely.
+- **The guidance was wrong.** The tool description told the model to use
+  `edit_file` for "updating documents", which is the path that cannot work. It
+  now says `edit_file` is for text files, and documents are read and rewritten.
+
 ## v0.10.0-alpha
 
 **The agent knows what day it is, and there is one loop instead of two.**
