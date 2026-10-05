@@ -36,6 +36,14 @@ dependencies = [
     "odfpy>=1.4",
     "xlrd>=2.0",
     "defusedxml>=0.7",
+    # Write support for agent-authored files (the `write_file` tool). These are
+    # runtime, not test, dependencies: the agent writes these formats on demand.
+    # reportlab is pure-Python and offline, in the same family as the readers
+    # above (see assistant/experiments/file_write_parity/result.md).
+    "reportlab>=4.0",
+    # Legacy Excel WRITER. xlrd only reads .xls; xlwt is what the agent needs to
+    # author one. It was test-only (an .xls fixture) until write support arrived.
+    "xlwt>=1.3",
 ]
 
 [project.optional-dependencies]
@@ -44,8 +52,6 @@ dev = [
     "pytest-asyncio>=0.23",
     "ruff>=0.3",
     "sqlalchemy>=2.0",
-    # Test-only: generates the legacy .xls fixture (xlrd only reads).
-    "xlwt>=1.3",
 ]
 
 [project.scripts]

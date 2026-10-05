@@ -51,11 +51,15 @@ produces a file our own `extract_file_content` reads back correctly.
 | `xls` | `xlwt` | ✅ `'# S Ada Lovelace'` |
 | `pptx` | `python-pptx` | ✅ `'# Slide 1 Quarterly Report'` |
 | `ics` | `icalendar` | ✅ `'Event: Trip to Rainier'` |
-| `pdf` | **none** | ⚠️ blocked on `reportlab` |
+| `pdf` | `reportlab` | ✅ **measured after the run** (see below) |
 
-So parity is **achievable without new dependencies for every format except pdf.**
-That is the decisive input to the build: the work is "call a writer library that
-is already installed", not "invent an encoder".
+So parity is **achievable for all 13 formats.** At the time of the run `reportlab`
+was absent and pdf was recorded as "no writer"; it was subsequently added as a
+dependency (1.9 MB wheel, pure-Python, offline) and measured directly: a
+reportlab-generated PDF begins `%PDF-1.3`, and both `pypdf` and
+`extract_text_from_pdf` read back `'Quarterly Report Ada Lovelace shipped the
+analytical engine in 1843.'` unchanged. The pdf column is therefore closed as a
+pass, measured — not assumed.
 
 ## H3 — parity (CONFIRMED for csv/json, even elsewhere)
 

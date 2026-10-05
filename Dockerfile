@@ -62,6 +62,7 @@ RUN pip install --no-cache-dir --no-index --find-links /wheels \
         odfpy \
         xlrd \
         defusedxml \
+        reportlab \
         ruff \
         pytest \
         pytest-asyncio \
