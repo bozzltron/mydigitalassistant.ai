@@ -1,5 +1,21 @@
 # MyDigitalAssistant.ai — release notes
 
+## v0.9.1-alpha
+
+**The suite and the docs stop drifting.** A maintenance release — no feature
+changes.
+
+- **Test audit.** Removed eight tests that could not fail (empty bodies), fixed
+  one that always skipped, renamed a fixture that was collected as a test, and
+  strengthened several whose only check was "does not raise". A new
+  `test_suite_hygiene.py` fails the suite if any test has no assertion, so this
+  cannot regrow.
+- **Docs reconciled with the code.** The prod port (8444, not 8443), two
+  `assistant db` commands that do not exist, the backup schedule's real name and
+  interval, and the max/math model defaults (opt-in, not `qwen3.8:27b`).
+- **Changelog tightened** from 701 to 254 lines, with its duplicated README tail
+  removed.
+
 ## v0.9.0-alpha
 
 **When you ask it to save something, you get a file — and you can find it.**
