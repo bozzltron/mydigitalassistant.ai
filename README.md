@@ -31,6 +31,7 @@ Learning happens entirely in that memory layer. The model weights stay frozen.
   memory; each daily run's output is ordinary memory you can ask about later.
 - **Talk** — hands-free voice mode with silence detection and local
   transcription.
+- **Export** — download any conversation as a plain-text transcript.
 - **See it** — a Brain Observatory graph and a trace panel showing what was
   searched, learned, and conflicted.
 

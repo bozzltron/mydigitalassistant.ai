@@ -129,6 +129,8 @@ is served by Caddy (`/assets/*`) with the SPA shell for other paths.
 
 Features:
 - Session persistence and conversation restore via `GET /chat/session/{id}/messages`.
+- Conversation export: `GET /chat/session/{id}/download` returns the whole thread as a
+  plain-text transcript (`pipeline/transcript.py`), owner-scoped.
 - Markdown-rendered responses with a sources block.
 - Trace panel showing `task_type`, `memory_context`, `citations`, and search info.
 - "What I learned" indicator showing the slots stored this turn, including

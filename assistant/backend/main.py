@@ -1303,6 +1303,55 @@ async def get_session_messages(
     ]
 
 
+def _safe_download_name(name: str) -> str:
+    """A filename-safe version of a conversation title.
+
+    Readable, but with path separators, quotes and control characters replaced --
+    the value goes inside a Content-Disposition header and onto the user's disk.
+    Bounded so a long first message does not make an absurd filename.
+    """
+    import re
+
+    safe = re.sub(r"[^A-Za-z0-9._ -]+", "_", (name or "").strip())
+    safe = re.sub(r"\s+", " ", safe).strip(" ._")
+    return safe[:60] or "conversation"
+
+
+@app.get("/chat/session/{session_id}/download")
+async def download_conversation(
+    session_id: str,
+    user_id: int,
+    store: MemoryStore = _Depends(get_store),
+):
+    """Export a whole conversation as a plain-text transcript (attachment).
+
+    Owner-scoped: a session id is not a capability, so the read is scoped by
+    user_id in SQL, as `get_session_messages` is. The *whole* conversation, not
+    the UI's tail -- an export is for re-use elsewhere.
+    """
+    from assistant.backend.pipeline.transcript import format_transcript
+    from assistant.backend.timeutil import current_datetime_str
+
+    episodes = await store.get_episodes_for_session(session_id, user_id=user_id)
+    if not episodes:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    title = await store.get_session_title(session_id, user_id)
+    if not title:
+        first_user = next(
+            (e.content for e in episodes if e.role == "user" and e.content), None
+        )
+        title = (first_user or "Conversation")[:60]
+
+    text = format_transcript(episodes, title=title, exported_at=current_datetime_str())
+    filename = _safe_download_name(title) + ".txt"
+    return Response(
+        text,
+        media_type="text/plain; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 # DB backup / restore (CLI container cannot access the DB file directly)
 @app.post("/db/backup")
 async def db_backup(store: MemoryStore = _Depends(get_store)):

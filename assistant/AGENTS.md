@@ -664,6 +664,7 @@ Endpoint: `POST /summarize` with body `{"session_id": "..."}`
 - `backend/pipeline/search.py` — `SearchBackend` ABC + `SearXNGBackend` + optional
   `BraveBackend`; `WebSearchTool` wraps backend selection and exposes `SearchInfo`.
 - `backend/pipeline/tools.py` — `builtin_tools()` registry; `_make_fetch_url_handler()` for `fetch_url`.
+- `backend/pipeline/transcript.py` — plain-text transcript of a conversation (episodes → downloadable `.txt`); also owns the loop's response footers (`strip_response_footers`), shared with the scheduler.
 - `backend/pipeline/extractor.py` — fact extraction + correction pipeline + scheduled task extraction.
 - `backend/pipeline/reasoner.py` — planning + self-correction (`Action.CORRECT`).
 - `backend/pipeline/orchestrator.py` — coordinates full cognitive loop; scheduled tasks

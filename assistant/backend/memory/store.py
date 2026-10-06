@@ -1858,6 +1858,21 @@ class MemoryStore:
                 })
             return sessions
 
+    async def get_session_title(self, session_id: str, user_id: int) -> str | None:
+        """The session's title, owner-scoped, or None if unknown or deleted.
+
+        A single-row read for the transcript export's filename.
+        `get_sessions_for_user` aggregates every session's episodes and is too
+        heavy to run for one title.
+        """
+        async with self._connect() as db:
+            rows = await db.execute_fetchall(
+                "SELECT title FROM sessions "
+                "WHERE id = ? AND user_id = ? AND deleted_at IS NULL",
+                (session_id, user_id),
+            )
+        return rows[0][0] if rows and rows[0][0] else None
+
     async def create_session(self, session_id: str, user_id: int, title: str = None) -> None:
         """Create a new session record."""
         async with self._connect() as db:

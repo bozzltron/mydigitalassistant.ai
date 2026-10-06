@@ -584,6 +584,54 @@ def test_session_messages_restore(client):
     assert empty.json() == []
 
 
+def test_conversation_download_is_a_plain_text_transcript(client):
+    """A conversation exports as a .txt attachment: the whole thread, owner-scoped,
+    with the loop's footers stripped."""
+    import asyncio
+
+    u1 = client.post("/users", params={"name": "downloadA"})
+    uid1 = u1.json()["id"]
+    u2 = client.post("/users", params={"name": "downloadB"})
+    uid2 = u2.json()["id"]
+    store = _state["store"]
+
+    async def seed():
+        await store.create_session("sess-dl", uid1, title="Album planning")
+        await store.create_episode(user_id=uid1, session_id="sess-dl",
+                                   role="user", content="what is the plan?")
+        await store.create_episode(
+            user_id=uid1, session_id="sess-dl", role="assistant",
+            content="Here you go.\n\n**Sources:**\n- https://example.com",
+        )
+        # Another household member's turn in the same session must NOT leak.
+        await store.create_episode(user_id=uid2, session_id="sess-dl",
+                                   role="user", content="secret note from bob")
+
+    asyncio.run(seed())
+
+    r = client.get("/chat/session/sess-dl/download", params={"user_id": uid1})
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/plain")
+    assert "attachment" in r.headers["content-disposition"]
+    assert ".txt" in r.headers["content-disposition"]
+    body = r.text
+    assert "Conversation: Album planning" in body
+    assert "Turns: 2" in body
+    assert "what is the plan?" in body
+    assert "Here you go." in body
+    assert "Sources" not in body and "example.com" not in body
+    assert "secret note from bob" not in body
+
+    # Owner-scoped: the other member exports only their own turn, not a 404.
+    r2 = client.get("/chat/session/sess-dl/download", params={"user_id": uid2})
+    assert "secret note from bob" in r2.text
+    assert "what is the plan?" not in r2.text
+
+    # An unknown session is a 404, not an empty file.
+    missing = client.get("/chat/session/nope/download", params={"user_id": uid1})
+    assert missing.status_code == 404
+
+
 def test_topic_search_finds_frames_by_keyword_and_semantic(client, stub_llm):
     """Topic transparency: /memory/search unions semantic hits with keyword
     matches and returns slots, associations, episodes, conflicts per frame."""
