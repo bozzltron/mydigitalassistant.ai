@@ -319,7 +319,10 @@
 
 /* File Viewer Panel */
 .file-viewer-panel {
-  width: 420px;
+  /* Wider than the old fixed 420px: the preview is the point of the page, and a
+     fixed narrow column wasted the space on large screens. Scales with the
+     viewport, bounded so it never starves the file grid. */
+  width: clamp(400px, 42vw, 720px);
   border-left: 1px solid var(--border);
   background: var(--surface);
   display: flex;
@@ -508,10 +511,8 @@
 
 /* Responsive */
 @media (max-width: 1024px) {
-  .file-viewer-panel {
-    width: 360px;
-  }
-  
+  /* The viewer panel's width is a `clamp()` now, so it scales down on its own;
+     only the table columns need a narrower definition here. */
   .files-table-header {
     grid-template-columns: 2fr 0.8fr 1fr 150px;
   }
