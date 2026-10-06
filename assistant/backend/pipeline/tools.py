@@ -373,8 +373,10 @@ class WriteFileArgs(BaseModel):
             "'report.docx', 'budget.xlsx'). The extension selects the format and "
             "the content is written as a real file of that type. Writable: txt, "
             "md, csv, json, ics, pdf, docx, odt, xlsx, xls, ods, pptx, odp. For a "
-            "spreadsheet, pass comma-separated rows; for a calendar (.ics), the "
-            "first line becomes the event title."
+            "spreadsheet, pass comma-separated rows; for a calendar (.ics), pass "
+            "a complete iCalendar document (BEGIN:VCALENDAR ... END:VCALENDAR) "
+            "with one or more VEVENTs. Plain prose becomes a single event titled "
+            "with its first line."
         ),
     )
     content: str = Field(..., description="File content to write")
@@ -402,6 +404,24 @@ class EditFileArgs(BaseModel):
 
 class DeleteFileArgs(BaseModel):
     path: str = Field(..., description="Relative path in sandbox")
+
+
+class RenameFileArgs(BaseModel):
+    path: str = Field(
+        ...,
+        description=(
+            "Sandbox-relative path of the file to rename, e.g. 'notes/todo.txt' "
+            "or 'mazworth_calendar.ics'."
+        ),
+    )
+    new_name: str = Field(
+        ...,
+        description=(
+            "The new file name, e.g. 'mozworth_calendar.ics'. Keep the same "
+            "extension. A bare name keeps the file in its folder; include a slash "
+            "to move it (e.g. 'archive/tasks.txt')."
+        ),
+    )
 
 
 class GlobArgs(BaseModel):
@@ -518,6 +538,14 @@ def builtin_tools(
             "Delete a file from the sandbox. Also removes the associated memory frame. "
             "Use when a file is no longer needed. Path is relative to sandbox root.",
             DeleteFileArgs,
+        ),
+        _make_def(
+            "rename_file",
+            "Rename a file in the sandbox, keeping the same extension. Use for: "
+            "fixing a name, correcting a spelling, or moving a file to a folder. "
+            "The memory frame moves with it. Fails rather than overwriting an "
+            "existing file.",
+            RenameFileArgs,
         ),
         _make_def(
             "glob",

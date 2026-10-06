@@ -12,6 +12,7 @@ the upload allowlist remain readable for files already on disk. See
 import asyncio
 import json
 import logging
+import re
 from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
@@ -562,18 +563,58 @@ def _render_json(content: str) -> bytes:
     return parsed.encode("utf-8")
 
 
-def _render_ics(content: str) -> bytes:
-    """Render prose as a valid single-event iCalendar file.
+def _as_icalendar_document(content: str) -> bytes | None:
+    """Normalize `content` if it is already a complete iCalendar document.
 
-    Verified in the file_write_parity experiment: writing prose as literal `.ics`
-    bytes extracts to '' because the parser rejects a bare line. A minimal VEVENT
-    extracts cleanly. The summary is the first non-empty line; the date is today.
+    The model knows ICS and frequently writes one directly. Wrapping that in a
+    VEVENT buries the real events inside a `DESCRIPTION`: a live write produced a
+    single event titled "BEGIN:VCALENDAR" with the actual calendar escaped inside
+    it, so reading the file back yielded the wrapper, not the events.
+
+    Returns normalized bytes when `content` parses as a VCALENDAR with at least
+    one VEVENT, else None so the caller can fall back. The parse is the check --
+    a malformed document (or prose that merely mentions the marker) is rejected.
+    """
+    from icalendar import Calendar
+
+    if "BEGIN:VCALENDAR" not in content.upper():
+        return None
+    try:
+        cal = Calendar.from_ical(content)
+    except Exception:
+        return None
+    if not cal.walk("VEVENT"):
+        return None
+    return cal.to_ical()
+
+
+def _render_ics(content: str) -> bytes:
+    """Render content as an iCalendar file, in one of two shapes.
+
+    **A complete iCalendar document** (contains ``BEGIN:VCALENDAR``) -- parsed and
+    re-serialized by the `icalendar` library, then written as-is. This is the
+    intended input: the model writes ICS directly, and it carries fields no
+    hand-rolled convention can (description, status, duration, timezone).
+
+    **Prose** (no document) -- the fallback: a single event titled with the first
+    non-empty line, dated today, the whole text as its description. Kept because a
+    `.ics` must be a real VEVENT -- prose-as-literal-bytes extracts to '' (the
+    parser rejects a bare line). See `file_write_parity`.
+
+    The library does the formatting in both shapes; nothing here builds ICS text.
     """
     import datetime
 
     from icalendar import Calendar, Event
 
     from assistant.backend.timeutil import local_tz
+
+    # A document the model already wrote is used as-is. Checked first: without
+    # this a raw VCALENDAR fell through to the prose path and got wrapped as one
+    # event titled "BEGIN:VCALENDAR", trapping the real events in a DESCRIPTION.
+    document = _as_icalendar_document(content)
+    if document is not None:
+        return document
 
     summary = next(
         (ln.strip() for ln in content.splitlines() if ln.strip()), "Note"
@@ -816,8 +857,6 @@ async def apply_file_to_memory(
     Memory holds what the file IS, never what it CONTAINS (see docs/FILES.md) —
     no content slot is written here.
     """
-    import re
-
     from assistant.backend.config import settings
 
     display_name = display_name or safe_filename

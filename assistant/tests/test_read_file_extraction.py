@@ -272,10 +272,13 @@ class TestContainerFormatsReadEndToEnd:
 
 
 class TestTextFormatsWithExtractorsAreExtracted:
-    """`html`/`xml`/`ics` are text but have extractors that add real value.
+    """`html`/`xml` are text but have extractors that add real value.
 
-    Reading them raw would hand the model `<h1>Title</h1>` or ICS syntax. The rule
-    is "extract whenever an extractor exists", not "extract only binaries".
+    Reading them raw would hand the model `<h1>Title</h1>` or XML. The rule is
+    "extract whenever an extractor exists" — with one exception, `ics`: its
+    extractor summarises the calendar (and caps at five events), which cannot be
+    edited back into a calendar, so `read_file` returns the raw document. See
+    `READ_RAW_EXTS` in `tool_executor`.
     """
 
     @pytest.mark.asyncio
@@ -304,7 +307,12 @@ class TestTextFormatsWithExtractorsAreExtracted:
             dst.unlink(missing_ok=True)
 
     @pytest.mark.asyncio
-    async def test_ics_is_summarised_not_dumped(self, store):
+    async def test_ics_is_read_raw_so_it_can_be_edited(self, store):
+        """`.ics` is the exception: read_file returns the document, not a summary.
+
+        The extractor's summary (capped at five events) is fine for memory but
+        cannot be edited back into a calendar, so the model gets the raw ICS.
+        """
         from assistant.backend.pipeline import filesystem
 
         filesystem.SANDBOX_ROOT.mkdir(parents=True, exist_ok=True)
@@ -322,7 +330,7 @@ class TestTextFormatsWithExtractorsAreExtracted:
             assert result.success
             content = result.data["content"]
             assert "Team sync" in content
-            assert "BEGIN:VEVENT" not in content
+            assert "BEGIN:VEVENT" in content
         finally:
             dst.unlink(missing_ok=True)
 

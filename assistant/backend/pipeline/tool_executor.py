@@ -84,6 +84,7 @@ def _register_builtin_tools() -> None:
         PlanArgs,
         ReadFileArgs,
         RecallArgs,
+        RenameFileArgs,
         RunScheduledTaskArgs,
         SearchEpisodesArgs,
         ThinkArgs,
@@ -98,6 +99,7 @@ def _register_builtin_tools() -> None:
     register_tool("read_file", ReadFileArgs, execute_read_file)
     register_tool("edit_file", EditFileArgs, execute_edit_file)
     register_tool("delete_file", DeleteFileArgs, execute_delete_file)
+    register_tool("rename_file", RenameFileArgs, execute_rename_file)
     register_tool("glob", GlobArgs, execute_glob)
     register_tool("upsert_slot", UpsertSlotArgs, execute_upsert_slot)
     register_tool("upsert_association", UpsertAssociationArgs, execute_upsert_association)
@@ -148,6 +150,7 @@ TOOL_TIMEOUTS: dict[str, float] = {
     "write_file": 10.0,
     "edit_file": 10.0,
     "delete_file": 10.0,
+    "rename_file": 10.0,
     "glob": 10.0,
     "list_files": 10.0,
     # A run-now executes the full loop (router + forced search + tool loop +
@@ -776,10 +779,15 @@ async def _available_file_names(store: MemoryStore, user_id: str) -> str:
 
 # Extensions with no extractor, where the bytes on disk are already the content
 # the model should read. Everything else goes through `extract_file_content` —
-# including html/xml/eml/ics, which are text but whose extractors strip markup,
-# parse the message, or summarise the calendar. Reading those raw would hand the
-# model `<h1>Title</h1>` or MIME boundaries instead of the content.
+# html/xml/eml are text but their extractors strip markup or parse the message;
+# reading those raw would hand the model `<h1>Title</h1>` or MIME boundaries.
 PLAIN_TEXT_EXTS = frozenset({"txt", "md", "log", "yaml", "yml"})
+
+# What `read_file` hands the model raw. `.ics` is included even though it has an
+# extractor: the extractor summarises the calendar (and caps at five events) for
+# memory, but a summary cannot be edited back into a calendar, so the model needs
+# the raw document to inspect or repair one. See docs/FILES.md.
+READ_RAW_EXTS = PLAIN_TEXT_EXTS | {"ics"}
 
 # Formats that are binary documents on disk. `read_file` *extracts* them to text,
 # but the bytes are not that text, so a find-and-replace can never match: the
@@ -801,13 +809,14 @@ MAX_READ_CHARS_FOR_MODEL = 60_000
 async def _read_file_text(file_path: str, ext: str) -> tuple[str | None, str | None]:
     """Return ``(text, error)`` for a sandbox file, extracting when needed.
 
-    Only formats with no extractor are read directly (`PLAIN_TEXT_EXTS`).
+    Formats in ``READ_RAW_EXTS`` (plain text, plus ``.ics``) are read directly.
     Everything else goes through ``extract_file_content``, the same path upload
     uses — the model must read a document the way upload understood it, not as
     raw bytes. Reading a PDF as UTF-8 was the bug: a 6.7 MB press kit extracted
     to 9,213 clean characters at upload and returned binary noise (or nothing) on
-    read. The same rule covers html/xml/eml/ics, which are text but whose
-    extractors strip markup, parse the message, or summarise the calendar.
+    read. The same rule covers html/xml/eml, which are text but whose extractors
+    strip markup or parse the message. ``.ics`` is the exception — read raw so a
+    calendar can be inspected and edited (see ``READ_RAW_EXTS``).
 
     ``extract_file_content`` extracts from the bytes it is given, not from the
     path, so the bytes are read here and handed over.
@@ -821,7 +830,7 @@ async def _read_file_text(file_path: str, ext: str) -> tuple[str | None, str | N
 
     path = resolve_sandbox_path(file_path)
 
-    if ext in PLAIN_TEXT_EXTS:
+    if ext in READ_RAW_EXTS:
         # FileNotFoundError propagates: "missing" and "unreadable" are different
         # answers and the caller reports them differently.
         return path.read_text(encoding="utf-8", errors="replace"), None
@@ -1367,6 +1376,88 @@ async def execute_delete_file(args: dict, user_id: str, session_id: str) -> Tool
         return ToolResult(success=False, error=str(e))
 
 
+async def execute_rename_file(args: dict, user_id: str, session_id: str) -> ToolResult:
+    """Rename a sandbox file, and its memory frame with it.
+
+    A rename is a first-class operation, not a read+write+delete dance the model
+    has to compose: the disk file and the ``file_<name>`` frame move together, so
+    the old name stops resolving and the new one works immediately. The extension
+    is kept fixed — renaming a ``.txt`` to ``.docx`` would leave text bytes under a
+    document name.
+    """
+    try:
+        from pathlib import Path
+
+        from assistant.backend.pipeline.filesystem import (
+            PathTraversalError,
+            get_sandbox_root,
+            rename_sandbox_file,
+        )
+
+        path = args.get("path", "")
+        new_name = args.get("new_name", "")
+        if not path or not new_name:
+            return ToolResult(success=False, error="path and new_name are required")
+
+        if Path(new_name).suffix.lower() != Path(path).suffix.lower():
+            return ToolResult(
+                success=False,
+                error=(
+                    "new_name must keep the same extension "
+                    f"({Path(path).suffix or 'none'}) — use write_file to change a "
+                    "file's format"
+                ),
+            )
+
+        new_base = Path(new_name).name
+        new_frame_name = f"file_{new_base}"
+
+        # Check the memory-name clash *before* touching disk, so a refusal cannot
+        # leave a renamed file whose frame name collides with another file.
+        old_frame = None
+        if _store is not None:
+            old_frame = await _store.get_frame_by_name(f"file_{Path(path).name}")
+            clash = await _store.get_frame_by_name(new_frame_name)
+            if clash is not None and (old_frame is None or clash.id != old_frame.id):
+                return ToolResult(
+                    success=False,
+                    error=f"a file named '{new_base}' already exists",
+                )
+
+        old_path, new_path = rename_sandbox_file(path, new_name)
+        new_rel = str(new_path.relative_to(get_sandbox_root()))
+
+        frame_moved = False
+        if old_frame is not None:
+            await _store.update_frame(old_frame.id, name=new_frame_name)
+            # Derived state, not a belief: a file's name is a fact about where it
+            # is, and a rename is a mutation, not a contradicting claim. These
+            # overwrite rather than going through the conflict ladder, which would
+            # keep the old name (both sides are file metadata at the same rung).
+            await _store.set_derived_slot(
+                old_frame.id, "file_name", new_rel, source_type="file_create"
+            )
+            await _store.set_derived_slot(
+                old_frame.id, "file_safe_name", new_rel, source_type="file_create"
+            )
+            frame_moved = True
+
+        return ToolResult(success=True, data={
+            "old_path": str(old_path.relative_to(get_sandbox_root())),
+            "path": new_rel,
+            "frame_moved": frame_moved,
+        })
+    except PathTraversalError as e:
+        return ToolResult(success=False, error=str(e))
+    except FileNotFoundError as e:
+        return ToolResult(success=False, error=str(e))
+    except FileExistsError as e:
+        return ToolResult(success=False, error=str(e))
+    except Exception as e:
+        logger.error(f"rename_file failed: {e}", exc_info=True)
+        return ToolResult(success=False, error=str(e))
+
+
 async def execute_glob(args: dict, user_id: str, session_id: str) -> ToolResult:
     """Find files matching a glob pattern in the sandbox."""
     try:
@@ -1432,7 +1523,6 @@ async def execute_list_files(args: dict, user_id: str, session_id: str) -> ToolR
                     "file_name": file_name,
                     "file_ext": slots_dict.get("file_ext", ""),
                     "file_size": file_size,
-                    "content_preview": slots_dict.get("file_content_preview", ""),
                     "created_at": frame.created_at if frame.created_at else None,
                     "path": sandbox_info.get("path"),
                     "modified": sandbox_info.get("modified"),
@@ -1449,7 +1539,6 @@ async def execute_list_files(args: dict, user_id: str, session_id: str) -> ToolR
                         "file_name": Path(sf["path"]).name,
                         "file_ext": sf["ext"],
                         "file_size": sf["size"],
-                        "content_preview": "",
                         "created_at": None,
                         "path": sf["path"],
                         "modified": sf["modified"],

@@ -48,6 +48,15 @@ class TestContentIsRefusedAtWriteTime:
             await store.upsert_slot(frame_id=frame.id, key=key, value="file contents")
 
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("key", FILE_CONTENT_HINT_SLOTS)
+    async def test_a_content_key_is_refused_on_the_derived_path_too(self, store, key):
+        """`set_derived_slot` writes to `slots` without going through `upsert_slot`,
+        so the guard must cover both or it is a guard a caller can sidestep."""
+        frame = await store.create_frame("file_notes.txt", "entity")
+        with pytest.raises(FileContentInMemoryError):
+            await store.set_derived_slot(frame.id, key, "file contents")
+
+    @pytest.mark.asyncio
     async def test_the_error_says_what_to_do_instead(self, store):
         frame = await store.create_frame("file_notes.txt", "entity")
         with pytest.raises(FileContentInMemoryError) as exc:

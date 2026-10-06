@@ -52,6 +52,8 @@ TOOL_DEPENDENCIES: dict[str, list[str]] = {
     "edit_file": ["read_file", "glob", "list_files"],
     # delete_file depends on glob/list_files (need to find path)
     "delete_file": ["glob", "list_files"],
+    # rename_file depends on glob/list_files (need to find the path first)
+    "rename_file": ["glob", "list_files"],
     # write_file can depend on glob if creating in specific dir
     "write_file": ["glob", "list_files"],
     # fetch_url depends on web_search (need URL first)

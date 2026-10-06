@@ -844,6 +844,7 @@ For this query, the user is asking about YOUR memory or knowledge. You must:
   • write_file(path, content) — Create or overwrite a file
   • edit_file(path, old_text, new_text) — Surgical find-and-replace
   • delete_file(path) — Delete a file
+  • rename_file(path, new_name) — Rename a file, keeping its extension
   • recall(query) — Search your structured memory (frames/slots)
 
 Tool chaining examples:
@@ -856,6 +857,7 @@ Tool chaining examples:
     1. read_file(path="notes/todo.txt")
     2. edit_file(path="notes/todo.txt", old_text="...", new_text="...")
 - User: "delete old notes" → glob("notes/*.txt") → delete_file() for each
+- User: "rename that file to X" → rename_file(path="old.txt", new_name="X.txt")
 - User: "what do you know about project X?" → recall(query="project X")
 
 Uploaded files: when memory mentions an uploaded file, read its actual contents
@@ -888,6 +890,7 @@ Respond conversationally as a helpful assistant.""")
   • write_file(path, content) — Create or overwrite a file
   • edit_file(path, old_text, new_text) — Surgical find-and-replace
   • delete_file(path) — Delete a file
+  • rename_file(path, new_name) — Rename a file, keeping its extension
   • recall(query) — Search your structured memory (frames/slots)
 
 Tool chaining examples:
@@ -900,6 +903,7 @@ Tool chaining examples:
     1. read_file(path="notes/todo.txt")
     2. edit_file(path="notes/todo.txt", old_text="...", new_text="...")
 - User: "delete old notes" → glob("notes/*.txt") → delete_file() for each
+- User: "rename that file to X" → rename_file(path="old.txt", new_name="X.txt")
 - User: "what do you know about project X?" → recall(query="project X")
 
 Uploaded files: when memory mentions an uploaded file, read its actual contents

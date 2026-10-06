@@ -43,8 +43,13 @@ extension via `render_file_bytes` (`pipeline/files.py`), then writes with
 
 - Text-ish (`txt`, `md`, `csv`) are the content verbatim; `json` is wrapped so it
   is valid JSON if the agent passed prose.
-- `ics` builds a real VEVENT (prose-as-text extracts to `''` — the parser rejects
-  a bare line).
+- `ics` builds real VEVENTs, from one of two shapes. A complete iCalendar document
+  (`BEGIN:VCALENDAR…`) is parsed and re-serialized by the `icalendar` library and
+  written as-is — the model writes ICS directly, and it carries fields no
+  hand-rolled convention can (description, status, timezone). Otherwise plain prose
+  becomes a single event titled with its first line and dated today, because
+  prose-as-literal-bytes extracts to `''`. The library formats both shapes; nothing
+  hand-builds ICS text.
 - Binary formats use their encoder library (`python-docx`, `openpyxl`, `xlwt`,
   `odfpy`, `python-pptx`, `reportlab`).
 
@@ -74,6 +79,16 @@ dead-ends.
 **A failed match is recoverable.** The error names the file size and the closest
 region, so the model can correct its `old_text` rather than hitting a wall. Do
 not replace this with a bare "not found".
+
+## Renaming
+
+`rename_file(path, new_name)` moves the disk file and its `file_<name>` frame
+together, so the old name stops resolving and the new one works immediately. It
+keeps the extension fixed — renaming a `.txt` to `.docx` would leave text bytes
+under a document name — and refuses to overwrite an existing file rather than
+silently clobber it. A bare `new_name` keeps the file in its folder; include a
+slash to move it. It is a first-class operation on purpose: the model should not
+have to compose read+write+delete, which can lose the file if it fails midway.
 
 ## The two names of every file
 
@@ -196,9 +211,12 @@ Large files are never fully embedded; the frame embeds metadata only.
   extractor upload uses), not raw bytes: reading a PDF as UTF-8 yields garbage.
   The rule is **extract whenever an extractor exists**; only formats with none
   (`txt`, `md`, `log`, `yaml`, `yml`) are read directly. That includes
-  `html`/`xml`/`ics`/`eml`, which are text but whose extractors strip markup,
-  parse the message, or summarise the calendar — reading those raw would hand the
-  model `<h1>Title</h1>` or MIME boundaries instead of the content.
+  `html`/`xml`/`eml`, which are text but whose extractors strip markup or parse the
+  message — reading those raw would hand the model `<h1>Title</h1>` or MIME
+  boundaries instead of the content. **`ics` is the exception**: its extractor
+  summarises the calendar (and caps at five events) for memory, but a summary
+  cannot be edited back into a calendar, so `read_file` returns the raw document
+  (see `READ_RAW_EXTS` in `tool_executor`).
 - The only bound is the **model's context window** on what `read_file` returns
   (`MAX_READ_CHARS_FOR_MODEL`), and a truncated read carries an explicit marker
   with the true total so the model can say it saw a fragment. The file on disk is
@@ -249,3 +267,10 @@ old index frames like `uploaded_files` can carry stale references (see below).
 
 `assistant/tests/test_files.py`: exact-name storage, re-upload overwrite,
 entity cap, frame-name readability, delete cascade, row-frame cap.
+
+`assistant/tests/test_ics_writer.py`: a model-written `.ics` document is used
+as-is (timed + all-day, timezone preserved), the prose fallback, and the
+`BEGIN:VCALENDAR`-in-a-DESCRIPTION regression.
+
+`assistant/tests/test_file_rename.py`: rename moves the disk file and its frame
+together, and refuses an overwrite or an extension change.

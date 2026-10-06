@@ -64,6 +64,23 @@ class FileContentInMemoryError(ValueError):
     quietly recreating a copy that goes stale.
     """
 
+
+def _reject_file_content_slot(key: str) -> None:
+    """Refuse a slot key that holds file content, on every write path.
+
+    Called by both `upsert_slot` and `set_derived_slot`. The rule lives here, at
+    the store, rather than in one writer: `set_derived_slot` writes to `slots`
+    without going through `upsert_slot`, so a guard on only one of them is a guard
+    a future caller can sidestep.
+    """
+    if key in FILE_CONTENT_HINT_SLOTS:
+        raise FileContentInMemoryError(
+            f"slot key {key!r} holds file content, which belongs in the sandbox, "
+            "not in memory. Store what the file IS (name, path, size); read what "
+            "it CONTAINS with read_file. See docs/FILES.md."
+        )
+
+
 # Max ids per batched IN (...) lookup. SQLite's default bound-parameter ceiling
 # is 999, so stay well under it; get_all_associations_for_frames binds each id
 # twice (from_ and to_), which is why this is not simply 999.
@@ -1277,6 +1294,7 @@ class MemoryStore:
         confidence change. ``updated_at`` still moves, so the fact that a derived
         value changed remains visible.
         """
+        _reject_file_content_slot(key)
         async with self._connect() as db:
             await db.execute(
                 "INSERT INTO slots "
@@ -1302,15 +1320,7 @@ class MemoryStore:
         source_url: str | None = None,
         source_reliability: float | None = None,
     ) -> tuple[Slot, Conflict | None]:
-        if key in FILE_CONTENT_HINT_SLOTS:
-            # File content belongs on disk, read verbatim. Refused here because the
-            # store is where every writer funnels, so this cannot be sidestepped by
-            # a new call site the way a per-writer fix could.
-            raise FileContentInMemoryError(
-                f"slot key {key!r} holds file content, which belongs in the sandbox, "
-                "not in memory. Store what the file IS (name, path, size); read what "
-                "it CONTAINS with read_file. See docs/FILES.md."
-            )
+        _reject_file_content_slot(key)
         if not key or not str(key).strip():
             # A slot with no key is an object with no identity: nothing can look it
             # up, and it inflates every count that iterates slots.

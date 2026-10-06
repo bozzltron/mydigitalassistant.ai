@@ -241,6 +241,38 @@ def delete_sandbox_file(relative_path: str) -> Path:
     return path
 
 
+def rename_sandbox_file(relative_path: str, new_name: str) -> tuple[Path, Path]:
+    """Rename a file within the sandbox.
+
+    ``new_name`` is a file name; a bare name keeps the file in its folder, while a
+    name with a slash moves it. The extension is not validated here (the tool
+    layer keeps it fixed) — this is the filesystem primitive.
+
+    Refuses to overwrite an existing file: a rename that clobbers is silent data
+    loss, worse than a failed rename.
+
+    Returns ``(old_path, new_path)``.
+
+    Raises PathTraversalError, FileNotFoundError, FileExistsError.
+    """
+    old_path = resolve_sandbox_path(relative_path)
+    if not old_path.exists():
+        raise FileNotFoundError(f"File not found: {relative_path}")
+    if not old_path.is_file():
+        raise ValueError(f"Not a file: {relative_path}")
+
+    new_rel = new_name if "/" in new_name else str(Path(relative_path).parent / new_name)
+    new_path = resolve_sandbox_path(new_rel)
+    validate_path_safety(new_path)
+
+    if new_path.exists():
+        raise FileExistsError(f"File exists: {new_rel}")
+
+    new_path.parent.mkdir(parents=True, exist_ok=True)
+    old_path.rename(new_path)
+    return old_path, new_path
+
+
 def get_sandbox_root() -> Path:
     """Return the sandbox root path (for testing/inspection)."""
     return SANDBOX_ROOT
