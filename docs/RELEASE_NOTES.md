@@ -1,5 +1,26 @@
 # MyDigitalAssistant.ai — release notes
 
+## v0.11.7-alpha
+
+**Conversations download as text, and the voice status tells the truth.**
+
+- **Download a conversation.** The conversation menu has a Download action; it
+  saves the whole thread as a plain-text transcript (`.txt`) — a header, then each
+  turn labelled with its role and timestamp, with the loop's scaffolding (sources
+  footers, memory markers) stripped. Owner-scoped, and useful for carrying context
+  to another brain.
+- **"Transcribing..." now shows while it transcribes.** The voice-mode status was
+  tied to the recorder teardown (a few milliseconds), so during the actual
+  `/transcribe` request the bar read "Listening...". It now reads "Transcribing..."
+  for the whole request — while the mic stays open, so a sentence said
+  mid-transcription is still queued rather than lost.
+- **Speaking beats listening.** While the agent read its answer aloud the bar
+  showed "Listening..." (the mic is shut then). It now shows "Speaking...".
+- **Wider file preview.** The file viewer was a fixed 420px column; it now scales
+  with the viewport (up to 720px), so a document is readable without scrolling
+  sideways.
+- Cleanup: removed a never-set `'speaking'` voice status and its unused helpers.
+
 ## v0.11.6-alpha
 
 **Calendars are real calendars now, and files can be renamed.**
