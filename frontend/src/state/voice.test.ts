@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { voice, setVoice, isVoiceModeActive, isListening, isProcessing, isSpeaking, isIdle, isTtsSpeaking } from './voice'
+import { voice, setVoice, isVoiceModeActive, isListening, isProcessing, isIdle, isTtsSpeaking } from './voice'
 
 describe('voice state helpers', () => {
   beforeEach(() => {
@@ -32,11 +32,6 @@ describe('voice state helpers', () => {
       expect(isVoiceModeActive()).toBe(false)
     })
 
-    it('returns false for speaking status', () => {
-      setVoice({ ...voice, status: 'speaking' })
-      expect(isVoiceModeActive()).toBe(false)
-    })
-
     it('returns false for error status', () => {
       setVoice({ ...voice, status: 'error' })
       expect(isVoiceModeActive()).toBe(false)
@@ -60,23 +55,6 @@ describe('voice state helpers', () => {
       
       setVoice({ ...voice, status: 'listening' })
       expect(isProcessing()).toBe(false)
-    })
-  })
-
-  describe('isSpeaking', () => {
-    it('returns true for speaking status', () => {
-      setVoice({ ...voice, status: 'speaking' })
-      expect(isSpeaking()).toBe(true)
-    })
-
-    it('returns true when TTS is speaking', () => {
-      setVoice({ ...voice, status: 'idle', isTtsSpeaking: true })
-      expect(isSpeaking()).toBe(true)
-    })
-
-    it('returns false otherwise', () => {
-      setVoice({ ...voice, status: 'idle' })
-      expect(isSpeaking()).toBe(false)
     })
   })
 

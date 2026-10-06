@@ -2,7 +2,7 @@ import { createSignal, createEffect, For, onMount, onCleanup, Show, createMemo }
 import type { Session } from '../../state/session'
 import { user } from '../../state/user'
 import { settings, updateSetting } from '../../state/settings'
-import { enterVoiceMode, exitVoiceMode, voice, isListening, isProcessing, isSpeaking, isIdle, isTtsSpeaking, stopRecording, cancelSpeech } from '../../state/voice'
+import { enterVoiceMode, exitVoiceMode, voice, isListening, isProcessing, isIdle, isTtsSpeaking, stopRecording, cancelSpeech } from '../../state/voice'
 import { getSettings, updateConversationTitle, deleteConversation } from '../../services/api'
 import { debug } from '../../services/logger'
 import TrashCan from '../chat/TrashCan'
@@ -163,14 +163,14 @@ export default function TopBar(props: TopBarProps) {
     // as "Listening..."; and "Transcribing..." overrides "Listening..." while a
     // /transcribe request is outstanding (the mic is still open -- see the
     // conversation hook). One string, most-informative first.
-    if (isSpeaking() || isTtsSpeaking()) return 'Speaking...'
+    if (isTtsSpeaking()) return 'Speaking...'
     if (isProcessing()) return 'Transcribing...'
     if (isListening()) return v.isDictating ? 'Dictating...' : 'Listening...'
     return 'Idle'
   })
 
   const voiceStatusClass = createMemo(() => {
-    if (isSpeaking() || isTtsSpeaking()) return 'speaking'
+    if (isTtsSpeaking()) return 'speaking'
     if (isProcessing()) return 'processing'
     return ''
   })
@@ -178,7 +178,7 @@ export default function TopBar(props: TopBarProps) {
   const voiceStatusActive = createMemo(() => !isIdle())
 
   const stopBtnText = createMemo(() =>
-    isListening() || isProcessing() || isSpeaking() || isTtsSpeaking()
+    isListening() || isProcessing() || isTtsSpeaking()
       ? "I'm done talking"
       : 'Start'
   )

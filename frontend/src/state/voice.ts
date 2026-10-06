@@ -2,7 +2,7 @@ import { createSignal } from 'solid-js'
 import { createStore } from 'solid-js/store'
 
 // Voice state type definition - matching original chat.html
-export type VoiceStatus = 'idle' | 'listening' | 'processing' | 'speaking' | 'error'
+export type VoiceStatus = 'idle' | 'listening' | 'processing' | 'error'
 
 export interface VoiceState {
   status: VoiceStatus
@@ -55,10 +55,6 @@ export const startProcessing = () => {
   setVoice('status', 'processing')
 }
 
-export const startSpeaking = () => {
-  setVoice('status', 'speaking')
-}
-
 export const setError = (error: string) => {
   setVoice('status', 'error')
   setVoice('transcript', error)
@@ -79,10 +75,7 @@ export const endDictation = () => {
 // Helper to get computed state for UI
 export const isListening = () => voice.status === 'listening'
 export const isProcessing = () => voice.status === 'processing'
-// Speaking includes both voice mode speaking and TTS playback
-export const isSpeaking = () => voice.status === 'speaking' || voice.isTtsSpeaking
 export const isIdle = () => voice.status === 'idle'
-export const isError = () => voice.status === 'error'
 export const isTtsSpeaking = () => voice.isTtsSpeaking
 
 // Voice mode is active during listening AND processing (transcription), but NOT
