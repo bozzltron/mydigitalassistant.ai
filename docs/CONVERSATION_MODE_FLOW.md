@@ -111,11 +111,14 @@ sequenceDiagram
 |--------|---------|------------|
 | `idle` | Voice mode off | No |
 | `listening` | Actively recording / waiting for speech | Yes |
-| `processing` | Transcribing audio | No |
-| `speaking` | Agent speaking (voice mode TTS) | No |
+| `processing` | Transcribing audio | Yes — see note |
 | `error` | Error state | No |
 
-**Note**: `isTtsSpeaking` is a separate flag for browser SpeechSynthesis TTS.
+**Note**: `isTtsSpeaking` is a separate flag for browser SpeechSynthesis TTS — "the
+agent is speaking" is that flag, not a `voice.status` value. `processing` overrides
+`listening` in the top bar while a `/transcribe` request is outstanding, but the
+microphone stays **open** through the request (only the brief recorder teardown shuts
+it), so a sentence said while transcribing is queued rather than lost.
 
 ---
 
@@ -195,7 +198,7 @@ into `messageQueue` and never calls `handleSendMessage`.
 - Earcon sounds
 
 ### `voice.ts` - Shared State
-- `voice.status` (idle/listening/processing/speaking/error)
+- `voice.status` (idle/listening/processing/error)
 - `voice.isDictating` (one-shot dictation mode)
 - `voice.isTtsSpeaking` (browser SpeechSynthesis)
 - `registerStopRecording` / `stopRecording` (callback for TopBar)
@@ -227,18 +230,22 @@ time. That is the whole rule; every other case follows from it.
 ```
 !voiceMode            → shut
 agent speaking        → shut, and drop what was captured
-transcription open    → shut, so the mic does not catch the user's tail
+recorder settling     → shut, until the blob is assembled
 otherwise             → open
 ```
 
-There is no `ConvVoiceState`. The old four-state machine (`idle` / `recording` /
-`transcribing` / `paused_tts`) existed to remember "voice mode is on but we must not
-record" — which is not a state, it is the conjunction above. Reading the conditions
-directly removes the possibility of the states disagreeing with them, which is how the
-hook ended up transcribing the agent: it had its own copy of the rule, and that copy
-had no TTS branch until it was caught.
+A `/transcribe` request in flight deliberately does **not** shut the mic — captures
+are queued and sent serially, so a sentence said while the previous one transcribes is
+heard instead of dropped. That is why the *status*, not the mic, is what shows
+"Transcribing...": the two are separate facts (see the status note above).
 
-`state()` survives only as `idle | recording | transcribing` for display.
+The *policy* is not a state machine — it is the conjunction above, read directly. The
+hook keeps one small display state, `state()` (`idle | recording | transcribing`), but
+an earlier four-state machine (`idle` / `recording` / `transcribing` / `paused_tts`)
+existed to remember "voice mode is on but we must not record"; that is not a state, and
+its own copy of the rule had no TTS branch until it was caught transcribing the agent.
+Reading the conditions directly removes the possibility of the states disagreeing with
+them.
 
 > **An active turn does not close the mic.** This is the whole point of the queue:
 > the user talks hands-free, the agent starts working, and whatever was said in the
