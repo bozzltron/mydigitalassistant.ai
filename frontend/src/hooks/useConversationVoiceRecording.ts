@@ -36,6 +36,11 @@ export function useConversationVoiceRecording({
   const pendingSends: Array<{ blob: Blob; mime: string }> = [];
   let drainingSends = false;
 
+  // True while a /transcribe send is outstanding. Drives the *status* only: the
+  // mic stays open through the request (see the capture policy below), so the bar
+  // must read "Transcribing..." rather than "Listening..." while a request is out.
+  const [transcriptionInFlight, setTranscriptionInFlight] = createSignal(false);
+
   function queueSend(blob: Blob, mime: string) {
     pendingSends.push({ blob, mime });
     void drainSends();
@@ -44,6 +49,7 @@ export function useConversationVoiceRecording({
   async function drainSends() {
     if (drainingSends) return;
     drainingSends = true;
+    setTranscriptionInFlight(true);
     try {
       while (pendingSends.length > 0) {
         const next = pendingSends.shift()!;
@@ -51,6 +57,7 @@ export function useConversationVoiceRecording({
       }
     } finally {
       drainingSends = false;
+      setTranscriptionInFlight(false);
     }
   }
 
@@ -130,12 +137,15 @@ export function useConversationVoiceRecording({
     const output = isOutputActive();
     const recording = capture.isRecording();
     const blocked = captureBlocked();
+    // True while a /transcribe send is outstanding. Status-only: the mic stays
+    // open through the request (see below), but the bar reads "Transcribing...".
+    const transcribing = transcriptionInFlight();
     // Read only so the trace shows it. A turn is not part of this policy.
     const turnActive = isTurnActive();
     // Re-decide whenever a capture starts, ends, or is handed back.
     capture.epoch();
 
-    debug('[convVoice] policy', { voiceMode, output, recording, blocked, turnActive });
+    debug('[convVoice] policy', { voiceMode, output, recording, blocked, transcribing, turnActive });
 
     if (!voiceMode) {
       if (recording) capture.stop();
@@ -156,9 +166,6 @@ export function useConversationVoiceRecording({
     // between utterances is heard instead of dropped.
     if (capture.isSettling()) {
       setConvState('transcribing');
-      // The global status is what the top-bar indicator reads, and this hook
-      // never advanced it: during a conversation turn it stayed 'listening', so
-      // the bar showed "Listening..." while actually transcribing.
       startProcessing();
       return;
     }
@@ -170,13 +177,18 @@ export function useConversationVoiceRecording({
       return;
     }
 
-    if (recording) {
-      setConvState('recording');
-      return;
+    setConvState('recording');
+    // The bar shows one string. "Transcribing..." overrides "Listening..." while a
+    // /transcribe send is outstanding, even though the mic stays open through it
+    // (it opens below and is not shut for the request) -- visually exclusive,
+    // functionally both true. The user sees the work, and nothing said is missed.
+    if (transcribing) {
+      startProcessing();
+    } else {
+      startListening();
     }
 
-    setConvState('recording');
-    startListening();
+    if (recording) return;
     void capture.start();
   });
 

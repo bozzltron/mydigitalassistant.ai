@@ -159,15 +159,19 @@ export default function TopBar(props: TopBarProps) {
   // Declarative voice status computed signals
   const voiceStatusText = createMemo(() => {
     const v = voice
-    if (isListening()) return v.isDictating ? 'Dictating...' : 'Listening...'
-    if (isProcessing()) return 'Transcribing...'
+    // Precedence matters: the agent speaking shuts the mic, so it must not read
+    // as "Listening..."; and "Transcribing..." overrides "Listening..." while a
+    // /transcribe request is outstanding (the mic is still open -- see the
+    // conversation hook). One string, most-informative first.
     if (isSpeaking() || isTtsSpeaking()) return 'Speaking...'
+    if (isProcessing()) return 'Transcribing...'
+    if (isListening()) return v.isDictating ? 'Dictating...' : 'Listening...'
     return 'Idle'
   })
 
   const voiceStatusClass = createMemo(() => {
-    if (isProcessing()) return 'processing'
     if (isSpeaking() || isTtsSpeaking()) return 'speaking'
+    if (isProcessing()) return 'processing'
     return ''
   })
 

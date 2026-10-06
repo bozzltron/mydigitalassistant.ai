@@ -354,9 +354,11 @@ describe('useConversationVoiceRecording', () => {
     dispose();
   });
 
-  it('stays in "listening" while a /transcribe is in flight, because the mic is open', async () => {
-    // The mic must not be held shut for the transcription round trip, so the
-    // honest status during a request is "listening" -- the user can keep talking.
+  it('shows "Transcribing..." while a /transcribe is in flight, then back to "listening"', async () => {
+    // The mic must not be held shut for the transcription round trip (nothing
+    // said is missed), but the status must read "Transcribing..." so the user
+    // sees what is happening -- "Listening..." would claim the agent is only
+    // listening while it transcribes.
     const voiceMode = voiceModeSignal(true);
     const { hook, dispose } = mountHook({ isVoiceMode: voiceMode.is, isTurnActive: () => false });
     await flush();
@@ -370,7 +372,8 @@ describe('useConversationVoiceRecording', () => {
     await speakThenPause();
 
     expect(global.fetch).toHaveBeenCalledTimes(1);
-    expect(voice.status).toBe('listening');
+    expect(voice.status).toBe('processing');
+    // ...but the microphone is still open -- the status is an override, not a gate.
     expect(hook.isRecording()).toBe(true);
 
     resolveFetch({ ok: true, status: 200, json: async () => ({ text: 'hello there' }) });
