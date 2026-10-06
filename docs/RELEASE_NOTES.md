@@ -1,5 +1,27 @@
 # MyDigitalAssistant.ai — release notes
 
+## v0.11.6-alpha
+
+**Calendars are real calendars now, and files can be renamed.**
+
+- **Multi-event `.ics`.** Writing a calendar no longer collapses it into a single
+  event titled with the first line (which could itself be `BEGIN:VCALENDAR`, with
+  the real events escaped inside its description). The model supplies a full
+  iCalendar document; it is stored as-is, validated and formatted by the
+  `icalendar` library, so a list of dates becomes a list of events. Plain prose
+  still becomes a single event.
+- **Reading a calendar shows the calendar.** `read_file` on an `.ics` returns the
+  raw document instead of a five-event summary, so the agent can inspect and edit
+  one — the summary could not be turned back into a calendar.
+- **`rename_file`.** A file can be renamed in one step: the sandbox file and its
+  memory frame move together, so the old name stops resolving and the new one
+  works immediately. The extension is fixed and an existing file is never
+  overwritten.
+- **Consistent file-content policy.** "Memory holds what a file *is*, never what
+  it *contains*" now holds on both write paths, and `list_files` no longer serves
+  a stale content preview. Existing content slots are left in place, read by
+  nothing — nothing is deleted.
+
 ## v0.11.5-alpha
 
 **Files table: dropped the Type column.**
