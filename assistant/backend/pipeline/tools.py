@@ -549,6 +549,53 @@ class WriteFileArgs(BaseModel):
     overwrite: bool = Field(False, description="Allow overwriting existing file")
 
 
+class AppendFileArgs(BaseModel):
+    path: str = Field(
+        ...,
+        description=(
+            "Relative path in the sandbox, WITH an extension (e.g. 'contacts.csv', "
+            "'events.jsonl', 'notes/log.md'). The file is created if it does not "
+            "exist. Text formats only; a binary document (.docx, .pdf, .xlsx) must "
+            "be read and rewritten with write_file instead."
+        ),
+    )
+    content: str = Field(
+        ...,
+        description=(
+            "Text to append. For line-oriented files pass one row/record per "
+            "line; a newline is inserted first if the file does not end with one."
+        ),
+    )
+
+
+class SearchFileArgs(BaseModel):
+    path: str | None = Field(
+        None,
+        description=(
+            "Sandbox path, or an uploaded file's name/frame name (e.g. "
+            "'contacts.csv' or 'file_contacts.csv'). Omit when using "
+            "frame_id/frame_name."
+        ),
+    )
+    frame_id: int | None = Field(
+        None, description="Uploaded file's frame id (alternative to path)."
+    )
+    frame_name: str | None = Field(
+        None, description="Uploaded file's frame name (alternative to path)."
+    )
+    query: str = Field(
+        ...,
+        description="Text to find, or a regular expression when regex=true.",
+    )
+    regex: bool = Field(False, description="Treat query as a regular expression.")
+    case_sensitive: bool = Field(
+        False, description="Match case-sensitively (default: case-insensitive)."
+    )
+    max_matches: int = Field(
+        50, ge=1, description="Maximum matching lines to return."
+    )
+
+
 class EditFileArgs(BaseModel):
     path: str = Field(
         ...,
@@ -689,6 +736,25 @@ def builtin_tools(
             "A large file is read in pieces: a capped result names the line range "
             "and the offset for the next page, so use offset/limit to walk it.",
             ReadFileArgs,
+        ),
+        _make_def(
+            "append_file",
+            "Append text to a file, creating it if it does not exist. Builds a "
+            "file WITHOUT reading it, so a large file never has to enter the "
+            "context just to add a line. Generic: a CSV row, a JSONL record, a log "
+            "line and a markdown section all append the same way. Text formats "
+            "only (a binary document must be rewritten with write_file). Pair with "
+            "search_file to add only what is not already there.",
+            AppendFileArgs,
+        ),
+        _make_def(
+            "search_file",
+            "Find the lines in a file that match a query. Membership ('is this "
+            "email already in the list?') and targeted lookup without holding the "
+            "whole file. Generic across formats. Case-insensitive substring by "
+            "default; set regex=true for a pattern. Returns matching lines with "
+            "their line numbers, capped.",
+            SearchFileArgs,
         ),
         _make_def(
             "edit_file",

@@ -73,6 +73,7 @@ def init_store(
 def _register_builtin_tools() -> None:
     """Register all builtin tools with their executors."""
     from assistant.backend.pipeline.tools import (
+        AppendFileArgs,
         ComputeArgs,
         DeleteFileArgs,
         EditFileArgs,
@@ -87,6 +88,7 @@ def _register_builtin_tools() -> None:
         RenameFileArgs,
         RunScheduledTaskArgs,
         SearchEpisodesArgs,
+        SearchFileArgs,
         ThinkArgs,
         UpsertAssociationArgs,
         UpsertSlotArgs,
@@ -97,6 +99,8 @@ def _register_builtin_tools() -> None:
     register_tool("list_files", ListFilesArgs, execute_list_files)
     register_tool("write_file", WriteFileArgs, execute_write_file)
     register_tool("read_file", ReadFileArgs, execute_read_file)
+    register_tool("append_file", AppendFileArgs, execute_append_file)
+    register_tool("search_file", SearchFileArgs, execute_search_file)
     register_tool("edit_file", EditFileArgs, execute_edit_file)
     register_tool("delete_file", DeleteFileArgs, execute_delete_file)
     register_tool("rename_file", RenameFileArgs, execute_rename_file)
@@ -148,6 +152,8 @@ TOOL_TIMEOUTS: dict[str, float] = {
     "fetch_url": 30.0,
     "read_file": 10.0,
     "write_file": 10.0,
+    "append_file": 10.0,
+    "search_file": 10.0,
     "edit_file": 10.0,
     "delete_file": 10.0,
     "rename_file": 10.0,
@@ -813,6 +819,14 @@ READ_RESULT_WINDOW_FRACTION = 0.35
 CHARS_PER_TOKEN = 4
 MIN_READ_CHARS = 2_000
 
+# A `search_file` result is capped so it cannot fill the window either. 80
+# matching lines at 200 chars each is ~16k chars, under `_read_char_limit()`;
+# past that the model should narrow the query, which is cheaper than reading
+# more. `MAX_MATCH_LINE_CHARS` clips one enormous line (a minified JSONL record,
+# say) so a single match cannot dominate the result.
+MAX_SEARCH_MATCHES = 80
+MAX_MATCH_LINE_CHARS = 200
+
 
 def _read_char_limit() -> int:
     """The char budget one read_file result may use: a fraction of the window."""
@@ -820,6 +834,11 @@ def _read_char_limit() -> int:
         MIN_READ_CHARS,
         int(settings.chat_num_ctx * READ_RESULT_WINDOW_FRACTION) * CHARS_PER_TOKEN,
     )
+
+
+def _clip_line(line: str, limit: int = MAX_MATCH_LINE_CHARS) -> str:
+    """Shorten a single matched line, marking the cut."""
+    return line if len(line) <= limit else line[:limit] + "…"
 
 
 async def _read_file_text(file_path: str, ext: str) -> tuple[str | None, str | None]:
@@ -938,6 +957,105 @@ def _page_and_bound(
         last = start_line + page.count("\n") + 1
         bounded = f"[lines {start_line + 1}-{last} of {total_lines}]\n{bounded}"
     return bounded, total_lines
+
+
+async def _read_by_path_strategies(
+    path: str, user_id: str
+) -> tuple[str | None, str, Frame | None, str | None]:
+    """Resolve a path (or uploaded-file reference) to readable text.
+
+    Strategies, in order:
+      1. literal sandbox path (``"subscribers_active.csv"``)
+      2. the frame name of an uploaded file (``"file_subscribers_active.csv"``)
+      3. the path with a leading ``file_`` prefix stripped
+      4. a unique fuzzy match against the user's uploaded files, so names quoted
+         in old conversations still resolve to the current file
+
+    Returns ``(content, resolved_path, resolved_frame, unreadable)``. ``content``
+    is None when nothing resolved; ``unreadable`` names a file that existed but
+    could not be turned into text, so the caller reports *that* rather than
+    "File not found" — which would send the model hunting for a file it already
+    has. Shared by ``read_file`` and ``search_file`` so the two cannot drift.
+
+    ``PathTraversalError`` deliberately propagates: a path escaping the sandbox is
+    a security rejection, and swallowing it into "not found" would hide an attack
+    attempt as a missing file.
+    """
+    from assistant.backend.pipeline.filesystem import PathTraversalError
+
+    content: str | None = None
+    resolved_path = ""
+    resolved_frame: Frame | None = None
+    unreadable: str | None = None
+
+    def _ext(path_str: str) -> str:
+        return path_str.rsplit(".", 1)[-1].lower() if "." in path_str else ""
+
+    async def _try(resolved: str) -> str | None:
+        nonlocal unreadable
+        try:
+            text, err = await _read_file_text(resolved, _ext(resolved))
+        except FileNotFoundError:
+            return None
+        except PermissionError as e:
+            unreadable = f"'{resolved}' is not readable ({e})"
+            return None
+        except PathTraversalError:
+            raise
+        except Exception as e:
+            logger.debug(f"could not read {resolved}: {e}")
+            return None
+        if text is None and err:
+            unreadable = f"'{resolved}': {err}"
+        return text
+
+    # 1. literal sandbox path
+    content = await _try(path)
+    if content is not None:
+        resolved_path = path
+
+    # 2. frame name given as path, e.g. "file_subscribers_active.csv"
+    if content is None and _store is not None:
+        base = Path(path).name
+        candidate = path if base.startswith("file_") else f"file_{base}"
+        try:
+            frame = await _store.get_frame_by_name(candidate)
+            if frame is not None:
+                safe = await _file_safe_name_for_frame(_store, frame)
+                if safe:
+                    text = await _try(safe)
+                    if text is not None:
+                        content = text
+                        resolved_path = safe
+                        resolved_frame = frame
+        except Exception as e:  # best-effort: DB may be uninitialized
+            logger.debug(f"frame-name resolution unavailable: {e}")
+
+    # 3. "file_<name>" -> "<name>" (historical disk naming)
+    if content is None:
+        stripped = _strip_frame_prefix(path)
+        if stripped != path:
+            text = await _try(stripped)
+            if text is not None:
+                content = text
+                resolved_path = stripped
+
+    # 4. stale/partial name -> unique fuzzy match against uploaded files
+    if content is None and _store is not None:
+        try:
+            frame = await _resolve_file_frame_fuzzy(_store, user_id, path)
+            if frame is not None:
+                safe = await _file_safe_name_for_frame(_store, frame)
+                if safe:
+                    text = await _try(safe)
+                    if text is not None:
+                        content = text
+                        resolved_path = safe
+                        resolved_frame = frame
+        except Exception as e:  # best-effort: DB may be uninitialized
+            logger.debug(f"fuzzy resolution unavailable: {e}")
+
+    return content, resolved_path, resolved_frame, unreadable
 
 
 async def execute_read_file(args: dict, user_id: str, session_id: str) -> ToolResult:
@@ -1072,91 +1190,12 @@ async def execute_read_file(args: dict, user_id: str, session_id: str) -> ToolRe
             )
 
         requested = path
-        content: str | None = None
-        resolved_path = ""
-        resolved_frame: Frame | None = None
-
-        def _ext(path_str: str) -> str:
-            return path_str.rsplit(".", 1)[-1].lower() if "." in path_str else ""
-
-        # Set when a file was found but could not be turned into text, so the
-        # caller reports *that* rather than "File not found" — which would send
-        # the model hunting for a file it already has.
-        unreadable: str | None = None
-
-        async def _try(resolved: str) -> str | None:
-            """Read `resolved` as text, extracting when its extension needs it.
-
-            Returns None when the file is absent or resolution should move on to
-            the next strategy. A file that exists but cannot be read sets
-            `unreadable` and still returns None, so the final error is accurate.
-
-            `PathTraversalError` deliberately propagates: a path escaping the
-            sandbox is a security rejection, and swallowing it into "not found"
-            would hide an attack attempt as a missing file.
-            """
-            nonlocal unreadable
-            try:
-                text, err = await _read_file_text(resolved, _ext(resolved))
-            except FileNotFoundError:
-                return None
-            except PermissionError as e:
-                unreadable = f"'{resolved}' is not readable ({e})"
-                return None
-            except PathTraversalError:
-                raise
-            except Exception as e:
-                logger.debug(f"read_file could not read {resolved}: {e}")
-                return None
-            if text is None and err:
-                unreadable = f"'{resolved}': {err}"
-            return text
-
-        # 1. literal sandbox path
-        content = await _try(path)
-        if content is not None:
-            resolved_path = path
-
-        # 2. frame name given as path, e.g. "file_subscribers_active.csv"
-        if content is None and _store is not None:
-            base = Path(path).name
-            candidate = path if base.startswith("file_") else f"file_{base}"
-            try:
-                frame = await _store.get_frame_by_name(candidate)
-                if frame is not None:
-                    safe = await _file_safe_name_for_frame(_store, frame)
-                    if safe:
-                        text = await _try(safe)
-                        if text is not None:
-                            content = text
-                            resolved_path = safe
-                            resolved_frame = frame
-            except Exception as e:  # best-effort: DB may be uninitialized
-                logger.debug(f"read_file frame-name resolution unavailable: {e}")
-
-        # 3. "file_<name>" -> "<name>" (historical disk naming)
-        if content is None:
-            stripped = _strip_frame_prefix(path)
-            if stripped != path:
-                text = await _try(stripped)
-                if text is not None:
-                    content = text
-                    resolved_path = stripped
-
-        # 4. stale/partial name -> unique fuzzy match against uploaded files
-        if content is None and _store is not None:
-            try:
-                frame = await _resolve_file_frame_fuzzy(_store, user_id, path)
-                if frame is not None:
-                    safe = await _file_safe_name_for_frame(_store, frame)
-                    if safe:
-                        text = await _try(safe)
-                        if text is not None:
-                            content = text
-                            resolved_path = safe
-                            resolved_frame = frame
-            except Exception as e:  # best-effort: DB may be uninitialized
-                logger.debug(f"read_file fuzzy resolution unavailable: {e}")
+        (
+            content,
+            resolved_path,
+            resolved_frame,
+            unreadable,
+        ) = await _read_by_path_strategies(path, user_id)
 
         if content is None:
             # A file that exists but could not be read is a different error from
@@ -1288,6 +1327,226 @@ async def execute_write_file(args: dict, user_id: str, session_id: str) -> ToolR
         return ToolResult(success=False, error=str(e))
     except Exception as e:
         logger.error(f"write_file failed: {e}", exc_info=True)
+        return ToolResult(success=False, error=str(e))
+
+
+async def execute_append_file(args: dict, user_id: str, session_id: str) -> ToolResult:
+    """Append text to a sandbox file, creating it if it does not exist.
+
+    This is how a file is *built* without reading it: the model adds a line
+    without pulling the existing content into the window. Generic across formats
+    — a CSV row, a JSONL record, a log line and a markdown section all append the
+    same way, so there is no `add_rows` and no format assumption. Dedup is
+    composition: `search_file` first, then append only what is missing.
+
+    Text formats only. A binary document (``.docx``, ``.pdf``, ``.xlsx``) is not
+    text on disk, so appending bytes would corrupt it; that is refused with a
+    redirect to read + rewrite via ``write_file``. When the file exists and does
+    not end with a newline, one is inserted first so appended lines do not merge
+    into the last line.
+    """
+    try:
+        from assistant.backend.pipeline.files import apply_file_to_memory
+        from assistant.backend.pipeline.filesystem import (
+            PathTraversalError,
+            get_sandbox_root,
+            read_sandbox_file,
+            resolve_sandbox_path,
+            write_sandbox_file,
+        )
+
+        path = args.get("path", "")
+        content = args.get("content", "")
+
+        if not path:
+            return ToolResult(success=False, error="path is required")
+        if not content:
+            return ToolResult(success=False, error="content is required")
+
+        ext = path.rsplit(".", 1)[-1].lower() if "." in path else ""
+        if not ext:
+            return ToolResult(
+                success=False,
+                error="path must include a file extension (e.g. contacts.csv)",
+            )
+        if ext in BINARY_DOCUMENT_EXTS:
+            return ToolResult(
+                success=False,
+                error=(
+                    f".{ext} is a binary document and cannot be appended to in "
+                    "place. Read it with read_file, then rewrite the whole file "
+                    f"with write_file (which re-renders a real .{ext})."
+                ),
+            )
+
+        # Resolve first so a traversal attempt is reported as such, before any
+        # extension complaint masks it.
+        resolved = resolve_sandbox_path(path)
+        existed = resolved.is_file()
+
+        existing = read_sandbox_file(path) if existed else ""
+        separator = "\n" if existing and not existing.endswith("\n") else ""
+        new_content = existing + separator + content
+
+        write_sandbox_file(path, new_content, overwrite=True)
+
+        if _store is not None:
+            try:
+                user_id_int = int(user_id)
+            except (ValueError, TypeError):
+                user_id_int = 1
+            # The same step upload and write_file use, so an appended-to file's
+            # frame stays true to its content (row frames, entity slots, size).
+            await apply_file_to_memory(
+                _store,
+                frame_name=f"file_{resolved.name}",
+                safe_filename=str(resolved.relative_to(get_sandbox_root())),
+                ext=ext,
+                content_bytes=new_content.encode("utf-8"),
+                user_id=user_id_int,
+                source_type="file_create",
+                source_reliability=0.8,
+            )
+
+        return ToolResult(success=True, data={
+            "path": str(resolved.relative_to(get_sandbox_root())),
+            "created": not existed,
+            "appended_lines": content.count("\n") + (0 if content.endswith("\n") else 1),
+            "new_size": len(new_content),
+        })
+    except PathTraversalError as e:
+        return ToolResult(success=False, error=str(e))
+    except Exception as e:
+        logger.error(f"append_file failed: {e}", exc_info=True)
+        return ToolResult(success=False, error=str(e))
+
+
+async def _resolve_frame_reference(
+    frame_id: int | None, frame_name: str | None, user_id: str
+) -> tuple[str, str | None]:
+    """Resolve a frame_id/frame_name to its on-disk sandbox name.
+
+    Returns ``(safe_name, error)``. Ownership is checked so a frame belonging to
+    another user is never opened.
+    """
+    if _store is None:
+        return "", "MemoryStore not initialized"
+
+    frame: Frame | None = None
+    if frame_id is not None:
+        frame = await _store.get_frame(frame_id)
+    elif frame_name:
+        frame = await _store.get_frame_by_name(frame_name)
+        if frame is None:
+            frame = await _resolve_file_frame_fuzzy(_store, user_id, frame_name)
+
+    if frame is None:
+        return "", f"Frame not found: {frame_id or frame_name}"
+
+    owner = _coerce_user_id(user_id)
+    if (
+        frame.owner_user_id is not None
+        and owner is not None
+        and frame.owner_user_id != owner
+    ):
+        return "", "Access denied: file belongs to another user"
+
+    safe = await _file_safe_name_for_frame(_store, frame)
+    if not safe:
+        return "", f"Frame {frame.name} has no file on disk"
+    return safe, None
+
+
+async def execute_search_file(args: dict, user_id: str, session_id: str) -> ToolResult:
+    """Find the lines in a file that match a query.
+
+    Membership and targeted lookup without holding the file: "is this email
+    already in the list?", "which rows mention Acme?". Generic across formats —
+    it matches lines, so CSV rows, JSONL records, log lines and prose all behave
+    the same. Pair it with `append_file` to add only what is not already there
+    (dedup as composition, with no format assumption).
+
+    Matching is a case-insensitive substring by default; `regex=true` treats the
+    query as a regular expression. The number of returned matches is capped, and
+    a capped result says so.
+    """
+    try:
+        from assistant.backend.pipeline.filesystem import PathTraversalError
+
+        path = args.get("path") or ""
+        frame_id = args.get("frame_id")
+        frame_name = args.get("frame_name")
+        query = args.get("query", "")
+
+        if not query:
+            return ToolResult(success=False, error="query is required")
+
+        if not path and (frame_id is not None or frame_name is not None):
+            path, error = await _resolve_frame_reference(frame_id, frame_name, user_id)
+            if error:
+                return ToolResult(success=False, error=error)
+
+        if not path:
+            return ToolResult(
+                success=False,
+                error="path is required (or provide frame_id/frame_name)",
+            )
+
+        content, resolved_path, resolved_frame, unreadable = (
+            await _read_by_path_strategies(path, user_id)
+        )
+        if content is None:
+            if unreadable:
+                return ToolResult(success=False, error=f"Could not read {unreadable}.")
+            return ToolResult(success=False, error=f"File not found: {path!r}")
+
+        regex = bool(args.get("regex", False))
+        case_sensitive = bool(args.get("case_sensitive", False))
+        max_matches = max(1, min(int(args.get("max_matches") or 50), MAX_SEARCH_MATCHES))
+
+        pattern: re.Pattern[str] | None = None
+        if regex:
+            try:
+                pattern = re.compile(query, 0 if case_sensitive else re.IGNORECASE)
+            except re.error as e:
+                return ToolResult(success=False, error=f"Invalid regex: {e}")
+        needle = query if case_sensitive else query.lower()
+
+        lines = content.splitlines()
+        matches: list[dict] = []
+        total_matches = 0
+        for number, line in enumerate(lines, start=1):
+            if pattern is not None:
+                hit = pattern.search(line) is not None
+            else:
+                hit = needle in (line if case_sensitive else line.lower())
+            if not hit:
+                continue
+            total_matches += 1
+            if len(matches) < max_matches:
+                matches.append({"line": number, "text": _clip_line(line)})
+
+        data: dict = {
+            "path": resolved_path or path,
+            "matches": matches,
+            "match_count": len(matches),
+            "total_matches": total_matches,
+            "total_lines": len(lines),
+            "truncated": total_matches > len(matches),
+        }
+        if resolved_frame is not None:
+            data["frame_id"] = resolved_frame.id
+            data["frame_name"] = resolved_frame.name
+        if total_matches > len(matches):
+            data["note"] = (
+                f"showing the first {len(matches)} of {total_matches} matching "
+                "lines; narrow the query for the rest."
+            )
+        return ToolResult(success=True, data=data)
+    except PathTraversalError as e:
+        return ToolResult(success=False, error=str(e))
+    except Exception as e:
+        logger.error(f"search_file failed: {e}", exc_info=True)
         return ToolResult(success=False, error=str(e))
 
 
@@ -1812,7 +2071,7 @@ async def execute_finalize(args: dict, user_id: str, session_id: str = "") -> To
 # web_search/fetch_url are excluded too: they already retry inside their own HTTP
 # layer, and nesting the two would multiply attempts.
 _READ_ONLY_TOOLS = frozenset(
-    {"list_files", "read_file", "glob", "recall", "search_episodes"}
+    {"list_files", "read_file", "search_file", "glob", "recall", "search_episodes"}
 )
 _TOOL_RETRY_ATTEMPTS = 3
 

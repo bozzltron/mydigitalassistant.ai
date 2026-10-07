@@ -80,6 +80,32 @@ dead-ends.
 region, so the model can correct its `old_text` rather than hitting a wall. Do
 not replace this with a bare "not found".
 
+## Building and querying without reading
+
+`append_file(path, content)` and `search_file(path, query)` are the format-agnostic
+pair for working with a file **without holding it in context**. They replaced a
+CSV-specific `add_rows`, which assumed a format the sandbox does not.
+
+- **`append_file`** adds text to a file, creating it if absent. The model adds a
+  line without reading the existing content, so a large file never has to enter
+  the window to grow. Generic: a CSV row, a JSONL record, a log line and a
+  markdown section all append the same way. If the file exists and does not end
+  with a newline, one is inserted first so appended lines do not merge into the
+  last line. Text formats only — a binary document is refused with the same
+  read → rewrite redirect as `edit_file`. Memory is refreshed through
+  `apply_file_to_memory`, the one step upload and `write_file` share.
+- **`search_file`** returns the lines that match a query, with line numbers —
+  membership ("is this email already in the list?") and targeted lookup. A
+  case-insensitive substring by default; `regex=true` for a pattern. It resolves
+  a path the same way `read_file` does (both share `_read_by_path_strategies`),
+  so an uploaded file is reachable by disk name or frame name. Results are capped
+  (`MAX_SEARCH_MATCHES`), and a capped result says so.
+
+**Dedup is composition.** Search first, append only what is missing. No format
+assumption, and no new format-specific tool to maintain. If an airtight
+guarantee is ever wanted it belongs as a generic option (`unique_lines=True`),
+never as CSV awareness.
+
 ## Renaming
 
 `rename_file(path, new_name)` moves the disk file and its `file_<name>` frame
@@ -278,3 +304,9 @@ as-is (timed + all-day, timezone preserved), the prose fallback, and the
 
 `assistant/tests/test_file_rename.py`: rename moves the disk file and its frame
 together, and refuses an overwrite or an extension change.
+
+`assistant/tests/test_append_search_file.py`: `append_file` creates then grows
+without reading, inserts a separator before a newline-less last line, and refuses
+a binary document; `search_file` finds a line by number, reports absence as a
+clean zero, honors case and regex, caps and labels a large result, and reports an
+invalid regex; and dedup as composition (search → append only what is missing).

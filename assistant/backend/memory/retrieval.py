@@ -201,6 +201,12 @@ def format_memory_context(
                 if file_safe_name:
                     pointer += f' or read_file(path="{file_safe_name}")'
                 block.append(pointer)
+                if file_safe_name:
+                    block.append(
+                        "  search or grow without reading: "
+                        f'search_file(path="{file_safe_name}", query="…") / '
+                        f'append_file(path="{file_safe_name}", content="…")'
+                    )
             if rf.associations:
                 # Render the *name* of what each edge points at, never the id.
                 # The target is whichever end is not this frame, so an inbound

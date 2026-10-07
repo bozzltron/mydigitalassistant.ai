@@ -55,8 +55,8 @@ first.
 
 ### The tool loop's context window is the whole turn's budget
 
-The tool loop sends the system prompt **plus every tool schema** (~13.5k chars /
-~3.4k tokens for the builtin set, 17 tools) **plus history** in one prompt, so it is the
+The tool loop sends the system prompt **plus every tool schema** (~16.6k chars /
+~4.2k tokens for the builtin set, 19 tools) **plus history** in one prompt, so it is the
 largest prompt in the system and the one that overflows first. At
 `CHAT_NUM_CTX=8192` a live turn reached 8169 prompt tokens, generated 23, and was
 cut off — `llama-server` logged `n_tokens = 8191, truncated = 1`, Ollama returned
