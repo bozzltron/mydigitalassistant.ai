@@ -182,6 +182,8 @@ every writer funnels through it, so a new call site cannot reintroduce the copy.
 One frame per uploaded file (`frames.name = file_<safe>`, `source_type=file_upload`):
 
 - `file_name` / `file_ext` / `file_size` / `file_safe_name`
+- `file_profile` — a deterministic shape (see "The file profile" below), so
+  "what is this file and where are the gaps?" is a memory read.
 - CSV extras when the file is a CSV: `row_count`, `columns`, plus up to
   `CSV_MAX_ROW_FRAMES` (default 100) `csv_row_<n>` child frames for small-CSV
   recall/edit. Row data beyond the cap stays on disk, read via `read_file`.
@@ -191,6 +193,28 @@ No content slot is stored. The upload *response* still carries a `content_previe
 field so the UI can show what was received, but it is never written to memory.
 
 Large files are never fully embedded; the frame embeds metadata only.
+
+## The file profile (computed, not inferred)
+
+`pipeline/file_profile.py` computes a profile at the one write path,
+`apply_file_to_memory`, and stores it as a `file_profile` slot (JSON). It is
+arithmetic over the bytes, not a model's guess — the model kept hand-rolling
+"~92% radio, ~8% venue" and getting it wrong, and a computed number cannot be
+wrong the same way.
+
+- **Delimited** (csv/tsv): `rows`, `columns`, per-column `distinct` counts, and —
+  for a column with few distinct values and not every row unique — its value
+  `categorical` distribution (the top few values, bounded).
+- **JSON**: `keys` and the `sizes` of nested arrays/objects, or `items` and
+  `item_keys` for an array.
+- **Markdown**: `headings` plus line/word counts. **Plain text**: lines/words/chars.
+- **Unparseable input degrades** to a size/line shape rather than failing the write.
+
+`format_memory_context` renders it as a compact `profile:` line on the file frame
+(never as raw JSON), so a retrieved file arrives with its shape attached. Because
+it holds *shape* and not *content*, it is allowed where `file_content` is refused
+(see the store's content-slot guard) — the bounded categorical distribution is the
+only place a value appears, and it is a count, not the file.
 
 ## Re-upload / merge semantics
 

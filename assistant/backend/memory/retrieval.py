@@ -1,9 +1,11 @@
+import json
 import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from assistant.backend.config import settings
 from assistant.backend.memory.models import Association, Episode, Frame, Slot
+from assistant.backend.pipeline.file_profile import profile_summary_lines
 
 if TYPE_CHECKING:
     from assistant.backend.memory.store import MemoryStore
@@ -170,6 +172,7 @@ def format_memory_context(
             ]
             is_file_frame = rf.frame.source_type in FILE_FRAME_SOURCE_TYPES
             file_safe_name = ""
+            profile_json = ""
             for slot in rf.slots:
                 if is_file_frame:
                     # Content snapshots are truncated on-disk hints. Full
@@ -180,6 +183,9 @@ def format_memory_context(
                     if slot.key == "file_safe_name":
                         file_safe_name = slot.value or ""
                         continue  # surfaced via the read pointer below
+                    if slot.key == "file_profile":
+                        profile_json = slot.value or ""
+                        continue  # rendered compactly below, never as raw JSON
                 source_note = ""
                 if slot.source_url:
                     if "//" in slot.source_url:
@@ -207,6 +213,12 @@ def format_memory_context(
                         f'search_file(path="{file_safe_name}", query="…") / '
                         f'append_file(path="{file_safe_name}", content="…")'
                     )
+                if profile_json:
+                    try:
+                        block.extend(profile_summary_lines(json.loads(profile_json)))
+                    except (ValueError, TypeError):
+                        # A malformed profile is not worth failing the prompt over.
+                        pass
             if rf.associations:
                 # Render the *name* of what each edge points at, never the id.
                 # The target is whichever end is not this frame, so an inbound

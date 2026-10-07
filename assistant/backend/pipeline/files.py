@@ -15,6 +15,8 @@ import logging
 import re
 from dataclasses import dataclass
 
+from assistant.backend.pipeline.file_profile import build_profile
+
 logger = logging.getLogger(__name__)
 
 # Formats the upload paths accept, and the formats the agent may write. Reading
@@ -903,6 +905,17 @@ async def apply_file_to_memory(
     # ('notes/x.txt') must keep its path here, not just its basename.
     await store.upsert_slot(
         frame_id=frame.id, key="file_safe_name", value=safe_filename,
+        source_type=source_type, source_reliability=source_reliability,
+    )
+
+    # The deterministic profile: what the file IS, computed rather than inferred.
+    # One JSON slot, so the memory context can answer "what is this file and where
+    # are the gaps?" without reading the bytes. It holds shape, not content (no
+    # cell values beyond a bounded categorical distribution), which is why it is
+    # allowed where `file_content` is refused.
+    profile = build_profile(ext, content_bytes)
+    await store.upsert_slot(
+        frame_id=frame.id, key="file_profile", value=json.dumps(profile),
         source_type=source_type, source_reliability=source_reliability,
     )
 
