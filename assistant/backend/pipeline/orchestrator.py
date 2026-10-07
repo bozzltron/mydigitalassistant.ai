@@ -90,6 +90,8 @@ def _meta_event_from_response(session_id: str | None, response: "ChatResponse"):
         confidence_basis=response.confidence_basis,
         citations=response.citations,
         memory_context=response.memory_context,
+        prompt_tokens=response.prompt_tokens,
+        context_window=response.context_window,
     )
 
 
@@ -144,6 +146,11 @@ class ChatResponse(BaseModel):
     search_info: SearchInfo | None = None  # which backend + query + results (for UI transparency)
     confidence: float = 0.0  # 0-1 answer confidence (memory-grounded)
     confidence_basis: str = "none"  # "memory" | "search" | "none"
+    # The tool loop's peak prompt and the window it ran in -- the turn's real
+    # context cost. `context_stats` logs only the initial system prompt, so this
+    # is the number that shows a file filling the window.
+    prompt_tokens: int = 0
+    context_window: int = 0
 
 
 def compute_answer_confidence(
@@ -934,6 +941,8 @@ class Orchestrator:
             search_info=meta.get("search_info"),
             confidence=meta.get("confidence") or 0.0,
             confidence_basis=meta.get("confidence_basis") or "none",
+            prompt_tokens=meta.get("prompt_tokens") or 0,
+            context_window=meta.get("context_window") or 0,
         )
 
     async def _handle_scheduled_task(
@@ -1728,6 +1737,10 @@ class Orchestrator:
         # the user saw a broken stream instead of the sentence chat() shows.
         final_answer = ""
         final_reasoning: str | None = None
+        # The tool loop's peak prompt and window, captured from the finalize
+        # event (0 when no tool loop ran, e.g. the no-tools branch).
+        final_prompt_tokens = 0
+        final_context_window = 0
 
         # Check if tools enabled
         if settings.tools_enabled:
@@ -1756,6 +1769,7 @@ class Orchestrator:
             
             async def _stream_and_capture():
                 nonlocal final_answer, final_reasoning, ttft_s
+                nonlocal final_prompt_tokens, final_context_window
                 async for event in stream_tool_loop(
                     self.llm_client,
                     messages_dict,
@@ -1776,6 +1790,8 @@ class Orchestrator:
                         elif etype == "finalize":
                             final_answer = event_data.get("answer", final_answer)
                             final_reasoning = event_data.get("reasoning_trace")
+                            final_prompt_tokens = event_data.get("prompt_tokens") or 0
+                            final_context_window = event_data.get("context_window") or 0
                         # TTFT is the first moment the user can see any of the
                         # answer. `finalize` counts, and on the tool path it is
                         # currently the ONLY one that arrives: stream_tool_loop
@@ -1891,6 +1907,20 @@ class Orchestrator:
             search_ms=stream_search_s,
             ttft_ms=ttft_s,
         )
+        # The turn's real context cost: the tool loop's peak prompt against the
+        # window it ran in. `context_stats` above logs only the initial system
+        # prompt, so without this a file that fills the window is invisible.
+        # `truncated` is the heuristic "the prompt reached the window", tightened
+        # by the read budget in the next phase.
+        if final_context_window:
+            pct = 100.0 * final_prompt_tokens / final_context_window
+            logger.info(
+                "context_usage: prompt_tokens=%d window=%d pct=%.1f truncated=%s",
+                final_prompt_tokens,
+                final_context_window,
+                pct,
+                final_prompt_tokens >= final_context_window,
+            )
 
         # Final metadata: same transparency the non-streaming ChatResponse carries
         # (session id, task type, extraction/search summaries, search info). The UI
@@ -1909,6 +1939,8 @@ class Orchestrator:
                 confidence_basis=confidence_basis,
                 citations=citations,
                 memory_context=memory_context.formatted,
+                prompt_tokens=final_prompt_tokens,
+                context_window=final_context_window,
             )
         )
 

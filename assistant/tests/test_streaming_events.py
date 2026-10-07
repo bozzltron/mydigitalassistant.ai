@@ -201,6 +201,9 @@ async def test_stream_tool_loop_max_turns_wraps_up_not_metadata(tmp_path):
             self.calls.append({"messages": messages, **kwargs})
             return self.responses.pop(0)
 
+        def context_window(self, model=None):
+            return 16384
+
     failing = ChatResponse(
         content="",
         model="m",
@@ -273,6 +276,9 @@ async def test_stream_tool_loop_retries_empty_generation_with_compacted_history(
             self.calls.append({"messages": messages, **kwargs})
             return self.responses.pop(0)
 
+        def context_window(self, model=None):
+            return 16384
+
     empty = ChatResponse(content="", model="m", done=True, done_reason="length")
     answer = ChatResponse(content="Here is the strategy.", model="m", done=True)
     llm = StubLLM([empty, answer])
@@ -328,6 +334,9 @@ async def test_stream_tool_loop_empty_generation_fallback_is_honest(tmp_path):
                 content="", model="m", done=True, done_reason="length"
             )
 
+        def context_window(self, model=None):
+            return 16384
+
     llm = StubLLM()
     events = [
         ev
@@ -345,3 +354,61 @@ async def test_stream_tool_loop_empty_generation_fallback_is_honest(tmp_path):
     stream = "".join(events)
     assert "I'm not sure how to respond" not in stream
     assert "my working context filled up" in stream
+
+
+async def test_stream_tool_loop_reports_the_peak_prompt(tmp_path):
+    """The finalize carries the loop's *maximum* prompt, not turn 1's.
+
+    The tool result appended after the first call is what makes the loop the
+    largest prompt in the system, so the peak is the number the context meter
+    needs -- turn 1 is only the system prompt + history.
+    """
+    import json
+
+    from assistant.backend.pipeline.llm_client import ChatResponse, ToolCall
+    from assistant.backend.pipeline.streaming import stream_tool_loop
+    from assistant.backend.pipeline.tool_executor import init_store
+
+    init_store(str(tmp_path / "stream.db"))
+
+    class StubLLM:
+        def __init__(self, responses):
+            self.responses = list(responses)
+            self.tools_model = "test-model"
+
+        async def chat(self, messages, **kwargs):
+            return self.responses.pop(0)
+
+        def context_window(self, model=None):
+            return 16384
+
+    tool_turn = ChatResponse(
+        content="",
+        model="m",
+        done=True,
+        prompt_eval_count=9000,
+        tool_calls=[ToolCall(name="read_file", arguments={"path": "nope.csv"})],
+    )
+    answer_turn = ChatResponse(
+        content="done", model="m", done=True, prompt_eval_count=15000
+    )
+    llm = StubLLM([tool_turn, answer_turn])
+
+    events = [
+        ev
+        async for ev in stream_tool_loop(
+            llm,
+            messages=[{"role": "user", "content": "q"}],
+            tools=[],
+            model="test-model",
+            user_id="1",
+            session_id="s-1",
+        )
+    ]
+    finalize = [
+        json.loads(ev.replace("data: ", "").strip())
+        for ev in events
+        if '"type": "finalize"' in ev
+    ][-1]
+    assert finalize["prompt_tokens"] == 15000  # the peak, not turn 1's 9000
+    assert finalize["context_window"] == 16384

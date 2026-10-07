@@ -113,6 +113,11 @@ class ChatResponse(BaseModel):
     # empty content is the signature of a prompt that filled the context window
     # and left no room to answer.
     done_reason: str = ""
+    # Ollama's token counts for this call. `prompt_eval_count` is the measured
+    # prompt size -- the number the tool loop's window budget needs, and the one
+    # `context_stats` (which logs only the system prompt) cannot see.
+    prompt_eval_count: int = 0
+    eval_count: int = 0
 
 
 class ChatChunk(BaseModel):
@@ -229,6 +234,14 @@ class OllamaClient:
         if model == self.tools_model and self.tools_model != self.chat_model:
             return self.tools_num_ctx
         return self.chat_num_ctx
+
+    def context_window(self, model: str | None = None) -> int:
+        """The context window (resolved `num_ctx`) that applies to `model`.
+
+        Public so the tool loop can report its peak prompt against the window it
+        was measured in -- the two numbers the context meter shows together.
+        """
+        return self._num_ctx_for(model or self.chat_model)
 
     @staticmethod
     def _normalize_keep_alive(value: str | int) -> str | int:
@@ -594,6 +607,8 @@ except: pass
             thinking=thinking,
             tool_calls=tool_calls,
             done_reason=r.get("done_reason") or "",
+            prompt_eval_count=int(r.get("prompt_eval_count") or 0),
+            eval_count=int(r.get("eval_count") or 0),
         )
 
     async def chat_stream(

@@ -43,12 +43,25 @@ class ToolResultEvent(ToolLoopEvent):
 
 
 class FinalizeEvent(ToolLoopEvent):
-    """Tool loop finalized with answer."""
+    """Tool loop finalized with answer.
 
-    def __init__(self, answer: str, reasoning_trace: str | None = None):
+    Carries the loop's **peak prompt size** and the window it was measured in --
+    the true context cost of the turn, which the initial `context_stats` line
+    (system prompt only) cannot see. Zero when no LLM call ran.
+    """
+
+    def __init__(
+        self,
+        answer: str,
+        reasoning_trace: str | None = None,
+        prompt_tokens: int = 0,
+        context_window: int = 0,
+    ):
         self.type = "finalize"
         self.answer = answer
         self.reasoning_trace = reasoning_trace
+        self.prompt_tokens = prompt_tokens
+        self.context_window = context_window
 
 
 class ErrorEvent(ToolLoopEvent):
@@ -87,6 +100,8 @@ class MetaEvent(ToolLoopEvent):
         confidence_basis: str | None = None,
         citations: list[str] | None = None,
         memory_context: str | None = None,
+        prompt_tokens: int = 0,
+        context_window: int = 0,
     ):
         self.type = "meta"
         self.session_id = session_id
@@ -101,6 +116,9 @@ class MetaEvent(ToolLoopEvent):
         # the CLI) can rebuild it from the stream alone.
         self.citations = citations or []
         self.memory_context = memory_context or ""
+        # The tool loop's peak prompt and its window -- the context meter.
+        self.prompt_tokens = prompt_tokens
+        self.context_window = context_window
 
 
 def _event_json_default(obj: object) -> object:
@@ -133,7 +151,9 @@ def serialize_event(event: ToolLoopEvent) -> str:
         data = {
             'type': 'finalize',
             'answer': event.answer,
-            'reasoning_trace': event.reasoning_trace
+            'reasoning_trace': event.reasoning_trace,
+            'prompt_tokens': event.prompt_tokens,
+            'context_window': event.context_window,
         }
         return f"data: {json.dumps(data, default=_event_json_default)}\n\n"
     elif isinstance(event, ErrorEvent):
@@ -154,6 +174,8 @@ def serialize_event(event: ToolLoopEvent) -> str:
             'confidence_basis': event.confidence_basis,
             'citations': event.citations,
             'memory_context': event.memory_context,
+            'prompt_tokens': event.prompt_tokens,
+            'context_window': event.context_window,
         }
         return f"data: {json.dumps(data, default=_event_json_default)}\n\n"
     else:
@@ -192,6 +214,13 @@ async def stream_tool_loop(
 
     max_turns = MAX_TOOL_ROUNDS
 
+    # The peak prompt across the loop's turns -- the turn's true context cost.
+    # Turn 1 is the system prompt + history; the tool results that follow are what
+    # make the loop the largest prompt in the system, so the peak is usually a
+    # later turn. Reported against the window it was measured in.
+    max_prompt_tokens = 0
+    context_window = llm_client.context_window(loop_model)
+
     turn = 0
     reasoning_trace: list[str] = []
     empty_retried = False
@@ -214,6 +243,7 @@ async def stream_tool_loop(
             think=think,
             num_predict=num_predict,
         )
+        max_prompt_tokens = max(max_prompt_tokens, response.prompt_eval_count)
 
         # An empty generation with no tool call means the model emitted nothing:
         # on this stack that is almost always context exhaustion. The prompt —
@@ -247,6 +277,7 @@ async def stream_tool_loop(
                 think=think,
                 num_predict=num_predict,
             )
+            max_prompt_tokens = max(max_prompt_tokens, response.prompt_eval_count)
 
         if response.tool_calls:
             # Yield tool call events
@@ -287,7 +318,9 @@ async def stream_tool_loop(
                     answer = raw_args.get("answer", "Done.")
                     event = FinalizeEvent(
                         answer,
-                        "\n\n".join(reasoning_trace) if reasoning_trace else None
+                        "\n\n".join(reasoning_trace) if reasoning_trace else None,
+                        prompt_tokens=max_prompt_tokens,
+                        context_window=context_window,
                     )
                     yield serialize_event(event)
                     return
@@ -310,7 +343,9 @@ async def stream_tool_loop(
             answer = (response.content or "").strip() or EMPTY_GENERATION_FALLBACK
             event = FinalizeEvent(
                 answer,
-                "\n\n".join(reasoning_trace) if reasoning_trace else None
+                "\n\n".join(reasoning_trace) if reasoning_trace else None,
+                prompt_tokens=max_prompt_tokens,
+                context_window=context_window,
             )
             yield serialize_event(event)
             return
@@ -343,6 +378,7 @@ async def stream_tool_loop(
             think=think,
             num_predict=num_predict,
         )
+        max_prompt_tokens = max(max_prompt_tokens, wrap_up.prompt_eval_count)
         answer = (wrap_up.content or "").strip() or None
     except Exception:
         logger.warning(
@@ -356,7 +392,9 @@ async def stream_tool_loop(
         )
     event = FinalizeEvent(
         answer,
-        "\n\n".join(reasoning_trace) if reasoning_trace else None
+        "\n\n".join(reasoning_trace) if reasoning_trace else None,
+        prompt_tokens=max_prompt_tokens,
+        context_window=context_window,
     )
     yield serialize_event(event)
 

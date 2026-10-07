@@ -12,6 +12,9 @@ export interface MessageMeta {
   extraction_summary?: ExtractionSummary
   search_extraction_summary?: ExtractionSummary
   search_info?: SearchInfo
+  /** The tool loop's peak prompt and its window (the context meter). */
+  prompt_tokens?: number
+  context_window?: number
   ogData?: Record<string, OgData>
   media?: MediaContent[]
   /** True while assistant text is still arriving over the stream. */

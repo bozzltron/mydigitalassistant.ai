@@ -241,6 +241,17 @@
   margin-top: var(--space-xs);
 }
 
+/* Context meter: how much of the model window this turn used. Reaching the
+   window (truncated) is the state that matters, so it is the one that reads as
+   a warning rather than a neutral stat. */
+.msg-context {
+  font-variant-numeric: tabular-nums;
+}
+.msg-context.is-truncated {
+  color: var(--warning);
+  font-weight: 600;
+}
+
 /* File attachment */
 .msg .file-attachment {
   display: flex;

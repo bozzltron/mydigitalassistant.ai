@@ -217,7 +217,8 @@ export async function postChatMessageStream(
           // info) lands on the streaming bubble so search + learning transparency
           // renders (Brave indicator, "what I learned", trace panel, media).
           if (session_id && (event.task_type || event.extraction_summary ||
-              event.search_extraction_summary || event.search_info)) {
+              event.search_extraction_summary || event.search_info ||
+              event.context_window)) {
             mergeStreamingMessageMeta(session_id, assistantMessageId, {
               ...(event.task_type ? { task_type: event.task_type } : {}),
               ...(event.extraction_summary ? { extraction_summary: event.extraction_summary } : {}),
@@ -225,6 +226,8 @@ export async function postChatMessageStream(
                 ? { search_extraction_summary: event.search_extraction_summary }
                 : {}),
               ...(event.search_info ? { search_info: event.search_info } : {}),
+              ...(event.prompt_tokens ? { prompt_tokens: event.prompt_tokens } : {}),
+              ...(event.context_window ? { context_window: event.context_window } : {}),
             })
           }
           signalNameChangeIfNeeded(event.extraction_summary)

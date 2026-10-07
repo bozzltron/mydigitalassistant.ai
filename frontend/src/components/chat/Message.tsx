@@ -80,6 +80,22 @@ export default function Message(props: MessageProps) {
     searchExtractionSummary()?.slots && searchExtractionSummary()!.slots.length > 0)
   const conflictCount = createMemo(() => learnedSlots().filter(s => s.conflict).length)
 
+  // The turn's context cost, if the tool loop reported one. A percentage of the
+  // window is the readable number; the tokens are the detail. `truncated` is the
+  // signal that matters -- the prompt reached the window, so content may have
+  // been dropped.
+  const contextPct = createMemo(() => {
+    const m = message().meta
+    if (!m?.context_window || !m.prompt_tokens) return 0
+    return Math.round((m.prompt_tokens / m.context_window) * 100)
+  })
+  const contextTruncated = createMemo(() => {
+    const m = message().meta
+    return !!m?.context_window && (m.prompt_tokens || 0) >= m.context_window
+  })
+  const formatTokens = (n?: number) =>
+    n && n >= 1000 ? `${(n / 1000).toFixed(1)}k` : `${n ?? 0}`
+
   const learnedLabel = createMemo(() => {
     let label = 'What I learned'
     if (conflictCount() > 0) label += ` (${conflictCount()} auto-resolved)`
@@ -116,6 +132,20 @@ export default function Message(props: MessageProps) {
             type: {message().meta!.task_type}
           </div>
         )}
+
+        {message().meta?.context_window ? (
+          <div
+            class={`msg-meta msg-context${contextTruncated() ? ' is-truncated' : ''}`}
+            title={
+              contextTruncated()
+                ? 'This turn filled the model context window, so some content may have been dropped.'
+                : 'How much of the model context window this turn used.'
+            }
+          >
+            Context {contextPct()}% · {formatTokens(message().meta!.prompt_tokens)}/
+            {formatTokens(message().meta!.context_window)}
+          </div>
+        ) : null}
 
         {!isUser() && hasLearned() && (
           <details class="learned-indicator">

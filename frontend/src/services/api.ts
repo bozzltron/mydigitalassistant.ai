@@ -236,6 +236,10 @@ export interface StreamEvent {
   extraction_summary?: ExtractionSummary
   search_extraction_summary?: ExtractionSummary
   search_info?: SearchInfo
+  // The tool loop's peak prompt and its window, on the `meta` event -- the
+  // context meter.
+  prompt_tokens?: number
+  context_window?: number
 }
 
 export async function postChatStream(
