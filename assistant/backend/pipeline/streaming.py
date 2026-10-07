@@ -48,6 +48,11 @@ class FinalizeEvent(ToolLoopEvent):
     Carries the loop's **peak prompt size** and the window it was measured in --
     the true context cost of the turn, which the initial `context_stats` line
     (system prompt only) cannot see. Zero when no LLM call ran.
+
+    ``tool_result_chars`` is the total characters of tool results appended during
+    the loop -- the part of the prompt that grows with each round. Reported
+    alongside the fixed cost (system prompt + tool schemas + history, known to the
+    caller) so `context_usage` can show where the window actually went.
     """
 
     def __init__(
@@ -56,12 +61,14 @@ class FinalizeEvent(ToolLoopEvent):
         reasoning_trace: str | None = None,
         prompt_tokens: int = 0,
         context_window: int = 0,
+        tool_result_chars: int = 0,
     ):
         self.type = "finalize"
         self.answer = answer
         self.reasoning_trace = reasoning_trace
         self.prompt_tokens = prompt_tokens
         self.context_window = context_window
+        self.tool_result_chars = tool_result_chars
 
 
 class ErrorEvent(ToolLoopEvent):
@@ -154,6 +161,7 @@ def serialize_event(event: ToolLoopEvent) -> str:
             'reasoning_trace': event.reasoning_trace,
             'prompt_tokens': event.prompt_tokens,
             'context_window': event.context_window,
+            'tool_result_chars': event.tool_result_chars,
         }
         return f"data: {json.dumps(data, default=_event_json_default)}\n\n"
     elif isinstance(event, ErrorEvent):
@@ -220,6 +228,10 @@ async def stream_tool_loop(
     # later turn. Reported against the window it was measured in.
     max_prompt_tokens = 0
     context_window = llm_client.context_window(loop_model)
+    # Total characters of tool results appended across the loop -- the part of the
+    # prompt that grows round over round. Reported with the fixed cost so the
+    # window's composition is visible per turn (see context_usage).
+    tool_result_chars = 0
 
     turn = 0
     reasoning_trace: list[str] = []
@@ -321,6 +333,7 @@ async def stream_tool_loop(
                         "\n\n".join(reasoning_trace) if reasoning_trace else None,
                         prompt_tokens=max_prompt_tokens,
                         context_window=context_window,
+                        tool_result_chars=tool_result_chars,
                     )
                     yield serialize_event(event)
                     return
@@ -331,10 +344,12 @@ async def stream_tool_loop(
 
                 # Add tool result to messages (surface the error on failure so
                 # the model can recover instead of retrying the same call)
+                formatted_result = format_tool_result(result)
+                tool_result_chars += len(formatted_result)
                 chat_messages.append(
                     ChatMessage(
                         role="tool",
-                        content=format_tool_result(result),
+                        content=formatted_result,
                         name=tool_name
                     )
                 )
@@ -346,6 +361,7 @@ async def stream_tool_loop(
                 "\n\n".join(reasoning_trace) if reasoning_trace else None,
                 prompt_tokens=max_prompt_tokens,
                 context_window=context_window,
+                tool_result_chars=tool_result_chars,
             )
             yield serialize_event(event)
             return
@@ -395,6 +411,7 @@ async def stream_tool_loop(
         "\n\n".join(reasoning_trace) if reasoning_trace else None,
         prompt_tokens=max_prompt_tokens,
         context_window=context_window,
+        tool_result_chars=tool_result_chars,
     )
     yield serialize_event(event)
 

@@ -412,3 +412,71 @@ async def test_stream_tool_loop_reports_the_peak_prompt(tmp_path):
     ][-1]
     assert finalize["prompt_tokens"] == 15000  # the peak, not turn 1's 9000
     assert finalize["context_window"] == 16384
+
+
+def test_serialize_finalize_includes_tool_result_chars():
+    """The finalize wire format carries the tool-result total.
+
+    The orchestrator reads it back to log where the window went; if it is not
+    serialized the value silently reads as 0 and the composition is a lie.
+    """
+    from assistant.backend.pipeline.streaming import FinalizeEvent
+
+    msg = serialize_event(
+        FinalizeEvent("hi", prompt_tokens=10, context_window=100, tool_result_chars=42)
+    )
+    parsed = json.loads(msg[len("data: "):].strip("\n"))
+    assert parsed["tool_result_chars"] == 42
+
+
+async def test_stream_tool_loop_reports_tool_result_chars(tmp_path):
+    """The finalize carries the total characters of tool results appended.
+
+    That is the part of the prompt that grows round over round. `context_usage`
+    reports it with the fixed cost so the window's composition is visible per
+    turn rather than inferred.
+    """
+    from assistant.backend.pipeline.llm_client import ChatResponse, ToolCall
+    from assistant.backend.pipeline.streaming import stream_tool_loop
+    from assistant.backend.pipeline.tool_executor import init_store
+
+    init_store(str(tmp_path / "stream.db"))
+
+    class StubLLM:
+        def __init__(self, responses):
+            self.responses = list(responses)
+            self.tools_model = "test-model"
+
+        async def chat(self, messages, **kwargs):
+            return self.responses.pop(0)
+
+        def context_window(self, model=None):
+            return 16384
+
+    tool_turn = ChatResponse(
+        content="",
+        model="m",
+        done=True,
+        tool_calls=[ToolCall(name="read_file", arguments={"path": "nope.csv"})],
+    )
+    answer_turn = ChatResponse(content="done", model="m", done=True)
+    llm = StubLLM([tool_turn, answer_turn])
+
+    events = [
+        ev
+        async for ev in stream_tool_loop(
+            llm,
+            messages=[{"role": "user", "content": "q"}],
+            tools=[],
+            model="test-model",
+            user_id="1",
+            session_id="s-1",
+        )
+    ]
+    finalize = [
+        json.loads(ev.replace("data: ", "").strip())
+        for ev in events
+        if '"type": "finalize"' in ev
+    ][-1]
+    # The failed read appended an "ERROR: ..." tool result, so the total is > 0.
+    assert finalize["tool_result_chars"] > 0

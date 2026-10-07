@@ -1717,6 +1717,14 @@ class Orchestrator:
         # Convert to dict format for streaming
         messages_dict = [m.model_dump() for m in messages]
 
+        # The window's fixed cost, measured in chars, so `context_usage` can show
+        # where the prompt went rather than only how big it got. Tool schemas are
+        # added by Ollama from `tools`, not from `system_prompt`, so they are the
+        # part the 12k system-prompt cap does not see.
+        system_prompt_chars = len(system_prompt)
+        history_chars = sum(len(m.content) for m in history_messages)
+        tool_schema_chars = 0
+
         # Everything above the generation call is dead time for the user: no text
         # has been emitted yet, so this span is exactly what they wait through
         # before the first word. On the streaming path it is the latency that
@@ -1741,6 +1749,7 @@ class Orchestrator:
         # event (0 when no tool loop ran, e.g. the no-tools branch).
         final_prompt_tokens = 0
         final_context_window = 0
+        final_tool_result_chars = 0
 
         # Check if tools enabled
         if settings.tools_enabled:
@@ -1751,6 +1760,7 @@ class Orchestrator:
                 embed_fn=self.embed_fn(),
             )
             tool_names = [t["function"]["name"] for t in tools]
+            tool_schema_chars = len(json.dumps(tools))
             logger.info("DEBUG: Available tools for streaming: %s", tool_names)
 
             # Determine model, think and num_predict (max-intelligence aware)
@@ -1770,6 +1780,7 @@ class Orchestrator:
             async def _stream_and_capture():
                 nonlocal final_answer, final_reasoning, ttft_s
                 nonlocal final_prompt_tokens, final_context_window
+                nonlocal final_tool_result_chars
                 async for event in stream_tool_loop(
                     self.llm_client,
                     messages_dict,
@@ -1792,6 +1803,7 @@ class Orchestrator:
                             final_reasoning = event_data.get("reasoning_trace")
                             final_prompt_tokens = event_data.get("prompt_tokens") or 0
                             final_context_window = event_data.get("context_window") or 0
+                            final_tool_result_chars = event_data.get("tool_result_chars") or 0
                         # TTFT is the first moment the user can see any of the
                         # answer. `finalize` counts, and on the tool path it is
                         # currently the ONLY one that arrives: stream_tool_loop
@@ -1934,6 +1946,20 @@ class Orchestrator:
                     final_prompt_tokens,
                     final_context_window,
                 )
+
+        # The composition of the fixed cost, so the budget work is driven by where
+        # the characters actually go. `context_usage` gives the peak; this says what
+        # it is made of. Chars are ÷4 estimates of tokens; the true count is Ollama's.
+        logger.info(
+            "context_fixed: system_prompt_chars=%d tool_schema_chars=%d "
+            "history_chars=%d tool_result_chars=%d peak_prompt_tokens=%d window=%d",
+            system_prompt_chars,
+            tool_schema_chars,
+            history_chars,
+            final_tool_result_chars,
+            final_prompt_tokens,
+            final_context_window,
+        )
 
         # Final metadata: same transparency the non-streaming ChatResponse carries
         # (session id, task type, extraction/search summaries, search info). The UI

@@ -55,8 +55,8 @@ first.
 
 ### The tool loop's context window is the whole turn's budget
 
-The tool loop sends the system prompt **plus every tool schema** (~16.6k chars /
-~4.2k tokens for the builtin set, 19 tools) **plus history** in one prompt, so it is the
+The tool loop sends the system prompt **plus every tool schema** (~17.8k chars /
+~4.4k tokens for the builtin set, 19 tools) **plus history** in one prompt, so it is the
 largest prompt in the system and the one that overflows first. At
 `CHAT_NUM_CTX=8192` a live turn reached 8169 prompt tokens, generated 23, and was
 cut off — `llama-server` logged `n_tokens = 8191, truncated = 1`, Ollama returned
@@ -70,8 +70,10 @@ cost (system prompt + every tool schema + history) and the answer, so a single
 window, and a 43k-char CSV was silently truncated by Ollama as a result). A capped
 read carries an **actionable** marker — the line range, the true total, and the
 `read_file(path=…, offset=…)` call to read on — so the model knows it saw a
-fragment and can page. The turn's real peak is logged as `context_usage`; see
-`plans/2026-10-07-large-file-context.md`.
+fragment and can page. The turn's real peak is logged as `context_usage`, and its
+composition (system prompt / tool schemas / history / tool results) as
+`context_fixed`. The full end-to-end map — windows, caps, arithmetic, and the
+known bottlenecks — is **`docs/CONTEXT_THROUGHPUT.md`**.
 
 Because `tools_model` defaults to `chat_model`, **one loaded runner serves both
 roles, so they share one context window** — the tool loop gets the chat window,

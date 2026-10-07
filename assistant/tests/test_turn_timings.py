@@ -131,6 +131,23 @@ class TestStreamingPathIsInstrumented:
     def test_streaming_logs_turn_timings_on_completion(self, streaming_source):
         assert "_log_turn_timings" in streaming_source
 
+    def test_streaming_logs_the_context_composition(self, streaming_source):
+        """Where the window went, not just how big it got.
+
+        `context_usage` reports the peak prompt; `context_fixed` says what it is
+        made of (system prompt, tool schemas, history, tool results), so the
+        throughput work is driven by the split rather than a guess. Chars are the
+        ÷4 token estimate; the true count is Ollama's `prompt_eval_count`.
+        """
+        assert "context_fixed:" in streaming_source
+        for field in (
+            "system_prompt_chars",
+            "tool_schema_chars",
+            "history_chars",
+            "tool_result_chars",
+        ):
+            assert field in streaming_source, f"{field} is not reported"
+
 
 class TestNonStreamingPathIsInstrumented:
     def test_chat_routes_through_the_instrumented_loop(self):
