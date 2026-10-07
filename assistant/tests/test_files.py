@@ -682,8 +682,13 @@ class TestFileSandboxTools:
         assert "foo BAR baz" in read_result.data["content"]
 
     @pytest.mark.asyncio
-    async def test_edit_file_replace_all_false(self, store, stub_llm):
-        """edit_file with replace_all=false replaces only first occurrence."""
+    async def test_edit_file_ambiguous_anchor_is_refused(self, store, stub_llm):
+        """An ambiguous old_text is refused, not silently replaced.
+
+        `replace_all` defaults to false: a short anchor that matches more than
+        once must not rewrite the file (or guess which occurrence was meant) —
+        the error names each match so the model can disambiguate.
+        """
         from assistant.backend.pipeline.tool_executor import (
             execute_edit_file,
             execute_read_file,
@@ -693,14 +698,14 @@ class TestFileSandboxTools:
         await execute_write_file({"path": "multi.txt", "content": "foo bar baz bar"}, "1", "test")
 
         result = await execute_edit_file(
-            {"path": "multi.txt", "old_text": "bar", "new_text": "BAR", "replace_all": False},
+            {"path": "multi.txt", "old_text": "bar", "new_text": "BAR"},
             "1", "test"
         )
-        assert result.success
-        assert result.data["changes"] == 1
+        assert not result.success
+        assert "matches 2 regions" in result.error
 
         read_result = await execute_read_file({"path": "multi.txt"}, "1", "test")
-        assert read_result.data["content"] == "foo BAR baz bar"
+        assert read_result.data["content"] == "foo bar baz bar"  # unchanged
 
     @pytest.mark.asyncio
     async def test_edit_file_refuses_a_binary_document(self, store, stub_llm):

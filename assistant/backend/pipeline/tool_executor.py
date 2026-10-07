@@ -1562,6 +1562,25 @@ def _flexible_whitespace_pattern(old_text: str) -> str:
     return "".join(r"\s+" if part.isspace() else re.escape(part) for part in parts)
 
 
+def _whitespace_equal(a: str, b: str) -> bool:
+    """True when two strings match ignoring runs of whitespace.
+
+    The anchor check for a line-addressed edit: the model passes the lines it saw
+    as `old_text`, and a stale line number must fail here rather than replace the
+    wrong region.
+    """
+    return re.sub(r"\s+", " ", a).strip() == re.sub(r"\s+", " ", b).strip()
+
+
+def _number_lines(text: str, start_line: int) -> str:
+    """Render `text` with 1-based line numbers, for a failure message."""
+    lines = text.split("\n")
+    width = len(str(start_line + len(lines) - 1))
+    return "\n".join(
+        f"{start_line + i:>{width}}: {line}" for i, line in enumerate(lines)
+    )
+
+
 def _closest_region(content: str, old_text: str, context: int = 3) -> str | None:
     """A few lines of `content` nearest the best lexical match for `old_text`.
 
@@ -1587,30 +1606,42 @@ def _closest_region(content: str, old_text: str, context: int = 3) -> str | None
 
 
 async def execute_edit_file(args: dict, user_id: str, session_id: str) -> ToolResult:
-    """Make a surgical edit to an existing text file.
+    """Make a precise edit to an existing text file.
+
+    Two ways to say *where*, so an edit can be as precise as the read that found it:
+
+    * **Line range** — ``start_line``/``end_line`` (1-based inclusive, the numbers
+      ``read_file`` shows) replace exactly that range. If ``old_text`` is also
+      given it must match those lines (whitespace-tolerant), which is a
+      compare-and-swap: a stale line number cannot silently edit the wrong lines.
+    * **Anchor** — ``old_text``/``new_text`` replace a matched region. The anchor
+      must be unambiguous unless ``replace_all=true``; an ambiguous match is
+      refused with the line numbers of every occurrence, so a short anchor can
+      never silently rewrite the file.
 
     Text only, and whitespace-tolerant. A binary document (`.docx`, `.pdf`, …)
     cannot be edited in place — the bytes are not the text `read_file` shows — so
     it is refused with a redirect to read + rewrite via `write_file`.
     """
     try:
-        from pathlib import Path
-
+        from assistant.backend.pipeline.files import apply_file_to_memory
         from assistant.backend.pipeline.filesystem import (
             PathTraversalError,
+            get_sandbox_root,
             read_sandbox_file,
+            resolve_sandbox_path,
             write_sandbox_file,
         )
 
         path = args.get("path", "")
-        old_text = args.get("old_text", "")
-        new_text = args.get("new_text", "")
-        replace_all = args.get("replace_all", True)
+        old_text = args.get("old_text")
+        new_text = args.get("new_text") or ""
+        replace_all = bool(args.get("replace_all", False))
+        start_line = args.get("start_line")
+        end_line = args.get("end_line")
 
         if not path:
             return ToolResult(success=False, error="path is required")
-        if not old_text.strip():
-            return ToolResult(success=False, error="old_text cannot be blank")
 
         ext = path.rsplit(".", 1)[-1].lower() if "." in path else ""
         if ext in BINARY_DOCUMENT_EXTS:
@@ -1624,31 +1655,96 @@ async def execute_edit_file(args: dict, user_id: str, session_id: str) -> ToolRe
             )
 
         content = read_sandbox_file(path)
+        # Split on "\n" (not splitlines) so the count matches read_file's line
+        # numbering and a round-trip preserves a trailing newline exactly.
+        lines = content.split("\n")
 
-        # Exact first, then whitespace-tolerant. Never fuzzy beyond whitespace:
-        # matching the wrong region silently is worse than failing loudly.
-        pattern = re.escape(old_text)
-        count = content.count(old_text)
-        if count == 0:
-            pattern = _flexible_whitespace_pattern(old_text)
-            count = len(re.findall(pattern, content))
-
-        if count == 0:
-            message = (
-                f"old_text not found in {path} ({len(content)} chars). Read the "
-                "file and copy the exact text to replace."
+        has_anchor = bool(old_text and old_text.strip())
+        has_range = start_line is not None or end_line is not None
+        if not has_anchor and not has_range:
+            return ToolResult(
+                success=False,
+                error=(
+                    "nothing to edit: give old_text to replace a matched region, or "
+                    "start_line/end_line to replace a line range."
+                ),
             )
-            region = _closest_region(content, old_text)
-            if region:
-                message += f"\nClosest region:\n{region}"
-            return ToolResult(success=False, error=message)
 
-        if replace_all:
-            new_content = re.sub(pattern, lambda _m: new_text, content)
-            changes = count
+        replaced: list[int] | None = None
+        if has_range:
+            if start_line is None or end_line is None:
+                return ToolResult(
+                    success=False,
+                    error="start_line and end_line must be given together",
+                )
+            start, end = int(start_line), int(end_line)
+            if start < 1 or end < start:
+                return ToolResult(
+                    success=False,
+                    error=f"invalid line range {start}-{end} (1-based, start <= end)",
+                )
+            if end > len(lines):
+                return ToolResult(
+                    success=False,
+                    error=(
+                        f"line range {start}-{end} is past the end of {path} "
+                        f"({len(lines)} lines). Re-read the file for current numbers."
+                    ),
+                )
+            target = "\n".join(lines[start - 1:end])
+            if has_anchor and not _whitespace_equal(target, old_text):
+                return ToolResult(
+                    success=False,
+                    error=(
+                        f"lines {start}-{end} of {path} do not match old_text — the "
+                        "file may have changed since you read it. They currently read:"
+                        f"\n{_number_lines(target, start)}"
+                    ),
+                )
+            # Empty new_text deletes the range; otherwise it replaces it.
+            middle = [new_text] if new_text else []
+            new_content = "\n".join(lines[:start - 1] + middle + lines[end:])
+            changes = end - start + 1
+            replaced = [start, end]
         else:
-            new_content = re.sub(pattern, lambda _m: new_text, content, count=1)
-            changes = 1
+            # Exact first, then whitespace-tolerant. Never fuzzy beyond whitespace:
+            # matching the wrong region silently is worse than failing loudly.
+            pattern = re.compile(re.escape(old_text))
+            matches = list(pattern.finditer(content))
+            if not matches:
+                pattern = re.compile(_flexible_whitespace_pattern(old_text))
+                matches = list(pattern.finditer(content))
+
+            if not matches:
+                message = (
+                    f"old_text not found in {path} ({len(content)} chars). Read the "
+                    "file and copy the exact text to replace."
+                )
+                region = _closest_region(content, old_text)
+                if region:
+                    message += f"\nClosest region:\n{region}"
+                return ToolResult(success=False, error=message)
+
+            if len(matches) > 1 and not replace_all:
+                where = ", ".join(
+                    str(content.count("\n", 0, m.start()) + 1) for m in matches[:20]
+                )
+                return ToolResult(
+                    success=False,
+                    error=(
+                        f"old_text matches {len(matches)} regions in {path} (lines "
+                        f"{where}). Add surrounding context to make it unique, use "
+                        "start_line/end_line to name the region, or pass "
+                        "replace_all=true to change all of them."
+                    ),
+                )
+
+            if replace_all:
+                new_content = pattern.sub(lambda _m: new_text, content)
+                changes = len(matches)
+            else:
+                new_content = pattern.sub(lambda _m: new_text, content, count=1)
+                changes = 1
 
         if new_content == content:
             return ToolResult(success=False, error="No changes made")
@@ -1656,21 +1752,43 @@ async def execute_edit_file(args: dict, user_id: str, session_id: str) -> ToolRe
         # Atomic write
         write_sandbox_file(path, new_content, overwrite=True)
 
-        # Update memory frame
+        # Refresh the file's memory through the one shared step, so the profile and
+        # CSV row frames stay true to the bytes. write_file and append_file already
+        # do this; edit_file previously wrote only file_size, which left the Phase 5
+        # `file_profile` (and the row frames) stale after every edit.
+        #
+        # Best-effort: the bytes are already written, so a memory failure must not
+        # report the edit as failed — that would invite a retry that re-applies it.
         if _store is not None:
-            frame_name = f"file_{Path(path).name}"
-            frame = await _store.get_frame_by_name(frame_name)
-            if frame:
-                # Only identity changes here. The content is on disk and is read
-                # verbatim; a preview copy would go stale the moment this edit
-                # landed, which is precisely the drift the boundary exists to stop.
-                await _store.upsert_slot(
-                    frame.id, "file_size", str(len(new_content)), source_type="file_edit"
+            try:
+                user_id_int = int(user_id)
+            except (ValueError, TypeError):
+                user_id_int = 1
+            try:
+                resolved = resolve_sandbox_path(path)
+                await apply_file_to_memory(
+                    _store,
+                    frame_name=f"file_{resolved.name}",
+                    safe_filename=str(resolved.relative_to(get_sandbox_root())),
+                    ext=ext,
+                    content_bytes=new_content.encode("utf-8"),
+                    user_id=user_id_int,
+                    source_type="file_create",
+                    source_reliability=0.8,
                 )
+            except Exception as e:
+                logger.warning("edit_file memory refresh failed for %s: %s", path, e)
 
-        return ToolResult(success=True, data={
-            "path": path, "changes": changes, "new_size": len(new_content)
-        })
+        data: dict = {
+            "path": path,
+            "changes": changes,
+            "new_size": len(new_content),
+            "total_lines": new_content.count("\n") + 1,
+            "mode": "lines" if replaced is not None else "text",
+        }
+        if replaced is not None:
+            data["replaced_lines"] = replaced
+        return ToolResult(success=True, data=data)
     except PathTraversalError as e:
         return ToolResult(success=False, error=str(e))
     except FileNotFoundError as e:

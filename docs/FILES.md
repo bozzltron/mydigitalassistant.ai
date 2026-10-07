@@ -62,10 +62,30 @@ binary extension.**
 
 ## Editing (agent changes to an existing file)
 
-`edit_file` is a surgical text replace: read the file, replace text, write it
-back. It is **whitespace-tolerant** (exact match first, then any run of
-whitespace matches any other) but never fuzzy beyond that — matching the wrong
-region silently is worse than failing.
+`edit_file` is a precise text replace: read the file, replace a region, write it
+back. There are **two ways to say where**, so an edit can be as exact as the read
+that found it:
+
+- **Line range** — `start_line`/`end_line`, 1-based and inclusive, exactly the
+  numbers `read_file` shows (`[lines 201-250 of 628]`). Replaces that range; an
+  empty `new_text` deletes it. This is the paging handle applied to editing, and
+  it is what makes editing a file larger than the window precise: the model names
+  the lines it just read instead of reproducing them.
+- **Anchor** — `old_text`/`new_text` replace a matched region. It is
+  **whitespace-tolerant** (exact match first, then any run of whitespace matches
+  any other) but never fuzzy beyond that.
+
+**Ambiguity is refused, not guessed.** An `old_text` that matches more than one
+region is refused unless `replace_all=true` is explicit, and the error names the
+line number of every match so the model can add context or switch to a line range.
+`replace_all` defaults to **false** — a short anchor silently rewriting the whole
+file is the failure this prevents.
+
+**`old_text` is also the line-mode anchor.** Given both a range and `old_text`, the
+tool verifies the lines at that range still match before replacing — a
+compare-and-swap, so a stale line number cannot edit the wrong lines. The result
+names the range that was replaced and the file's new line total, so the model knows
+where it landed and that later line numbers shifted.
 
 **Text only.** A binary document (`.docx`, `.pdf`, `.xlsx`, `.pptx`,
 `.odt`/`.ods`/`.odp`, `.rtf`) is refused with a redirect. `read_file` *extracts*
@@ -79,6 +99,11 @@ dead-ends.
 **A failed match is recoverable.** The error names the file size and the closest
 region, so the model can correct its `old_text` rather than hitting a wall. Do
 not replace this with a bare "not found".
+
+**An edit refreshes memory.** After writing, `edit_file` runs
+`apply_file_to_memory` — the same step `write_file` and `append_file` use — so the
+file's `file_profile` and CSV row frames stay true to the bytes. It writes no
+content slot: memory holds what the file *is*, not what it contains.
 
 ## Building and querying without reading
 

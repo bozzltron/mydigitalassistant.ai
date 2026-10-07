@@ -1,7 +1,7 @@
 ---
 date: 2026-10-07
 status: active
-estimated_hours: 7
+estimated_hours: 10
 ---
 
 # Large files: make the context window visible, budgeted, and pageable
@@ -123,6 +123,30 @@ This is what the model kept trying to hand-roll ("~92% radio, ~8% venue") and
 getting wrong. It is deterministic, so it should be computed, not hallucinated —
 and it doubles as the search steer for gap-finding tasks.
 
+### Phase 6 — Precise editing: address by line, refuse ambiguity
+
+Read hands the model a **line-numbered** view (`[lines 201–250 of 628]`); editing
+should accept the same handle. Today `edit_file` is anchor-only and its
+`replace_all` defaults to **true**, so a short `old_text` silently rewrites *every*
+occurrence — the opposite of precision. The read work fixed "the model did not know
+it saw a fragment"; the edit work fixes "the model cannot say *where*".
+
+- **Line-addressed replace.** `edit_file(path, start_line, end_line, new_text)` —
+  1-based inclusive, exactly the numbers `read_file` shows. Replaces that range.
+- **Ambiguity is refused, not guessed.** An `old_text` that matches more than one
+  region is refused (unless `replace_all=true` is explicit), and the error lists
+  each match's line number so the model can add context or switch to line mode. The
+  default flips to replace-once.
+- **`old_text` doubles as the line-mode anchor.** Given both, the tool verifies the
+  lines at `[start_line, end_line]` still match `old_text` (whitespace-tolerant)
+  before replacing — a compare-and-swap, so a stale line number cannot silently
+  edit the wrong lines.
+- **The result names the new range and total**, so the model knows where it landed
+  and that later line numbers shifted.
+- **An edit refreshes memory.** `edit_file` routes through `apply_file_to_memory`
+  (the one write step `write_file`/`append_file` use), so the `file_profile` and CSV
+  row frames do not go stale after an edit — the gap Phase 5 exposed.
+
 ## Key decisions (recorded so they are not relitigated)
 
 1. **Show a percentage of the window, with tokens as the detail** (`97% · 15.9k/16.4k`).
@@ -136,7 +160,7 @@ and it doubles as the search steer for gap-finding tasks.
 
 - **Unit:** the read-cap derivation; the marker text (range + paging handle);
   paging offsets and range reporting; `append_file` / `search_file`;
-  the profile per format.
+  the profile per format; line-addressed edit and the ambiguity refusal.
 - **Regression (the point):** reproduce this exact CSV turn — a file larger than
   the window must produce a **marked, actionable** truncation, never a silent
   one. Pin the marker's presence in the tool result.
@@ -156,9 +180,9 @@ and it doubles as the search steer for gap-finding tasks.
 ## Rollback
 
 Each phase is additive and independently shippable: the token capture, the cap
-derivation, paging, append/search, and the profile are separate changes. Reverting
-any one leaves the others working; the cap change is a one-line default if it
-misbehaves.
+derivation, paging, append/search, the profile, and precise editing are separate
+changes. Reverting any one leaves the others working; the cap change is a one-line
+default if it misbehaves, and the `replace_all` default is the same.
 
 ## Threats and limits
 

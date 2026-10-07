@@ -857,7 +857,8 @@ For this query, the user is asking about YOUR memory or knowledge. You must:
   • glob(pattern) — Find files by pattern (e.g., "*.csv", "notes/**/*.md")
   • read_file(path) — Read a file's full content
   • write_file(path, content) — Create or overwrite a file
-  • edit_file(path, old_text, new_text) — Surgical find-and-replace
+  • edit_file(path, old_text, new_text) — Replace exact text; add start_line/end_line
+    to replace a line range (1-based, the numbers read_file shows)
   • delete_file(path) — Delete a file
   • rename_file(path, new_name) — Rename a file, keeping its extension
   • recall(query) — Search your structured memory (frames/slots)
@@ -903,7 +904,8 @@ Respond conversationally as a helpful assistant.""")
   • glob(pattern) — Find files by pattern (e.g., "*.csv", "notes/**/*.md")
   • read_file(path) — Read a file's full content
   • write_file(path, content) — Create or overwrite a file
-  • edit_file(path, old_text, new_text) — Surgical find-and-replace
+  • edit_file(path, old_text, new_text) — Replace exact text; add start_line/end_line
+    to replace a line range (1-based, the numbers read_file shows)
   • delete_file(path) — Delete a file
   • rename_file(path, new_name) — Rename a file, keeping its extension
   • recall(query) — Search your structured memory (frames/slots)

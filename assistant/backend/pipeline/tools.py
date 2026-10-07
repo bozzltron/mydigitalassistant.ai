@@ -604,15 +604,38 @@ class EditFileArgs(BaseModel):
             "Binary documents (.docx, .pdf, .xlsx, ...) cannot be edited in place."
         ),
     )
-    old_text: str = Field(
-        ...,
+    old_text: str | None = Field(
+        None,
         description=(
             "Exact text to replace. Read the file first and copy it verbatim; "
-            "whitespace differences are tolerated, but the words must match."
+            "whitespace differences are tolerated, but the words must match. It "
+            "must match exactly one region unless replace_all=true, or the edit is "
+            "refused with the line numbers of every match. When start_line/end_line "
+            "are given, old_text is the anchor the tool verifies against those lines."
         ),
     )
-    new_text: str = Field(..., description="Replacement text")
-    replace_all: bool = Field(True, description="Replace all occurrences (default: true)")
+    new_text: str = Field(
+        "", description="Replacement text. Empty deletes the matched text or range."
+    )
+    start_line: int | None = Field(
+        None,
+        description=(
+            "First line to replace, 1-based and inclusive — use the numbers "
+            "read_file shows (e.g. '[lines 201-250 of 628]'). Requires end_line, and "
+            "replaces exactly that range. Prefer this for a large file."
+        ),
+    )
+    end_line: int | None = Field(
+        None,
+        description="Last line to replace, 1-based and inclusive. Requires start_line.",
+    )
+    replace_all: bool = Field(
+        False,
+        description=(
+            "Replace every occurrence of old_text (default: false). Set true only "
+            "when you intend to change all of them."
+        ),
+    )
 
 
 class DeleteFileArgs(BaseModel):
@@ -758,12 +781,16 @@ def builtin_tools(
         ),
         _make_def(
             "edit_file",
-            "Make a surgical edit to an existing TEXT file by replacing exact "
-            "text. Use for small changes to text/markdown, configs, and code. "
-            "Read the file first and copy old_text verbatim (whitespace is "
-            "tolerated; the words must match). For a binary document (.docx, "
-            ".pdf, .xlsx, ...) read it and rewrite the whole file with write_file "
-            "instead — documents cannot be edited in place.",
+            "Make a precise edit to an existing TEXT file. Two ways to say where: "
+            "give start_line/end_line (1-based, exactly the numbers read_file shows) "
+            "to replace that range, or give old_text to replace a matched region. "
+            "old_text must be unique unless replace_all=true; an ambiguous match is "
+            "refused with the line numbers of every occurrence. When both are given, "
+            "old_text is verified against the line range before replacing. Read the "
+            "file first and copy old_text verbatim (whitespace is tolerated; the "
+            "words must match). For a binary document (.docx, .pdf, .xlsx, ...) read "
+            "it and rewrite the whole file with write_file instead — documents "
+            "cannot be edited in place.",
             EditFileArgs,
         ),
         _make_def(
