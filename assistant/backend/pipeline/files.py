@@ -913,7 +913,10 @@ async def apply_file_to_memory(
     # are the gaps?" without reading the bytes. It holds shape, not content (no
     # cell values beyond a bounded categorical distribution), which is why it is
     # allowed where `file_content` is refused.
-    profile = build_profile(ext, content_bytes)
+    #
+    # CPU-bound like the extractor above, so it runs off-thread for the same
+    # reason: a large file must not block the event loop.
+    profile = await asyncio.to_thread(build_profile, ext, content_bytes)
     await store.upsert_slot(
         frame_id=frame.id, key="file_profile", value=json.dumps(profile),
         source_type=source_type, source_reliability=source_reliability,

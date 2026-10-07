@@ -63,6 +63,18 @@ def test_plain_text_profile_reports_shape():
     assert profile["words"] == 4
 
 
+def test_tsv_profile_is_labelled_tsv():
+    profile = build_profile("tsv", b"name\tstate\nAda\tTX\nBob\tCA\n")
+    assert profile["kind"] == "tsv"
+    assert profile["columns"] == ["name", "state"]
+
+
+def test_blank_categorical_values_are_labelled():
+    """A blank cell is a gap, so the distribution names it rather than showing ''."""
+    lines = profile_summary_lines(build_profile("csv", b"state\nTX\n\nTX\n"))
+    assert any("(blank) 1" in line for line in lines)
+
+
 def test_broken_json_degrades_to_a_shape_not_an_error():
     profile = build_profile("json", b"{not json")
     assert profile["kind"] == "json"
@@ -78,6 +90,11 @@ def test_profile_lines_are_compact_and_readable():
 def test_no_profile_renders_nothing():
     assert profile_summary_lines(None) == []
     assert profile_summary_lines({}) == []
+
+
+def test_a_non_dict_profile_renders_nothing():
+    """A hand-edited slot could hold any JSON; the renderer must not raise."""
+    assert profile_summary_lines(["not", "a", "dict"]) == []
 
 
 @pytest.mark.asyncio

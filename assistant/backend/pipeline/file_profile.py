@@ -36,7 +36,7 @@ def build_profile(ext: str, content_bytes: bytes) -> dict:
     """
     text = content_bytes.decode("utf-8", errors="replace")
     if ext in ("csv", "tsv"):
-        return _profile_delimited(text, "\t" if ext == "tsv" else ",")
+        return _profile_delimited(text, "\t" if ext == "tsv" else ",", ext)
     if ext == "json":
         return _profile_json(text)
     if ext in ("md", "markdown"):
@@ -44,39 +44,51 @@ def build_profile(ext: str, content_bytes: bytes) -> dict:
     return _profile_text(ext, text)
 
 
-def _profile_delimited(text: str, delimiter: str) -> dict:
+def _profile_delimited(text: str, delimiter: str, kind: str) -> dict:
     import csv
     from io import StringIO
 
-    rows = list(csv.reader(StringIO(text), delimiter=delimiter))
-    if not rows:
-        return {"kind": "csv", "rows": 0, "columns": []}
+    reader = csv.reader(StringIO(text), delimiter=delimiter)
+    try:
+        header_row = next(reader)
+    except StopIteration:
+        return {"kind": kind, "rows": 0, "columns": []}
 
-    header = [h.strip() for h in rows[0]][:MAX_PROFILE_COLUMNS]
-    body = rows[1:]
+    header = [h.strip() for h in header_row][:MAX_PROFILE_COLUMNS]
 
-    distinct: dict[str, int] = {}
-    categorical: dict[str, dict[str, int]] = {}
-    for index, column in enumerate(header):
-        seen: set[str] = set()
-        counts: dict[str, int] = {}
-        for row in body:
+    # Stream the body rather than materializing it, and stop counting a column's
+    # values once it is past the categorical bound: a high-cardinality column
+    # (ids, emails) must not grow a per-value dict the size of the file. The
+    # distinct *count* stays exact; only the value distribution is bounded.
+    seen: list[set[str]] = [set() for _ in header]
+    counts: list[dict[str, int] | None] = [dict() for _ in header]
+    rows = 0
+    for row in reader:
+        rows += 1
+        for index in range(len(header)):
             value = (row[index] if index < len(row) else "").strip()
-            seen.add(value)
-            counts[value] = counts.get(value, 0) + 1
-        distinct[column] = len(seen)
-        if body and _is_categorical(len(seen), len(body)):
-            top = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
-            categorical[column] = dict(top[:MAX_PROFILE_VALUES])
+            seen[index].add(value)
+            column_counts = counts[index]
+            if column_counts is not None:
+                column_counts[value] = column_counts.get(value, 0) + 1
+                if len(seen[index]) > CATEGORICAL_MAX_DISTINCT:
+                    counts[index] = None
 
     profile: dict = {
-        "kind": "csv",
-        "rows": len(body),
+        "kind": kind,
+        "rows": rows,
         "columns": header,
-        "distinct": distinct,
+        "distinct": {column: len(seen[i]) for i, column in enumerate(header)},
     }
-    if len(rows[0]) > MAX_PROFILE_COLUMNS:
-        profile["columns_total"] = len(rows[0])
+    if len(header_row) > MAX_PROFILE_COLUMNS:
+        profile["columns_total"] = len(header_row)
+
+    categorical: dict[str, dict[str, int]] = {}
+    for index, column in enumerate(header):
+        column_counts = counts[index]
+        if rows and column_counts is not None and _is_categorical(len(seen[index]), rows):
+            top = sorted(column_counts.items(), key=lambda kv: (-kv[1], kv[0]))
+            categorical[column] = dict(top[:MAX_PROFILE_VALUES])
     if categorical:
         profile["categorical"] = categorical
     return profile
@@ -136,7 +148,7 @@ def profile_summary_lines(profile: dict | None) -> list[str]:
     Shared by the memory-context renderer so a file frame carries its shape in the
     prompt without the raw JSON.
     """
-    if not profile:
+    if not profile or not isinstance(profile, dict):
         return []
 
     parts: list[str] = [str(profile.get("kind", "file"))]
@@ -155,7 +167,7 @@ def profile_summary_lines(profile: dict | None) -> list[str]:
 
     lines = ["  profile: " + " · ".join(parts)]
     for column, counts in (profile.get("categorical") or {}).items():
-        values = ", ".join(f"{k} {v}" for k, v in counts.items())
+        values = ", ".join(f"{k or '(blank)'} {v}" for k, v in counts.items())
         lines.append(f"    {column}: {values}")
     if profile.get("headings"):
         lines.append("    headings: " + " | ".join(profile["headings"]))

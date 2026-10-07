@@ -1729,6 +1729,8 @@ async def execute_edit_file(args: dict, user_id: str, session_id: str) -> ToolRe
                 where = ", ".join(
                     str(content.count("\n", 0, m.start()) + 1) for m in matches[:20]
                 )
+                if len(matches) > 20:
+                    where += ", …"
                 return ToolResult(
                     success=False,
                     error=(
