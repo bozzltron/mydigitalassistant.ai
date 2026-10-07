@@ -511,6 +511,19 @@ class ReadFileArgs(BaseModel):
             "current file."
         ),
     )
+    offset: int = Field(
+        0,
+        ge=0,
+        description=(
+            "0-based line to start at, for reading a large file in pieces. A "
+            "capped result names the range and the offset for the next page."
+        ),
+    )
+    limit: int | None = Field(
+        None,
+        ge=1,
+        description="Maximum lines to return (default: to the end, capped).",
+    )
 
 
 class ListFilesArgs(BaseModel):
@@ -670,10 +683,11 @@ def builtin_tools(
         ),
         _make_def(
             "read_file",
-            "Read a file's full contents: a sandbox file by relative path "
+            "Read a file's contents: a sandbox file by relative path "
             "(e.g., 'notes/meeting.txt', 'data.csv'), or an uploaded file by its "
             "frame name (e.g., 'file_subscribers_active.csv') or frame_id. "
-            "Use when you need to examine a file before editing or referencing it.",
+            "A large file is read in pieces: a capped result names the line range "
+            "and the offset for the next page, so use offset/limit to walk it.",
             ReadFileArgs,
         ),
         _make_def(

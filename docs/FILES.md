@@ -217,10 +217,13 @@ Large files are never fully embedded; the frame embeds metadata only.
   summarises the calendar (and caps at five events) for memory, but a summary
   cannot be edited back into a calendar, so `read_file` returns the raw document
   (see `READ_RAW_EXTS` in `tool_executor`).
-- The only bound is the **model's context window** on what `read_file` returns
-  (`MAX_READ_CHARS_FOR_MODEL`), and a truncated read carries an explicit marker
-  with the true total so the model can say it saw a fragment. The file on disk is
-  never truncated.
+- The only bound is the **model's context window** on what `read_file` returns: a
+  single result is capped at a fraction of the window (`_read_char_limit`), so one
+  read cannot fill it. A capped read carries an **actionable** marker — the line
+  range, the true total, and the exact `read_file(path=…, offset=…)` call to read
+  on — so the model knows it saw a fragment and how to get the rest.
+  `read_file(path, offset=, limit=)` pages by line. The file on disk is never
+  truncated.
 - Jobs, backups (`.db`, `.assistant-brain`) and the search index also live in
   `/app/data`; `list_sandbox_files("**/*")` sees everything, which is why
   `list_files` enriches from frames (only `file_upload` / `file_create` frames
@@ -241,9 +244,10 @@ old index frames like `uploaded_files` can carry stale references (see below).
   file is renamed or deleted.
 - **`read_file` result size.** The tool result is re-sent into the model's
   context, so `_bounded_for_model` caps what the model *sees* per turn at
-  `MAX_READ_CHARS_FOR_MODEL` with an explicit truncation marker and the true
-  total. This is a context-window bound, not a file-size limit: the file is
-  stored and read whole, and nothing is refused at any size.
+  `_read_char_limit()` — a fraction of `CHAT_NUM_CTX`, not a flat number — with an
+  actionable marker naming the line range and the next page. This is a
+  context-window bound, not a file-size limit: the file is stored and read whole,
+  and nothing is refused at any size.
 - **Embedding model drift.** Frames may carry embeddings under a different
   `embedding_model` than the runtime default (the current default is
   `qwen3-embedding:0.6b`, 1024-dim; older data may still carry

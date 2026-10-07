@@ -63,6 +63,16 @@ cut off — `llama-server` logged `n_tokens = 8191, truncated = 1`, Ollama retur
 `done_reason="length"`, and the loop finalized empty (the old
 `"I'm not sure how to respond."`). `CHAT_NUM_CTX` is now 16384.
 
+**A tool result must not fill the window.** The window is shared with the fixed
+cost (system prompt + every tool schema + history) and the answer, so a single
+`read_file` is capped at a *fraction* of it (`_read_char_limit`, not a flat number
+— the old `MAX_READ_CHARS_FOR_MODEL = 60_000` was ~15k tokens, nearly the whole
+window, and a 43k-char CSV was silently truncated by Ollama as a result). A capped
+read carries an **actionable** marker — the line range, the true total, and the
+`read_file(path=…, offset=…)` call to read on — so the model knows it saw a
+fragment and can page. The turn's real peak is logged as `context_usage`; see
+`plans/2026-10-07-large-file-context.md`.
+
 Because `tools_model` defaults to `chat_model`, **one loaded runner serves both
 roles, so they share one context window** — the tool loop gets the chat window,
 not the smaller `tools_num_ctx`. `tools_num_ctx` applies only to a *distinct*

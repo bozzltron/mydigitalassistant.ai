@@ -1914,13 +1914,26 @@ class Orchestrator:
         # by the read budget in the next phase.
         if final_context_window:
             pct = 100.0 * final_prompt_tokens / final_context_window
+            reached = final_prompt_tokens >= final_context_window
             logger.info(
                 "context_usage: prompt_tokens=%d window=%d pct=%.1f truncated=%s",
                 final_prompt_tokens,
                 final_context_window,
                 pct,
-                final_prompt_tokens >= final_context_window,
+                reached,
             )
+            # The backstop: if the prompt reached the window, Ollama truncated it
+            # below us and the read marker may not have survived. With the read
+            # budgeted this should not happen -- it means the fixed cost alone
+            # filled the window, and it needs to be visible.
+            if reached:
+                logger.warning(
+                    "context window reached (prompt_tokens=%d window=%d): Ollama may "
+                    "have truncated the prompt, so the model may be answering from a "
+                    "fragment it cannot see. Reduce the read or page it.",
+                    final_prompt_tokens,
+                    final_context_window,
+                )
 
         # Final metadata: same transparency the non-streaming ChatResponse carries
         # (session id, task type, extraction/search summaries, search info). The UI

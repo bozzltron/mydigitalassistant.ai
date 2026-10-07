@@ -799,12 +799,27 @@ BINARY_DOCUMENT_EXTS = frozenset(
     {"pdf", "docx", "xlsx", "xls", "pptx", "odt", "ods", "odp", "rtf"}
 )
 
-# How much extracted text a single read_file returns to the model. This is NOT a
-# file-size limit: the file is stored whole on disk and nothing is refused at any
-# size. It bounds only what can ride in one turn's context window, which is a
-# property of the model, not a policy on the user's files. The marker tells the
-# model it saw a fragment so it can say so rather than answer from a silent cut.
-MAX_READ_CHARS_FOR_MODEL = 60_000
+# A tool result must not be able to fill the model's context window on its own.
+# The window is shared with the fixed cost (the system prompt + every tool schema
+# + history) and with the answer, so one read gets a fraction of it. The old flat
+# `MAX_READ_CHARS_FOR_MODEL = 60_000` was ~15k tokens -- nearly the whole 16,384
+# window -- which is how a 43k-char CSV left no room and was silently truncated
+# by Ollama (see plans/2026-10-07-large-file-context.md).
+#
+# The fraction and the chars-per-token ratio are deliberately rough: we do not
+# tokenize locally, so this is a guard, not a measurement. The measured number is
+# Ollama's `prompt_eval_count`, logged per turn as `context_usage`.
+READ_RESULT_WINDOW_FRACTION = 0.35
+CHARS_PER_TOKEN = 4
+MIN_READ_CHARS = 2_000
+
+
+def _read_char_limit() -> int:
+    """The char budget one read_file result may use: a fraction of the window."""
+    return max(
+        MIN_READ_CHARS,
+        int(settings.chat_num_ctx * READ_RESULT_WINDOW_FRACTION) * CHARS_PER_TOKEN,
+    )
 
 
 async def _read_file_text(file_path: str, ext: str) -> tuple[str | None, str | None]:
@@ -858,19 +873,51 @@ async def _read_file_text(file_path: str, ext: str) -> tuple[str | None, str | N
     return text, None
 
 
-def _bounded_for_model(text: str) -> str:
-    """Trim extracted text to the model's share, with an honest marker.
+def _page_text(content: str, offset: int, limit: int | None) -> tuple[str, int, int]:
+    """Slice `content` to a line range: (slice, start_line_0based, total_lines).
+
+    `offset` is a 0-based line index; `limit` is the max lines (None = to the
+    end). Paging lets the model walk a large file in pieces instead of pulling it
+    all into the window; `_bounded_for_model` still caps a single page.
+    """
+    total_lines = content.count("\n") + 1
+    if offset <= 0 and limit is None:
+        return content, 0, total_lines
+    lines = content.splitlines()
+    start = min(offset, len(lines))
+    end = len(lines) if limit is None else min(len(lines), start + max(0, limit))
+    return "\n".join(lines[start:end]), start, total_lines
+
+
+def _bounded_for_model(
+    text: str,
+    *,
+    handle: str | None = None,
+    start_line: int = 0,
+    total_lines: int | None = None,
+) -> str:
+    """Trim text to the model's share, with an actionable marker.
 
     Never applied to the file on disk — this is the context-window bound and
-    nothing else. The marker states the true total so the model can tell the user
-    it read a fragment rather than believing it read the whole document.
+    nothing else. When it trims, the marker names the line range and the exact
+    call to read on, so the model knows it saw a fragment *and* how to get the
+    rest, rather than believing it read the whole file (the failure a 43k-char
+    CSV produced: a silent cut it could not see).
     """
-    if len(text) <= MAX_READ_CHARS_FOR_MODEL:
+    limit = _read_char_limit()
+    if len(text) <= limit:
         return text
-    return (
-        text[:MAX_READ_CHARS_FOR_MODEL]
-        + f"\n\n... [truncated for this turn: {len(text):,} characters total]"
+    head = text[:limit]
+    total = total_lines if total_lines is not None else (text.count("\n") + 1)
+    first = start_line + 1
+    last = start_line + head.count("\n") + 1
+    marker = (
+        f"\n\n... [truncated for this turn: showing lines {first}-{last} of {total} "
+        f"({limit:,} of {len(text):,} characters). The rest was NOT read."
     )
+    if handle:
+        marker += f" Call read_file(path={handle!r}, offset={last}) for the next page."
+    return head + marker + "]"
 
 
 async def execute_read_file(args: dict, user_id: str, session_id: str) -> ToolResult:
@@ -889,6 +936,12 @@ async def execute_read_file(args: dict, user_id: str, session_id: str) -> ToolRe
         frame_id = args.get("frame_id")
         frame_name = args.get("frame_name")
         path = args.get("path", "")
+        # Paging: read a slice of lines so a large file can be walked in pieces
+        # instead of filling the window. `offset` is 0-based; `limit` is the max
+        # lines (None = to the end, still capped by `_bounded_for_model`).
+        offset = max(0, int(args.get("offset") or 0))
+        raw_limit = args.get("limit")
+        limit = int(raw_limit) if raw_limit else None
 
         # ---- Read an uploaded file by frame_id / frame_name ----------------
         if frame_id is not None or frame_name is not None:
@@ -974,7 +1027,13 @@ async def execute_read_file(args: dict, user_id: str, session_id: str) -> ToolRe
                     ),
                 )
 
-            bounded = _bounded_for_model(content)
+            page, start_line, total_lines = _page_text(content, offset, limit)
+            bounded = _bounded_for_model(
+                page,
+                handle=frame_name or frame.name,
+                start_line=start_line,
+                total_lines=total_lines,
+            )
             return ToolResult(
                 success=True,
                 data={
@@ -985,6 +1044,7 @@ async def execute_read_file(args: dict, user_id: str, session_id: str) -> ToolRe
                     "content": bounded,
                     "size": len(bounded),
                     "total_chars": len(content),
+                    "total_lines": total_lines,
                 },
             )
 
@@ -1103,12 +1163,19 @@ async def execute_read_file(args: dict, user_id: str, session_id: str) -> ToolRe
                     pass
             return ToolResult(success=False, error=error)
 
-        bounded = _bounded_for_model(content)
+        page, start_line, total_lines = _page_text(content, offset, limit)
+        bounded = _bounded_for_model(
+            page,
+            handle=resolved_path or requested,
+            start_line=start_line,
+            total_lines=total_lines,
+        )
         data: dict = {
             "path": resolved_path,
             "content": bounded,
             "size": len(bounded),
             "total_chars": len(content),
+            "total_lines": total_lines,
         }
         if resolved_frame is not None:
             data["frame_id"] = resolved_frame.id
