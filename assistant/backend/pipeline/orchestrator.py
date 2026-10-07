@@ -3,16 +3,13 @@
 import asyncio
 import json
 import logging
-import re
 import time
 import uuid
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from html.parser import HTMLParser
 from urllib.parse import urlparse
 
-import httpx
 from pydantic import BaseModel
 
 from assistant.backend.config import settings
@@ -44,55 +41,8 @@ from assistant.backend.pipeline.search import (
 from assistant.backend.pipeline.task_router import TaskType, route
 from assistant.backend.pipeline.tools import builtin_tools
 from assistant.backend.pipeline.user_content import CONTENT_SLOT_KEY
-from assistant.backend.retry import retry_transient
 
 logger = logging.getLogger(__name__)
-
-MAX_FETCH_BYTES = 500_000
-FETCH_TIMEOUT_SECONDS = 4.0
-
-
-class _HTMLTextExtractor(HTMLParser):
-    """Strip HTML tags and return plain text."""
-
-    def __init__(self) -> None:
-        super().__init__()
-        self._text: list[str] = []
-
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        if tag in ("br", "hr", "p", "div", "li"):
-            self._text.append("\n")
-
-    def handle_endtag(self, tag: str) -> None:
-        if tag in ("p", "div"):
-            self._text.append("\n")
-
-    def handle_data(self, data: str) -> None:
-        text = data.strip()
-        if text:
-            self._text.append(text)
-
-    @property
-    def text(self) -> str:
-        joined = "".join(self._text)
-        return " ".join(
-            " ".join(line.split())
-            for line in joined.split("\n")
-            if line.strip()
-        )
-
-
-def _strip_html(html: str) -> str:
-    try:
-        extractor = _HTMLTextExtractor()
-        extractor.feed(html)
-        text = extractor.text
-    except Exception:
-        text = re.sub(r"<[^>]+>", " ", html)
-    text = re.sub(r"[ \t]+", " ", text)
-    text = re.sub(r"\n{3,}", "\n\n", text)
-    return text.strip()
-
 
 # One wording, shared by chat() and chat_stream(). Local inference can be slow
 # (large prefill, model load) or the backend briefly unreachable; both paths must
@@ -144,42 +94,22 @@ def _meta_event_from_response(session_id: str | None, response: "ChatResponse"):
 
 
 async def _fetch_url_body(url: str) -> str | None:
-    """Fetch a URL and return stripped plain text. Returns None on failure."""
-    try:
-        parsed = urlparse(url)
-        if parsed.scheme not in ("http", "https"):
-            return None
-    except Exception:
+    """Fetch a URL and return stripped plain text. Returns None on failure.
+
+    Delegates to the shared `_fetch_page`, so search enrichment gets the same
+    robots.txt check and per-hop SSRF check as the `fetch_url` tool -- this path
+    used to fetch with `follow_redirects=True` and no robots check, a second,
+    weaker implementation of "fetch a page".
+    """
+    from assistant.backend.pipeline.tools import _fetch_page
+
+    text, _raw, error = await _fetch_page(url)
+    if error:
+        logger.warning("Failed to fetch %s: %s", url[:80], error)
         return None
-
-    async def _do_fetch() -> str | None:
-        async with httpx.AsyncClient(
-            timeout=httpx.Timeout(FETCH_TIMEOUT_SECONDS, read=8.0),
-            follow_redirects=True,
-            headers={"User-Agent": "Mozilla/5.0 (compatible; AssistantBot/1.0)"},
-        ) as client:
-            r = await client.get(url)
-            r.raise_for_status()
-            content_type = r.headers.get("content-type", "")
-            if "text/html" not in content_type and "text/plain" not in content_type:
-                return r.text[:2000]
-
-            raw = r.content[:MAX_FETCH_BYTES]
-            try:
-                raw = raw.decode(r.encoding or "utf-8", errors="replace")
-            except Exception:
-                raw = raw.decode("utf-8", errors="replace")
-
-            text = _strip_html(raw)
-            if not text.strip():
-                return None
-            return text[:8000]
-
-    try:
-        return await retry_transient(_do_fetch, label=f"fetch_url {url[:80]}")
-    except Exception as e:
-        logger.warning("Failed to fetch %s: %s", url[:80], e)
+    if not text.strip():
         return None
+    return text[:8000]
 
 
 class ChatRequest(BaseModel):

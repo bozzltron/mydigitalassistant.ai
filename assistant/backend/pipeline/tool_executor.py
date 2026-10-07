@@ -644,6 +644,7 @@ async def execute_fetch_url(args: dict, user_id: str, session_id: str = "") -> T
     try:
         url = args.get("url", "")
         extract_facts = args.get("extract_facts", True)
+        follow_links = int(args.get("follow_links", 0) or 0)
 
         if not url:
             return ToolResult(success=False, error="url is required")
@@ -655,7 +656,7 @@ async def execute_fetch_url(args: dict, user_id: str, session_id: str = "") -> T
             store=_store if extract_facts else None,
             llm_client=llm_client if extract_facts else None,
         )
-        content = await handler(url)
+        content = await handler(url, follow_links)
 
         # The handler signals failure with a string prefix rather than raising.
         if isinstance(content, str) and content.startswith("Error:"):

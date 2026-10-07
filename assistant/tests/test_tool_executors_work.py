@@ -250,7 +250,7 @@ class TestFetchUrl:
         """
         from assistant.backend.pipeline import tools as tools_mod
 
-        async def _failing(url: str) -> str:
+        async def _failing(url: str, follow_links: int = 0) -> str:
             return f"Error: {url} is blocked by robots.txt"
 
         monkeypatch.setattr(tools_mod, "_fetch_single_url", _failing)
@@ -266,7 +266,7 @@ class TestFetchUrl:
     async def test_fetch_url_returns_page_content(self, wired, monkeypatch):
         from assistant.backend.pipeline import tools as tools_mod
 
-        async def _page(url: str) -> str:
+        async def _page(url: str, follow_links: int = 0) -> str:
             return "Sourdough needs a live starter."
 
         monkeypatch.setattr(tools_mod, "_fetch_single_url", _page)

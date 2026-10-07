@@ -35,6 +35,16 @@ MAX_TOOL_ROUNDS = 3
 MAX_FETCH_BYTES = 500_000
 FETCH_TIMEOUT_SECONDS = 15
 
+# The tool identifies itself honestly. robots.txt rules that name `*` or
+# `AssistantBot` bind it; an AI-specific block naming another crawler does not
+# bind it by letter, though it expresses the owner's intent about AI clients.
+FETCH_USER_AGENT = "Mozilla/5.0 (compatible; AssistantBot/1.0)"
+# The token a robots.txt `User-agent` line names us by. `robotparser` takes the
+# part of the UA before the first "/", which for the string above is "Mozilla", so
+# it must be told our product token explicitly -- otherwise a site that writes
+# `User-agent: AssistantBot` would not bind us.
+ROBOTS_USER_AGENT = "AssistantBot"
+
 
 class _HTMLTextExtractor(HTMLParser):
     """Strip HTML tags and return plain text."""
@@ -113,83 +123,216 @@ async def _read_capped(response: httpx.Response, limit: int) -> bytes:
     return b"".join(chunks)[:limit]
 
 
-async def _fetch_single_url(url: str) -> str:
-    """Fetch a URL, strip HTML, return plain text.
+_CRAWL_DELAY_SECONDS = 0.5
 
-    The host is resolved and rejected when it maps to a private/loopback/
-    link-local/reserved address, and the check is re-run on every redirect hop.
-    The body is read with a real byte cap off the wire.
+
+class _HTMLLinkExtractor(HTMLParser):
+    """Collect `href`s from an HTML document, for bounded link-following."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.links: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag != "a":
+            return
+        for name, value in attrs:
+            if name == "href" and value:
+                self.links.append(value)
+
+
+def _snippet(text: str, limit: int = 3000) -> str:
+    snippet = text[:limit]
+    if len(text) > limit:
+        snippet += f"\n... [{len(text):,} total characters, truncated to first {limit}]"
+    return snippet
+
+
+def _same_site_links(base_url: str, raw_html: str, max_candidates: int) -> list[str]:
+    """Same-host `http(s)` links in `raw_html`, resolved and deduped.
+
+    The fragment is dropped and the query kept; the base URL itself is excluded.
+    """
+    base = urllib.parse.urlparse(base_url)
+    parser = _HTMLLinkExtractor()
+    try:
+        parser.feed(raw_html)
+    except Exception:
+        return []
+    seen: set[str] = set()
+    out: list[str] = []
+    for href in parser.links:
+        resolved = urllib.parse.urlparse(urllib.parse.urljoin(base_url, href))
+        if resolved.scheme not in ("http", "https") or resolved.netloc != base.netloc:
+            continue
+        clean = urllib.parse.urlunparse(
+            (
+                resolved.scheme,
+                resolved.netloc,
+                resolved.path,
+                resolved.params,
+                resolved.query,
+                "",
+            )
+        )
+        if clean == base_url or clean in seen:
+            continue
+        seen.add(clean)
+        out.append(clean)
+        if len(out) >= max_candidates:
+            break
+    return out
+
+
+async def _follow_same_site(
+    client: httpx.AsyncClient, base_url: str, raw_html: str, limit: int
+) -> list[str]:
+    """Fetch up to `limit` same-site links, robots-permitting, paced.
+
+    "Going deeper" is not a crawl that hammers a site: same host only, deduped,
+    robots.txt checked per URL, a short delay between fetches, and every hop goes
+    through `safe_stream` (the SSRF check). A link that fails, is off-site, or is
+    disallowed is skipped rather than aborting the whole fetch.
+    """
+    import asyncio
+
+    blocks: list[str] = []
+    for link in _same_site_links(base_url, raw_html, limit * 3):
+        if len(blocks) >= limit:
+            break
+        try:
+            if not await _check_robots_txt(client, link, ROBOTS_USER_AGENT):
+                continue
+            async with safe_stream(client, link) as r:
+                if "text/html" not in r.headers.get("content-type", ""):
+                    continue
+                raw = (await _read_capped(r, MAX_FETCH_BYTES)).decode(
+                    r.encoding or "utf-8", errors="replace"
+                )
+            text = _strip_html(raw)
+            if not text.strip():
+                continue
+            blocks.append(f"## {link}\n{_snippet(text)}")
+            await asyncio.sleep(_CRAWL_DELAY_SECONDS)
+        except Exception:
+            continue
+    return blocks
+
+
+async def _fetch_page(url: str) -> tuple[str, str, str | None]:
+    """Fetch `url`: (plain_text, raw_html, error).
+
+    THE one fetch path. The scheme and host are checked (`assert_public_url`),
+    robots.txt is consulted, the body is read through `safe_stream` (which re-runs
+    the SSRF check on every redirect hop), and HTML is stripped. Transient network
+    errors are retried (a GET is idempotent); a robots refusal is returned, not
+    retried.
+
+    The `fetch_url` tool and search enrichment both go through here, so robots.txt
+    and the SSRF check cannot drift between them.
     """
     try:
         parsed = urllib.parse.urlparse(url)
         if parsed.scheme not in ("http", "https"):
-            return f"Error: only http/https URLs are supported, got {parsed.scheme!r}"
+            return "", "", f"Error: only http/https URLs are supported, got {parsed.scheme!r}"
     except Exception as e:
-        return f"Error: malformed URL {e}"
+        return "", "", f"Error: malformed URL {e}"
 
     try:
         await assert_public_url(url)
     except UnsafeURLError as e:
-        return f"Error: {e}"
+        return "", "", f"Error: {e}"
 
-    async def _do_fetch() -> str:
+    async def _do_fetch() -> tuple[str, str, str | None]:
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(FETCH_TIMEOUT_SECONDS, read=20.0),
             follow_redirects=False,
-            headers={"User-Agent": "Mozilla/5.0 (compatible; AssistantBot/1.0)"},
+            headers={"User-Agent": FETCH_USER_AGENT},
         ) as client:
-            # Simple robots.txt check
-            allowed = await _check_robots_txt(client, url)
-            if not allowed:
-                return f"Error: {url} is blocked by robots.txt"
+            if not await _check_robots_txt(client, url, ROBOTS_USER_AGENT):
+                return "", "", f"Error: {url} is blocked by robots.txt"
 
             async with safe_stream(client, url) as r:
                 content_type = r.headers.get("content-type", "")
                 encoding = r.encoding or "utf-8"
                 if "text/html" not in content_type and "text/plain" not in content_type:
-                    return (await _read_capped(r, 2000)).decode(
+                    body = (await _read_capped(r, 2000)).decode(
                         encoding, errors="replace"
                     )
+                    return body, "", None
 
                 raw = (await _read_capped(r, MAX_FETCH_BYTES)).decode(
                     encoding, errors="replace"
                 )
 
-            text = _strip_html(raw)
-
-            if not text.strip():
-                return (
-                    "Error: page appears to be JavaScript-rendered "
-                    "(empty after HTML strip). Try searching for the page "
-                    "content instead."
-                )
-
-            snippet = text[:3000]
-            if len(text) > 3000:
-                snippet += f"\n... [{len(text):,} total characters, truncated to first 3000]"
-            return snippet
+            return _strip_html(raw), raw, None
 
     try:
         # A GET is idempotent, so a transient network blip is retried.
         return await retry_transient(_do_fetch, label=f"fetch_url {url}")
     except httpx.TimeoutException:
-        return f"Error: timeout fetching {url} ({FETCH_TIMEOUT_SECONDS}s)"
+        return "", "", f"Error: timeout fetching {url} ({FETCH_TIMEOUT_SECONDS}s)"
     except Exception as e:
-        return f"Error fetching {url}: {e}"
+        return "", "", f"Error fetching {url}: {e}"
 
 
-async def _check_robots_txt(client: httpx.AsyncClient, url: str) -> bool:
-    """Check robots.txt for a given URL. Default to allowing."""
+async def _fetch_single_url(url: str, follow_links: int = 0) -> str:
+    """Fetch a URL, strip HTML, return plain text.
+
+    With `follow_links > 0`, also fetches up to that many same-site links from the
+    page (robots-permitting, paced) and appends them under `## <url>` headers -- a
+    bounded "read further into this site", not a crawl.
+
+    The scheme/host checks, robots.txt, the per-hop SSRF check and the retry live in
+    `_fetch_page`; this adds the JS-rendered check and the crawl.
+    """
+    text, raw, error = await _fetch_page(url)
+    if error:
+        return error
+    if not text.strip():
+        return (
+            "Error: page appears to be JavaScript-rendered "
+            "(empty after HTML strip). Try searching for the page "
+            "content instead."
+        )
+
+    parts = [_snippet(text)]
+    if follow_links > 0 and raw:
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(FETCH_TIMEOUT_SECONDS, read=20.0),
+            follow_redirects=False,
+            headers={"User-Agent": FETCH_USER_AGENT},
+        ) as client:
+            parts.extend(await _follow_same_site(client, url, raw, follow_links))
+    return "\n\n".join(parts)
+
+
+async def _check_robots_txt(
+    client: httpx.AsyncClient, url: str, user_agent: str
+) -> bool:
+    """Whether `user_agent` may fetch `url`, per the site's robots.txt.
+
+    Parsed with the stdlib `robotparser`, which understands per-User-agent and
+    per-path rules. The previous check was a substring match: ``"disallow: /"`` is
+    a substring of ``"disallow: /private/"``, so any site with a single
+    path-specific rule was treated as fully disallowed -- which is nearly every
+    site, and the reason the agent was "often blocked by robots.txt" while nothing
+    had actually disallowed it.
+
+    Defaults to allow when robots.txt is absent or unreadable: robots.txt is an
+    opt-out, and its absence is not a prohibition.
+    """
+    from urllib.robotparser import RobotFileParser
+
     try:
         parsed = urllib.parse.urlparse(url)
         robots_url = f"{parsed.scheme}://{parsed.netloc}/robots.txt"
         r = await client.get(robots_url, timeout=5.0)
         if r.status_code != 200:
             return True  # no robots.txt = allow
-        robots_text = r.text.lower()
-        if "disallow: /" in robots_text and "user-agent: *" in robots_text:
-            return False
-        return True
+        parser = RobotFileParser()
+        parser.parse(r.text.splitlines())
+        return parser.can_fetch(user_agent, url)
     except Exception:
         return True  # on error, allow
 
@@ -200,10 +343,10 @@ def _make_fetch_url_handler(
 ):
     """Create a fetch_url handler that auto-extracts facts into memory.
 
-    Returns an async callable: handler(url) -> str
+    Returns an async callable: handler(url, follow_links=0) -> str
     """
-    async def handler(url: str) -> str:
-        content = await _fetch_single_url(url)
+    async def handler(url: str, follow_links: int = 0) -> str:
+        content = await _fetch_single_url(url, follow_links)
         if content.startswith("Error:"):
             return content
 
@@ -331,6 +474,16 @@ class FetchUrlArgs(BaseModel):
         ..., description="URL to fetch")
     extract_facts: bool = Field(
         True, description="Auto-extract facts into memory")
+    follow_links: int = Field(
+        0,
+        ge=0,
+        le=5,
+        description=(
+            "Also fetch up to this many same-site links from the page (0-5), to "
+            "read further into a site. Robots.txt and same-host limits apply, and "
+            "fetched pages are paced. Default 0 (just this page)."
+        ),
+    )
 
 
 class ReadFileArgs(BaseModel):
@@ -596,7 +749,8 @@ def builtin_tools(
         ),
         _make_def(
             "fetch_url",
-            "Fetch and extract text from a URL. Auto-extracts facts into memory.",
+            "Fetch and extract text from a URL. Auto-extracts facts into memory. "
+            "Set follow_links to read further into the same site.",
             FetchUrlArgs,
         ),
         _make_def(

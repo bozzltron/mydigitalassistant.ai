@@ -196,10 +196,17 @@ Result quality is guarded in three layers:
 - `BRAVE_API_KEY` — Brave Search API key (required when `BRAVE_ENABLED=true`)
 
 **`fetch_url` tool** — direct HTTP fetch with auto-extraction:
-- Fetches URL content, strips HTML, respects robots.txt, detects JS-rendered pages.
+- Fetches URL content, strips HTML, detects JS-rendered pages.
+- **robots.txt is parsed with `urllib.robotparser`** (per User-agent, per path) and
+  checked against our product token `AssistantBot` — not the full UA, whose first
+  token `robotparser` would read as "Mozilla". Absent/unreadable robots = allow.
+  See `docs/FETCHING.md` for the policy and the AI-block intent caveat.
+- `follow_links` (0–5) reads further into the same site: same-host links only,
+  deduped, robots-checked per URL, paced, every hop SSRF-checked.
 - After fetching, calls `extract_facts_from_document()` and stores facts in memory with `source_type="web_fetch"`.
 - Extraction errors are logged and degrade gracefully — fetched content is always returned.
-- Tool user-agent: `Mozilla/5.0 (compatible; AssistantBot/1.0)`.
+- Tool user-agent: `Mozilla/5.0 (compatible; AssistantBot/1.0)` — honest; the
+  project does not spoof a browser UA to evade a block.
 
 ## Do / Don't
 - **Do** let the model handle ambiguous or unparseable input — when the utility model fails, pass the user's message to the chat model rather than generating a scripted fallback. The model's own reasoning determines the response.
