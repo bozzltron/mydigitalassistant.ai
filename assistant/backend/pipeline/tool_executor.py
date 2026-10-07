@@ -16,7 +16,7 @@ from pydantic import ValidationError
 
 from assistant.backend.config import settings
 from assistant.backend.memory.models import Frame
-from assistant.backend.memory.store import MemoryStore
+from assistant.backend.memory.store import FILE_FRAME_SOURCE_TYPES, MemoryStore
 
 # Slot-key namespaces owned by the system, not the model. Defined in extractor.py
 # so the extraction pipeline and the tool loop enforce one shared denylist.
@@ -680,9 +680,8 @@ async def execute_fetch_url(args: dict, user_id: str, session_id: str = "") -> T
 # File read resolution
 # ---------------------------------------------------------------------------
 
-# Frame source types whose full content lives on disk (read via read_file)
-# rather than in slots: user uploads and tool-created sandbox files.
-FILE_FRAME_SOURCE_TYPES = ("file_upload", "file_create")
+# FILE_FRAME_SOURCE_TYPES (imported above) is the one home for the set of frame
+# source types whose content lives on disk; `retrieval` re-exports it.
 
 
 def _strip_frame_prefix(name: str) -> str:

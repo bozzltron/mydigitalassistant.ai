@@ -55,6 +55,12 @@ ALERT_FRAME_TYPE = "alert"
 # so no future writer can reintroduce it; see docs/FILES.md.
 FILE_CONTENT_HINT_SLOTS: tuple[str, ...] = ("file_content", "file_content_preview")
 
+# Frame source types whose full content lives on disk (read via `read_file`)
+# rather than in slots: user uploads and tool-created sandbox files. The read
+# path (`retrieval`) and the file tooling (`tool_executor`) both branch on this
+# set, so it has one home here rather than a copy each that can drift.
+FILE_FRAME_SOURCE_TYPES: tuple[str, ...] = ("file_upload", "file_create")
+
 
 class FileContentInMemoryError(ValueError):
     """Raised when a write tries to put file content into a slot.

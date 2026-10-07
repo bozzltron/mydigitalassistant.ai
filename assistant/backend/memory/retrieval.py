@@ -14,17 +14,14 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Frame source types whose full content lives on disk (read via read_file)
-# rather than in slots: user uploads and tool-created sandbox files.
-FILE_FRAME_SOURCE_TYPES = ("file_upload", "file_create")
-
-# Content slots on file frames are truncated hints, not the file itself.
-#
-# Retained as a re-export because `retrieval` historically owned this list; the one
-# definition now lives in `memory.store`, where the write-time refusal uses it, so the
-# rule has a single home rather than two that can drift.
+# File-frame constants — which source types hold their content on disk, and which
+# slot keys hold file content. Both live in `memory.store`, where the write-time
+# refusal uses them; they are re-exported here because `retrieval` historically
+# owned them and callers still import them from this path — one home, not copies
+# that can drift.
 from assistant.backend.memory.store import (  # noqa: E402, F401
     FILE_CONTENT_HINT_SLOTS,
+    FILE_FRAME_SOURCE_TYPES,
 )
 
 # Minimum association confidence for the graph walk to *follow* an edge.
