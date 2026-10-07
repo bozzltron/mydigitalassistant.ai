@@ -31,6 +31,17 @@ fragment.
   - No behavior change; the budget work is now driven by where the chars go.
   - Tests: `test_streaming_events.py` (the loop reports the total; the wire
     format carries it) and `test_turn_timings.py` (the line is logged at INFO).
+- **T2 — One per-turn budget. SHIPPED (2026-10-07).**
+  - `pipeline/context_budget.py`: `TurnBudget` = `window − measured fixed cost −
+    reserved answer` (reserve 4,096, matching the thinking cap). Installed by
+    `_run_turn` around the tool loop and reset after.
+  - `read_file`, `search_file`, `list_files`/`glob`, and `fetch_url` all draw from
+    it, replacing the flat `×0.35` fraction. Listings keep `count` as the true
+    total and mark the result truncated; a direct tool call (no turn budget)
+    falls back to the fraction.
+  - Tests: `test_context_budget.py` (the derivation, the floor, the allowance, the
+    search/listing behaviour, the orchestrator wiring); `test_read_budget.py`
+    updated for the fallback.
 
 ## Fact-check of the map
 
@@ -69,8 +80,8 @@ so it is measured against a budgeted pipeline rather than hiding the problem.
 | # | Work | Status |
 |---|---|---|
 | T1 | Instrument the composition (`context_fixed`) | **shipped** |
-| T2 | One per-turn budget object; wire read/search/list/fetch to it | next |
-| T3 | Aggregate tool-result cap across rounds | |
+| T2 | One per-turn budget object; wire read/search/list/fetch to it | **shipped** |
+| T3 | Aggregate tool-result cap across rounds | next |
 | T4 | De-duplicate tool prose; token-bound history | |
 | T5 | Re-measure on a fixed turn set | |
 | O1 | Run the opus model-swap experiment against the improved pipeline | after T5 |

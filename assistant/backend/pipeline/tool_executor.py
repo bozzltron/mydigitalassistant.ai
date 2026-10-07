@@ -22,6 +22,7 @@ from assistant.backend.memory.store import FILE_FRAME_SOURCE_TYPES, MemoryStore
 # so the extraction pipeline and the tool loop enforce one shared denylist.
 # `file_safe_name` is consumed as a filesystem path by the /files endpoints, so a
 # model-supplied value there is a path primitive. See test_file_slot_reserved_keys.py.
+from assistant.backend.pipeline.context_budget import content_char_limit
 from assistant.backend.pipeline.extractor import RESERVED_SLOT_PREFIXES
 from assistant.backend.retry import is_transient_error_message
 
@@ -806,33 +807,48 @@ BINARY_DOCUMENT_EXTS = frozenset(
 
 # A tool result must not be able to fill the model's context window on its own.
 # The window is shared with the fixed cost (the system prompt + every tool schema
-# + history) and with the answer, so one read gets a fraction of it. The old flat
-# `MAX_READ_CHARS_FOR_MODEL = 60_000` was ~15k tokens -- nearly the whole 16,384
-# window -- which is how a 43k-char CSV left no room and was silently truncated
-# by Ollama (see plans/2026-10-07-large-file-context.md).
-#
-# The fraction and the chars-per-token ratio are deliberately rough: we do not
-# tokenize locally, so this is a guard, not a measurement. The measured number is
-# Ollama's `prompt_eval_count`, logged per turn as `context_usage`.
-READ_RESULT_WINDOW_FRACTION = 0.35
-CHARS_PER_TOKEN = 4
-MIN_READ_CHARS = 2_000
+# + history + the user turn) and with the answer. That allowance is now *derived*
+# per turn from the measured fixed cost (context_budget.py), rather than a flat
+# fraction of the window: the old flat `MAX_READ_CHARS_FOR_MODEL = 60_000` was
+# ~15k tokens, nearly the whole 16,384 window, which is how a 43k-char CSV left no
+# room and was silently truncated by Ollama. Chars are an estimate; the measured
+# number is Ollama's `prompt_eval_count`, logged per turn as `context_usage`.
+# See docs/CONTEXT_THROUGHPUT.md.
 
-# A `search_file` result is capped so it cannot fill the window either. 80
-# matching lines at 200 chars each is ~16k chars, under `_read_char_limit()`;
-# past that the model should narrow the query, which is cheaper than reading
-# more. `MAX_MATCH_LINE_CHARS` clips one enormous line (a minified JSONL record,
-# say) so a single match cannot dominate the result.
+# A `search_file` result is capped so it cannot fill the window either: at most 80
+# matching lines and at most the turn's content allowance in characters. Past that
+# the model should narrow the query, which is cheaper than reading more.
+# `MAX_MATCH_LINE_CHARS` clips one enormous line (a minified JSONL record, say) so
+# a single match cannot dominate the result.
 MAX_SEARCH_MATCHES = 80
 MAX_MATCH_LINE_CHARS = 200
 
 
 def _read_char_limit() -> int:
-    """The char budget one read_file result may use: a fraction of the window."""
-    return max(
-        MIN_READ_CHARS,
-        int(settings.chat_num_ctx * READ_RESULT_WINDOW_FRACTION) * CHARS_PER_TOKEN,
-    )
+    """The char budget one read_file result may use this turn."""
+    return content_char_limit()
+
+
+def _cap_entries_to_budget(entries: list[dict]) -> tuple[list[dict], int]:
+    """Trim a listing so its rendered result fits the turn's content allowance.
+
+    Returns ``(kept, total)``. Always keeps at least one entry. The caller keeps
+    ``count`` as the true total and marks the result truncated, so the model knows
+    the list is partial rather than complete. ``list_files``/``glob`` previously
+    had no character cap at all: one call on a full sandbox could exceed the window
+    by itself.
+    """
+    total = len(entries)
+    budget = _read_char_limit()
+    kept: list[dict] = []
+    used = 0
+    for entry in entries:
+        chunk = len(str(entry))
+        if kept and used + chunk > budget:
+            break
+        kept.append(entry)
+        used += chunk
+    return kept, total
 
 
 def _clip_line(line: str, limit: int = MAX_MATCH_LINE_CHARS) -> str:
@@ -1514,6 +1530,8 @@ async def execute_search_file(args: dict, user_id: str, session_id: str) -> Tool
         lines = content.splitlines()
         matches: list[dict] = []
         total_matches = 0
+        used_chars = 0
+        char_budget = _read_char_limit()
         for number, line in enumerate(lines, start=1):
             if pattern is not None:
                 hit = pattern.search(line) is not None
@@ -1523,7 +1541,14 @@ async def execute_search_file(args: dict, user_id: str, session_id: str) -> Tool
                 continue
             total_matches += 1
             if len(matches) < max_matches:
-                matches.append({"line": number, "text": _clip_line(line)})
+                clipped = _clip_line(line)
+                # Stop collecting once the turn's content allowance is spent; keep
+                # counting so the note can still say how many there were. The first
+                # match is always kept, even if it alone is large.
+                if matches and used_chars + len(clipped) > char_budget:
+                    continue
+                matches.append({"line": number, "text": clipped})
+                used_chars += len(clipped)
 
         data: dict = {
             "path": resolved_path or path,
@@ -1924,7 +1949,16 @@ async def execute_glob(args: dict, user_id: str, session_id: str) -> ToolResult:
         pattern = args.get("pattern", "**/*")
         files = list_sandbox_files(pattern)
 
-        return ToolResult(success=True, data={"files": files, "count": len(files)})
+        kept, total = _cap_entries_to_budget(files)
+        data: dict = {"files": kept, "count": total}
+        if len(kept) < total:
+            data["returned"] = len(kept)
+            data["truncated"] = True
+            data["note"] = (
+                f"showing {len(kept)} of {total} matches; narrow the pattern "
+                "to see the rest."
+            )
+        return ToolResult(success=True, data=data)
     except PathTraversalError as e:
         return ToolResult(success=False, error=str(e))
     except Exception as e:
@@ -2002,10 +2036,16 @@ async def execute_list_files(args: dict, user_id: str, session_id: str) -> ToolR
                         "modified": sf["modified"],
                     })
 
-        return ToolResult(
-            success=True,
-            data={"files": files, "count": len(files)}
-        )
+        kept, total = _cap_entries_to_budget(files)
+        data: dict = {"files": kept, "count": total}
+        if len(kept) < total:
+            data["returned"] = len(kept)
+            data["truncated"] = True
+            data["note"] = (
+                f"showing {len(kept)} of {total} files; narrow the view or list "
+                "a folder."
+            )
+        return ToolResult(success=True, data=data)
     except Exception as e:
         logger.error(f"list_files failed: {e}", exc_info=True)
         return ToolResult(success=False, error=str(e))

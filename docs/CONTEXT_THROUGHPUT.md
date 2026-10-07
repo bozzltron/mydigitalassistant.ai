@@ -87,16 +87,21 @@ Tool schemas are added by Ollama from the `tools` argument, not from
 round's prompt is `system + every tool schema + history + user + all tool results
 so far`; tool results **accumulate**.
 
-| Per-result cap | Chars | ≈Tokens | Home |
-|---|---|---|---|
-| `read_file` | 22,936 | 5,734 | `_read_char_limit()` = `num_ctx × 0.35 × 4` |
-| `search_file` | ≤80 × 200 = 16,000 | 4,000 | `MAX_SEARCH_MATCHES` |
-| `fetch_url` | 3,000 / page (up to 5 pages) | 750–3,750 | `_snippet()` |
-| `list_files` / `glob` | sandbox entries ≤1,000; **no char cap** | up to ~20k | `filesystem.MAX_GLOB_RESULTS` |
-| Output | **none** unless thinking → 4,096 | — | `think_num_predict_cap` |
+Every content-carrying result is capped by the **turn's content allowance** —
+`window − measured fixed cost − reserved answer` — derived per turn in
+`context_budget.py` (see §7). It adapts: a longer history or a bigger tool set
+shrinks it.
 
-`list_files` also enriches from memory frames, which is **not** capped by
-`MAX_GLOB_RESULTS`.
+| Per-result cap | Cap | Home |
+|---|---|---|
+| `read_file` | the turn's content allowance | `_read_char_limit()` |
+| `search_file` | ≤80 lines **and** ≤ the allowance | `MAX_SEARCH_MATCHES` |
+| `fetch_url` | `min(3,000, allowance)` / page (up to 5 pages) | `_snippet()` |
+| `list_files` / `glob` | ≤1,000 entries **and** ≤ the allowance; `count` stays the true total | `MAX_GLOB_RESULTS` |
+| Output | **none** unless thinking → 4,096 | `think_num_predict_cap` |
+
+`list_files` also enriches from memory frames; the trim keeps at least one entry
+and marks the result truncated so the model knows the list is partial.
 
 ## 6. Output
 
@@ -111,16 +116,19 @@ Against the 16,384 window, turn 1 of the tool loop:
 ```
 tool schemas            4,444   (27%)
 system prompt (≤)       3,000   (18%)
+history + user turn     (varies)
 ------------------------------
-fixed cost              7,444   (45%)  before a single fact, file, or word
-remaining               8,940
-one capped read         5,734   (64% of what's left)
+fixed cost             ~7,444   (45%)  before a single fact, file, or word
+reserved answer         4,096   (25%)  think_num_predict_cap
+------------------------------
+content allowance      ~4,844   (30%)  what a read/search/listing may use
 ```
 
-The per-item caps **do not compose**: each was sized against the whole window,
-not against a shared remainder. One read plus the fixed cost leaves ~3.2k tokens
-for history and the answer; add a `search_file` or a `list_files` and the
-remainder is gone.
+The allowance is **derived**, not a fraction: `window − fixed cost − reserved
+answer`. It shrinks as history or the tool set grows, and grows when they are
+small. The fixed cost is measured per turn and logged as `context_fixed`. The
+per-item caps now all draw from this one allowance; the sum across the loop's
+rounds is still bounded separately (see Bottlenecks).
 
 ## 8. How it is measured
 
@@ -133,25 +141,35 @@ One greppable INFO line per turn, plus the peak:
   `pct` and `truncated` (the prompt reached the window).
 - `context_fixed:` — the composition in chars: `system_prompt_chars`,
   `tool_schema_chars`, `history_chars`, `tool_result_chars`, with the peak tokens.
+- The per-turn content allowance itself (`context_budget.py`):
+  `window − fixed cost − reserved answer`, installed by `_run_turn` and read by
+  every content-carrying tool while the loop runs.
 
 `prompt_eval_count` from Ollama is the only true token count; every char figure
 here is a ÷4 estimate, and JSON tool schemas tokenize worse than that.
 
-## 9. Known bottlenecks
+## 9. Bottlenecks
 
-1. **The read cap is a fraction, not a derivation.** `_read_char_limit()` uses
-   `× 0.35` rather than `num_ctx − fixed cost − headroom`, so the reserve it
-   implies is fictional once the fixed cost is 7.4k tokens.
-2. **Tool results are capped individually, never in aggregate** across the 3
-   rounds.
-3. **`list_files` / `glob` have no character cap**; one call can exceed the window.
-4. **History is bounded by turns, not tokens** — one long prior answer is re-sent
-   every subsequent turn.
-5. **Tool schemas are the largest fixed cost, and the file tools are duplicated**
-   in the system prompt prose.
-6. **`chars_per_token = 4` is optimistic** for JSON.
-7. **Extraction runs on a 4,096 window** with an unbounded user message.
-8. **No output reservation** — generation competes with content.
+Resolved by T2 (the per-turn budget, `context_budget.py`):
+
+- ~~The read cap was a flat fraction~~ — now derived from the measured fixed cost
+  (`window − fixed − reserved answer`), and it adapts to history and tool size.
+- ~~`list_files` / `glob` had no character cap~~ — now trimmed to the allowance.
+- ~~No output reservation~~ — the answer now has an explicit reserve
+  (`RESERVED_OUTPUT_TOKENS`, matching the thinking cap).
+
+Still open:
+
+1. **Tool results are capped individually, never in aggregate.** Each result draws
+   from the allowance, but the sum across the loop's rounds is not yet bounded —
+   3 rounds can each spend it (T3).
+2. **History is bounded by turns, not tokens** — one long prior answer is re-sent
+   every subsequent turn (T4).
+3. **Tool schemas are the largest fixed cost, and the file tools are duplicated**
+   in the system prompt prose (T4).
+4. **`chars_per_token = 4` is optimistic** for JSON, so the fixed cost may be
+   under-counted and the allowance over-stated; `context_usage` is the check.
+5. **Extraction runs on a 4,096 window** with an unbounded user message.
 
 ## 10. Where each cap lives
 
@@ -159,7 +177,10 @@ here is a ÷4 estimate, and JSON tool schemas tokenize worse than that.
   `OllamaClient._num_ctx_for`.
 - System prompt budget: `max_system_prompt_chars`; fitting in
   `Orchestrator._memory_char_budget` / `_fit_prompt_to_cap`.
-- Read/search caps: `tool_executor.py` (`_read_char_limit`, `MAX_SEARCH_MATCHES`).
+- Read/search/listing caps: `tool_executor.py` (`_read_char_limit`,
+  `_cap_entries_to_budget`, `MAX_SEARCH_MATCHES`).
+- The per-turn content allowance: `pipeline/context_budget.py`
+  (`TurnBudget`, `content_char_limit`), installed by `Orchestrator._run_turn`.
 - Fetch cap: `tools.py` (`_snippet`).
 - Loop length: `tools.py` (`MAX_TOOL_ROUNDS`).
 - Glob cap: `filesystem.py` (`MAX_GLOB_RESULTS`).

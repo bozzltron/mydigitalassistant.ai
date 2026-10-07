@@ -14,9 +14,11 @@ from __future__ import annotations
 import pytest
 
 from assistant.backend.config import settings
-from assistant.backend.pipeline.tool_executor import (
+from assistant.backend.pipeline.context_budget import (
     CHARS_PER_TOKEN,
-    READ_RESULT_WINDOW_FRACTION,
+    FALLBACK_WINDOW_FRACTION,
+)
+from assistant.backend.pipeline.tool_executor import (
     _bounded_for_model,
     _page_and_bound,
     _page_text,
@@ -24,8 +26,14 @@ from assistant.backend.pipeline.tool_executor import (
 )
 
 
-def test_read_limit_is_a_fraction_of_the_window_not_a_flat_60k():
-    expected = int(settings.chat_num_ctx * READ_RESULT_WINDOW_FRACTION) * CHARS_PER_TOKEN
+def test_read_limit_falls_back_to_a_fraction_without_a_turn_budget():
+    """A direct tool call (no turn budget) still cannot fill the window.
+
+    Inside a turn the limit is derived from the measured fixed cost
+    (context_budget.py); outside one -- the CLI, a direct call -- it falls back to
+    a fraction of the configured chat window, the pre-T2 behaviour.
+    """
+    expected = int(settings.chat_num_ctx * FALLBACK_WINDOW_FRACTION) * CHARS_PER_TOKEN
     assert _read_char_limit() == max(2_000, expected)
     # A single read can no longer be the whole window.
     assert _read_char_limit() < settings.chat_num_ctx * CHARS_PER_TOKEN

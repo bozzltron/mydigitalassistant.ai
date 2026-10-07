@@ -19,6 +19,11 @@ from assistant.backend.memory.retrieval import (
     format_memory_context,
 )
 from assistant.backend.memory.store import MemoryStore
+from assistant.backend.pipeline.context_budget import (
+    measure_budget,
+    reset_turn_budget,
+    set_turn_budget,
+)
 from assistant.backend.pipeline.llm_client import (
     EMPTY_GENERATION_FALLBACK,
     ChatMessage,
@@ -1774,6 +1779,23 @@ class Orchestrator:
             else:
                 await self._report(progress, "responding", "writing a reply")
 
+            # The turn's context budget: the tool loop shares one window with the
+            # fixed cost (system prompt + tool schemas + history + the user turn)
+            # and the answer. Derived from the measured components, not a flat
+            # fraction, so a long history or a bigger tool set shrinks the room a
+            # read/search/listing may use. See docs/CONTEXT_THROUGHPUT.md.
+            loop_window = self.llm_client.context_window(
+                gen_model or self.llm_client.tools_model
+            )
+            budget = measure_budget(
+                loop_window,
+                system_prompt_chars=system_prompt_chars,
+                tool_schema_chars=tool_schema_chars,
+                history_chars=history_chars,
+                user_message_chars=len(request.user_turn_override or request.message),
+            )
+            budget_token = set_turn_budget(budget)
+
             # Stream using the tool loop (Phase 4: stream full tool loop including tools)
             # We need to capture the final answer to persist it as an episode
             
@@ -1827,6 +1849,8 @@ class Orchestrator:
                 logger.error("Streaming generation failed: %s", e)
                 final_answer = _GENERATION_FAILURE_MESSAGE
                 yield _finalize_event(final_answer)
+            finally:
+                reset_turn_budget(budget_token)
 
         else:
             # No tools - just stream the chat response

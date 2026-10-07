@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 
 from assistant.backend.config import settings
 from assistant.backend.memory.store import MemoryStore
+from assistant.backend.pipeline.context_budget import content_char_limit
 from assistant.backend.pipeline.llm_client import (
     EMPTY_GENERATION_FALLBACK,
     ChatMessage,
@@ -34,6 +35,9 @@ logger = logging.getLogger(__name__)
 MAX_TOOL_ROUNDS = 3
 MAX_FETCH_BYTES = 500_000
 FETCH_TIMEOUT_SECONDS = 15
+# Per-page cap for a fetched page's text. The turn's content allowance can only
+# tighten this (see `_snippet`).
+FETCH_SNIPPET_CHARS = 3000
 
 # The tool identifies itself honestly. robots.txt rules that name `*` or
 # `AssistantBot` bind it; an AI-specific block naming another crawler does not
@@ -141,7 +145,14 @@ class _HTMLLinkExtractor(HTMLParser):
                 self.links.append(value)
 
 
-def _snippet(text: str, limit: int = 3000) -> str:
+def _snippet(text: str, limit: int | None = None) -> str:
+    """Clip a fetched page to the model's share.
+
+    ``limit`` defaults to the smaller of the per-page cap and the turn's content
+    allowance, so a fetch cannot add more than the loop has room for.
+    """
+    if limit is None:
+        limit = min(FETCH_SNIPPET_CHARS, content_char_limit())
     snippet = text[:limit]
     if len(text) > limit:
         snippet += f"\n... [{len(text):,} total characters, truncated to first {limit}]"
