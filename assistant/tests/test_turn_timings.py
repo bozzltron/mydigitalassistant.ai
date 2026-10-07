@@ -145,6 +145,7 @@ class TestStreamingPathIsInstrumented:
             "tool_schema_chars",
             "history_chars",
             "tool_result_chars",
+            "tool_results_dropped",
         ):
             assert field in streaming_source, f"{field} is not reported"
 

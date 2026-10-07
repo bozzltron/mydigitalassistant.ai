@@ -9,6 +9,14 @@ from collections.abc import AsyncGenerator
 from dataclasses import asdict, is_dataclass
 from enum import Enum
 
+# When the loop's content allowance is spent, an older tool result is replaced by
+# this marker rather than dropped from the message list -- the tool_call it answers
+# stays paired, and the model is told the result is gone and can be re-fetched.
+DROPPED_TOOL_RESULT = (
+    "[earlier tool result dropped to fit this turn's context budget; "
+    "run the tool again if you still need it]"
+)
+
 
 class ToolLoopEvent:
     """Event types for the tool loop streaming."""
@@ -49,10 +57,12 @@ class FinalizeEvent(ToolLoopEvent):
     the true context cost of the turn, which the initial `context_stats` line
     (system prompt only) cannot see. Zero when no LLM call ran.
 
-    ``tool_result_chars`` is the total characters of tool results appended during
-    the loop -- the part of the prompt that grows with each round. Reported
-    alongside the fixed cost (system prompt + tool schemas + history, known to the
-    caller) so `context_usage` can show where the window actually went.
+    ``tool_result_chars`` is the peak total characters of tool results held in the
+    prompt during the loop -- the part of the prompt that grows with each round.
+    Reported alongside the fixed cost (system prompt + tool schemas + history,
+    known to the caller) so `context_usage` can show where the window actually
+    went. ``tool_results_dropped`` counts older results collapsed to make room for
+    a newer one once the turn's content allowance was spent.
     """
 
     def __init__(
@@ -62,6 +72,7 @@ class FinalizeEvent(ToolLoopEvent):
         prompt_tokens: int = 0,
         context_window: int = 0,
         tool_result_chars: int = 0,
+        tool_results_dropped: int = 0,
     ):
         self.type = "finalize"
         self.answer = answer
@@ -69,6 +80,7 @@ class FinalizeEvent(ToolLoopEvent):
         self.prompt_tokens = prompt_tokens
         self.context_window = context_window
         self.tool_result_chars = tool_result_chars
+        self.tool_results_dropped = tool_results_dropped
 
 
 class ErrorEvent(ToolLoopEvent):
@@ -162,6 +174,7 @@ def serialize_event(event: ToolLoopEvent) -> str:
             'prompt_tokens': event.prompt_tokens,
             'context_window': event.context_window,
             'tool_result_chars': event.tool_result_chars,
+            'tool_results_dropped': event.tool_results_dropped,
         }
         return f"data: {json.dumps(data, default=_event_json_default)}\n\n"
     elif isinstance(event, ErrorEvent):
@@ -199,6 +212,7 @@ async def stream_tool_loop(
     model: str | None = None,
     user_id: str = "",
     session_id: str = "",
+    max_turns: int | None = None,
 ) -> AsyncGenerator[str, None]:
     """Stream the full tool loop including tool calls and final answer (SSE format).
 
@@ -206,21 +220,25 @@ async def stream_tool_loop(
     """
     import logging
 
+    from assistant.backend.config import settings
     from assistant.backend.pipeline.async_tools import format_tool_result
+    from assistant.backend.pipeline.context_budget import content_char_limit
     from assistant.backend.pipeline.llm_client import (
         EMPTY_GENERATION_FALLBACK,
         ChatMessage,
         compact_messages,
     )
     from assistant.backend.pipeline.tool_executor import ToolResult, execute_tool
-    from assistant.backend.pipeline.tools import MAX_TOOL_ROUNDS
 
     logger = logging.getLogger(__name__)
 
     chat_messages = [ChatMessage(**m) for m in messages]
     loop_model = model or llm_client.tools_model
 
-    max_turns = MAX_TOOL_ROUNDS
+    # The cap is a runaway guard; the model ends the loop itself. A caller that
+    # knows the task's complexity (the orchestrator, from the reasoner's plan)
+    # passes a larger ceiling for deep work.
+    max_turns = max_turns or settings.max_tool_rounds
 
     # The peak prompt across the loop's turns -- the turn's true context cost.
     # Turn 1 is the system prompt + history; the tool results that follow are what
@@ -228,10 +246,16 @@ async def stream_tool_loop(
     # later turn. Reported against the window it was measured in.
     max_prompt_tokens = 0
     context_window = llm_client.context_window(loop_model)
-    # Total characters of tool results appended across the loop -- the part of the
-    # prompt that grows round over round. Reported with the fixed cost so the
-    # window's composition is visible per turn (see context_usage).
+    # The tool results held in the prompt, and their peak, so the window's
+    # composition is visible per turn (see context_usage). The aggregate is capped
+    # at the turn's content allowance: once it is spent, an older result is
+    # collapsed to a marker to make room for a newer one, so a long tool chain
+    # cannot overflow the window round over round.
+    content_allowance = content_char_limit()
+    tool_result_messages: list[ChatMessage] = []
     tool_result_chars = 0
+    peak_tool_result_chars = 0
+    tool_results_dropped = 0
 
     turn = 0
     reasoning_trace: list[str] = []
@@ -333,7 +357,8 @@ async def stream_tool_loop(
                         "\n\n".join(reasoning_trace) if reasoning_trace else None,
                         prompt_tokens=max_prompt_tokens,
                         context_window=context_window,
-                        tool_result_chars=tool_result_chars,
+                        tool_result_chars=peak_tool_result_chars,
+                        tool_results_dropped=tool_results_dropped,
                     )
                     yield serialize_event(event)
                     return
@@ -343,16 +368,26 @@ async def stream_tool_loop(
                     reasoning_trace.append(raw_args.get("reasoning", ""))
 
                 # Add tool result to messages (surface the error on failure so
-                # the model can recover instead of retrying the same call)
+                # the model can recover instead of retrying the same call).
                 formatted_result = format_tool_result(result)
+                # The aggregate cap: the loop's rounds share one content allowance.
+                # Collapse older results (oldest first) to make room for this one,
+                # so a long tool chain cannot overflow the window round over round.
+                if tool_result_chars + len(formatted_result) > content_allowance:
+                    for old in tool_result_messages:
+                        if tool_result_chars + len(formatted_result) <= content_allowance:
+                            break
+                        if len(old.content) > len(DROPPED_TOOL_RESULT):
+                            tool_result_chars += len(DROPPED_TOOL_RESULT) - len(old.content)
+                            old.content = DROPPED_TOOL_RESULT
+                            tool_results_dropped += 1
                 tool_result_chars += len(formatted_result)
-                chat_messages.append(
-                    ChatMessage(
-                        role="tool",
-                        content=formatted_result,
-                        name=tool_name
-                    )
+                result_message = ChatMessage(
+                    role="tool", content=formatted_result, name=tool_name
                 )
+                tool_result_messages.append(result_message)
+                chat_messages.append(result_message)
+                peak_tool_result_chars = max(peak_tool_result_chars, tool_result_chars)
         else:
             # No tool calls = direct answer
             answer = (response.content or "").strip() or EMPTY_GENERATION_FALLBACK
@@ -361,7 +396,8 @@ async def stream_tool_loop(
                 "\n\n".join(reasoning_trace) if reasoning_trace else None,
                 prompt_tokens=max_prompt_tokens,
                 context_window=context_window,
-                tool_result_chars=tool_result_chars,
+                tool_result_chars=peak_tool_result_chars,
+                tool_results_dropped=tool_results_dropped,
             )
             yield serialize_event(event)
             return
@@ -411,7 +447,8 @@ async def stream_tool_loop(
         "\n\n".join(reasoning_trace) if reasoning_trace else None,
         prompt_tokens=max_prompt_tokens,
         context_window=context_window,
-        tool_result_chars=tool_result_chars,
+        tool_result_chars=peak_tool_result_chars,
+        tool_results_dropped=tool_results_dropped,
     )
     yield serialize_event(event)
 

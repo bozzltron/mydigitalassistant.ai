@@ -225,6 +225,7 @@ async def test_stream_tool_loop_max_turns_wraps_up_not_metadata(tmp_path):
         model="test-model",
         user_id="1",
         session_id="s-1",
+        max_turns=3,
     ):
         events.append(ev)
 
@@ -415,18 +416,25 @@ async def test_stream_tool_loop_reports_the_peak_prompt(tmp_path):
 
 
 def test_serialize_finalize_includes_tool_result_chars():
-    """The finalize wire format carries the tool-result total.
+    """The finalize wire format carries the tool-result total and drop count.
 
-    The orchestrator reads it back to log where the window went; if it is not
-    serialized the value silently reads as 0 and the composition is a lie.
+    The orchestrator reads them back to log where the window went; if they are not
+    serialized the values silently read as 0 and the composition is a lie.
     """
     from assistant.backend.pipeline.streaming import FinalizeEvent
 
     msg = serialize_event(
-        FinalizeEvent("hi", prompt_tokens=10, context_window=100, tool_result_chars=42)
+        FinalizeEvent(
+            "hi",
+            prompt_tokens=10,
+            context_window=100,
+            tool_result_chars=42,
+            tool_results_dropped=3,
+        )
     )
     parsed = json.loads(msg[len("data: "):].strip("\n"))
     assert parsed["tool_result_chars"] == 42
+    assert parsed["tool_results_dropped"] == 3
 
 
 async def test_stream_tool_loop_reports_tool_result_chars(tmp_path):
@@ -480,3 +488,85 @@ async def test_stream_tool_loop_reports_tool_result_chars(tmp_path):
     ][-1]
     # The failed read appended an "ERROR: ..." tool result, so the total is > 0.
     assert finalize["tool_result_chars"] > 0
+
+
+async def test_stream_tool_loop_collapses_older_results_when_the_budget_is_spent(
+    tmp_path,
+):
+    """The aggregate cap: rounds share one allowance, older results give way.
+
+    T2 caps each result; without an aggregate cap the loop could still add one per
+    round and overflow. Here the allowance fits one large read, so the second read
+    collapses the first to a marker -- which the model sees, and which keeps the
+    tool_call/tool_result pairing intact.
+    """
+    from assistant.backend.pipeline import filesystem
+    from assistant.backend.pipeline.context_budget import (
+        TurnBudget,
+        reset_turn_budget,
+        set_turn_budget,
+    )
+    from assistant.backend.pipeline.llm_client import ChatResponse, ToolCall
+    from assistant.backend.pipeline.streaming import DROPPED_TOOL_RESULT, stream_tool_loop
+    from assistant.backend.pipeline.tool_executor import init_store
+
+    init_store(str(tmp_path / "stream.db"))
+    filesystem.SANDBOX_ROOT.mkdir(parents=True, exist_ok=True)
+    big = filesystem.SANDBOX_ROOT / "collapse_big.txt"
+    big.write_text("\n".join(f"line {i}" for i in range(5000)), encoding="utf-8")
+
+    class StubLLM:
+        def __init__(self, responses):
+            self.responses = list(responses)
+            self.tools_model = "test-model"
+            self.calls = []
+
+        async def chat(self, messages, **kwargs):
+            self.calls.append(messages)
+            return self.responses.pop(0)
+
+        def context_window(self, model=None):
+            return 16384
+
+    def read_call():
+        return ChatResponse(
+            content="",
+            model="m",
+            done=True,
+            tool_calls=[ToolCall(name="read_file", arguments={"path": "collapse_big.txt"})],
+        )
+
+    llm = StubLLM([read_call(), read_call(), ChatResponse(content="done", model="m", done=True)])
+
+    # Allowance 4,000 chars: one large read fits, two do not.
+    token = set_turn_budget(
+        TurnBudget(window_tokens=16384, fixed_cost_chars=0, reserved_output_tokens=16384 - 1000)
+    )
+    try:
+        events = [
+            ev
+            async for ev in stream_tool_loop(
+                llm,
+                messages=[{"role": "user", "content": "q"}],
+                tools=[],
+                model="test-model",
+                user_id="1",
+                session_id="s-1",
+            )
+        ]
+    finally:
+        reset_turn_budget(token)
+        big.unlink(missing_ok=True)
+
+    finalize = [
+        json.loads(ev.replace("data: ", "").strip())
+        for ev in events
+        if '"type": "finalize"' in ev
+    ][-1]
+    assert finalize["tool_results_dropped"] >= 1
+    # The dropped marker reached the model's messages.
+    assert any(
+        DROPPED_TOOL_RESULT in (m.content or "")
+        for call in llm.calls
+        for m in call
+    )

@@ -1755,6 +1755,7 @@ class Orchestrator:
         final_prompt_tokens = 0
         final_context_window = 0
         final_tool_result_chars = 0
+        final_tool_results_dropped = 0
 
         # Check if tools enabled
         if settings.tools_enabled:
@@ -1796,13 +1797,22 @@ class Orchestrator:
             )
             budget_token = set_turn_budget(budget)
 
+            # Rounds follow the task: a deep task (the reasoner's thinking /
+            # max-intelligence escalation) gets the deeper ceiling; everything
+            # else the base. The model ends the loop itself when it is done.
+            loop_max_turns = (
+                settings.max_tool_rounds_deep
+                if (think or plan.max_intelligence)
+                else settings.max_tool_rounds
+            )
+
             # Stream using the tool loop (Phase 4: stream full tool loop including tools)
             # We need to capture the final answer to persist it as an episode
             
             async def _stream_and_capture():
                 nonlocal final_answer, final_reasoning, ttft_s
                 nonlocal final_prompt_tokens, final_context_window
-                nonlocal final_tool_result_chars
+                nonlocal final_tool_result_chars, final_tool_results_dropped
                 async for event in stream_tool_loop(
                     self.llm_client,
                     messages_dict,
@@ -1812,6 +1822,7 @@ class Orchestrator:
                     num_predict=num_predict,
                     user_id=str(request.user_id),
                     session_id=session_id,
+                    max_turns=loop_max_turns,
                 ):
                     # Parse event to capture final answer
                     try:
@@ -1826,6 +1837,9 @@ class Orchestrator:
                             final_prompt_tokens = event_data.get("prompt_tokens") or 0
                             final_context_window = event_data.get("context_window") or 0
                             final_tool_result_chars = event_data.get("tool_result_chars") or 0
+                            final_tool_results_dropped = (
+                                event_data.get("tool_results_dropped") or 0
+                            )
                         # TTFT is the first moment the user can see any of the
                         # answer. `finalize` counts, and on the tool path it is
                         # currently the ONLY one that arrives: stream_tool_loop
@@ -1976,11 +1990,13 @@ class Orchestrator:
         # it is made of. Chars are ÷4 estimates of tokens; the true count is Ollama's.
         logger.info(
             "context_fixed: system_prompt_chars=%d tool_schema_chars=%d "
-            "history_chars=%d tool_result_chars=%d peak_prompt_tokens=%d window=%d",
+            "history_chars=%d tool_result_chars=%d tool_results_dropped=%d "
+            "peak_prompt_tokens=%d window=%d",
             system_prompt_chars,
             tool_schema_chars,
             history_chars,
             final_tool_result_chars,
+            final_tool_results_dropped,
             final_prompt_tokens,
             final_context_window,
         )

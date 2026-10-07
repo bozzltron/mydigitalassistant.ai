@@ -42,6 +42,17 @@ fragment.
   - Tests: `test_context_budget.py` (the derivation, the floor, the allowance, the
     search/listing behaviour, the orchestrator wiring); `test_read_budget.py`
     updated for the fallback.
+- **T3 — Aggregate cap + rounds that follow the task. SHIPPED (2026-10-07).**
+  - `stream_tool_loop` bounds the **sum** of tool results at the turn's
+    allowance: when a new result would exceed it, the oldest are collapsed to
+    `DROPPED_TOOL_RESULT` (the `tool_call`/`tool_result` pairing is preserved and
+    the model is told the result is gone). Logged as `tool_results_dropped`.
+  - Loop length follows the plan: `max_tool_rounds` (6) base,
+    `max_tool_rounds_deep` (12) for the reasoner's think / max-intelligence
+    escalation. The cap is a runaway guard; the model ends the loop itself, and
+    the aggregate cap means more rounds cost latency, not context.
+  - Tests: `test_streaming_events.py` (collapse behaviour + wire format);
+    `test_context_budget.py` (rounds follow the plan).
 
 ## Fact-check of the map
 
@@ -81,8 +92,8 @@ so it is measured against a budgeted pipeline rather than hiding the problem.
 |---|---|---|
 | T1 | Instrument the composition (`context_fixed`) | **shipped** |
 | T2 | One per-turn budget object; wire read/search/list/fetch to it | **shipped** |
-| T3 | Aggregate tool-result cap across rounds | next |
-| T4 | De-duplicate tool prose; token-bound history | |
+| T3 | Aggregate tool-result cap; rounds follow the task | **shipped** |
+| T4 | De-duplicate tool prose; token-bound history | next |
 | T5 | Re-measure on a fixed turn set | |
 | O1 | Run the opus model-swap experiment against the improved pipeline | after T5 |
 

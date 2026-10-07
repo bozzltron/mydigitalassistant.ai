@@ -103,6 +103,18 @@ shrinks it.
 `list_files` also enriches from memory frames; the trim keeps at least one entry
 and marks the result truncated so the model knows the list is partial.
 
+**The aggregate is capped too.** The rounds share one allowance: when a new tool
+result would exceed it, the oldest results are collapsed to `DROPPED_TOOL_RESULT`
+— a marker the model sees, and one that keeps the `tool_call`/`tool_result`
+pairing intact — so a long tool chain cannot overflow the window round over
+round. The count is logged as `tool_results_dropped`.
+
+**Loop length follows the task.** `max_tool_rounds` (default 6) is a *runaway
+guard*, not a task budget: the model ends the loop itself with a direct answer or
+a `finalize` call. A deep task — the reasoner's `think` / `max_intelligence`
+escalation — gets `max_tool_rounds_deep` (default 12). Because the aggregate is
+bounded, more rounds cost latency only, not context.
+
 ## 6. Output
 
 The tool path calls blocking `chat()`, so the answer arrives whole (no text
@@ -140,7 +152,8 @@ One greppable INFO line per turn, plus the peak:
 - `context_usage:` — the tool loop's **peak prompt tokens** and the window, with
   `pct` and `truncated` (the prompt reached the window).
 - `context_fixed:` — the composition in chars: `system_prompt_chars`,
-  `tool_schema_chars`, `history_chars`, `tool_result_chars`, with the peak tokens.
+  `tool_schema_chars`, `history_chars`, `tool_result_chars`,
+  `tool_results_dropped`, with the peak tokens.
 - The per-turn content allowance itself (`context_budget.py`):
   `window − fixed cost − reserved answer`, installed by `_run_turn` and read by
   every content-carrying tool while the loop runs.
@@ -158,18 +171,20 @@ Resolved by T2 (the per-turn budget, `context_budget.py`):
 - ~~No output reservation~~ — the answer now has an explicit reserve
   (`RESERVED_OUTPUT_TOKENS`, matching the thinking cap).
 
+Resolved by T3 (the aggregate cap, `stream_tool_loop`):
+
+- ~~Tool results were capped individually, never in aggregate~~ — the rounds now
+  share one allowance; older results collapse to a marker when it is spent.
+
 Still open:
 
-1. **Tool results are capped individually, never in aggregate.** Each result draws
-   from the allowance, but the sum across the loop's rounds is not yet bounded —
-   3 rounds can each spend it (T3).
-2. **History is bounded by turns, not tokens** — one long prior answer is re-sent
-   every subsequent turn (T4).
-3. **Tool schemas are the largest fixed cost, and the file tools are duplicated**
+1. **History is bounded by turns, not tokens** — one long prior answer is re-sent
+   every subsequent turn, and can by itself exceed the window (T4).
+2. **Tool schemas are the largest fixed cost, and the file tools are duplicated**
    in the system prompt prose (T4).
-4. **`chars_per_token = 4` is optimistic** for JSON, so the fixed cost may be
+3. **`chars_per_token = 4` is optimistic** for JSON, so the fixed cost may be
    under-counted and the allowance over-stated; `context_usage` is the check.
-5. **Extraction runs on a 4,096 window** with an unbounded user message.
+4. **Extraction runs on a 4,096 window** with an unbounded user message.
 
 ## 10. Where each cap lives
 
@@ -182,7 +197,8 @@ Still open:
 - The per-turn content allowance: `pipeline/context_budget.py`
   (`TurnBudget`, `content_char_limit`), installed by `Orchestrator._run_turn`.
 - Fetch cap: `tools.py` (`_snippet`).
-- Loop length: `tools.py` (`MAX_TOOL_ROUNDS`).
+- Loop length: `config.py` (`max_tool_rounds`, `max_tool_rounds_deep`);
+  `tools.py` (`MAX_TOOL_ROUNDS`, the legacy non-streaming loop).
 - Glob cap: `filesystem.py` (`MAX_GLOB_RESULTS`).
 
 ## Related

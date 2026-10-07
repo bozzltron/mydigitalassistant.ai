@@ -92,6 +92,22 @@ def test_orchestrator_installs_and_resets_the_budget():
     assert "reset_turn_budget(" in source
 
 
+def test_tool_rounds_follow_task_complexity():
+    """The loop length scales with the plan, not a flat cap.
+
+    The model ends the loop itself; the cap is a runaway guard. A deep task (the
+    reasoner's thinking / max-intelligence escalation) gets the deeper ceiling.
+    """
+    import inspect
+
+    from assistant.backend.pipeline import orchestrator as orch_module
+
+    source = inspect.getsource(orch_module.Orchestrator._run_turn)
+    assert "max_tool_rounds_deep" in source
+    assert "max_tool_rounds" in source
+    assert "max_turns=loop_max_turns" in source
+
+
 @pytest.mark.asyncio
 async def test_search_file_respects_the_turn_allowance():
     """A tight allowance stops search_file collecting long matches.

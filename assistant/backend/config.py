@@ -122,6 +122,16 @@ class Settings(BaseSettings):
     tools_num_ctx: int = 16384
     tools_keep_alive: str = "-1"
 
+    # Tool-loop length. The cap is a *runaway guard*, not a task budget: the model
+    # ends the loop itself (a direct answer, or a `finalize` call), so a longer cap
+    # lets a genuinely multi-step task finish rather than being cut off at three
+    # rounds. The aggregate context budget (context_budget.py) keeps more rounds
+    # from overflowing the window, so the cost of a higher cap is latency only —
+    # and the user asked to trade that for value. Deep tasks (the reasoner's
+    # `think` / `max_intelligence` escalation) get the deeper ceiling.
+    max_tool_rounds: int = 6
+    max_tool_rounds_deep: int = 12
+
     # Max-intelligence escalation tier (Phase 6 M6). The largest local model the
     # host can serve well (qwen3.8:27b on a 48GB Mac). Loaded on demand with a
     # short keep_alive — never resident next to the warm chat/utility/embedding
