@@ -920,6 +920,26 @@ def _bounded_for_model(
     return head + marker + "]"
 
 
+def _page_and_bound(
+    content: str, *, offset: int, limit: int | None, handle: str
+) -> tuple[str, int]:
+    """Page `content` by line, label a requested page, then bound it.
+
+    A *requested* page that is not itself capped gets a `[lines X-Y of N]` header
+    so the model knows where it is in the file. A capped result is already
+    labelled by `_bounded_for_model`'s marker, so it does not get both. Returns
+    `(text_for_model, total_lines)`.
+    """
+    page, start_line, total_lines = _page_text(content, offset, limit)
+    bounded = _bounded_for_model(
+        page, handle=handle, start_line=start_line, total_lines=total_lines
+    )
+    if (offset or limit is not None) and bounded == page:
+        last = start_line + page.count("\n") + 1
+        bounded = f"[lines {start_line + 1}-{last} of {total_lines}]\n{bounded}"
+    return bounded, total_lines
+
+
 async def execute_read_file(args: dict, user_id: str, session_id: str) -> ToolResult:
     """Read a sandbox file or an uploaded file.
 
@@ -1027,12 +1047,8 @@ async def execute_read_file(args: dict, user_id: str, session_id: str) -> ToolRe
                     ),
                 )
 
-            page, start_line, total_lines = _page_text(content, offset, limit)
-            bounded = _bounded_for_model(
-                page,
-                handle=frame_name or frame.name,
-                start_line=start_line,
-                total_lines=total_lines,
+            bounded, total_lines = _page_and_bound(
+                content, offset=offset, limit=limit, handle=frame_name or frame.name
             )
             return ToolResult(
                 success=True,
@@ -1163,12 +1179,8 @@ async def execute_read_file(args: dict, user_id: str, session_id: str) -> ToolRe
                     pass
             return ToolResult(success=False, error=error)
 
-        page, start_line, total_lines = _page_text(content, offset, limit)
-        bounded = _bounded_for_model(
-            page,
-            handle=resolved_path or requested,
-            start_line=start_line,
-            total_lines=total_lines,
+        bounded, total_lines = _page_and_bound(
+            content, offset=offset, limit=limit, handle=resolved_path or requested
         )
         data: dict = {
             "path": resolved_path,

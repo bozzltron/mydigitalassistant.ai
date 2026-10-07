@@ -18,6 +18,7 @@ from assistant.backend.pipeline.tool_executor import (
     CHARS_PER_TOKEN,
     READ_RESULT_WINDOW_FRACTION,
     _bounded_for_model,
+    _page_and_bound,
     _page_text,
     _read_char_limit,
 )
@@ -56,6 +57,16 @@ def test_paging_default_reads_everything():
     assert page == "a\nb\nc"
     assert start == 0
     assert total == 3
+
+
+def test_a_requested_page_names_its_range():
+    """A page that fits still says where it is, so the model is not lost."""
+    text = "\n".join(f"line {i}" for i in range(100))
+    out, total = _page_and_bound(text, offset=10, limit=5, handle="data.csv")
+    assert out.startswith("[lines 11-15 of 100]\n")
+    assert "line 10" in out and "line 14" in out
+    assert "line 15" not in out
+    assert total == 100
 
 
 @pytest.mark.asyncio
