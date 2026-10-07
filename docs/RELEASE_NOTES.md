@@ -1,5 +1,46 @@
 # MyDigitalAssistant.ai — release notes
 
+## v0.11.9-alpha
+
+**Large files stop overwhelming the agent — and edits get precise.**
+
+The tool loop sends the system prompt, every tool schema, and the history in one
+prompt, so it is the largest prompt in the system and the one that overflows
+first. A single `read_file` of a 43k-char CSV was ~15k tokens against a 16,384
+window; llama.cpp truncated it silently and the model answered from a fragment it
+could not see. This release makes the window visible, budgets what enters it, and
+gives the model handles to work with a large file instead of holding it.
+
+- **The context window is visible.** The turn's true peak prompt is read from
+  Ollama (`prompt_eval_count`) and shown in the trace as a context meter, with a
+  warning when a turn actually reached the window.
+- **A read is budgeted from the window, not a flat number.** The old cap was
+  60,000 chars (~15k tokens) — nearly the whole window. A read now gets a
+  fraction of `CHAT_NUM_CTX`, and a capped read carries an **actionable** marker:
+  the line range, the true total, and the exact `read_file(path=…, offset=…)`
+  call for the next page.
+- **`read_file` pages by line** (`offset`/`limit`), and a requested page says
+  where it is (`[lines 201-250 of 628]`).
+- **Build and query a file without reading it.** `append_file` adds a line
+  without pulling the file into the window; `search_file` answers "is this
+  already here?" by matching lines. Dedup is composition, and neither assumes a
+  format.
+- **A file arrives with its shape.** A deterministic profile — rows, columns,
+  per-column distinct counts, and the category distribution for low-cardinality
+  columns; keys and sizes for JSON; headings for markdown — is computed at write
+  time and shown in memory context, so "what is this file and where are the
+  gaps?" is a memory read rather than a model guess.
+- **Editing is precise.** `edit_file` takes a line range (the numbers `read_file`
+  shows) or a text anchor. An ambiguous anchor is refused with the line number of
+  every match instead of silently rewriting the file, and `replace_all` now
+  defaults **off**. Given both, the anchor is verified against the range before
+  replacing — a stale line number cannot edit the wrong line. An edit refreshes
+  the file's memory through the same step writes use, so its profile and row
+  frames no longer go stale.
+
+Contracts live in `docs/FILES.md`; the tool-loop window rule in
+`assistant/AGENTS.md`.
+
 ## v0.11.8-alpha
 
 **Browsing works now, and can read further into a site.**
