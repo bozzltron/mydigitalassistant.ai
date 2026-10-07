@@ -1,5 +1,25 @@
 # MyDigitalAssistant.ai — release notes
 
+## v0.11.8-alpha
+
+**Browsing works now, and can read further into a site.**
+
+- **robots.txt was blocking almost everything.** The check was a substring match:
+  `"disallow: /"` is a substring of `"disallow: /private/"`, so any site with a
+  single path-specific rule was treated as *fully* disallowed — which is nearly
+  every site, and why the agent was "often blocked by robots.txt" while nothing had
+  actually disallowed it. It is now parsed with `urllib.robotparser`, per
+  User-agent and per path, against our `AssistantBot` token.
+- **`fetch_url` can go deeper.** A new `follow_links` (0–5) reads further into the
+  same site — same-host links only, deduped, robots-checked per URL, paced between
+  fetches, and SSRF-checked on every hop.
+- **One fetch path.** Search enrichment used its own fetch (`follow_redirects=True`,
+  no robots check, no per-hop SSRF check); it now shares the tool's `_fetch_page`,
+  so both obey the same rules — which also closes the SSRF gap.
+
+Policy and limits are documented in `docs/FETCHING.md` (including the honest-UA
+stance and the AI-crawler-block intent caveat).
+
 ## v0.11.7-alpha
 
 **Conversations download as text, and the voice status tells the truth.**
