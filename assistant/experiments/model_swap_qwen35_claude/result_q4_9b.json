@@ -1,0 +1,86 @@
+{
+  "chat baseline": [
+    {
+      "prompt": "qa",
+      "wall_s": 1.677,
+      "load_s": 0.005,
+      "prompt_s": 0.189,
+      "eval_tokens": 56,
+      "tok_per_s": 39.4,
+      "content": "A confidence interval is a range of values derived from sample data that is likely to contain the true population parameter with a specified level of confidence. It quantifies the uncertainty associated with an estimate by providing a margin of error around a point estimate, such as a mean or proportion."
+    },
+    {
+      "prompt": "json",
+      "wall_s": 2.249,
+      "load_s": 0.004,
+      "prompt_s": 0.196,
+      "eval_tokens": 82,
+      "tok_per_s": 40.2,
+      "content": "{\n  \"benefits\": [\n    \"Early detection of bugs, which significantly reduces the cost and effort required for debugging later in the development lifecycle.\",\n    \"Facilitates safe refactoring by providing a safety net that ensures existing functionality remains intact when code is modified.\",\n    \"Serves as living documentation that clearly defines expected behavior for specific units of code.\"\n  ]\n}",
+      "json_ok": true
+    },
+    {
+      "prompt": "tool",
+      "wall_s": 1.461,
+      "load_s": 0.003,
+      "prompt_s": 0.757,
+      "eval_tokens": 28,
+      "tok_per_s": 40.9,
+      "content": "",
+      "tool_call": true
+    }
+  ],
+  "math baseline": [
+    {
+      "prompt": "code",
+      "wall_s": 11.398,
+      "load_s": 8.155,
+      "prompt_s": 0.841,
+      "eval_tokens": 23,
+      "tok_per_s": 9.6,
+      "content": "```python\nprint(sum(i**2 for i in range(1, 101)))\n```",
+      "code_signal": true
+    }
+  ],
+  "candidate (all roles)": [
+    {
+      "prompt": "qa",
+      "wall_s": 5.021,
+      "load_s": 3.134,
+      "prompt_s": 0.213,
+      "eval_tokens": 62,
+      "tok_per_s": 37.2,
+      "content": "A confidence interval is a range of values derived from sample data that is likely to contain the true value of an unknown population parameter. It quantifies the uncertainty associated with a point estimate by providing a margin of error around that estimate, typically expressed as a percentage level of confidence (such as 95%)."
+    },
+    {
+      "prompt": "json",
+      "wall_s": 3.235,
+      "load_s": 0.007,
+      "prompt_s": 0.193,
+      "eval_tokens": 118,
+      "tok_per_s": 39.3,
+      "content": "{\n  \"benefits\": [\n    \"Early Bug Detection: Identifies and fixes errors during the development phase, significantly reducing the cost and effort required for debugging compared to finding issues in production.\",\n    \"Improved Code Quality and Maintainability: Enforces modular design by ensuring each component functions correctly in isolation, making the codebase easier to understand, refactor, and extend over time.\",\n    \"Facilitates Refactoring: Provides a safety net of automated tests that allows developers to confidently modify existing code without introducing regressions or breaking unint",
+      "json_ok": true
+    },
+    {
+      "prompt": "tool",
+      "wall_s": 1.457,
+      "load_s": 0.004,
+      "prompt_s": 0.763,
+      "eval_tokens": 28,
+      "tok_per_s": 41.6,
+      "content": "",
+      "tool_call": true
+    },
+    {
+      "prompt": "code",
+      "wall_s": 0.963,
+      "load_s": 0.004,
+      "prompt_s": 0.24,
+      "eval_tokens": 29,
+      "tok_per_s": 41.2,
+      "content": "```python\ntotal = sum(i ** 2 for i in range(1, 101))\nprint(total)\n```",
+      "code_signal": true
+    }
+  ]
+}

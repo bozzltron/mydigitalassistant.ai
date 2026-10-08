@@ -1,0 +1,145 @@
+{
+  "candidate (q4:4b)": [
+    {
+      "message": "My name is Ada Lovelace and I live in Austin, Texas.",
+      "expected": [
+        "Ada",
+        "Austin"
+      ],
+      "found": [
+        "Ada",
+        "Austin"
+      ],
+      "missed": [],
+      "slot_count": 2,
+      "wall_s": 21.11,
+      "error": ""
+    },
+    {
+      "message": "I drive a blue 2019 Subaru Outback.",
+      "expected": [
+        "Subaru"
+      ],
+      "found": [],
+      "missed": [
+        "Subaru"
+      ],
+      "slot_count": 2,
+      "wall_s": 14.25,
+      "error": ""
+    },
+    {
+      "message": "My sister Priya's birthday is March 3.",
+      "expected": [
+        "Priya",
+        "March"
+      ],
+      "found": [
+        "Priya"
+      ],
+      "missed": [
+        "March"
+      ],
+      "slot_count": 1,
+      "wall_s": 2.46,
+      "error": ""
+    },
+    {
+      "message": "I'm allergic to peanuts.",
+      "expected": [
+        "peanut"
+      ],
+      "found": [
+        "peanut"
+      ],
+      "missed": [],
+      "slot_count": 1,
+      "wall_s": 1.96,
+      "error": ""
+    },
+    {
+      "message": "I work at Acme Corp as a data engineer.",
+      "expected": [
+        "Acme"
+      ],
+      "found": [],
+      "missed": [
+        "Acme"
+      ],
+      "slot_count": 1,
+      "wall_s": 1.87,
+      "error": ""
+    }
+  ],
+  "utility baseline (qwen3.5:4b)": [
+    {
+      "message": "My name is Ada Lovelace and I live in Austin, Texas.",
+      "expected": [
+        "Ada",
+        "Austin"
+      ],
+      "found": [
+        "Ada",
+        "Austin"
+      ],
+      "missed": [],
+      "slot_count": 2,
+      "wall_s": 5.54,
+      "error": ""
+    },
+    {
+      "message": "I drive a blue 2019 Subaru Outback.",
+      "expected": [
+        "Subaru"
+      ],
+      "found": [
+        "Subaru"
+      ],
+      "missed": [],
+      "slot_count": 3,
+      "wall_s": 3.14,
+      "error": ""
+    },
+    {
+      "message": "My sister Priya's birthday is March 3.",
+      "expected": [
+        "Priya",
+        "March"
+      ],
+      "found": [
+        "Priya",
+        "March"
+      ],
+      "missed": [],
+      "slot_count": 2,
+      "wall_s": 3.01,
+      "error": ""
+    },
+    {
+      "message": "I'm allergic to peanuts.",
+      "expected": [
+        "peanut"
+      ],
+      "found": [
+        "peanut"
+      ],
+      "missed": [],
+      "slot_count": 1,
+      "wall_s": 1.82,
+      "error": ""
+    },
+    {
+      "message": "I work at Acme Corp as a data engineer.",
+      "expected": [
+        "Acme"
+      ],
+      "found": [
+        "Acme"
+      ],
+      "missed": [],
+      "slot_count": 3,
+      "wall_s": 5.58,
+      "error": ""
+    }
+  ]
+}

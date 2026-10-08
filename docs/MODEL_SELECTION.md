@@ -117,6 +117,28 @@ Rationale highlights:
 - **0.6b embedding** — fast, tiny, 1024-dim vectors.
 - Max/math are **never resident** (`10m` keep-alive) so the warm set survives.
 
+## Re-assessment: `qwen3.5-claude-4.6-opus-q4` (Oct 2026)
+
+A community family (`sorc/qwen3.5-claude-4.6-opus-q4`) whose Q4 builds match the
+incumbents' sizes exactly (`:9b` 6.59 GB, `:4b` 3.39 GB), so each role can be
+compared **like-for-like** (unlike the Q8 `:latest` build, which is heavier and
+misleading — see `assistant/experiments/model_fleet_q4/`).
+
+| Role | Incumbent | Candidate | Result |
+|---|---|---|---|
+| Chat / Tools | `qwen3.5:9b` | `q4:9b` | **tie** — tools ✓, JSON ✓, ~40 tok/s both; quality unmeasured |
+| Utility | `qwen3.5:4b` | `q4:4b` | candidate **worse** — 4/7 vs 7/7 facts extracted |
+| Math | `qwen3.8:27b` | `q4:9b` | candidate **wins** — 8/8 both, 2–4 s vs 7–50 s, 6.6 GB vs 17 GB |
+
+**Decision:** keep `qwen3.5:9b` (chat/tools) and `qwen3.5:4b` (utility); prefer
+`qwen3.5-claude-4.6-opus-q4:9b` for the **math** role when it is enabled —
+equal accuracy on the probe, far faster, and 10 GB smaller than the 27B.
+
+**Caveats:** the probes are small (one chat prompt, five extraction turns, eight
+easy math problems); the math tie does not prove superiority on hard problems, and
+chat quality was not measured. A chat swap would need a quality win this did not
+find.
+
 ## Re-assessment cadence
 
 - **Trigger:** a new notable Ollama model family (bigger qwen, llama, mistral,

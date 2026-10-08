@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import re
 from pathlib import Path
 
@@ -21,7 +22,7 @@ from assistant.backend.pipeline.llm_client import OllamaClient
 
 HERE = Path(__file__).resolve().parent
 
-CANDIDATE = "sorc/qwen3.5-claude-4.6-opus:latest"
+CANDIDATE = os.environ.get("CANDIDATE_MODEL", "sorc/qwen3.5-claude-4.6-opus:latest")
 MODELS: list[tuple[str, str]] = [
     ("candidate", CANDIDATE),
     ("math baseline (qwen3.8:27b)", "qwen3.8:27b"),
@@ -134,8 +135,9 @@ async def _main() -> None:
         results[label] = await _run_arm(label, model)
         score = sum(1 for r in results[label] if r["correct"])
         print(f"  -> {score}/{len(PROBLEMS)} correct")
-    (HERE / "result.json").write_text(json.dumps(results, indent=2))
-    print(f"\nwrote {HERE / 'result.json'}")
+    out = Path(os.environ.get("RESULT_PATH", HERE / "result.json"))
+    out.write_text(json.dumps(results, indent=2))
+    print(f"\nwrote {out}")
 
 
 if __name__ == "__main__":

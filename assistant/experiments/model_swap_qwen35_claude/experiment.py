@@ -144,8 +144,9 @@ def main() -> None:
     for model, label, names in ARMS:
         print(f"\n[{label}] {model}")
         results[label] = _run(model, names)
-    (HERE / "result.json").write_text(json.dumps(results, indent=2))
-    print(f"\nwrote {HERE / 'result.json'}")
+    out = Path(os.environ.get("RESULT_PATH", HERE / "result.json"))
+    out.write_text(json.dumps(results, indent=2))
+    print(f"\nwrote {out}")
 
 
 if __name__ == "__main__":

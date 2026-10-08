@@ -1,0 +1,86 @@
+{
+  "chat baseline": [
+    {
+      "prompt": "qa",
+      "wall_s": 3.717,
+      "load_s": 2.723,
+      "prompt_s": 0.116,
+      "eval_tokens": 54,
+      "tok_per_s": 63.1,
+      "content": "A confidence interval is a range of values derived from sample data that is likely to contain the true value of an unknown population parameter. It provides a measure of uncertainty by indicating the probability that the calculated statistic falls within a specific range if the experiment were repeated many times."
+    },
+    {
+      "prompt": "json",
+      "wall_s": 2.906,
+      "load_s": 0.004,
+      "prompt_s": 0.124,
+      "eval_tokens": 172,
+      "tok_per_s": 62.5,
+      "content": "{\n  \"benefits\": [\n    {\n      \"id\": 1,\n      \"title\": \"Early Bug Detection\",\n      \"description\": \"Identifies and fixes defects early in the development cycle, significantly reducing the cost and effort required to resolve issues later.\"\n    },\n    {\n      \"id\": 2,\n      \"title\": \"Improved Code Quality\",\n      \"description\": \"Encourages writing clean, modular, and maintainable code by enforcing strict rules about input validation and expected outputs.\"\n    },\n    {\n      \"id\": 3,\n      \"title\": \"Faster Feedback Loop\",\n      \"description\": \"Provides immediate results after every code change, al",
+      "json_ok": true
+    },
+    {
+      "prompt": "tool",
+      "wall_s": 0.91,
+      "load_s": 0.005,
+      "prompt_s": 0.432,
+      "eval_tokens": 28,
+      "tok_per_s": 62.2,
+      "content": "",
+      "tool_call": true
+    }
+  ],
+  "math baseline": [
+    {
+      "prompt": "code",
+      "wall_s": 0.561,
+      "load_s": 0.006,
+      "prompt_s": 0.136,
+      "eval_tokens": 25,
+      "tok_per_s": 63.5,
+      "content": "sum_sq = sum(i**2 for i in range(1, 101))\nprint(sum_sq)",
+      "code_signal": true
+    }
+  ],
+  "candidate (all roles)": [
+    {
+      "prompt": "qa",
+      "wall_s": 3.746,
+      "load_s": 2.411,
+      "prompt_s": 0.11,
+      "eval_tokens": 77,
+      "tok_per_s": 63.4,
+      "content": "A confidence interval is a range of values derived from sample data that is likely to contain the true value of an unknown population parameter, such as a mean or proportion. It provides a measure of uncertainty by indicating the probability\u2014typically 95% or 99%\u2014that the method used to generate the interval would produce a range containing the true parameter if repeated many times."
+    },
+    {
+      "prompt": "json",
+      "wall_s": 3.153,
+      "load_s": 0.005,
+      "prompt_s": 0.126,
+      "eval_tokens": 189,
+      "tok_per_s": 63.0,
+      "content": "{\n  \"benefits\": [\n    {\n      \"id\": 1,\n      \"name\": \"Early Bug Detection\",\n      \"description\": \"Unit tests catch errors at the smallest level of development, allowing developers to fix issues immediately before they propagate into larger components or production environments.\"\n    },\n    {\n      \"id\": 2,\n      \"name\": \"Improved Code Quality and Documentation\",\n      \"description\": \"Well-written unit tests serve as executable documentation, clarifying expected behavior for new developers and ensuring the code remains consistent over time.\"\n    },\n    {\n      \"id\": 3,\n      \"name\": \"Enables Sa",
+      "json_ok": true
+    },
+    {
+      "prompt": "tool",
+      "wall_s": 0.899,
+      "load_s": 0.005,
+      "prompt_s": 0.428,
+      "eval_tokens": 28,
+      "tok_per_s": 63.1,
+      "content": "",
+      "tool_call": true
+    },
+    {
+      "prompt": "code",
+      "wall_s": 0.609,
+      "load_s": 0.005,
+      "prompt_s": 0.134,
+      "eval_tokens": 28,
+      "tok_per_s": 62.4,
+      "content": "```python\ntotal = sum(i**2 for i in range(1, 101))\nprint(total)\n```",
+      "code_signal": true
+    }
+  ]
+}
