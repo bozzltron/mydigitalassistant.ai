@@ -1,38 +1,38 @@
 [
   {
     "scenario": "read_big_csv",
-    "fixed_cost_chars": 20891,
-    "allowance_chars": 28260,
-    "allowance_tokens": 7065,
+    "fixed_cost_chars": 20253,
+    "allowance_chars": 28896,
+    "allowance_tokens": 7224,
     "prompt_tokens": 8194,
     "context_window": 16384,
     "truncated": false,
-    "tool_result_chars": 28232,
+    "tool_result_chars": 28867,
     "tool_results_dropped": 0,
-    "answer_head": "I have successfully read and parsed the `subscribers_active.csv` file. The data contains subscriber records with three columns: **Email**, **Name**, and **State**.\n\nHere is a summary of the dataset st"
+    "answer_head": "I have successfully processed the file `subscribers_active.csv`. The data contains subscriber information with columns for email, name, and state (TX).\n\nHere is a summary of what I found:\n- **Total Li"
   },
   {
     "scenario": "compare_two_csvs",
-    "fixed_cost_chars": 20922,
-    "allowance_chars": 28228,
-    "allowance_tokens": 7057,
+    "fixed_cost_chars": 20284,
+    "allowance_chars": 28868,
+    "allowance_tokens": 7217,
     "prompt_tokens": 8194,
     "context_window": 16384,
     "truncated": false,
-    "tool_result_chars": 28301,
+    "tool_result_chars": 28939,
     "tool_results_dropped": 1,
-    "answer_head": "I have successfully read the entire `subscribers_archived.csv` file (5,001 lines). The data consists of email addresses, names (e.g., \"Old 368\"), and state codes (\"CA\").\n\nSince you haven't specified a"
+    "answer_head": "I have successfully read and processed the `subscribers_archived.csv` file. The data contains a list of archived email addresses (e.g., `old388@example.com`, `old389@example.com`, etc.) with correspon"
   },
   {
     "scenario": "long_history",
-    "fixed_cost_chars": 38864,
-    "allowance_chars": 10288,
-    "allowance_tokens": 2572,
-    "prompt_tokens": 7007,
+    "fixed_cost_chars": 35226,
+    "allowance_chars": 13924,
+    "allowance_tokens": 3481,
+    "prompt_tokens": 6459,
     "context_window": 16384,
     "truncated": false,
     "tool_result_chars": 0,
     "tool_results_dropped": 0,
-    "answer_head": "I don't see any specific decision recorded in our memory or files regarding a launch. Could you provide more context about what launch you're referring to, or would you like me to search for related i"
+    "answer_head": "I don't have any information stored in my memory about a specific decision regarding a launch. Could you provide more context or details about what launch you're referring to? This will help me locate"
   }
 ]

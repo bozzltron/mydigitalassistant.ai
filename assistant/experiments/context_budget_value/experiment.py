@@ -23,7 +23,6 @@ from assistant.backend.memory.store import MemoryStore
 from assistant.backend.pipeline import filesystem
 from assistant.backend.pipeline.context_budget import measure_budget, set_turn_budget
 from assistant.backend.pipeline.llm_client import (
-    ChatMessage,
     OllamaClient,
     build_system_prompt,
 )
@@ -90,13 +89,20 @@ async def _run_scenario(
     tools: list[dict],
     user_id: int,
 ) -> dict:
+    from types import SimpleNamespace
+
+    from assistant.backend.pipeline.orchestrator import Orchestrator
+
     if long_history:
-        history = [
-            ChatMessage(role="assistant", content="x" * LONG_HISTORY_CHARS)
+        raw_history = [
+            SimpleNamespace(role="assistant", content="x" * LONG_HISTORY_CHARS)
             for _ in range(LONG_HISTORY_TURNS)
         ]
     else:
-        history = [ChatMessage(role="assistant", content="ok")]
+        raw_history = [SimpleNamespace(role="assistant", content="ok")]
+    # Apply the production history bound (T4) -- otherwise the harness measures a
+    # prompt production would never build, and the history change is invisible.
+    history = Orchestrator._bounded_history(raw_history)
 
     system_prompt = build_system_prompt(
         memory_context="", task_type="functional", current_datetime=""

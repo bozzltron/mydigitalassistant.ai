@@ -1,0 +1,38 @@
+[
+  {
+    "scenario": "read_big_csv",
+    "fixed_cost_chars": 20891,
+    "allowance_chars": 28260,
+    "allowance_tokens": 7065,
+    "prompt_tokens": 8194,
+    "context_window": 16384,
+    "truncated": false,
+    "tool_result_chars": 28232,
+    "tool_results_dropped": 0,
+    "answer_head": "I have successfully read and parsed the `subscribers_active.csv` file. The data contains subscriber records with three columns: **Email**, **Name**, and **State**.\n\nHere is a summary of the dataset st"
+  },
+  {
+    "scenario": "compare_two_csvs",
+    "fixed_cost_chars": 20922,
+    "allowance_chars": 28228,
+    "allowance_tokens": 7057,
+    "prompt_tokens": 8194,
+    "context_window": 16384,
+    "truncated": false,
+    "tool_result_chars": 28301,
+    "tool_results_dropped": 1,
+    "answer_head": "I have successfully read the entire `subscribers_archived.csv` file (5,001 lines). The data consists of email addresses, names (e.g., \"Old 368\"), and state codes (\"CA\").\n\nSince you haven't specified a"
+  },
+  {
+    "scenario": "long_history",
+    "fixed_cost_chars": 38864,
+    "allowance_chars": 10288,
+    "allowance_tokens": 2572,
+    "prompt_tokens": 7007,
+    "context_window": 16384,
+    "truncated": false,
+    "tool_result_chars": 0,
+    "tool_results_dropped": 0,
+    "answer_head": "I don't see any specific decision recorded in our memory or files regarding a launch. Could you provide more context about what launch you're referring to, or would you like me to search for related i"
+  }
+]

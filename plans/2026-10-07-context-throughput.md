@@ -68,6 +68,11 @@ fragment.
     chaining examples and the uploaded-file note stay.
   - Tests: `test_context_budget.py` (history bound; oversized-turn truncation);
     `test_prompt_assembly.py` (prose gone, guidance kept).
+- **T5 — Re-measure. SHIPPED (2026-10-07).** Re-ran the fixed turn set after T4
+  (`assistant/experiments/context_budget_value/t5_remeasure.md`): the fixed cost
+  fell (prose −638 chars; the memory-heavy turn −3,638 chars), the content
+  allowance rose (up to +35% on the memory-heavy turn), the memory-heavy peak
+  fell 548 tokens, no turn reaches the window, and the aggregate still fires.
 
 ## Fact-check of the map
 
@@ -109,9 +114,9 @@ so it is measured against a budgeted pipeline rather than hiding the problem.
 | T2 | One per-turn budget object; wire read/search/list/fetch to it | **shipped** |
 | T3 | Aggregate tool-result cap; rounds follow the task | **shipped** |
 | T4 | De-duplicate tool prose; token-bound history | **shipped** |
-| T5 | Re-measure on a fixed turn set | next |
+| T5 | Re-measure on a fixed turn set | **shipped** |
 | T6 | Conversation scaling: same-session recall, tail summaries, transparency | **shipped (A/B/transparency)** |
-| O1 | Run the opus model-swap experiment against the improved pipeline | after T5 |
+| O1 | Run the opus model-swap experiment against the improved pipeline | next |
 
 ## T6 — Conversation scaling and summarization transparency
 
