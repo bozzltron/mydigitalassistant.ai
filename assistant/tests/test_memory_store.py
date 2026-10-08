@@ -412,6 +412,9 @@ async def test_embed_frames_skips_missing_frames(store: MemoryStore, stub_llm):
 
     emb = await store.get_frame_embedding(valid.id, "nomic-embed-text")
     assert emb is not None
+    # The missing ids were skipped, not embedded: only the valid frame has a row.
+    all_embs = await store.get_all_frame_embeddings("nomic-embed-text")
+    assert {row[0] for row in all_embs} == {valid.id}
 
 
 async def test_merge_associations_are_preserved_for_primary(store: MemoryStore):

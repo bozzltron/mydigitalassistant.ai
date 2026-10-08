@@ -87,7 +87,8 @@ class TestContentIsRefusedAtWriteTime:
         frame = await store.create_frame(
             "file_report.csv", "entity", source_type="file_create"
         )
-        assert frame.id is not None
+        assert frame.name == "file_report.csv"
+        assert frame.source_type == "file_create"
 
 
 class TestAMissingFileReportsMissing:

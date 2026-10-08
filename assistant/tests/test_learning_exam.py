@@ -14,6 +14,7 @@ inspected afterward with: sqlite3 assistant/tests/test_exam_brain.db "SELECT nam
 
 import asyncio
 import json
+import os
 import textwrap
 from pathlib import Path
 
@@ -190,7 +191,10 @@ def exam_orchestrator(exam_store):
     )
 
 
-@pytest.mark.skip(reason="Requires real Ollama + SearXNG; model knows mercury from training")
+@pytest.mark.skipif(
+    not os.environ.get("RUN_LEARNING_EXAM"),
+    reason="E2E: needs real Ollama + SearXNG; set RUN_LEARNING_EXAM=1 to run",
+)
 @pytest.mark.asyncio
 async def test_learning_exam_retake_cycle(exam_brain, exam_store, exam_orchestrator):
     """

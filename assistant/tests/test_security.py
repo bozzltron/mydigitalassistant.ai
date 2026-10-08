@@ -8,8 +8,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pytest
-
 from assistant.scripts.verify_security import (
     check_bind_address,
     check_env_example_exists,
@@ -38,13 +36,6 @@ def test_security_script_runs():
         timeout=30,
     )
     assert result.returncode == 0, f"Script failed:\n{result.stdout}\n{result.stderr}"
-
-
-def test_no_external_urls_check():
-    """Verify the external URL check is callable and returns proper types."""
-    passed, message = check_no_external_urls()
-    assert isinstance(passed, bool)
-    assert isinstance(message, str)
 
 
 def test_ollama_url_is_localhost():
@@ -111,17 +102,13 @@ def test_docker_compose_ollama_url_localhost():
            "OLLAMA_URL=http://127.0.0.1:11434" in compose
 
 
-@pytest.mark.parametrize(
-    "forbidden_url",
-    [
-        "api.openai.com",
-        "api.anthropic.com",
-        "googleapis.com",
-        "api.cohere.ai",
-        "api.mistral.ai",
-    ],
-)
-def test_forbidden_cloud_urls_not_in_source(forbidden_url):
-    """Each forbidden cloud API URL should not appear in backend or CLI source."""
+def test_no_forbidden_cloud_urls_in_source():
+    """The external-URL check passes: no cloud LLM API host is in the source.
+
+    Guards `api.openai.com`, `api.anthropic.com`, `googleapis.com`,
+    `api.cohere.ai`, `api.mistral.ai`. This replaced five identical parametrized
+    tests whose `forbidden_url` parameter was never used -- they asserted the same
+    verdict five times; the check itself scans for every host.
+    """
     passed, message = check_no_external_urls()
-    assert passed is True, f"Forbidden URL '{forbidden_url}' found: {message}"
+    assert passed is True, f"External-URL check failed: {message}"
