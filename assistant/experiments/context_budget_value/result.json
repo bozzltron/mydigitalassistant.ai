@@ -1,0 +1,38 @@
+[
+  {
+    "scenario": "read_big_csv",
+    "fixed_cost_chars": 20891,
+    "allowance_chars": 28260,
+    "allowance_tokens": 7065,
+    "prompt_tokens": 8194,
+    "context_window": 16384,
+    "truncated": false,
+    "tool_result_chars": 29452,
+    "tool_results_dropped": 0,
+    "answer_head": "I have successfully read and processed the `subscribers_active.csv` file. The data contains subscriber information with columns for email address, name, and state (TX).\n\nThe file contains **6,001 line"
+  },
+  {
+    "scenario": "compare_two_csvs",
+    "fixed_cost_chars": 20922,
+    "allowance_chars": 28228,
+    "allowance_tokens": 7057,
+    "prompt_tokens": 8194,
+    "context_window": 16384,
+    "truncated": false,
+    "tool_result_chars": 29586,
+    "tool_results_dropped": 1,
+    "answer_head": "I have successfully read and processed the `subscribers_archived.csv` file. It contains **5,001 lines** (including the header) of archived subscriber data for California (CA).\n\nThe data appears to be "
+  },
+  {
+    "scenario": "long_history",
+    "fixed_cost_chars": 38864,
+    "allowance_chars": 10288,
+    "allowance_tokens": 2572,
+    "prompt_tokens": 7026,
+    "context_window": 16384,
+    "truncated": false,
+    "tool_result_chars": 27,
+    "tool_results_dropped": 0,
+    "answer_head": "I don't have any information stored about decisions regarding a launch. Could you provide more context or details about what launch you're referring to? This would help me locate the relevant informat"
+  }
+]

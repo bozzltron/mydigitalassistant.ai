@@ -35,7 +35,9 @@ from assistant.backend.pipeline.tools import builtin_tools
 HERE = Path(__file__).resolve().parent
 
 BIG_CSV = "subscribers_active.csv"
+BIG_CSV_B = "subscribers_archived.csv"
 BIG_CSV_ROWS = 6000
+BIG_CSV_B_ROWS = 5000
 MANY_FILES = 300
 # A long history: enough that the allowance visibly shrinks for scenario 4.
 LONG_HISTORY_TURNS = settings.verbatim_history_turns
@@ -44,10 +46,9 @@ LONG_HISTORY_CHARS = 3000  # per turn
 SCENARIOS: list[tuple[str, str, bool]] = [
     # name, user message, use a long history
     ("read_big_csv", f"Read {BIG_CSV} and tell me how many rows it has.", False),
-    ("list_files", "List every file in my sandbox.", False),
     (
-        "read_twice",
-        f"Read {BIG_CSV}, then read it again, and tell me whether the two reads match.",
+        "compare_two_csvs",
+        f"Compare {BIG_CSV} and {BIG_CSV_B} and tell me which has more rows.",
         False,
     ),
     ("long_history", "What did we decide about the launch?", True),
@@ -65,6 +66,13 @@ def _seed_sandbox() -> list[Path]:
         encoding="utf-8",
     )
     created.append(big)
+    big_b = root / BIG_CSV_B
+    big_b.write_text(
+        "email,name,state\n"
+        + "\n".join(f"old{i}@example.com,Old {i},CA" for i in range(BIG_CSV_B_ROWS)),
+        encoding="utf-8",
+    )
+    created.append(big_b)
     for i in range(MANY_FILES):
         p = root / f"note_{i:03d}.txt"
         p.write_text(f"note {i}\n", encoding="utf-8")
@@ -155,7 +163,16 @@ async def _main() -> None:
         store = MemoryStore(db_path)
         user = await store.create_user("experiment")
 
-        llm = OllamaClient()
+        llm = OllamaClient(
+            base_url=settings.ollama_url,
+            chat_model=settings.chat_model,
+            utility_model=settings.utility_model,
+            embedding_model=settings.embedding_model,
+            tools_model=settings.tools_model,
+            chat_num_ctx=settings.chat_num_ctx,
+            tools_num_ctx=settings.tools_num_ctx,
+            utility_num_ctx=settings.utility_num_ctx,
+        )
         search_tool = WebSearchTool(enabled=False)
         init_store(db_path, embed_fn=llm.embed_one, embedding_model=settings.embedding_model)
         tools = builtin_tools(
