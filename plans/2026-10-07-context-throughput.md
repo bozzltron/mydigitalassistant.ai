@@ -58,6 +58,16 @@ fragment.
     (`dropped=1`) on a two-file comparison — so it is load-bearing, not dead
     weight. The run also surfaced a small bug: `format_tool_result`'s dict
     overhead pushes the rendered result past the content allowance.
+- **T4 — lower the fixed cost. SHIPPED (2026-10-07).**
+  - History is bounded by **size**, not only by turn count: a single huge prior
+    turn was re-sent in full every later turn and could exceed the window alone.
+    `_bounded_history` keeps the most recent turns within `history_char_limit`
+    (25% of the window) and marks-and-bounds a single oversized turn.
+  - The system prompt no longer duplicates the tool schemas: the prose bullet list
+    was stale (eight of nineteen tools) and repeated the JSON schemas. The
+    chaining examples and the uploaded-file note stay.
+  - Tests: `test_context_budget.py` (history bound; oversized-turn truncation);
+    `test_prompt_assembly.py` (prose gone, guidance kept).
 
 ## Fact-check of the map
 
@@ -98,8 +108,8 @@ so it is measured against a budgeted pipeline rather than hiding the problem.
 | T1 | Instrument the composition (`context_fixed`) | **shipped** |
 | T2 | One per-turn budget object; wire read/search/list/fetch to it | **shipped** |
 | T3 | Aggregate tool-result cap; rounds follow the task | **shipped** |
-| T4 | De-duplicate tool prose; token-bound history | next |
-| T5 | Re-measure on a fixed turn set | |
+| T4 | De-duplicate tool prose; token-bound history | **shipped** |
+| T5 | Re-measure on a fixed turn set | next |
 | T6 | Conversation scaling: same-session recall, tail summaries, transparency | **shipped (A/B/transparency)** |
 | O1 | Run the opus model-swap experiment against the improved pipeline | after T5 |
 

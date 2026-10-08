@@ -41,7 +41,7 @@ token. The tool loop is the only place context *accumulates* within a turn.
 | `ChatRequest.message` | **none** | `orchestrator.py` |
 | Attached files / uploads | **none** (removed on purpose) | `docs/FILES.md` |
 | Pasted content (`register_user_content`) | **none** — stored, then injected whole | `orchestrator._render_supplied_content` |
-| Conversation history | **6 prior turns, verbatim** (not tokens) | `orchestrator._run_turn` |
+| Conversation history | the last `verbatim_history_turns` (6) turns, and bounded by `history_char_limit` (25% of the window) | `orchestrator._bounded_history` |
 
 The input has no width limit; every bound is downstream.
 
@@ -75,8 +75,10 @@ Measured in this image (2026-10-07):
 | Memory section | 12,000 − overhead − appends | — | ≤10 frames, ≤10 episodes, digests ≤240 chars |
 | Search results | ≤3 results | ~0.5k | `max_search_results_in_prompt` |
 
-The system prompt also lists the file tools **in prose** (`llm_client.py`), the
-same information the JSON schemas carry — a known duplication (see Bottlenecks).
+The system prompt no longer duplicates the tool schemas: the bulleted prose list
+named only eight of the nineteen tools and repeated the JSON schemas, which are
+the real contract. The chaining examples and the uploaded-file note remain,
+because the schemas do not carry them.
 
 Tool schemas are added by Ollama from the `tools` argument, not from
 `system_prompt`, so the 12,000-char cap does **not** see them.
@@ -181,15 +183,18 @@ Resolved by T3 (the aggregate cap, `stream_tool_loop`):
 - ~~Tool results were capped individually, never in aggregate~~ — the rounds now
   share one allowance; older results collapse to a marker when it is spent.
 
+Resolved by T4:
+
+- ~~History is bounded by turns, not tokens~~ — `_bounded_history` bounds it by
+  size too, and marks a single oversized turn.
+- ~~The file tools are duplicated in the system prompt prose~~ — the stale prose
+  list is gone; the schemas are the contract.
+
 Still open:
 
-1. **History is bounded by turns, not tokens** — one long prior answer is re-sent
-   every subsequent turn, and can by itself exceed the window (T4).
-2. **Tool schemas are the largest fixed cost, and the file tools are duplicated**
-   in the system prompt prose (T4).
-3. **`chars_per_token = 4` is optimistic** for JSON, so the fixed cost may be
+1. **`chars_per_token = 4` is optimistic** for JSON, so the fixed cost may be
    under-counted and the allowance over-stated; `context_usage` is the check.
-4. **Extraction runs on a 4,096 window** with an unbounded user message.
+2. **Extraction runs on a 4,096 window** with an unbounded user message.
 
 ## 10. Where each cap lives
 
@@ -200,7 +205,8 @@ Still open:
 - Read/search/listing caps: `tool_executor.py` (`_read_char_limit`,
   `_cap_entries_to_budget`, `MAX_SEARCH_MATCHES`).
 - The per-turn content allowance: `pipeline/context_budget.py`
-  (`TurnBudget`, `content_char_limit`), installed by `Orchestrator._run_turn`.
+  (`TurnBudget`, `content_char_limit`) and the history bound
+  (`history_char_limit`), both read by `Orchestrator._run_turn`.
 - Fetch cap: `tools.py` (`_snippet`).
 - Loop length: `config.py` (`max_tool_rounds`, `max_tool_rounds_deep`);
   `tools.py` (`MAX_TOOL_ROUNDS`, the legacy non-streaming loop).
