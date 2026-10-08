@@ -22,7 +22,10 @@ from assistant.backend.memory.store import FILE_FRAME_SOURCE_TYPES, MemoryStore
 # so the extraction pipeline and the tool loop enforce one shared denylist.
 # `file_safe_name` is consumed as a filesystem path by the /files endpoints, so a
 # model-supplied value there is a path primitive. See test_file_slot_reserved_keys.py.
-from assistant.backend.pipeline.context_budget import content_char_limit
+from assistant.backend.pipeline.context_budget import (
+    MIN_CONTENT_CHARS,
+    content_char_limit,
+)
 from assistant.backend.pipeline.extractor import RESERVED_SLOT_PREFIXES
 from assistant.backend.retry import is_transient_error_message
 
@@ -943,6 +946,7 @@ def _bounded_for_model(
     handle: str | None = None,
     start_line: int = 0,
     total_lines: int | None = None,
+    reserve: int = 0,
 ) -> str:
     """Trim text to the model's share, with an actionable marker.
 
@@ -951,25 +955,45 @@ def _bounded_for_model(
     call to read on, so the model knows it saw a fragment *and* how to get the
     rest, rather than believing it read the whole file (the failure a 43k-char
     CSV produced: a silent cut it could not see).
+
+    `reserve` is characters the caller knows will surround this text in the
+    rendered tool result (metadata keys, a list wrapper). The prompt receives
+    `str(result.data)`, so those characters come out of the same allowance; a
+    content-only cap let the rendered result exceed it (found in
+    `context_budget_value`). The truncation marker is part of what the model
+    sees, so it comes out of the same budget too -- the head is sized to leave
+    room for it.
     """
-    limit = _read_char_limit()
+    limit = max(MIN_CONTENT_CHARS, _read_char_limit() - reserve)
     if len(text) <= limit:
         return text
-    head = text[:limit]
+
     total = total_lines if total_lines is not None else (text.count("\n") + 1)
     first = start_line + 1
-    last = start_line + head.count("\n") + 1
-    marker = (
-        f"\n\n... [truncated for this turn: showing lines {first}-{last} of {total} "
-        f"({limit:,} of {len(text):,} characters). The rest was NOT read."
-    )
-    if handle:
-        marker += f" Call read_file(path={handle!r}, offset={last}) for the next page."
-    return head + marker + "]"
+
+    def build(head: str) -> str:
+        last = start_line + head.count("\n") + 1
+        marker = (
+            f"\n\n... [truncated for this turn: showing lines {first}-{last} of {total} "
+            f"({limit:,} of {len(text):,} characters). The rest was NOT read."
+        )
+        if handle:
+            marker += (
+                f" Call read_file(path={handle!r}, offset={last}) for the next page."
+            )
+        return head + marker + "]"
+
+    head = text[:limit]
+    result = build(head)
+    if len(result) > limit:
+        # The marker's own length comes out of the budget; size the head to fit.
+        head = text[: max(0, limit - (len(result) - len(head)))]
+        result = build(head)
+    return result
 
 
 def _page_and_bound(
-    content: str, *, offset: int, limit: int | None, handle: str
+    content: str, *, offset: int, limit: int | None, handle: str, reserve: int = 0
 ) -> tuple[str, int]:
     """Page `content` by line, label a requested page, then bound it.
 
@@ -980,12 +1004,57 @@ def _page_and_bound(
     """
     page, start_line, total_lines = _page_text(content, offset, limit)
     bounded = _bounded_for_model(
-        page, handle=handle, start_line=start_line, total_lines=total_lines
+        page, handle=handle, start_line=start_line, total_lines=total_lines,
+        reserve=reserve,
     )
     if (offset or limit is not None) and bounded == page:
         last = start_line + page.count("\n") + 1
         bounded = f"[lines {start_line + 1}-{last} of {total_lines}]\n{bounded}"
     return bounded, total_lines
+
+
+def _bound_read_result(
+    meta: dict,
+    content: str,
+    *,
+    offset: int,
+    limit: int | None,
+    handle: str,
+) -> dict:
+    """Build a read_file result whose **rendered** size fits the allowance.
+
+    The prompt receives `str(result.data)`, which does two things a raw content
+    cap cannot see: it wraps the content in metadata (frame ids, sizes, totals),
+    and it repr-escapes the content (every newline becomes ``\\n``, +1 char).
+    Both come out of the same allowance, so cap, render, and reserve the
+    overshoot until the rendered result fits. Found in `context_budget_value`.
+    """
+    allowance = _read_char_limit()
+    placeholder = {
+        **meta,
+        "content": "",
+        "size": 0,
+        "total_chars": len(content),
+        "total_lines": 0,
+    }
+    reserve = len(str(placeholder))
+    data = placeholder
+    for _ in range(3):
+        bounded, total_lines = _page_and_bound(
+            content, offset=offset, limit=limit, handle=handle, reserve=reserve
+        )
+        data = {
+            **meta,
+            "content": bounded,
+            "size": len(bounded),
+            "total_chars": len(content),
+            "total_lines": total_lines,
+        }
+        rendered = len(str(data))
+        if rendered <= allowance:
+            break
+        reserve += rendered - allowance
+    return data
 
 
 async def _read_by_path_strategies(
@@ -1194,21 +1263,20 @@ async def execute_read_file(args: dict, user_id: str, session_id: str) -> ToolRe
                     ),
                 )
 
-            bounded, total_lines = _page_and_bound(
-                content, offset=offset, limit=limit, handle=frame_name or frame.name
-            )
             return ToolResult(
                 success=True,
-                data={
-                    "frame_id": frame.id,
-                    "frame_name": frame.name,
-                    "file_name": file_name,
-                    "file_ext": file_ext,
-                    "content": bounded,
-                    "size": len(bounded),
-                    "total_chars": len(content),
-                    "total_lines": total_lines,
-                },
+                data=_bound_read_result(
+                    {
+                        "frame_id": frame.id,
+                        "frame_name": frame.name,
+                        "file_name": file_name,
+                        "file_ext": file_ext,
+                    },
+                    content,
+                    offset=offset,
+                    limit=limit,
+                    handle=frame_name or frame.name,
+                ),
             )
 
         # ---- Read from the sandbox by path --------------------------------
@@ -1247,27 +1315,27 @@ async def execute_read_file(args: dict, user_id: str, session_id: str) -> ToolRe
                     pass
             return ToolResult(success=False, error=error)
 
-        bounded, total_lines = _page_and_bound(
-            content, offset=offset, limit=limit, handle=resolved_path or requested
-        )
-        data: dict = {
-            "path": resolved_path,
-            "content": bounded,
-            "size": len(bounded),
-            "total_chars": len(content),
-            "total_lines": total_lines,
-        }
+        # No content hint is refreshed here. This used to write the first 200
+        # characters into the frame on every read — the fourth such write site,
+        # after create, edit, and upload — which put content into memory as a
+        # side effect of reading it and left a copy that went stale immediately.
+        # The bytes are on disk; reading them is the whole job.
+        meta: dict = {"path": resolved_path}
         if resolved_frame is not None:
-            data["frame_id"] = resolved_frame.id
-            data["frame_name"] = resolved_frame.name
-            # No content hint is refreshed here. This used to write the first 200
-            # characters into the frame on every read — the fourth such write site,
-            # after create, edit, and upload — which put content into memory as a
-            # side effect of reading it and left a copy that went stale immediately.
-            # The bytes are on disk; reading them is the whole job.
+            meta["frame_id"] = resolved_frame.id
+            meta["frame_name"] = resolved_frame.name
         elif resolved_path != requested:
-            data["resolved_from"] = requested
-        return ToolResult(success=True, data=data)
+            meta["resolved_from"] = requested
+        return ToolResult(
+            success=True,
+            data=_bound_read_result(
+                meta,
+                content,
+                offset=offset,
+                limit=limit,
+                handle=resolved_path or requested,
+            ),
+        )
     except PathTraversalError as e:
         return ToolResult(success=False, error=str(e))
     except FileNotFoundError as e:

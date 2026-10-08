@@ -109,6 +109,11 @@ result would exceed it, the oldest results are collapsed to `DROPPED_TOOL_RESULT
 pairing intact — so a long tool chain cannot overflow the window round over
 round. The count is logged as `tool_results_dropped`.
 
+The held total is therefore bounded at the allowance **plus one marker per dropped
+result** (104 chars each; ≤ ~600 with the round cap). The marker is itself
+content the model sees, and the answer reserve absorbs it — the bound is the
+allowance plus a few hundred chars, not the allowance exactly.
+
 **Loop length follows the task.** `max_tool_rounds` (default 6) is a *runaway
 guard*, not a task budget: the model ends the loop itself with a direct answer or
 a `finalize` call. A deep task — the reasoner's `think` / `max_intelligence`

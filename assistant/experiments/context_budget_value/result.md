@@ -25,14 +25,23 @@ turn that would otherwise overflow the window.
   comparisons, not on single reads. The mechanism is justified; its *frequency*
   is a separate question this probe did not measure.
 
-## Bug surfaced (not part of the hypotheses)
+## Bug surfaced (not part of the hypotheses) — fixed
 
-`tool_result_chars` (29,452) exceeded the allowance (28,260) on `read_big_csv`.
-The cap applies to the file *content*, but `format_tool_result` renders
-`str(result.data)`, whose dict overhead (~1,200 chars: frame ids, sizes, totals)
-pushes the actual result over the allowance. So the per-result cap is not a hard
-cap on what enters the prompt — small, but real. Fix: budget the rendered result,
-not just the content.
+The first run recorded `tool_result_chars=29,452` against `allowance=28,260` on
+`read_big_csv`: the cap applied to the file *content*, but `format_tool_result`
+renders `str(result.data)`, whose metadata and repr-escaping (newlines → `\n`)
+pushed the rendered result over the allowance.
+
+**Fixed** (`_bound_read_result`): the read now caps, renders, and reserves the
+overshoot until `str(data)` fits. The re-run records **28,232 ≤ 28,260** — the
+per-result cap is now a hard cap on the rendered result.
+
+**Residual (recorded, not hidden):** the *aggregate* still overshoots by up to one
+`DROPPED_TOOL_RESULT` marker per dropped result (104 chars; `compare_two_csvs`
+recorded 28,301 vs 28,228). The marker is content the model sees, so the aggregate
+bound is the allowance *plus the markers*, not the allowance exactly. It is
+absorbed by the 4,096-token answer reserve, and `docs/CONTEXT_THROUGHPUT.md` now
+states the bound precisely.
 
 ## Falsification conditions, resolved
 

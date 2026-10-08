@@ -101,3 +101,45 @@ async def test_a_big_csv_read_is_capped_and_actionable(store):
         assert result.data["total_lines"] == 6001
     finally:
         path.unlink(missing_ok=True)
+
+
+@pytest.mark.asyncio
+async def test_a_capped_read_result_fits_the_allowance_including_metadata():
+    """The rendered tool result, not just its content, must fit the allowance.
+
+    Regression (`context_budget_value`): the content was capped, but `str(data)` --
+    content plus frame ids, sizes and totals -- exceeded the allowance by the dict
+    overhead, and the truncation marker sat outside the cap too.
+    """
+    from assistant.backend.pipeline import filesystem
+    from assistant.backend.pipeline.context_budget import (
+        TurnBudget,
+        content_char_limit,
+        reset_turn_budget,
+        set_turn_budget,
+    )
+    from assistant.backend.pipeline.tool_executor import execute_read_file
+
+    filesystem.SANDBOX_ROOT.mkdir(parents=True, exist_ok=True)
+    path = filesystem.SANDBOX_ROOT / "render_budget.csv"
+    path.write_text(
+        "email,name\n" + "\n".join(f"a{i}@x.com,Name {i}" for i in range(6000)),
+        encoding="utf-8",
+    )
+    token = set_turn_budget(
+        TurnBudget(
+            window_tokens=16384, fixed_cost_chars=0, reserved_output_tokens=16384 - 1000
+        )
+    )
+    try:
+        result = await execute_read_file(
+            {"path": "render_budget.csv"}, user_id="1", session_id="s"
+        )
+        limit = content_char_limit()
+    finally:
+        reset_turn_budget(token)
+        path.unlink(missing_ok=True)
+
+    assert result.success, result.error
+    assert "truncated" in result.data["content"]
+    assert len(str(result.data)) <= limit, f"{len(str(result.data))} > {limit}"
