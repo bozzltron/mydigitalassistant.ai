@@ -1,0 +1,307 @@
+{
+  "candidate": [
+    {
+      "prompt": "What is 17% of 2,480?",
+      "expected": 421.6,
+      "matched": 421.6,
+      "numbers_seen": [
+        421.6
+      ],
+      "correct": true,
+      "wall_s": 7.74,
+      "error": "",
+      "stdout_head": "421.6\n"
+    },
+    {
+      "prompt": "Compute the sum of the squares of the integers from 1 to 100",
+      "expected": 338350.0,
+      "matched": null,
+      "numbers_seen": [],
+      "correct": false,
+      "wall_s": 2.71,
+      "error": "",
+      "stdout_head": ""
+    },
+    {
+      "prompt": "A $10,000 loan at 6% annual interest, compounded monthly, fo",
+      "expected": 11966.8052,
+      "matched": 11966.81,
+      "numbers_seen": [
+        11966.81
+      ],
+      "correct": true,
+      "wall_s": 6.23,
+      "error": "",
+      "stdout_head": "Total amount owed: $11966.81\n"
+    },
+    {
+      "prompt": "What is the net present value of $1,000 received at the end ",
+      "expected": 3992.71,
+      "matched": 3992.71,
+      "numbers_seen": [
+        3992.71,
+        3992.71
+      ],
+      "correct": true,
+      "wall_s": 9.51,
+      "error": "",
+      "stdout_head": "NPV by Summation: $3992.71\nNPV by Formula:   $3992.71\n"
+    },
+    {
+      "prompt": "What is the mean of the numbers 12, 7, 19, 4, and 8?",
+      "expected": 10.0,
+      "matched": 10.0,
+      "numbers_seen": [
+        10.0
+      ],
+      "correct": true,
+      "wall_s": 3.4,
+      "error": "",
+      "stdout_head": "10.0\n"
+    },
+    {
+      "prompt": "What is the population standard deviation of 2, 4, 4, 4, 5, ",
+      "expected": 2.0,
+      "matched": 2.0,
+      "numbers_seen": [
+        2.0
+      ],
+      "correct": true,
+      "wall_s": 3.89,
+      "error": "",
+      "stdout_head": "2.0\n"
+    },
+    {
+      "prompt": "A train travels 240 km in 2.5 hours. At the same speed, how ",
+      "expected": 384.0,
+      "matched": 384.0,
+      "numbers_seen": [
+        96.0,
+        4.0,
+        384.0
+      ],
+      "correct": true,
+      "wall_s": 5.48,
+      "error": "",
+      "stdout_head": "Speed: 96.0 km/h\nDistance in 4 hours: 384.0 km\n"
+    },
+    {
+      "prompt": "What is 10 factorial?",
+      "expected": 3628800.0,
+      "matched": 3628800.0,
+      "numbers_seen": [
+        3628800.0
+      ],
+      "correct": true,
+      "wall_s": 2.58,
+      "error": "",
+      "stdout_head": "3628800\n"
+    }
+  ],
+  "math baseline (qwen3.8:27b)": [
+    {
+      "prompt": "What is 17% of 2,480?",
+      "expected": 421.6,
+      "matched": 421.6,
+      "numbers_seen": [
+        421.6
+      ],
+      "correct": true,
+      "wall_s": 15.2,
+      "error": "",
+      "stdout_head": "421.6\n"
+    },
+    {
+      "prompt": "Compute the sum of the squares of the integers from 1 to 100",
+      "expected": 338350.0,
+      "matched": 338350.0,
+      "numbers_seen": [
+        338350.0
+      ],
+      "correct": true,
+      "wall_s": 7.82,
+      "error": "",
+      "stdout_head": "338350\n"
+    },
+    {
+      "prompt": "A $10,000 loan at 6% annual interest, compounded monthly, fo",
+      "expected": 11966.8052,
+      "matched": 11966.81,
+      "numbers_seen": [
+        11966.81,
+        1966.81
+      ],
+      "correct": true,
+      "wall_s": 13.49,
+      "error": "",
+      "stdout_head": "Total amount owed: $11,966.81\nTotal interest paid: $1,966.81\n"
+    },
+    {
+      "prompt": "What is the net present value of $1,000 received at the end ",
+      "expected": 3992.71,
+      "matched": 3992.71,
+      "numbers_seen": [
+        3992.71,
+        3992.71,
+        1.0,
+        1000.0,
+        1.08,
+        1.0,
+        925.93,
+        2.0
+      ],
+      "correct": true,
+      "wall_s": 31.68,
+      "error": "",
+      "stdout_head": "NPV (sum of PVs): $3,992.71\nNPV (annuity formula): $3,992.71\n\nYear-by-year breakdown:\n  Year 1: $1,000 / (1.08)^1 = $925.93\n  Year 2: $1,000 / (1.08)^2 = $857.3"
+    },
+    {
+      "prompt": "What is the mean of the numbers 12, 7, 19, 4, and 8?",
+      "expected": 10.0,
+      "matched": 10.0,
+      "numbers_seen": [
+        10.0
+      ],
+      "correct": true,
+      "wall_s": 8.63,
+      "error": "",
+      "stdout_head": "10.0\n"
+    },
+    {
+      "prompt": "What is the population standard deviation of 2, 4, 4, 4, 5, ",
+      "expected": 2.0,
+      "matched": 2.0,
+      "numbers_seen": [
+        2.0
+      ],
+      "correct": true,
+      "wall_s": 9.45,
+      "error": "",
+      "stdout_head": "2.0\n"
+    },
+    {
+      "prompt": "A train travels 240 km in 2.5 hours. At the same speed, how ",
+      "expected": 384.0,
+      "matched": 384.0,
+      "numbers_seen": [
+        96.0,
+        4.0,
+        384.0
+      ],
+      "correct": true,
+      "wall_s": 15.1,
+      "error": "",
+      "stdout_head": "Speed: 96.0 km/h\nDistance in 4 hours: 384.0 km\n"
+    },
+    {
+      "prompt": "What is 10 factorial?",
+      "expected": 3628800.0,
+      "matched": 3628800.0,
+      "numbers_seen": [
+        3628800.0
+      ],
+      "correct": true,
+      "wall_s": 6.76,
+      "error": "",
+      "stdout_head": "3628800\n"
+    }
+  ],
+  "chat fallback (qwen3.5:9b)": [
+    {
+      "prompt": "What is 17% of 2,480?",
+      "expected": 421.6,
+      "matched": 421.6,
+      "numbers_seen": [
+        421.6
+      ],
+      "correct": true,
+      "wall_s": 5.1,
+      "error": "",
+      "stdout_head": "421.6\n"
+    },
+    {
+      "prompt": "Compute the sum of the squares of the integers from 1 to 100",
+      "expected": 338350.0,
+      "matched": 338350.0,
+      "numbers_seen": [
+        338350.0
+      ],
+      "correct": true,
+      "wall_s": 2.46,
+      "error": "",
+      "stdout_head": "338350\n"
+    },
+    {
+      "prompt": "A $10,000 loan at 6% annual interest, compounded monthly, fo",
+      "expected": 11966.8052,
+      "matched": null,
+      "numbers_seen": [],
+      "correct": false,
+      "wall_s": 3.2,
+      "error": "",
+      "stdout_head": ""
+    },
+    {
+      "prompt": "What is the net present value of $1,000 received at the end ",
+      "expected": 3992.71,
+      "matched": 3992.71,
+      "numbers_seen": [
+        3992.71
+      ],
+      "correct": true,
+      "wall_s": 4.56,
+      "error": "",
+      "stdout_head": "Net Present Value: $3992.71\n"
+    },
+    {
+      "prompt": "What is the mean of the numbers 12, 7, 19, 4, and 8?",
+      "expected": 10.0,
+      "matched": 10.0,
+      "numbers_seen": [
+        10.0
+      ],
+      "correct": true,
+      "wall_s": 2.65,
+      "error": "",
+      "stdout_head": "10.0\n"
+    },
+    {
+      "prompt": "What is the population standard deviation of 2, 4, 4, 4, 5, ",
+      "expected": 2.0,
+      "matched": 2.0,
+      "numbers_seen": [
+        2.0
+      ],
+      "correct": true,
+      "wall_s": 3.01,
+      "error": "",
+      "stdout_head": "2.0\n"
+    },
+    {
+      "prompt": "A train travels 240 km in 2.5 hours. At the same speed, how ",
+      "expected": 384.0,
+      "matched": 384.0,
+      "numbers_seen": [
+        96.0,
+        4.0,
+        384.0
+      ],
+      "correct": true,
+      "wall_s": 3.9,
+      "error": "",
+      "stdout_head": "Speed: 96.0 km/h\nDistance in 4 hours: 384.0 km\n"
+    },
+    {
+      "prompt": "What is 10 factorial?",
+      "expected": 3628800.0,
+      "matched": 3628800.0,
+      "numbers_seen": [
+        3628800.0
+      ],
+      "correct": true,
+      "wall_s": 2.1,
+      "error": "",
+      "stdout_head": "3628800\n"
+    }
+  ]
+}
