@@ -743,13 +743,20 @@ async def test_session_summary_endpoint_is_read_only(client, store):
         frame_id=frame.id, key="turn_count", value="12", source_type="summarization"
     )
 
-    r = client.get("/chat/session/conv-x/summary")
+    r = client.get("/chat/session/conv-x/summary", params={"user_id": user.id})
     assert r.status_code == 200
     body = r.json()
     assert body["summary"] == "We planned the launch and agreed on May."
     assert body["turn_count"] == "12"
 
+    # Owner-scoped: another member cannot read it by guessing the session id.
+    other = client.get("/chat/session/conv-x/summary", params={"user_id": user.id + 999})
+    assert other.status_code == 200
+    assert other.json()["summary"] is None
+
     # A session with no summary reads as null, not an error.
-    empty = client.get("/chat/session/never-summarized/summary")
+    empty = client.get(
+        "/chat/session/never-summarized/summary", params={"user_id": user.id}
+    )
     assert empty.status_code == 200
     assert empty.json()["summary"] is None

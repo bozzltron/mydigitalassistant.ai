@@ -689,27 +689,21 @@ class Orchestrator:
         )
         return system_prompt, plan_instructions, self_context
 
-    async def _conversation_summary(self, session_id: str | None) -> str:
+    async def _conversation_summary(self, session_id: str | None, user_id: int) -> str:
         """This session's stored conversation summary prose, or "".
 
         Transparency, not context: it rides the turn's `meta` so the UI can show
         what the agent compressed about the thread, and is never added to the
-        prompt. Best-effort -- a missing frame is simply "not summarized yet".
+        prompt. Owner-scoped. Best-effort -- a missing frame is "not summarized".
         """
         if not session_id:
             return ""
         try:
-            frame = await self.store.get_frame_by_name(
-                f"conversation_summary_{session_id}"
-            )
-            if frame is None:
-                return ""
-            for slot in await self.store.get_slots_for_frame(frame.id):
-                if slot.key == "summary":
-                    return slot.value or ""
+            slots = await self.store.get_conversation_summary_slots(session_id, user_id)
+            return slots.get("summary") or ""
         except Exception as exc:
             logger.debug("Could not read the conversation summary: %s", exc)
-        return ""
+            return ""
 
     async def _render_supplied_content(
         self, system_prompt: str, extraction_summary: dict
@@ -1706,8 +1700,9 @@ class Orchestrator:
         # Build conversation history
         history_messages: list[ChatMessage] = []
         if session_id:
-            # Owner-scoped in SQL now; bound to the tail we can use (6 prior
-            # turns plus the current one, which `[:-1]` drops).
+            # Owner-scoped in SQL now; bound to the tail we can use
+            # (`verbatim_history_turns` prior turns plus the current one, which
+            # `[:-1]` drops).
             session_episodes = await self.store.get_episodes_for_session(
                 session_id,
                 user_id=request.user_id,
@@ -2050,7 +2045,9 @@ class Orchestrator:
                 memory_context=memory_context.formatted,
                 prompt_tokens=final_prompt_tokens,
                 context_window=final_context_window,
-                conversation_summary=await self._conversation_summary(session_id),
+                conversation_summary=await self._conversation_summary(
+                    session_id, request.user_id
+                ),
             )
         )
 

@@ -2021,6 +2021,32 @@ class MemoryStore:
             rows = await db.execute_fetchall(sql, tuple(params))
             return [Episode(**self._episode_dict(row)) for row in reversed(rows)]
 
+    async def get_conversation_summary_slots(
+        self, session_id: str, user_id: int | None = None
+    ) -> dict[str, str]:
+        """A session's conversation-summary slots, owner-scoped, or ``{}``.
+
+        The frame is named ``conversation_summary_{session_id}``. Owner scoping is
+        enforced here so a caller cannot read another member's summary by guessing
+        a session id -- the same rule ``/chat/session/{id}/messages`` follows. The
+        one read used by the summarizer, the turn meta, and the read endpoint, so
+        the frame name and the scoping rule have a single home.
+        """
+        frame = await self.get_frame_by_name(f"conversation_summary_{session_id}")
+        if frame is None:
+            return {}
+        if (
+            user_id is not None
+            and frame.owner_user_id is not None
+            and frame.owner_user_id != user_id
+        ):
+            return {}
+        return {
+            slot.key: slot.value
+            for slot in await self.get_slots_for_frame(frame.id)
+            if slot.value
+        }
+
     async def update_episode_frame_ids(self, episode_id: int, frame_ids: list[int]) -> None:
         """Update the frame_ids for an episode after extraction completes."""
         async with self._connect() as db:

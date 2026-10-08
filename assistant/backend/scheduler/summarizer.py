@@ -65,7 +65,7 @@ class Summarizer:
         # summary tracks where the conversation is. Truncating the head (the old
         # behaviour) summarized a long session from its opening and never moved:
         # `episodes_text[:max_chars]` on an oldest-first list drops the tail.
-        prior_summary = await self._existing_summary(session_id)
+        prior_summary = await self._existing_summary(session_id, user_id)
         episodes_text = self._recent_episodes_text(user_episodes)
 
         # Generate summary via utility model
@@ -127,17 +127,10 @@ class Summarizer:
         chosen.reverse()
         return "\n".join(chosen)
 
-    async def _existing_summary(self, session_id: str) -> str | None:
+    async def _existing_summary(self, session_id: str, user_id: int) -> str | None:
         """The session's current summary prose, or None if there is none."""
-        frame = await self.store.get_frame_by_name(
-            f"conversation_summary_{session_id}"
-        )
-        if frame is None:
-            return None
-        for slot in await self.store.get_slots_for_frame(frame.id):
-            if slot.key == "summary" and (slot.value or "").strip():
-                return slot.value
-        return None
+        slots = await self.store.get_conversation_summary_slots(session_id, user_id)
+        return slots.get("summary") or None
 
     async def _generate_summary(
         self,

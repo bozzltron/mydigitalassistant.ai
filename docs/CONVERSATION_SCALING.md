@@ -46,7 +46,9 @@ reflects where the conversation *is* rather than where it started.
 The summary is a memory artifact, made **viewable**, not **pushed** (no new event
 type, no alert, no prompt cost):
 
-- `GET /chat/session/{id}/summary` — read-only; never re-summarizes.
+- `GET /chat/session/{id}/summary` — read-only; never re-summarizes. Owner-scoped
+  (`user_id` is required and the summary frame is checked against it), the same
+  rule `/chat/session/{id}/messages` follows.
 - The current session's summary rides the turn `meta` (`conversation_summary`),
   and the chat's "What I learned" panel shows it. After a long thread is
   summarized, the user sees it on their next turn in that conversation.

@@ -298,8 +298,8 @@ async def test_existing_summary_reads_the_stored_prose(store):
     )
     await summarizer.summarize_session(session_id, user.id)
 
-    assert await summarizer._existing_summary(session_id) == "STORED PROSE"
-    assert await summarizer._existing_summary("no_such_session") is None
+    assert await summarizer._existing_summary(session_id, user.id) == "STORED PROSE"
+    assert await summarizer._existing_summary("no_such_session", user.id) is None
 
 
 if __name__ == "__main__":

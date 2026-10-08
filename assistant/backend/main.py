@@ -2173,17 +2173,20 @@ async def summarize_session(
 @app.get("/chat/session/{session_id}/summary")
 async def get_session_summary(
     session_id: str,
+    user_id: int,
     store: MemoryStore = _Depends(get_store),
 ):
     """The stored summary of a conversation, if one exists.
 
-    Read-only: it never re-summarizes, so it costs no model call. Transparency,
-    so the user can see what the agent compressed about a thread.
+    Read-only: it never re-summarizes, so it costs no model call. Owner-scoped:
+    `user_id` is required and the summary frame is checked against it, so one
+    household member cannot read another's summary by guessing a session id --
+    the same rule `/chat/session/{id}/messages` follows. Transparency, so the
+    user can see what the agent compressed about a thread.
     """
-    frame = await store.get_frame_by_name(f"conversation_summary_{session_id}")
-    if frame is None:
+    slots = await store.get_conversation_summary_slots(session_id, user_id)
+    if not slots:
         return {"session_id": session_id, "summary": None}
-    slots = {s.key: s.value for s in await store.get_slots_for_frame(frame.id)}
     return {
         "session_id": session_id,
         "summary": slots.get("summary"),
