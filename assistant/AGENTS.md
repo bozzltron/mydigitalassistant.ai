@@ -65,15 +65,20 @@ cut off — `llama-server` logged `n_tokens = 8191, truncated = 1`, Ollama retur
 
 **A tool result must not fill the window.** The window is shared with the fixed
 cost (system prompt + every tool schema + history) and the answer, so a single
-`read_file` is capped at a *fraction* of it (`_read_char_limit`, not a flat number
-— the old `MAX_READ_CHARS_FOR_MODEL = 60_000` was ~15k tokens, nearly the whole
-window, and a 43k-char CSV was silently truncated by Ollama as a result). A capped
+result is capped at a **derived** content allowance — `window − measured fixed
+cost − reserved answer` (`context_budget.py`), not a flat number and not a fixed
+fraction (the old `MAX_READ_CHARS_FOR_MODEL = 60_000` was ~15k tokens, nearly the
+whole window, and a 43k-char CSV was silently truncated by Ollama as a result).
+The allowance adapts: a longer history or a bigger tool set shrinks it. A capped
 read carries an **actionable** marker — the line range, the true total, and the
 `read_file(path=…, offset=…)` call to read on — so the model knows it saw a
-fragment and can page. The turn's real peak is logged as `context_usage`, and its
-composition (system prompt / tool schemas / history / tool results) as
-`context_fixed`. The full end-to-end map — windows, caps, arithmetic, and the
-known bottlenecks — is **`docs/CONTEXT_THROUGHPUT.md`**.
+fragment and can page. The loop's rounds share that allowance: an older result is
+collapsed to a marker when a new one would exceed it. **History is bounded by
+size**, not only by turn count, so one huge prior turn cannot exceed the window by
+itself. The turn's real peak is logged as `context_usage`, and its composition
+(system prompt / tool schemas / history / tool results) as `context_fixed`. The
+full end-to-end map — windows, caps, arithmetic, and the known bottlenecks — is
+**`docs/CONTEXT_THROUGHPUT.md`**.
 
 Because `tools_model` defaults to `chat_model`, **one loaded runner serves both
 roles, so they share one context window** — the tool loop gets the chat window,

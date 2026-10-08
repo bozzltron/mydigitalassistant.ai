@@ -85,7 +85,8 @@ Tool schemas are added by Ollama from the `tools` argument, not from
 
 ## 5. The tool loop
 
-`stream_tool_loop` (`streaming.py`), `MAX_TOOL_ROUNDS = 3` (`tools.py`). Each
+`stream_tool_loop` (`streaming.py`), `max_tool_rounds` (`config.py`; 6 base, 12
+deep). Each
 round's prompt is `system + every tool schema + history + user + all tool results
 so far`; tool results **accumulate**.
 
@@ -208,8 +209,7 @@ Still open:
   (`TurnBudget`, `content_char_limit`) and the history bound
   (`history_char_limit`), both read by `Orchestrator._run_turn`.
 - Fetch cap: `tools.py` (`_snippet`).
-- Loop length: `config.py` (`max_tool_rounds`, `max_tool_rounds_deep`);
-  `tools.py` (`MAX_TOOL_ROUNDS`, the legacy non-streaming loop).
+- Loop length: `config.py` (`max_tool_rounds`, `max_tool_rounds_deep`).
 - Glob cap: `filesystem.py` (`MAX_GLOB_RESULTS`).
 
 ## Related
