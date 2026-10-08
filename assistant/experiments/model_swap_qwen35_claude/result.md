@@ -10,7 +10,7 @@ not provide.**
 | | Verdict | Evidence |
 |---|---|---|
 | **H1 — tools (the gate)** | **pass** | Emits a valid `tool_calls` entry on the tool prompt. It can take the chat/tools role. |
-| **H2 — latency** | **fails for the warm role** | ~26.6 tok/s vs the chat baseline's ~40.2 (≈1.5× slower); ~2.8× *faster* than the 27B math model's ~9.4. A middle tier. |
+| **H2 — latency** | **fails for the warm role, but confounded by quant** | ~26.6 tok/s vs the chat baseline's ~40.2; ~2.8× *faster* than the 27B. The gap is largely quantization (below), not capability. |
 | **H3 — math/codegen** | **pass (one prompt)** | Produces correct Python (`sum(i*i for i in range(1,101))`); so does the 27B. |
 | **H4 — fit** | **pass** | 10 GB vs the 9b's 6.6 GB — warm set 10.6 → ~14 GB, fits 48 GB. |
 
@@ -33,6 +33,20 @@ not provide.**
   the 27B and produced correct code; the 27B's advantage would be quality on hard
   problems, which is exactly what was not measured.
 - **The 10 GB it costs** is real but affordable (warm set 10.6 → 14 GB).
+
+## Quantization confound (recorded)
+
+The candidate ships **only as Q8_0** (10.70 GB). Both baselines are **Q4_K_M**
+(`qwen3.5:9b` 6.59 GB, `qwen3.8:27b` 17.74 GB). Q8 is ~1.6× the bytes of Q4 and
+typically ~1.5–2× slower per token, so the 26.6 vs 40.2 tok/s gap is **largely a
+quant difference, not a capability one**. `:latest` and `:9b` are the same build
+(identical config digest); the other tags (`:4b`/`:2b`/`:0.8b`) are smaller
+*models*, not a lighter quant of this one. So a chat swap means running Q8 —
+genuinely slower than the current Q4 9B — unless a Q4 build is made.
+
+This weakens the "do not swap" verdict from "the candidate is a slower model" to
+"the candidate is a heavier build; its per-token cost is not comparable to a Q4
+baseline." The math verdict is unaffected (see that experiment).
 
 ## What is still unmeasured — the decisive piece
 

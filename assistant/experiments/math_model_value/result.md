@@ -34,6 +34,13 @@ model — its speed does not compensate.**
    one).
 3. Candidate slower than the 27B → not triggered (it is faster).
 
+## Quantization strengthens the verdict
+
+The candidate is **Q8_0** (10.70 GB); the 27B is **Q4_K_M**. The candidate ran the
+*higher-precision* build and still missed a problem, so the reliability gap is not
+a quantization penalty — it is the model's behaviour. (The chat experiment's
+latency gap, by contrast, is largely a quant difference; see that result.)
+
 ## Verdict
 
 **Keep `qwen3.8:27b` as `MATH_MODEL`.** The candidate is a faster, smaller model
