@@ -53,6 +53,11 @@ fragment.
     the aggregate cap means more rounds cost latency, not context.
   - Tests: `test_streaming_events.py` (collapse behaviour + wire format);
     `test_context_budget.py` (rounds follow the plan).
+  - **Validated** by `assistant/experiments/context_budget_value/`: on a fixed
+    turn set the loop's peak stays below the window, and the aggregate cap fires
+    (`dropped=1`) on a two-file comparison — so it is load-bearing, not dead
+    weight. The run also surfaced a small bug: `format_tool_result`'s dict
+    overhead pushes the rendered result past the content allowance.
 
 ## Fact-check of the map
 
