@@ -3,11 +3,9 @@
 Pre-registered in ``plan.md`` (committed before any data). Pure Ollama I/O — it
 does not open the brain, so ``preflight.py`` does not apply.
 
-Run:
-
     python assistant/experiments/model_swap_qwen35_claude/experiment.py
 
-Writes ``result.json`` next to this file. ``result.md`` is written only after
+Writes ``result.json`` next to this file. ``result.md`` only after
 ``verification.md``.
 """
 
@@ -42,16 +40,22 @@ TOOLS = [
     }
 ]
 
-# name -> (prompt, tools). The role sets below decide who runs what.
-PROMPTS: dict[str, tuple[str, list | None]] = {
-    "qa": ("In two sentences, explain what a confidence interval is.", None),
-    "json": ("List three benefits of unit testing as a JSON array of strings.", None),
-    "tool": ("Read the file notes/budget.csv and tell me the total.", TOOLS),
-    "code": (
-        "Write Python that computes the sum of squares from 1 to 100 and prints "
-        "the result. Reply with only the code.",
-        None,
-    ),
+# name -> spec. `fmt="json"` mirrors the production structured-output mode; every
+# call is think=False, the production default (without it a thinking model leaks
+# its analysis into `content`).
+PROMPTS: dict[str, dict] = {
+    "qa": {"prompt": "In two sentences, explain what a confidence interval is."},
+    "json": {"prompt": "List three benefits of unit testing as JSON.", "fmt": "json"},
+    "tool": {
+        "prompt": "Read the file notes/budget.csv and tell me the total.",
+        "tools": TOOLS,
+    },
+    "code": {
+        "prompt": (
+            "Write Python that computes the sum of squares from 1 to 100 and "
+            "prints the result. Reply with only the code."
+        )
+    },
 }
 
 # The candidate runs every prompt (it may replace both roles); each baseline runs
@@ -63,13 +67,16 @@ ARMS: list[tuple[str, str, set[str]]] = [
 ]
 
 
-def _chat(model: str, prompt: str, tools: list | None) -> dict:
+def _chat(model: str, prompt: str, tools: list | None, fmt: str | None) -> dict:
     payload: dict = {
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
         "stream": False,
+        "think": False,
         "options": {"num_ctx": NUM_CTX, "temperature": 0},
     }
+    if fmt:
+        payload["format"] = fmt
     if tools:
         payload["tools"] = tools
     request = urllib.request.Request(
@@ -102,8 +109,11 @@ def _summarize(name: str, data: dict) -> dict:
     if name == "tool":
         row["tool_call"] = bool(message.get("tool_calls"))
     if name == "json":
+        # Valid JSON of any shape -- the models return an object under format=json,
+        # not the array the prompt asked for.
         try:
-            row["json_ok"] = isinstance(json.loads(content), list)
+            json.loads(content)
+            row["json_ok"] = True
         except (ValueError, TypeError):
             row["json_ok"] = False
     if name == "code":
@@ -113,10 +123,12 @@ def _summarize(name: str, data: dict) -> dict:
 
 def _run(model: str, names: set[str]) -> list[dict]:
     rows = []
-    for name, (prompt, tools) in PROMPTS.items():
+    for name, spec in PROMPTS.items():
         if name not in names:
             continue
-        row = _summarize(name, _chat(model, prompt, tools))
+        row = _summarize(
+            name, _chat(model, spec["prompt"], spec.get("tools"), spec.get("fmt"))
+        )
         rows.append(row)
         signal = row.get("tool_call", row.get("json_ok", row.get("code_signal", "")))
         print(
