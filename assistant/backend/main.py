@@ -387,6 +387,7 @@ async def health():
             "embedding": settings.embedding_model,
             "coder": settings.coder_model or settings.chat_model,
             "max": settings.max_model or settings.chat_model,
+            "math": settings.math_model or "(disabled)",
         },
         "thinking_supported": thinking_supported,
     }

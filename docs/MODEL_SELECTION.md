@@ -91,7 +91,7 @@ per-model vectors; the top-up is what keeps "related past conversations"
 searchable after a swap). Verify with: no frames/episodes lack a vector for the
 new model. Scheduler is off in this deployment, so the CLI is the only top-up.
 
-## Current fleet (Sept 2026)
+## Current fleet (Oct 2026)
 
 | Role | Model | Size | keep_alive | num_ctx |
 |------|-------|------|------------|---------|
@@ -100,7 +100,7 @@ new model. Scheduler is off in this deployment, so the CLI is the only top-up.
 | Utility | `qwen3.5:4b` | 3.4GB | global | 4096 |
 | Embedding | `qwen3-embedding:0.6b` | 0.6GB | — | — |
 | Max | `qwen3.8:27b` | 17GB | `10m` | 16384 |
-| Math | `qwen3.8:27b` | — shares max | `10m` | 16384 |
+| Math | `sorc/qwen3.5-claude-4.6-opus-q4:9b` | 6.6GB | `10m` | 16384 |
 | Coder | (empty → chat) | — | — | — |
 
 Rationale highlights:
@@ -112,8 +112,11 @@ Rationale highlights:
   tool schema + history — the largest prompt in the system — so 8192 left no room
   to generate and the turn finalized empty (incident 2026-10-01).
 - **4b utility** — cheap extraction/routing fallback that never slows the hot path.
-- **27b shared by max + math** — a single on-demand load serves both escalation
-  and exact computation; compute adds zero extra resident RAM.
+- **27b max, 9b math (Oct 2026)** — the 27B is now the on-demand escalation tier
+  only; the math/compute role runs the Q4 candidate (equal accuracy to the 27B on
+  the probe, ~4–10× faster per problem, 6.6 GB vs 17 GB). It no longer shares
+  weights with max, so compute is a separate on-demand load — both are `10m`, so
+  neither stays resident next to the warm set. See the re-assessment below.
 - **0.6b embedding** — fast, tiny, 1024-dim vectors.
 - Max/math are **never resident** (`10m` keep-alive) so the warm set survives.
 
@@ -130,9 +133,16 @@ misleading — see `assistant/experiments/model_fleet_q4/`).
 | Utility | `qwen3.5:4b` | `q4:4b` | candidate **worse** — 4/7 vs 7/7 facts extracted |
 | Math | `qwen3.8:27b` | `q4:9b` | candidate **wins** — 8/8 both, 2–4 s vs 7–50 s, 6.6 GB vs 17 GB |
 
-**Decision:** keep `qwen3.5:9b` (chat/tools) and `qwen3.5:4b` (utility); prefer
-`qwen3.5-claude-4.6-opus-q4:9b` for the **math** role when it is enabled —
-equal accuracy on the probe, far faster, and 10 GB smaller than the 27B.
+**Decision:** keep `qwen3.5:9b` (chat/tools) and `qwen3.5:4b` (utility); use
+`qwen3.5-claude-4.6-opus-q4:9b` for the **math** role — equal accuracy on the
+probe, far faster, and 10 GB smaller than the 27B.
+
+**Adopted on trial (2026-10-08).** `MATH_MODEL` is set to it in both dev and prod
+(the shared `.env`), and it was verified end-to-end: `/health` reports it as
+`math`, a direct `execute_python("What is 17% of 2,480?")` from inside the dev
+container returned `421.6`, and a live chat turn emitted a `compute` tool call and
+answered "17% of 2,480 is exactly **421.6**". Rollback is one line in `.env`
+(`MATH_MODEL=qwen3.8:27b`) plus a `docker compose up -d` in each project.
 
 **Caveats:** the probes are small (one chat prompt, five extraction turns, eight
 easy math problems, and a 10-prompt blind quality run whose judge flipped on 3 of

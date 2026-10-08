@@ -42,3 +42,17 @@ The earlier experiments used `sorc/qwen3.5-claude-4.6-opus:latest`, which is
   are a tie.
 - **Hard math.** Eight easy problems tie; the 27B's advantage, if any, is on the
   problems this probe did not ask.
+
+## Adopted on trial (2026-10-08)
+
+`MATH_MODEL` was set to `sorc/qwen3.5-claude-4.6-opus-q4:9b` in both dev and prod
+(the shared `.env`) and verified end-to-end:
+
+- `/health` now reports it as `math` (the health fleet was missing the role).
+- A direct `execute_python("What is 17% of 2,480?")` from inside the dev container
+  returned `421.6`.
+- A live chat turn emitted a `compute` tool call and answered
+  "17% of 2,480 is exactly **421.6**".
+
+Rollback is one line (`MATH_MODEL=qwen3.8:27b`) plus `docker compose up -d` in each
+project. Chat and utility are unchanged.
