@@ -1,5 +1,26 @@
 # MyDigitalAssistant.ai — release notes
 
+## v0.11.11-alpha
+
+**A faster math model on trial, a leaner image, and the fleet re-assessed.**
+
+- **Math model switched, on trial.** A like-for-like comparison of the
+  `sorc/qwen3.5-claude-4.6-opus-q4` family against the incumbents (same quant,
+  matching sizes) found the Q4 9B matches `qwen3.8:27b` on executed-answer
+  accuracy, is ~4–10× faster per problem, and is 6.6 GB instead of 17 GB. It is
+  now `MATH_MODEL` in dev and prod. Chat and utility were checked too and **kept**
+  (a mechanical tie with no quality win; fewer facts extracted, respectively). The
+  probes are in `assistant/experiments/model_fleet_q4/` and
+  `assistant/experiments/chat_quality_q4/`; rollback is one line in `.env`.
+- **`/health` reports the math role.** The fleet dict omitted `math`, so the model
+  serving the `compute` tool was invisible; it now appears (or `"(disabled)"`).
+- **Dependency audit.** Removed `sqlalchemy`, which nothing imported (the store is
+  raw aiosqlite) yet was installed into the runtime image *and* the dev extras.
+  Removed the stale `@types/dompurify` / `@types/marked` — both libraries ship
+  their own types now — and moved `@types/d3` / `typescript` to `devDependencies`.
+
+The fleet decision and its measurements live in `docs/MODEL_SELECTION.md`.
+
 ## v0.11.10-alpha
 
 **The context window is now budgeted, not guessed — and long conversations keep
