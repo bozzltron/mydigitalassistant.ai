@@ -298,15 +298,17 @@ def test_restore_path_traversal_blocked(client, store):
 
 
 def test_health_reports_model_fleet(client):
-    """Health endpoint should report the model fleet roles."""
+    """Health endpoint reports every fleet role, including max and math.
+
+    `math` was missing from the dict, so the model that actually serves the
+    `compute` tool was invisible on `/health`.
+    """
     r = client.get("/health")
     assert r.status_code == 200
     data = r.json()
     assert "models" in data
-    assert "chat" in data["models"]
-    assert "utility" in data["models"]
-    assert "embedding" in data["models"]
-    assert "coder" in data["models"]
+    for role in ("chat", "utility", "embedding", "coder", "max", "math"):
+        assert role in data["models"], f"{role} missing from the fleet dict"
     assert "thinking_supported" in data
 
 
