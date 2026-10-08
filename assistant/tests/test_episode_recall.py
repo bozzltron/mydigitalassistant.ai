@@ -235,3 +235,63 @@ async def test_retriever_empty_frames_still_recalls(store, stub_llm):
     ctx = await retriever.retrieve(query="garden project", user_id=alice.id, session_id="new")
     assert ctx.retrieved_frames == []
     assert [e.id for e, _sim in ctx.past_conversations] == [old.id]
+
+
+def test_excludes_named_episodes(seeded_store):
+    """`exclude_episode_ids` drops specific turns (the verbatim window)."""
+    s, alice, _bob, ep_a = seeded_store
+    hits = _run(
+        s.search_similar_episodes(
+            embedding=_embed("garden project urgency"),
+            user_id=alice,
+            limit=10,
+            min_distance=0.7,
+            embedding_model=settings.embedding_model,
+            exclude_episode_ids=[ep_a],
+        )
+    )
+    assert ep_a not in [e.id for e, _sim in hits]
+
+
+@pytest.mark.asyncio
+async def test_retriever_recalls_current_session_beyond_the_window(store, stub_llm):
+    """A long conversation can reach its own middle.
+
+    Turns older than the verbatim window are recalled even though they are in the
+    current session; the turns inside the window are not (already in the prompt).
+    Previously the whole current session was excluded, so a thread could not
+    recall its own older turns.
+    """
+    add_embedding_cluster("garden project")
+    alice = await store.create_user("gina")
+    session = "long-thread"
+
+    emb = (await stub_llm.embed("garden project launch")).embedding
+    old = await store.create_episode(
+        user_id=alice.id,
+        session_id=session,
+        role="user",
+        content="we decided the garden project launches in May",
+    )
+    await store.store_episode_embedding(old.id, emb, settings.embedding_model)
+
+    recent_ids = []
+    for i in range(settings.verbatim_history_turns + 1):
+        ep = await store.create_episode(
+            user_id=alice.id,
+            session_id=session,
+            role="user",
+            content=f"recent garden turn {i}",
+        )
+        recent_ids.append(ep.id)
+        await store.store_episode_embedding(ep.id, emb, settings.embedding_model)
+
+    retriever = Retriever(store, stub_llm)
+    ctx = await retriever.retrieve(
+        query="when does the garden project launch",
+        user_id=alice.id,
+        session_id=session,
+    )
+    ids = [e.id for e, _sim in ctx.past_conversations]
+    assert old.id in ids, "the current session's older turn must be recallable"
+    assert not (set(recent_ids) & set(ids)), "verbatim-window turns must be excluded"

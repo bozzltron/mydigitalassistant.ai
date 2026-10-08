@@ -61,10 +61,12 @@ class Summarizer:
             )
             return None
 
-        # Build conversation text
-        episodes_text = self._format_episodes(user_episodes)
-        if len(episodes_text) > settings.summarization_max_chars:
-            episodes_text = episodes_text[:settings.summarization_max_chars]
+        # Summarize the *recent* turns and fold in the prior summary, so the
+        # summary tracks where the conversation is. Truncating the head (the old
+        # behaviour) summarized a long session from its opening and never moved:
+        # `episodes_text[:max_chars]` on an oldest-first list drops the tail.
+        prior_summary = await self._existing_summary(session_id)
+        episodes_text = self._recent_episodes_text(user_episodes)
 
         # Generate summary via utility model
         summary_data = await self._generate_summary(
@@ -73,6 +75,7 @@ class Summarizer:
             first_ts=user_episodes[0].timestamp,
             last_ts=user_episodes[-1].timestamp,
             episodes_text=episodes_text,
+            prior_summary=prior_summary,
         )
 
         if not summary_data:
@@ -100,14 +103,41 @@ class Summarizer:
             created=created,
         )
 
-    def _format_episodes(self, episodes: list) -> str:
-        """Format episodes into conversation text."""
-        lines = []
-        for ep in episodes:
-            prefix = "User" if ep.role == "user" else "Assistant"
-            content = ep.content[:500]  # cap per-turn
-            lines.append(f"{prefix}: {content}")
-        return "\n".join(lines)
+    @staticmethod
+    def _episode_line(ep) -> str:
+        prefix = "User" if ep.role == "user" else "Assistant"
+        return f"{prefix}: {ep.content[:500]}"  # cap per-turn
+
+    def _recent_episodes_text(self, episodes: list) -> str:
+        """The most recent turns that fit the budget, oldest-first.
+
+        A long session's *recent* turns are where the conversation is; the prior
+        summary (folded in by the caller) carries the earlier context forward.
+        The previous head-truncation summarized the opening and never advanced.
+        """
+        budget = settings.summarization_max_chars
+        chosen: list[str] = []
+        used = 0
+        for ep in reversed(episodes):
+            line = self._episode_line(ep)
+            if chosen and used + len(line) > budget:
+                break
+            chosen.append(line)
+            used += len(line) + 1
+        chosen.reverse()
+        return "\n".join(chosen)
+
+    async def _existing_summary(self, session_id: str) -> str | None:
+        """The session's current summary prose, or None if there is none."""
+        frame = await self.store.get_frame_by_name(
+            f"conversation_summary_{session_id}"
+        )
+        if frame is None:
+            return None
+        for slot in await self.store.get_slots_for_frame(frame.id):
+            if slot.key == "summary" and (slot.value or "").strip():
+                return slot.value
+        return None
 
     async def _generate_summary(
         self,
@@ -116,19 +146,27 @@ class Summarizer:
         first_ts: str,
         last_ts: str,
         episodes_text: str,
+        prior_summary: str | None = None,
     ) -> dict | None:
         """Call utility model to generate structured summary."""
+        prior_block = (
+            "\nPrevious summary of the earlier part of this conversation "
+            "(carry it forward, updating it with what is new):\n"
+            f"{prior_summary}\n"
+            if prior_summary
+            else ""
+        )
         prompt = f"""Summarize the following conversation session into a structured summary.
 
 Session ID: {session_id}
 Turns: {turn_count}
 Date Range: {first_ts} to {last_ts}
-
-Conversation:
+{prior_block}
+Recent conversation:
 {episodes_text}
 
 Produce a JSON object with these fields:
-- "summary": 3-5 sentence narrative capturing key topics, decisions, and outcomes
+- "summary": 3-5 sentence narrative capturing key topics, decisions, and outcomes so far
 - "key_entities": list of important people, projects, concepts mentioned
 - "open_questions": list of unresolved topics or follow-ups needed"""
 

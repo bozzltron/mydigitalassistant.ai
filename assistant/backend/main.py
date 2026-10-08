@@ -2170,6 +2170,31 @@ async def summarize_session(
     )
 
 
+@app.get("/chat/session/{session_id}/summary")
+async def get_session_summary(
+    session_id: str,
+    store: MemoryStore = _Depends(get_store),
+):
+    """The stored summary of a conversation, if one exists.
+
+    Read-only: it never re-summarizes, so it costs no model call. Transparency,
+    so the user can see what the agent compressed about a thread.
+    """
+    frame = await store.get_frame_by_name(f"conversation_summary_{session_id}")
+    if frame is None:
+        return {"session_id": session_id, "summary": None}
+    slots = {s.key: s.value for s in await store.get_slots_for_frame(frame.id)}
+    return {
+        "session_id": session_id,
+        "summary": slots.get("summary"),
+        "key_entities": slots.get("key_entities"),
+        "open_questions": slots.get("open_questions"),
+        "turn_count": slots.get("turn_count"),
+        "date_start": slots.get("date_start"),
+        "date_end": slots.get("date_end"),
+    }
+
+
 @app.patch("/conversations/{session_id}/title")
 async def update_conversation_title(
     session_id: str,

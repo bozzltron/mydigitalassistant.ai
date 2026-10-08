@@ -97,6 +97,7 @@ def _meta_event_from_response(session_id: str | None, response: "ChatResponse"):
         memory_context=response.memory_context,
         prompt_tokens=response.prompt_tokens,
         context_window=response.context_window,
+        conversation_summary=response.conversation_summary,
     )
 
 
@@ -156,6 +157,10 @@ class ChatResponse(BaseModel):
     # is the number that shows a file filling the window.
     prompt_tokens: int = 0
     context_window: int = 0
+    # This conversation's stored summary, if it has one -- transparency, so the
+    # UI can show what the agent compressed about the thread. Not part of the
+    # prompt.
+    conversation_summary: str = ""
 
 
 def compute_answer_confidence(
@@ -684,6 +689,28 @@ class Orchestrator:
         )
         return system_prompt, plan_instructions, self_context
 
+    async def _conversation_summary(self, session_id: str | None) -> str:
+        """This session's stored conversation summary prose, or "".
+
+        Transparency, not context: it rides the turn's `meta` so the UI can show
+        what the agent compressed about the thread, and is never added to the
+        prompt. Best-effort -- a missing frame is simply "not summarized yet".
+        """
+        if not session_id:
+            return ""
+        try:
+            frame = await self.store.get_frame_by_name(
+                f"conversation_summary_{session_id}"
+            )
+            if frame is None:
+                return ""
+            for slot in await self.store.get_slots_for_frame(frame.id):
+                if slot.key == "summary":
+                    return slot.value or ""
+        except Exception as exc:
+            logger.debug("Could not read the conversation summary: %s", exc)
+        return ""
+
     async def _render_supplied_content(
         self, system_prompt: str, extraction_summary: dict
     ) -> str:
@@ -948,6 +975,7 @@ class Orchestrator:
             confidence_basis=meta.get("confidence_basis") or "none",
             prompt_tokens=meta.get("prompt_tokens") or 0,
             context_window=meta.get("context_window") or 0,
+            conversation_summary=meta.get("conversation_summary") or "",
         )
 
     async def _handle_scheduled_task(
@@ -1681,10 +1709,12 @@ class Orchestrator:
             # Owner-scoped in SQL now; bound to the tail we can use (6 prior
             # turns plus the current one, which `[:-1]` drops).
             session_episodes = await self.store.get_episodes_for_session(
-                session_id, user_id=request.user_id, limit=7
+                session_id,
+                user_id=request.user_id,
+                limit=settings.verbatim_history_turns + 1,
             )
             prior_turns = session_episodes[:-1]
-            max_turns = min(len(prior_turns), 6)
+            max_turns = min(len(prior_turns), settings.verbatim_history_turns)
             prior_turns = prior_turns[-max_turns:] if max_turns > 0 else []
             for ep in prior_turns:
                 history_messages.append(ChatMessage(role=ep.role, content=ep.content))
@@ -2020,6 +2050,7 @@ class Orchestrator:
                 memory_context=memory_context.formatted,
                 prompt_tokens=final_prompt_tokens,
                 context_window=final_context_window,
+                conversation_summary=await self._conversation_summary(session_id),
             )
         )
 

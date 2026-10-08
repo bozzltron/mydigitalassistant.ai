@@ -121,6 +121,7 @@ class MetaEvent(ToolLoopEvent):
         memory_context: str | None = None,
         prompt_tokens: int = 0,
         context_window: int = 0,
+        conversation_summary: str = "",
     ):
         self.type = "meta"
         self.session_id = session_id
@@ -138,6 +139,10 @@ class MetaEvent(ToolLoopEvent):
         # The tool loop's peak prompt and its window -- the context meter.
         self.prompt_tokens = prompt_tokens
         self.context_window = context_window
+        # This conversation's stored summary, if it has one. Transparency: the
+        # user can see what the agent compressed about the thread. It rides the
+        # meta, not the prompt, so it costs no context.
+        self.conversation_summary = conversation_summary
 
 
 def _event_json_default(obj: object) -> object:
@@ -197,6 +202,7 @@ def serialize_event(event: ToolLoopEvent) -> str:
             'memory_context': event.memory_context,
             'prompt_tokens': event.prompt_tokens,
             'context_window': event.context_window,
+            'conversation_summary': event.conversation_summary,
         }
         return f"data: {json.dumps(data, default=_event_json_default)}\n\n"
     else:

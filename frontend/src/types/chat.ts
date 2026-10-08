@@ -15,6 +15,8 @@ export interface MessageMeta {
   /** The tool loop's peak prompt and its window (the context meter). */
   prompt_tokens?: number
   context_window?: number
+  /** This conversation's stored summary, if the agent has compressed it. */
+  conversation_summary?: string
   ogData?: Record<string, OgData>
   media?: MediaContent[]
   /** True while assistant text is still arriving over the stream. */
@@ -240,6 +242,7 @@ export interface SessionMessage {
   timestamp?: string
   /** Persisted search/media payload for a search turn (see `search_info`). */
   search_info?: SearchInfo
+  conversation_summary?: string
 }
 
 export interface AttachedFile {

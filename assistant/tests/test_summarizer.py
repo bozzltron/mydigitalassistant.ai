@@ -13,6 +13,7 @@ class StubLLMClient(OllamaClient):
     def __init__(self):
         super().__init__()
         self._next_summary = None
+        self.last_user_prompt = ""
 
     def set_summary(self, summary: dict):
         self._next_summary = summary
@@ -30,6 +31,9 @@ class StubLLMClient(OllamaClient):
         tools=None,
     ):
         from assistant.backend.pipeline.llm_client import ChatResponse
+        for m in messages:
+            if getattr(m, "role", None) == "user":
+                self.last_user_prompt = m.content
         if self._next_summary:
             import json
             return ChatResponse(
@@ -225,6 +229,77 @@ async def test_summarizer_stores_embedding_for_summary_frame(store):
     assert frame is not None
     chunks = await store.count_frame_embedding_chunks(frame.id, settings.embedding_model)
     assert chunks >= 1, "summary frame was created without an embedding"
+
+
+def test_recent_episodes_text_keeps_the_tail_not_the_head():
+    """A long session is summarized from its recent turns, not its opening.
+
+    The old `_format_episodes(...)[:max_chars]` on an oldest-first list dropped
+    the tail -- so a long conversation's summary described its first turns and
+    never advanced.
+    """
+    from types import SimpleNamespace
+
+    from assistant.backend.config import settings
+    from assistant.backend.scheduler.summarizer import Summarizer
+
+    original = settings.summarization_max_chars
+    settings.summarization_max_chars = 60
+    try:
+        episodes = [
+            SimpleNamespace(role="user", content=f"turn {i} " + "x" * 20)
+            for i in range(20)
+        ]
+        text = Summarizer(store=None, llm_client=None)._recent_episodes_text(episodes)
+    finally:
+        settings.summarization_max_chars = original
+
+    assert "turn 19" in text  # the most recent turn is kept
+    assert "turn 0 " not in text  # the opening is dropped to fit
+
+
+@pytest.mark.asyncio
+async def test_second_summary_folds_in_the_prior_summary(store):
+    """Summarization is incremental: the prior summary is carried forward."""
+    from assistant.backend.config import settings
+
+    settings.summarization_min_turns = 3
+
+    user = await store.create_user("incuser")
+    session_id = "incremental_session"
+    for i in range(4):
+        await store.create_episode(user.id, session_id, "user", f"Message {i}", frame_ids=[])
+
+    llm = StubLLMClient()
+    llm.set_summary({"summary": "FIRST SUMMARY", "key_entities": [], "open_questions": []})
+    summarizer = Summarizer(store=store, llm_client=llm)
+    await summarizer.summarize_session(session_id, user.id)
+
+    llm.set_summary({"summary": "SECOND SUMMARY", "key_entities": [], "open_questions": []})
+    await summarizer.summarize_session(session_id, user.id)
+
+    assert "FIRST SUMMARY" in llm.last_user_prompt
+
+
+@pytest.mark.asyncio
+async def test_existing_summary_reads_the_stored_prose(store):
+    from assistant.backend.config import settings
+
+    settings.summarization_min_turns = 3
+
+    user = await store.create_user("readuser")
+    session_id = "read_session"
+    for i in range(4):
+        await store.create_episode(user.id, session_id, "user", f"Message {i}", frame_ids=[])
+
+    summarizer = Summarizer(store=store, llm_client=StubLLMClient())
+    summarizer.llm_client.set_summary(
+        {"summary": "STORED PROSE", "key_entities": [], "open_questions": []}
+    )
+    await summarizer.summarize_session(session_id, user.id)
+
+    assert await summarizer._existing_summary(session_id) == "STORED PROSE"
+    assert await summarizer._existing_summary("no_such_session") is None
 
 
 if __name__ == "__main__":

@@ -597,13 +597,28 @@ class Retriever:
     ) -> list[tuple[Episode, float]]:
         """Semantic recall over archived conversation turns.
 
-        Strictly owner-scoped; skips the current session (those turns are
-        already present verbatim as chat history). Best-effort: if the
-        episode_embeddings table has no rows for this model yet (fresh brain
-        or pre-upgrade archive), this quietly returns nothing.
+        Strictly owner-scoped. The turns already carried verbatim as chat history
+        -- the last `verbatim_history_turns` of the current session -- are
+        excluded, because re-injecting them is redundant. Turns *older* than that
+        window are recalled, including the current session's own: a long-running
+        conversation must be able to reach its own middle, which was previously
+        excluded along with the whole session. Best-effort: if the
+        episode_embeddings table has no rows for this model yet (fresh brain or
+        pre-upgrade archive), this quietly returns nothing.
         """
         if settings.retrieval_episode_limit <= 0:
             return []
+        exclude_ids: list[int] = []
+        if session_id:
+            try:
+                recent = await self.store.get_episodes_for_session(
+                    session_id,
+                    user_id=user_id,
+                    limit=settings.verbatim_history_turns + 1,
+                )
+                exclude_ids = [ep.id for ep in recent]
+            except Exception as exc:  # best-effort: recall still works without it
+                logger.debug("Could not read the verbatim window: %s", exc)
         try:
             hits = await self.store.search_similar_episodes(
                 embedding=query_embedding,
@@ -611,7 +626,7 @@ class Retriever:
                 embedding_model=self.embedding_model,
                 limit=settings.retrieval_episode_limit * 3,
                 min_distance=settings.retrieval_min_distance,
-                exclude_session_ids=[session_id] if session_id else None,
+                exclude_episode_ids=exclude_ids or None,
             )
         except Exception as exc:
             logger.warning("Episode recall unavailable: %s", exc)

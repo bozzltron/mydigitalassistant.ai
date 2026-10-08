@@ -718,3 +718,38 @@ async def test_correction_endpoint_basic(client, stub_llm, store):
         )
     assert len(feedbacks) == 1
     assert feedbacks[0][0] == "correction"
+
+
+@pytest.mark.asyncio
+async def test_session_summary_endpoint_is_read_only(client, store):
+    """Transparency: the user can read a conversation's summary without
+    re-summarizing it."""
+    user = await store.create_user("summaryuser")
+    frame = await store.create_frame(
+        name="conversation_summary_conv-x",
+        type="conversation_summary",
+        confidence=0.8,
+        owner_user_id=user.id,
+        source_type="summarization",
+        source_reliability=0.8,
+    )
+    await store.set_derived_slot(
+        frame_id=frame.id,
+        key="summary",
+        value="We planned the launch and agreed on May.",
+        source_type="summarization",
+    )
+    await store.set_derived_slot(
+        frame_id=frame.id, key="turn_count", value="12", source_type="summarization"
+    )
+
+    r = client.get("/chat/session/conv-x/summary")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["summary"] == "We planned the launch and agreed on May."
+    assert body["turn_count"] == "12"
+
+    # A session with no summary reads as null, not an error.
+    empty = client.get("/chat/session/never-summarized/summary")
+    assert empty.status_code == 200
+    assert empty.json()["summary"] is None

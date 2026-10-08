@@ -120,6 +120,7 @@ def _setup_orchestrator(chat_model: str, supports_thinking: bool, plan_think: bo
     llm_client.supports_tools = AsyncMock(return_value=False)
     llm_client.math_model = ""
     llm_client.chat = AsyncMock(return_value=MagicMock(content="test", thinking=""))
+    llm_client.context_window = MagicMock(return_value=16384)
     search_tool = MagicMock()
 
     deps = MagicMock()
@@ -177,6 +178,12 @@ def _setup_orchestrator(chat_model: str, supports_thinking: bool, plan_think: bo
     mock_settings.max_search_results_in_prompt = 3
     mock_settings.brave_search_min_relevance = 0.20
     mock_settings.search_min_relevance = 0.30
+    # Settings the context-budget and tool-loop work added. A MagicMock attribute
+    # is truthy but not an int, so `min()` and comparisons need real values.
+    mock_settings.verbatim_history_turns = 6
+    mock_settings.max_tool_rounds = 6
+    mock_settings.max_tool_rounds_deep = 12
+    mock_settings.chat_num_ctx = 16384
 
     for key in (
         "classify_intent",

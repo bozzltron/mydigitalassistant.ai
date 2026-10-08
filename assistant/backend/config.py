@@ -150,6 +150,12 @@ class Settings(BaseSettings):
     # episode recall). Owner-scoped, current session excluded. Disabled (0)
     # is opt-out; the default of 5 matches .env.example.
     retrieval_episode_limit: int = 5
+    # Turns of the current session carried verbatim as chat history. This is also
+    # the window excluded from episode recall (those turns are already in the
+    # prompt, so re-injecting them is redundant) -- turns *older* than it are
+    # recallable, including the current session's own, so a long conversation can
+    # reach its middle.
+    verbatim_history_turns: int = 6
 
     # System prompt budget (context window protection)
     # Limits total prompt chars before LLM call; truncates least-relevant first

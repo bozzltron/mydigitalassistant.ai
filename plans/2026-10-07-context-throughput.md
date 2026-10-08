@@ -95,7 +95,72 @@ so it is measured against a budgeted pipeline rather than hiding the problem.
 | T3 | Aggregate tool-result cap; rounds follow the task | **shipped** |
 | T4 | De-duplicate tool prose; token-bound history | next |
 | T5 | Re-measure on a fixed turn set | |
+| T6 | Conversation scaling: same-session recall, tail summaries, transparency | **shipped (A/B/transparency)** |
 | O1 | Run the opus model-swap experiment against the improved pipeline | after T5 |
+
+## T6 — Conversation scaling and summarization transparency
+
+Long-running **topical** conversations are the norm, not the exception. The
+components exist — verbatim tail, episode recall, summaries — but they do not
+compose: a live session cannot recall its own middle, its summary describes its
+*beginning*, and summarization is invisible.
+
+### Gaps
+
+- **G1 — the same session's middle is lost.** `_search_past_conversations`
+  excludes the *whole* current session (`retrieval.py:614`), on the assumption its
+  turns are already verbatim — true only for the last few. Turn 7+ of the current
+  thread is neither verbatim nor recalled.
+- **G2 — summaries describe the beginning.** `summarize_session` truncates the
+  episode text with `[:summarization_max_chars]` (`summarizer.py:66-67`) from the
+  oldest-first list, so a long session is summarized from its opening, and
+  regenerated the same way — it never advances.
+- **G3 — session-scoped, not topic-scoped.** `conversation_summary_{session}`: a
+  topic spanning sessions gets N summaries, none of them "the topic's state".
+- **G4 — timing/delivery.** A summary exists only after the scheduler runs, and is
+  injected only if retrieval happens to surface it.
+- **G5 — history size** (T4): one huge turn is carried verbatim for several turns.
+
+### Near-term (this work)
+
+- **A — same-session episode recall.** Exclude only the turns already in the
+  verbatim window, not the whole session, so a thread's older turns become
+  retrievable by meaning. (One SQL `NOT IN`, one shared window constant.)
+- **B — summarize the tail, incrementally.** Summarize the recent turns and fold
+  in the prior summary, so the summary reflects where the conversation *is*
+  rather than where it started.
+
+**Shipped (2026-10-07).** `verbatim_history_turns` is the one window constant;
+`_search_past_conversations` excludes exactly those episode ids via the new
+`exclude_episode_ids`; `summarize_session` summarizes the recent tail and carries
+the prior summary forward.
+
+### Transparency (this work)
+
+The summary is a memory artifact; make it **viewable**, not **pushed** — no new
+event type, no alert, no prompt cost:
+
+- `GET /chat/session/{id}/summary` — read-only, returns the stored summary (never
+  re-summarizes).
+- The current session's summary rides the turn `meta` (not the prompt), so the
+  existing "What I learned" panel can show it. After a long thread is summarized,
+  the user sees it on their next turn.
+
+**Shipped (2026-10-07).** Both, plus the panel entry.
+
+### Design (later)
+
+- **C — on-demand injection.** When the live session passes the verbatim window,
+  inject its summary as a "where this conversation is" section.
+- **D — topic-scoped state.** Key the summary to the topic frame the conversation
+  keeps touching, updated as it recurs.
+
+### Tests
+
+- A: a turn from the current session, older than the window, is recalled; the
+  verbatim turns are not.
+- B: a long session's summary reflects the recent turns, not the first.
+- Transparency: the read endpoint returns the stored summary; the meta carries it.
 
 ## Test strategy
 
@@ -133,5 +198,7 @@ independent. Reverting any one leaves the large-file work intact.
 ## Doc homes when this plan is deleted
 
 - The architecture map → **`docs/CONTEXT_THROUGHPUT.md`** (created).
+- Conversation scaling (the three layers, the partition rule, transparency) →
+  **`docs/CONVERSATION_SCALING.md`** (created).
 - The budget rule → `assistant/AGENTS.md` (tool-loop / context-window section).
 - What shipped → `docs/RELEASE_NOTES.md`.

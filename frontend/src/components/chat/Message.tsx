@@ -67,13 +67,15 @@ export default function Message(props: MessageProps) {
   // search info and extraction summaries need to re-render.
   const extractionSummary = createMemo(() => message().meta?.extraction_summary)
   const searchExtractionSummary = createMemo(() => message().meta?.search_extraction_summary)
+  const conversationSummary = createMemo(() => message().meta?.conversation_summary)
   const learnedSlots = createMemo(() => [
     ...(extractionSummary()?.slots || []),
     ...(searchExtractionSummary()?.slots || [])
   ])
   const hasLearned = createMemo(() => (!isUser() && (
     (extractionSummary()?.slots && extractionSummary()!.slots.length > 0) ||
-    (searchExtractionSummary()?.slots && searchExtractionSummary()!.slots.length > 0)
+    (searchExtractionSummary()?.slots && searchExtractionSummary()!.slots.length > 0) ||
+    !!conversationSummary()
   )))
 
   const isSearch = createMemo(() =>
@@ -100,6 +102,9 @@ export default function Message(props: MessageProps) {
     let label = 'What I learned'
     if (conflictCount() > 0) label += ` (${conflictCount()} auto-resolved)`
     if (isSearch()) label = 'Found from search'
+    if (!isSearch() && learnedSlots().length === 0 && conversationSummary()) {
+      label = 'Conversation summary'
+    }
     return label
   })
 
@@ -151,6 +156,11 @@ export default function Message(props: MessageProps) {
           <details class="learned-indicator">
             <summary>{learnedLabel()}{backendBadge()}</summary>
             <div class="learned-items">
+              {conversationSummary() && (
+                <div class="learned-item kind-learned">
+                  Summary of this conversation: {conversationSummary()}
+                </div>
+              )}
               <For each={learnedSlots()}>
                 {(slot) => (
                   <div

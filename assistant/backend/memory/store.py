@@ -1079,13 +1079,15 @@ class MemoryStore:
         limit: int = 5,
         min_distance: float = 0.7,
         exclude_session_ids: list[str] | None = None,
+        exclude_episode_ids: list[int] | None = None,
     ) -> list[tuple[Episode, float]]:
         """Semantic search over conversation turns.
 
         Returns (episode, similarity) tuples, best first. Episodes are strictly
         personal: user_id=None skips the filter only for observatory/admin use;
-        the retriever always passes a concrete user. exclude_session_ids drops
-        turns already present verbatim as chat history.
+        the retriever always passes a concrete user. `exclude_episode_ids` drops
+        the turns already present verbatim as chat history; `exclude_session_ids`
+        drops whole sessions.
         """
         owner_filter = (
             "" if user_id is None else "AND (e.user_id = ?)"
@@ -1093,7 +1095,7 @@ class MemoryStore:
         session_filter = ""
         # Params follow the statement's textual placeholder order:
         # model, select-distance, where-distance, min_distance,
-        # [owner], [excluded sessions...], limit.
+        # [owner], [excluded sessions...], [excluded episodes...], limit.
         params: list = [
             embedding_model,
             json.dumps(embedding),
@@ -1107,6 +1109,12 @@ class MemoryStore:
                 ",".join("?" for _ in exclude_session_ids)
             )
             params.extend(exclude_session_ids)
+        episode_filter = ""
+        if exclude_episode_ids:
+            episode_filter = "AND e.id NOT IN ({})".format(
+                ",".join("?" for _ in exclude_episode_ids)
+            )
+            params.extend(exclude_episode_ids)
         params.append(limit)
         async with self._connect() as db:
             rows = await db.execute_fetchall(
@@ -1124,6 +1132,7 @@ class MemoryStore:
                 WHERE vec_distance_cosine(candidate.embedding, ?) <= ?
                   {owner_filter}
                   {session_filter}
+                  {episode_filter}
                 ORDER BY distance ASC
                 LIMIT ?
                 """,
