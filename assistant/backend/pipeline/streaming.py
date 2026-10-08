@@ -227,14 +227,17 @@ async def stream_tool_loop(
     import logging
 
     from assistant.backend.config import settings
-    from assistant.backend.pipeline.async_tools import format_tool_result
     from assistant.backend.pipeline.context_budget import content_char_limit
     from assistant.backend.pipeline.llm_client import (
         EMPTY_GENERATION_FALLBACK,
         ChatMessage,
         compact_messages,
     )
-    from assistant.backend.pipeline.tool_executor import ToolResult, execute_tool
+    from assistant.backend.pipeline.tool_executor import (
+        ToolResult,
+        execute_tool,
+        format_tool_result,
+    )
 
     logger = logging.getLogger(__name__)
 

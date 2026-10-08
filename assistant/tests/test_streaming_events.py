@@ -490,6 +490,57 @@ async def test_stream_tool_loop_reports_tool_result_chars(tmp_path):
     assert finalize["tool_result_chars"] > 0
 
 
+async def test_stream_tool_loop_does_not_resend_thinking(tmp_path):
+    """§6.3 hygiene: the model's thinking is returned for audit, never re-sent.
+
+    Ported from the removed `run_tool_loop` tests, since that loop was dead in
+    production and this one is the only path.
+    """
+    from assistant.backend.pipeline.llm_client import ChatResponse, ToolCall
+    from assistant.backend.pipeline.streaming import stream_tool_loop
+    from assistant.backend.pipeline.tool_executor import init_store
+
+    init_store(str(tmp_path / "stream.db"))
+
+    class StubLLM:
+        def __init__(self, responses):
+            self.responses = list(responses)
+            self.tools_model = "test-model"
+            self.calls = []
+
+        async def chat(self, messages, **kwargs):
+            self.calls.append(messages)
+            return self.responses.pop(0)
+
+        def context_window(self, model=None):
+            return 16384
+
+    first = ChatResponse(
+        content="",
+        model="m",
+        done=True,
+        thinking="pondering",
+        tool_calls=[ToolCall(name="read_file", arguments={"path": "nope.csv"})],
+    )
+    answer = ChatResponse(content="done", model="m", done=True)
+    llm = StubLLM([first, answer])
+
+    async for _ in stream_tool_loop(
+        llm,
+        messages=[{"role": "user", "content": "q"}],
+        tools=[],
+        model="test-model",
+        user_id="1",
+        session_id="s-1",
+    ):
+        pass
+
+    assert len(llm.calls) == 2
+    assert all(
+        "pondering" not in (getattr(m, "content", "") or "") for m in llm.calls[1]
+    )
+
+
 async def test_stream_tool_loop_collapses_older_results_when_the_budget_is_spent(
     tmp_path,
 ):
