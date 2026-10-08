@@ -66,7 +66,6 @@ RUN pip install --no-cache-dir --no-index --find-links /wheels \
         ruff \
         pytest \
         pytest-asyncio \
-        sqlalchemy \
         xlwt \
     && rm -rf /wheels
 
