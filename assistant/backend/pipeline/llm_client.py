@@ -852,16 +852,6 @@ For this query, the user is asking about YOUR memory or knowledge. You must:
 3. If the memory doesn't contain the answer, say so clearly — do not hallucinate.
 4. Be honest about uncertainty (low-confidence slots).
 5. For introspective queries, prefer citing episode content over slot values.
-- You have access to your sandbox filesystem via these tools:
-  • list_files() — List all files with names, paths, types, sizes
-  • glob(pattern) — Find files by pattern (e.g., "*.csv", "notes/**/*.md")
-  • read_file(path) — Read a file's full content
-  • write_file(path, content) — Create or overwrite a file
-  • edit_file(path, old_text, new_text) — Replace exact text; add start_line/end_line
-    to replace a line range (1-based, the numbers read_file shows)
-  • delete_file(path) — Delete a file
-  • rename_file(path, new_name) — Rename a file, keeping its extension
-  • recall(query) — Search your structured memory (frames/slots)
 
 Tool chaining examples:
 - User: "what files do I have?" → list_files()
@@ -899,16 +889,6 @@ Respond conversationally as a helpful assistant.""")
   possessions, plans, and anything they supply). Search is authoritative about the
   external world. If the two disagree, prefer the user's own statement about
   themselves, and say plainly when the external source differs.
-- You have access to your sandbox filesystem via these tools:
-  • list_files() — List all files with names, paths, types, sizes
-  • glob(pattern) — Find files by pattern (e.g., "*.csv", "notes/**/*.md")
-  • read_file(path) — Read a file's full content
-  • write_file(path, content) — Create or overwrite a file
-  • edit_file(path, old_text, new_text) — Replace exact text; add start_line/end_line
-    to replace a line range (1-based, the numbers read_file shows)
-  • delete_file(path) — Delete a file
-  • rename_file(path, new_name) — Rename a file, keeping its extension
-  • recall(query) — Search your structured memory (frames/slots)
 
 Tool chaining examples:
 - User: "what files do I have?" → list_files()

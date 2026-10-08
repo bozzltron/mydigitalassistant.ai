@@ -20,6 +20,7 @@ from assistant.backend.memory.retrieval import (
 )
 from assistant.backend.memory.store import MemoryStore
 from assistant.backend.pipeline.context_budget import (
+    history_char_limit,
     measure_budget,
     reset_turn_budget,
     set_turn_budget,
@@ -688,6 +689,31 @@ class Orchestrator:
             self_context=self_context,
         )
         return system_prompt, plan_instructions, self_context
+
+    @staticmethod
+    def _bounded_history(turns: list) -> list[ChatMessage]:
+        """The most recent turns whose total size fits the history budget.
+
+        History is bounded by turn count (`verbatim_history_turns`) but not by
+        size, so a single huge prior turn -- a paste, a long answer -- was re-sent
+        in full on every later turn and could exceed the window by itself. Keep
+        the most recent turns within `history_char_limit`; if the newest alone
+        exceeds it, truncate it with a marker rather than dropping it.
+        """
+        budget = history_char_limit()
+        selected: list[ChatMessage] = []
+        used = 0
+        for ep in reversed(turns):
+            content = ep.content or ""
+            if selected and used + len(content) > budget:
+                break
+            if not selected and len(content) > budget:
+                marker = "\n\n[earlier turn truncated to fit the context window]"
+                content = content[: max(0, budget - len(marker))] + marker
+            selected.append(ChatMessage(role=ep.role, content=content))
+            used += len(content)
+        selected.reverse()
+        return selected
 
     async def _conversation_summary(self, session_id: str | None, user_id: int) -> str:
         """This session's stored conversation summary prose, or "".
@@ -1711,8 +1737,7 @@ class Orchestrator:
             prior_turns = session_episodes[:-1]
             max_turns = min(len(prior_turns), settings.verbatim_history_turns)
             prior_turns = prior_turns[-max_turns:] if max_turns > 0 else []
-            for ep in prior_turns:
-                history_messages.append(ChatMessage(role=ep.role, content=ep.content))
+            history_messages = self._bounded_history(prior_turns)
 
         # Hard limit on system prompt
         system_prompt, truncated = self._fit_prompt_to_cap(

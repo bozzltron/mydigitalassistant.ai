@@ -213,3 +213,18 @@ def test_the_loop_sizes_memory_before_building_the_prompt():
     source = _function_source(Orchestrator._run_turn)
     assert "_assemble_prompt(" in source
     assert "format_memory_context(" not in source
+
+
+def test_system_prompt_does_not_duplicate_the_tool_schemas():
+    """The prose tool list duplicated the JSON schemas -- and was stale.
+
+    The schemas (sent via `tools=`) are the contract; the prose list named only
+    eight of the tools and omitted append_file/search_file. The chaining guidance
+    and the uploaded-file note remain, because the schemas do not carry them.
+    """
+    from assistant.backend.pipeline.llm_client import build_system_prompt
+
+    prompt = build_system_prompt("", "functional", "", "", current_datetime="")
+    assert "• list_files()" not in prompt
+    assert "Tool chaining examples" in prompt
+    assert "Uploaded files" in prompt

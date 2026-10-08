@@ -92,6 +92,55 @@ def test_orchestrator_installs_and_resets_the_budget():
     assert "reset_turn_budget(" in source
 
 
+def test_history_char_limit_is_a_fraction_of_the_window():
+    from assistant.backend.config import settings
+    from assistant.backend.pipeline.context_budget import (
+        CHARS_PER_TOKEN,
+        HISTORY_WINDOW_FRACTION,
+        history_char_limit,
+    )
+
+    assert (
+        history_char_limit()
+        == int(settings.chat_num_ctx * HISTORY_WINDOW_FRACTION) * CHARS_PER_TOKEN
+    )
+
+
+def test_bounded_history_keeps_the_most_recent_within_budget():
+    """History is bounded by size, not just by turn count."""
+    from types import SimpleNamespace
+
+    from assistant.backend.pipeline.context_budget import history_char_limit
+    from assistant.backend.pipeline.orchestrator import Orchestrator
+
+    budget = history_char_limit()
+    per = budget // 4
+    turns = [
+        SimpleNamespace(role="assistant", content=f"turn {i} " + "x" * per)
+        for i in range(8)
+    ]
+    selected = Orchestrator._bounded_history(turns)
+    assert 0 < len(selected) < len(turns)
+    assert sum(len(m.content) for m in selected) <= budget
+    assert selected[-1].content.startswith("turn 7")  # newest kept
+
+
+def test_bounded_history_truncates_a_single_oversized_turn():
+    """A single huge turn is marked and bounded, not dropped."""
+    from types import SimpleNamespace
+
+    from assistant.backend.pipeline.context_budget import history_char_limit
+    from assistant.backend.pipeline.orchestrator import Orchestrator
+
+    budget = history_char_limit()
+    selected = Orchestrator._bounded_history(
+        [SimpleNamespace(role="user", content="y" * (budget * 3))]
+    )
+    assert len(selected) == 1
+    assert len(selected[0].content) <= budget
+    assert "truncated to fit the context window" in selected[0].content
+
+
 def test_tool_rounds_follow_task_complexity():
     """The loop length scales with the plan, not a flat cap.
 

@@ -36,6 +36,12 @@ MIN_CONTENT_CHARS = 2_000
 # fraction of the configured chat window, the pre-T2 behaviour.
 FALLBACK_WINDOW_FRACTION = 0.35
 
+# Fraction of the window reserved for verbatim history. History is otherwise
+# bounded only by turn count (`verbatim_history_turns`), so a single huge prior
+# turn -- a paste, a long answer -- was re-sent in full on every later turn and
+# could exceed the window by itself.
+HISTORY_WINDOW_FRACTION = 0.25
+
 
 @dataclass(frozen=True)
 class TurnBudget:
@@ -113,3 +119,14 @@ def content_char_limit() -> int:
         MIN_CONTENT_CHARS,
         int(settings.chat_num_ctx * FALLBACK_WINDOW_FRACTION) * CHARS_PER_TOKEN,
     )
+
+
+def history_char_limit() -> int:
+    """The characters of verbatim history a turn may carry.
+
+    History is bounded by turn count elsewhere; this bounds it by size too, so a
+    single oversized prior turn cannot exceed the window on its own.
+    """
+    from assistant.backend.config import settings
+
+    return int(settings.chat_num_ctx * HISTORY_WINDOW_FRACTION) * CHARS_PER_TOKEN
