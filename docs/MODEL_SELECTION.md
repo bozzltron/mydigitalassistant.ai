@@ -126,7 +126,7 @@ misleading — see `assistant/experiments/model_fleet_q4/`).
 
 | Role | Incumbent | Candidate | Result |
 |---|---|---|---|
-| Chat / Tools | `qwen3.5:9b` | `q4:9b` | **tie** — tools ✓, JSON ✓, ~40 tok/s both; quality unmeasured |
+| Chat / Tools | `qwen3.5:9b` | `q4:9b` | **tie** — tools ✓, JSON ✓, ~40 tok/s both; blind pairwise quality found **no win** (5 tie / 2 cand / 0 inc / 3 judge-flips) |
 | Utility | `qwen3.5:4b` | `q4:4b` | candidate **worse** — 4/7 vs 7/7 facts extracted |
 | Math | `qwen3.8:27b` | `q4:9b` | candidate **wins** — 8/8 both, 2–4 s vs 7–50 s, 6.6 GB vs 17 GB |
 
@@ -135,9 +135,11 @@ misleading — see `assistant/experiments/model_fleet_q4/`).
 equal accuracy on the probe, far faster, and 10 GB smaller than the 27B.
 
 **Caveats:** the probes are small (one chat prompt, five extraction turns, eight
-easy math problems); the math tie does not prove superiority on hard problems, and
-chat quality was not measured. A chat swap would need a quality win this did not
-find.
+easy math problems, and a 10-prompt blind quality run whose judge flipped on 3 of
+10 pairs). The math tie does not prove superiority on hard problems, and the chat
+quality run found no win but is too small and too noisy to be conclusive — a swap
+would need the larger run described in
+`assistant/experiments/chat_quality_q4/result.md`.
 
 ## Re-assessment cadence
 
