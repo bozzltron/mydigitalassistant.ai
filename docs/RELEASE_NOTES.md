@@ -1,5 +1,55 @@
 # MyDigitalAssistant.ai — release notes
 
+## v0.11.10-alpha
+
+**The context window is now budgeted, not guessed — and long conversations keep
+their thread.**
+
+The tool loop shares one window between the system prompt, every tool schema,
+history, the tool results, and the answer. v0.11.9 made that window *visible*;
+this release makes it *budgeted* and bounds what enters it, then fixes the two
+places a long conversation lost continuity.
+
+**Context throughput**
+- **The window's composition is logged.** `context_fixed` reports the system
+  prompt, tool schemas, history, and tool-result characters next to the peak
+  prompt (`context_usage`), so a turn's cost is a measurement, not an inference.
+- **A tool result is capped at a derived allowance** — `window − measured fixed
+  cost − reserved answer` — replacing a flat fraction of the window. The
+  allowance adapts: a longer history or a bigger tool set shrinks it.
+- **The rounds share that allowance.** When a new tool result would exceed it, the
+  oldest is collapsed to a marker the model can see (and the
+  `tool_call`/`tool_result` pairing is preserved), so a long tool chain cannot
+  overflow the window.
+- **Loop length follows the task.** `max_tool_rounds` (6) is a runaway guard, not
+  a task budget — the model ends the loop itself — and the reasoner's
+  think / max-intelligence escalation gets 12.
+- **History is bounded by size**, not only by turn count, so one huge prior turn
+  cannot fill the window by itself.
+- **The system prompt no longer duplicates the tool schemas.** The prose list was
+  stale (eight of nineteen tools); the schemas are the contract, and the chaining
+  examples and uploaded-file note remain.
+
+**Conversations**
+- **A long thread can recall its own middle.** The retriever excludes only the
+  turns already carried verbatim, not the whole current session, so older turns
+  are recalled by meaning.
+- **Summaries track the present.** Summarization now summarizes the recent turns
+  and folds in the prior summary, instead of summarizing the opening of a long
+  session and never advancing.
+- **Summarization is visible.** `GET /chat/session/{id}/summary` (read-only,
+  owner-scoped) and the session summary on the turn `meta`, shown in the chat's
+  "What I learned" panel.
+
+**Cleanup**
+- Removed the dead non-streaming tool loop (`run_tool_loop`) and its parallel
+  execution machinery — every turn goes through `stream_tool_loop`.
+- Test-suite audit: dropped redundant tests, strengthened weak ones, and made a
+  permanently-skipped end-to-end test runnable on demand.
+
+Policy and contracts: `docs/CONTEXT_THROUGHPUT.md`, `docs/CONVERSATION_SCALING.md`,
+`docs/FILES.md`.
+
 ## v0.11.9-alpha
 
 **Large files stop overwhelming the agent — and edits get precise.**
