@@ -132,6 +132,10 @@ the final answer so both share the hot cache.
 
 ## Search Learning
 
+The full search architecture — router → query distillation → backend → relevance
+gate → extraction → imagery — is **`docs/SEARCH.md`**. The rules below are the
+ones most easily broken.
+
 **The query is distilled, never the raw message.** The search *target* is identified
 before the query leaves: the router's `search_query` when it wants search, else
 `distill_search_query` (utility model). The raw message is a poor query — a

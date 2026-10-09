@@ -248,6 +248,25 @@ describe('composition', () => {
     const hero = getHeroMedia(searchMedia(m))
     expect(hero?.fullUrl).toBe('https://img/b-full.jpg')
   })
+
+  it('prefers Brave image-index results over web og:images', () => {
+    const m = msg({
+      search_info: {
+        backend: 'brave',
+        query: 'guitar strings',
+        results: [
+          { title: 'web', url: 'https://page/web', snippet: '', engine: 'brave', thumbnail: 'https://img/web200.png' },
+        ],
+        image_results: [
+          { title: 'img', url: 'https://page/img', snippet: 'site.com', engine: 'brave-images', thumbnail: 'https://cdn/500.png', image: 'https://img/full.jpg' },
+        ],
+      },
+    })
+    const media = searchMedia(m)
+    // The image-index result leads (it is query-relevant with a ~500px CDN copy).
+    expect(media[0].thumbnail).toBe('https://cdn/500.png')
+    expect(getHeroMedia(media)?.fullUrl).toBe('https://img/full.jpg')
+  })
 })
 
 describe('imageSrc', () => {

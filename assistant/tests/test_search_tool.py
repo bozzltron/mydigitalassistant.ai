@@ -345,6 +345,77 @@ async def test_orchestrator_search_turn_excludes_irrelevant_links(store, stub_ll
     assert "bad.com/pasta" not in injected
 
 
+class TestBraveImageSearch:
+    """Brave's image index: query-relevant images for the hero."""
+
+    @pytest.mark.asyncio
+    async def test_maps_brave_image_shape(self, monkeypatch):
+        from assistant.backend.pipeline import search as s
+
+        sample = {
+            "results": [
+                {
+                    "title": "A guitar",
+                    "url": "https://page/a",
+                    "source": "site.com",
+                    "properties": {"url": "https://img/full.jpg"},
+                    "thumbnail": {"src": "https://cdn/500.jpg"},
+                }
+            ]
+        }
+
+        async def fake_get_json(client, url, params=None, headers=None):
+            assert "images/search" in url
+            assert params["safesearch"] == "strict"  # image search: off|strict only
+            return sample
+
+        monkeypatch.setattr(s, "_get_json", fake_get_json)
+        backend = s.BraveBackend(api_key="k")
+        try:
+            images = await backend.search_images("guitar strings", 5)
+        finally:
+            await backend.close()
+
+        assert len(images) == 1
+        assert images[0].thumbnail == "https://cdn/500.jpg"
+        assert images[0].image == "https://img/full.jpg"
+        assert images[0].url == "https://page/a"
+
+    @pytest.mark.asyncio
+    async def test_default_backend_returns_no_images(self):
+        """SearXNG has no image index; the ABC default returns []."""
+        backend = SearXNGBackend(base_url="http://127.0.0.1:8080")
+        assert await backend.search_images("q") == []
+
+    def test_payload_includes_image_results(self):
+        import json
+
+        from assistant.backend.pipeline.search import (
+            SearchInfo,
+            SearchResult,
+            search_info_payload,
+        )
+
+        info = SearchInfo(
+            backend="brave",
+            query="q",
+            results=[],
+            image_results=[
+                SearchResult(
+                    title="T",
+                    url="https://page",
+                    snippet="site.com",
+                    engine="brave-images",
+                    thumbnail="https://cdn/500.jpg",
+                    image="https://img/full.jpg",
+                )
+            ],
+        )
+        payload = json.loads(search_info_payload(info))
+        assert payload["image_results"][0]["thumbnail"] == "https://cdn/500.jpg"
+        assert payload["image_results"][0]["image"] == "https://img/full.jpg"
+
+
 class TestOrchestratorUsesSanitizedQuery:
     def test_search_module_exports_complete(self):
         # Lock the public surface other modules rely on.

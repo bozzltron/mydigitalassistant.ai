@@ -1,4 +1,4 @@
-import type { ChatMessage, MediaContent } from '../types/chat'
+import type { ChatMessage, MediaContent, SearchResultItem } from '../types/chat'
 
 const YOUTUBE_URL_PATTERNS = [
   /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})/,
@@ -116,17 +116,16 @@ export function searchMedia(message: ChatMessage): MediaContent[] {
   const wantsVideo = VIDEO_INTENT.test(query)
 
   const images: MediaContent[] = []
-  for (const result of info.results ?? []) {
+  const pushImage = (result: SearchResultItem, filterJunk: boolean) => {
     // Coerce: a result's thumbnail/image may arrive as an object
     // ({src, original}) from a backend that has not normalised it yet.
-    // `thumbnail` is Brave's own CDN copy (reliable); `image` is the source
-    // site's image, which is frequently hotlink-blocked.
+    // `thumbnail` is the CDN copy (reliable); `image` is the source site's
+    // image, which is frequently hotlink-blocked.
     const preview = asStr(result.thumbnail)
     const full = asStr(result.image)
     const display = preview ?? full
-    if (!display) continue
-    // Skip logos, icons and ad imagery unless the query is about branding.
-    if (!wantsBrand && isJunkImage(full ?? preview, asStr(result.url))) continue
+    if (!display) return
+    if (filterJunk && !wantsBrand && isJunkImage(full ?? preview, asStr(result.url))) return
     images.push({
       type: 'image',
       url: display,
@@ -136,6 +135,11 @@ export function searchMedia(message: ChatMessage): MediaContent[] {
       sourceUrl: asStr(result.url),
     })
   }
+  // Brave's image index first: images that match the *query*, with a reliable
+  // ~500px CDN copy. They are already images, so the logo/junk filter does not
+  // apply. Then the web results' og:images, which are often site chrome.
+  for (const result of info.image_results ?? []) pushImage(result, false)
+  for (const result of info.results ?? []) pushImage(result, true)
 
   const videos: MediaContent[] = []
   if (wantsVideo) {

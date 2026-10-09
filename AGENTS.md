@@ -167,7 +167,7 @@ silently.
 - Confidence math is in `assistant/backend/memory/confidence.py` — change it there only.
 
 ## Web search
-The search tool is built on a swappable `SearchBackend` ABC in `assistant/backend/pipeline/search.py`. The default implementation is `SearXNGBackend`. An optional `BraveBackend` is available for higher-quality results.
+The search tool is built on a swappable `SearchBackend` ABC in `assistant/backend/pipeline/search.py`. The default implementation is `SearXNGBackend`. An optional `BraveBackend` is available for higher-quality results. The end-to-end pipeline — router → query distillation → backends → relevance gate → extraction → imagery — is documented in **`docs/SEARCH.md`**; read it before changing the search path.
 
 ### SearXNG (default)
 Result quality is guarded in three layers:

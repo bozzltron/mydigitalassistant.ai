@@ -278,6 +278,8 @@ class SearchInfo:
     sensitivity: SensitivityResult | None = None  # sensitivity analysis result
     consent_required: bool = False  # true if sensitive query needs user consent
     video_results: list[YouTubeVideo] | None = None
+    # Query-relevant images (Brave's image index), used for the message hero.
+    image_results: list[SearchResult] | None = None
 
 
 def search_info_payload(search_info: "SearchInfo | None", max_results: int = 20) -> str | None:
@@ -311,6 +313,15 @@ def search_info_payload(search_info: "SearchInfo | None", max_results: int = 20)
                 "url": v.url,
             }
             for v in (search_info.video_results or [])[:max_results]
+        ],
+        "image_results": [
+            {
+                "title": i.title,
+                "url": i.url,
+                "thumbnail": i.thumbnail,
+                "image": i.image,
+            }
+            for i in (search_info.image_results or [])[:max_results]
         ],
     }
     return json.dumps(payload)
@@ -470,6 +481,16 @@ class SearchBackend(ABC):
         """
         return 5
 
+    async def search_images(self, query: str, num_results: int = 8) -> list["SearchResult"]:
+        """Query-relevant images, when the backend has an image index.
+
+        Default: none. Brave overrides this — its image index returns images that
+        match the *query* (with a reliable ~500px CDN copy), where a web result's
+        og:image is chosen for social sharing and is often smaller and less
+        relevant.
+        """
+        return []
+
     @abstractmethod
     async def search(
         self, query: str, num_results: int = 5
@@ -602,6 +623,7 @@ class BraveBackend(SearchBackend):
     """Brave Search API (https://api.search.brave.com). Requires brave_api_key."""
 
     BRAVE_URL = "https://api.search.brave.com/res/v1/web/search"
+    BRAVE_IMAGES_URL = "https://api.search.brave.com/res/v1/images/search"
     BRAVE_HEADERS = {
         "Accept": "application/json",
         "Accept-Encoding": "gzip",
@@ -747,6 +769,65 @@ class BraveBackend(SearchBackend):
             logger.error("Brave search failed: %s", e)
             return [], []
 
+    async def search_images(
+        self, query: str, num_results: int = 8
+    ) -> list[SearchResult]:
+        """Query-relevant images from Brave's image index.
+
+        ``url`` is the page the image came from, ``thumbnail`` is Brave's ~500px
+        CDN copy (reliable), ``image`` is the source image (full, sometimes
+        blocked). Web-result thumbnails are ~200px and their og:image is chosen
+        for social sharing, so this is both larger and more relevant for the hero.
+        """
+        try:
+            client = await self._get_client()
+            headers = {**self.BRAVE_HEADERS, "X-Subscription-Token": self.api_key}
+            params = {
+                "q": sanitize_query(query),
+                "count": min(num_results, 20),
+                # Image search accepts only off|strict (not "moderate").
+                "safesearch": "strict",
+                "search_lang": settings.search_language or "en",
+            }
+            data = await retry_transient(
+                lambda: _get_json(
+                    client, self.BRAVE_IMAGES_URL, params=params, headers=headers
+                ),
+                label="brave image search",
+            )
+        except Exception as e:
+            logger.warning("Brave image search failed: %s", e)
+            return []
+
+        images: list[SearchResult] = []
+        seen: set[str] = set()
+        for item in data.get("results", []):
+            props = item.get("properties") or {}
+            thumb = item.get("thumbnail") or {}
+            full = props.get("url")
+            preview = thumb.get("src")
+            if not preview and not full:
+                continue
+            key = full or preview
+            if key in seen:
+                continue
+            seen.add(key)
+            images.append(
+                SearchResult(
+                    title=item.get("title", ""),
+                    url=item.get("url", ""),
+                    snippet=item.get("source", ""),
+                    engine="brave-images",
+                    thumbnail=preview,
+                    image=full,
+                )
+            )
+            if len(images) >= num_results:
+                break
+        logger.debug(
+            "Brave returned %d images (query_len=%d)", len(images), len(params["q"])
+        )
+        return images
 
 
 class WebSearchTool(SearchBackend):
@@ -843,6 +924,9 @@ class WebSearchTool(SearchBackend):
                 )
         
         results, video_results = await self._backend.search(raw_query, num_results)
+        # Query-relevant images for the hero (Brave's image index; other backends
+        # return none via the ABC default). Best-effort -- never fails the search.
+        image_results = await self._backend.search_images(raw_query, num_results)
         info = SearchInfo(
             backend=self.backend_name,
             query=raw_query,
@@ -850,5 +934,6 @@ class WebSearchTool(SearchBackend):
             sensitivity=sensitivity,
             consent_required=consent_required,
             video_results=video_results,
+            image_results=image_results,
         )
         return results, info

@@ -49,6 +49,8 @@ export interface SearchInfo {
   query: string
   engines?: string[]
   results?: SearchResultItem[]
+  /** Query-relevant images (Brave's image index); preferred for the hero. */
+  image_results?: SearchResultItem[]
   video_results?: YouTubeVideo[]
   sensitivity?: SensitivityResult
   consent_required?: boolean
