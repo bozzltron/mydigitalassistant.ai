@@ -1,0 +1,119 @@
+{
+  "experiment": "search_query_reuse",
+  "db_path": "/exp/assistant.db",
+  "search_turns": 147,
+  "unique_queries": 89,
+  "repeat_rate": 0.395,
+  "backend_mix": {
+    "brave": 147
+  },
+  "by_session_kind": {
+    "interactive": {
+      "turns": 72,
+      "unique": 71,
+      "repeat_rate": 0.014,
+      "hits_24h": 1,
+      "hit_rate_24h": 0.014
+    },
+    "scheduled": {
+      "turns": 75,
+      "unique": 18,
+      "repeat_rate": 0.76,
+      "hits_24h": 23,
+      "hit_rate_24h": 0.307
+    }
+  },
+  "windows": {
+    "1h": {
+      "hits": 3,
+      "hit_rate": 0.02,
+      "same_session_hits": 2,
+      "cross_session_hits": 1,
+      "median_gap_s": 1721.0,
+      "requests_saved": 6
+    },
+    "24h": {
+      "hits": 24,
+      "hit_rate": 0.163,
+      "same_session_hits": 2,
+      "cross_session_hits": 22,
+      "median_gap_s": 85379.5,
+      "requests_saved": 48
+    },
+    "7d": {
+      "hits": 58,
+      "hit_rate": 0.395,
+      "same_session_hits": 2,
+      "cross_session_hits": 56,
+      "median_gap_s": 86420.0,
+      "requests_saved": 116
+    },
+    "forever": {
+      "hits": 58,
+      "hit_rate": 0.395,
+      "same_session_hits": 2,
+      "cross_session_hits": 56,
+      "median_gap_s": 86420.0,
+      "requests_saved": 116
+    }
+  },
+  "top_repeated": [
+    {
+      "query": "new job postings summary",
+      "count": 6
+    },
+    {
+      "query": "earth environmental data daily report",
+      "count": 5
+    },
+    {
+      "query": "latest ai developments 2024 tech news",
+      "count": 4
+    },
+    {
+      "query": "monitor and log submission deadlines and upcoming events for the mozilla calendar initiative to ensure timely",
+      "count": 4
+    },
+    {
+      "query": "latest news and updates summary",
+      "count": 4
+    },
+    {
+      "query": "austin music venues calling for artists indie alt rock",
+      "count": 4
+    },
+    {
+      "query": "current deals 4k tv nintendo switch 2 ocarina of time switch 2",
+      "count": 4
+    },
+    {
+      "query": "recent ai advancements security implications analysis",
+      "count": 4
+    },
+    {
+      "query": "new blogs radio stations booking agencies for band mozworth",
+      "count": 4
+    },
+    {
+      "query": "superior ai models to enhance agent capabilities",
+      "count": 4
+    }
+  ],
+  "db_digest_before": {
+    "frames": 4401,
+    "slots": 7065,
+    "associations": 4411,
+    "episodes": 3701,
+    "slot_history": 14108,
+    "conflicts": 971
+  },
+  "db_digest_after": {
+    "frames": 4401,
+    "slots": 7065,
+    "associations": 4411,
+    "episodes": 3701,
+    "slot_history": 14108,
+    "conflicts": 971
+  },
+  "db_mutated": {}
+}

@@ -99,6 +99,16 @@ both directions; a stored answer is never overridden (the force requires
 backend implements `search()`; `search_images()` defaults to `[]` so a backend
 without an image index needs no change.
 
+**A Brave turn spends two requests** (web + images; image API limits are in §6), so
+quota is the binding constraint for opt-in Brave. Measured
+(`assistant/experiments/search_query_reuse/`), a **query-keyed response cache is
+not worth building**: 39% of queries repeat, but the repeats are **scheduled
+tasks** (interactive repeat rate 1%, scheduled 76%) — and those run with
+`force_search=True` because a standing task must see new information, so caching
+them would serve stale results. The quota driver is scheduled-task *volume* (51%
+of search turns from 18 recurring queries); the lever is task cadence, or routing
+tasks to the free local SearXNG, not a cache.
+
 **Brave is the only permitted non-local backend** (it does not profile users or
 sell query data). A **sensitive query is gated by consent** *before* it is sent
 (`classify_query_sensitivity` → `consent_required`); the search does not execute
