@@ -1,0 +1,156 @@
+{
+  "must_search_recall_pct": 100.0,
+  "must_not_specificity_pct": 100.0,
+  "rows": [
+    {
+      "query": "What are the latest developments in celestial holography?",
+      "task_type": "functional",
+      "wants_search": true,
+      "search_query": "latest developments in celestial holography",
+      "search_needed": true,
+      "vetoed": false,
+      "final_search": true,
+      "class": "must_search"
+    },
+    {
+      "query": "What is the current price of a Nintendo Switch 2?",
+      "task_type": "functional",
+      "wants_search": true,
+      "search_query": "Nintendo Switch 2 current price",
+      "search_needed": true,
+      "vetoed": false,
+      "final_search": true,
+      "class": "must_search"
+    },
+    {
+      "query": "Who won the most recent Austin mayoral election?",
+      "task_type": "functional",
+      "wants_search": true,
+      "search_query": "most recent Austin mayoral election winner",
+      "search_needed": true,
+      "vetoed": false,
+      "final_search": true,
+      "class": "must_search"
+    },
+    {
+      "query": "What events are happening in Austin this weekend?",
+      "task_type": "functional",
+      "wants_search": true,
+      "search_query": "events happening in Austin this weekend",
+      "search_needed": true,
+      "vetoed": false,
+      "final_search": true,
+      "class": "must_search"
+    },
+    {
+      "query": "Is the new Dune movie out yet?",
+      "task_type": "functional",
+      "wants_search": true,
+      "search_query": "Dune movie release date 2024",
+      "search_needed": true,
+      "vetoed": false,
+      "final_search": true,
+      "class": "must_search"
+    },
+    {
+      "query": "What is the weather in Chicago tomorrow?",
+      "task_type": "search",
+      "wants_search": true,
+      "search_query": "weather in Chicago tomorrow",
+      "search_needed": true,
+      "vetoed": false,
+      "final_search": true,
+      "class": "must_search"
+    },
+    {
+      "query": "What is the latest news about the James Webb telescope?",
+      "task_type": "functional",
+      "wants_search": true,
+      "search_query": "latest news James Webb telescope",
+      "search_needed": true,
+      "vetoed": false,
+      "final_search": true,
+      "class": "must_search"
+    },
+    {
+      "query": "What are the 2026 ACL submission deadlines?",
+      "task_type": "functional",
+      "wants_search": true,
+      "search_query": "2026 ACL submission deadlines",
+      "search_needed": true,
+      "vetoed": false,
+      "final_search": true,
+      "class": "must_search"
+    },
+    {
+      "query": "My name is Ada and I live in Austin.",
+      "task_type": "functional",
+      "wants_search": false,
+      "search_query": null,
+      "search_needed": true,
+      "vetoed": true,
+      "final_search": false,
+      "class": "must_not_search"
+    },
+    {
+      "query": "Remember that I drive a Subaru Outback.",
+      "task_type": "functional",
+      "wants_search": false,
+      "search_query": null,
+      "search_needed": true,
+      "vetoed": true,
+      "final_search": false,
+      "class": "must_not_search"
+    },
+    {
+      "query": "What files do I have?",
+      "task_type": "introspective",
+      "wants_search": false,
+      "search_query": null,
+      "search_needed": false,
+      "vetoed": false,
+      "final_search": false,
+      "class": "must_not_search"
+    },
+    {
+      "query": "What is my name?",
+      "task_type": "introspective",
+      "wants_search": false,
+      "search_query": null,
+      "search_needed": false,
+      "vetoed": false,
+      "final_search": false,
+      "class": "must_not_search"
+    },
+    {
+      "query": "Explain what a confidence interval is.",
+      "task_type": "functional",
+      "wants_search": false,
+      "search_query": null,
+      "search_needed": true,
+      "vetoed": true,
+      "final_search": false,
+      "class": "must_not_search"
+    },
+    {
+      "query": "What did we decide about the launch?",
+      "task_type": "introspective",
+      "wants_search": false,
+      "search_query": null,
+      "search_needed": false,
+      "vetoed": false,
+      "final_search": false,
+      "class": "must_not_search"
+    },
+    {
+      "query": "Add eggs to my shopping list.",
+      "task_type": "functional",
+      "wants_search": false,
+      "search_query": null,
+      "search_needed": true,
+      "vetoed": true,
+      "final_search": false,
+      "class": "must_not_search"
+    }
+  ]
+}
