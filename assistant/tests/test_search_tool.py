@@ -11,6 +11,7 @@ Core functionality under lock:
 """
 
 import asyncio
+from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
@@ -55,6 +56,64 @@ class TestSanitizeQuery:
     def test_preserves_plain_queries(self):
         assert sanitize_query("asteroid city plot summary") == \
             "asteroid city plot summary"
+
+
+class _StubDistillLLM:
+    """A minimal chat client that returns a fixed distillation."""
+
+    def __init__(self, content: str):
+        self._content = content
+        self.utility_model = "stub-utility"
+
+    async def chat(self, messages, **kwargs):
+        from assistant.backend.pipeline.llm_client import ChatResponse
+
+        return ChatResponse(content=self._content, model="stub", done=True)
+
+
+class TestDistillSearchQuery:
+    """The query that actually leaves for the engine is distilled, not raw.
+
+    Regression: the fallback was `sanitize_query(request.message)`, so a scheduled
+    task's script ("Monitor and alert for Mozilla release dates...") was searched
+    verbatim -- the engine looked for the *instruction*, which is how
+    "search how to research" results appeared.
+    """
+
+    @pytest.mark.asyncio
+    async def test_returns_a_sanitized_query(self):
+        from assistant.backend.pipeline.search import distill_search_query
+
+        llm = _StubDistillLLM("Mozilla ACL submission deadline November 2026")
+        q = await distill_search_query(
+            "Monitor and alert for Mozilla release dates ACL submission deadline",
+            llm,
+        )
+        assert q == "Mozilla ACL submission deadline November 2026"
+
+    @pytest.mark.asyncio
+    async def test_none_when_the_model_declines(self):
+        from assistant.backend.pipeline.search import distill_search_query
+
+        assert await distill_search_query("prices for these items", _StubDistillLLM("NONE")) is None
+
+    @pytest.mark.asyncio
+    async def test_none_on_empty_output(self):
+        from assistant.backend.pipeline.search import distill_search_query
+
+        assert await distill_search_query("x", _StubDistillLLM("")) is None
+
+    @pytest.mark.asyncio
+    async def test_none_when_the_call_fails(self):
+        from assistant.backend.pipeline.search import distill_search_query
+
+        class Boom:
+            utility_model = "u"
+
+            async def chat(self, *a, **k):
+                raise RuntimeError("down")
+
+        assert await distill_search_query("x", Boom()) is None
 
 
 class TestNormalizeUrl:
@@ -259,14 +318,20 @@ async def test_orchestrator_search_turn_excludes_irrelevant_links(store, stub_ll
         )
     )
     user = await store.create_user("alice")
-    response = await orchestrator.chat(
-        ChatRequest(
-            user_id=user.id,
-            message="What guitar strings should I buy for my guitar?",
+    # The query that leaves is the *distilled* one, not the raw message. The
+    # conftest stub returns a canned chat response, so the distiller is patched.
+    with patch(
+        "assistant.backend.pipeline.search.distill_search_query",
+        new=AsyncMock(return_value="guitar strings Austin"),
+    ):
+        response = await orchestrator.chat(
+            ChatRequest(
+                user_id=user.id,
+                message="What guitar strings should I buy for my guitar?",
+            )
         )
-    )
 
-    # The search ran on cleaned text, not raw conversational message.
+    # The search ran on the distilled query, not the raw conversational message.
     assert len(spy.queries) == 1
     assert spy.queries[0] != "What guitar strings should I buy for my guitar?"
     assert "guitar strings" in spy.queries[0].lower()
@@ -285,5 +350,10 @@ class TestOrchestratorUsesSanitizedQuery:
         # Lock the public surface other modules rely on.
         from assistant.backend.pipeline import search as s
 
-        for name in ("sanitize_query", "normalize_url", "filter_relevant"):
+        for name in (
+            "sanitize_query",
+            "distill_search_query",
+            "normalize_url",
+            "filter_relevant",
+        ):
             assert hasattr(s, name)

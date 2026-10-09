@@ -131,6 +131,17 @@ the final answer so both share the hot cache.
   self-heal (e.g. Brave 429s) stay.
 
 ## Search Learning
+
+**The query is distilled, never the raw message.** The search *target* is identified
+before the query leaves: the router's `search_query` when it wants search, else
+`distill_search_query` (utility model). The raw message is a poor query — a
+scheduled task's script ("Monitor and alert for Mozilla release dates...") or a
+vague utterance ("prices for these items") makes the engine look for the
+*instruction*, which is how "how to search / how to research" results appear. The
+distiller may decline (`NONE`), so a turn with no concrete external target does not
+search at all. Do **not** fall back to `sanitize_query(request.message)`: stripping
+filler does not turn an instruction into a target.
+
 Search-derived facts enter memory only when they are accurate and useful:
 
 1. **Extract from snippets first.** The utility model extracts slots/associations

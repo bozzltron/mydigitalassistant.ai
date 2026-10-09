@@ -332,6 +332,54 @@ def sanitize_query(query: str) -> str:
     return cleaned
 
 
+_DISTILL_PROMPT = """Turn a request into ONE web-search query.
+
+Write a short, specific query (3-12 keywords) that would find the information
+needed. Use the concrete subject -- names, titles, dates, places, product
+models -- and drop the instruction words ("search for", "monitor", "check",
+"research", "tell me", "find out", "look out for"). Never search for how to
+search or how to research.
+
+If the request has no concrete external target -- it is about the user's own
+files or memory, or it is too vague to search ("prices for these items",
+"findings first", "latest news") -- reply with exactly: NONE
+
+Output only the query, or NONE."""
+
+
+async def distill_search_query(text: str, llm_client) -> str | None:
+    """A focused search query for ``text``, or None when there is no clear target.
+
+    The raw message is a poor query: a scheduled task's script ("Monitor and alert
+    for Mozilla release dates...") or a vague utterance ("prices for these items")
+    makes the engine search for the *instruction*, not the subject -- which is how
+    "search how to research" results appear. The router distils a query when it
+    wants search; when it does not (forced/scheduled search, ``skip_route``), this
+    is the fallback. It may decline, so a turn with no concrete target does not
+    search at all.
+    """
+    from assistant.backend.pipeline.llm_client import ChatMessage
+
+    try:
+        resp = await llm_client.chat(
+            [
+                ChatMessage(role="system", content=_DISTILL_PROMPT),
+                ChatMessage(role="user", content=text),
+            ],
+            model=llm_client.utility_model,
+            temperature=0.0,
+            think=False,
+        )
+    except Exception as e:
+        logger.warning("Search-query distillation failed: %s", e)
+        return None
+
+    raw = (resp.content or "").strip()
+    if not raw or raw.upper().startswith("NONE"):
+        return None
+    return sanitize_query(raw)
+
+
 def normalize_url(url: str) -> str:
     """Canonical form for dedup: no fragments, no tracking params."""
     try:

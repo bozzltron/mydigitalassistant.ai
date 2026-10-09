@@ -1503,13 +1503,21 @@ class Orchestrator:
             # `classification` is None when skip_route=True; see the identical
             # guard in chat() for why the router veto does not cover it.
             from assistant.backend.pipeline.search import (
+                distill_search_query,
                 filter_relevant,
-                sanitize_query,
             )
 
             routed_query = classification.search_query if classification else None
-            query = routed_query or sanitize_query(request.message)
-            logger.info("Reasoner triggered search for: %s", query[:80])
+            query = routed_query or await distill_search_query(
+                request.message, self.llm_client
+            )
+            if not query:
+                # No concrete external target: searching the raw instruction finds
+                # "how to search", not the subject. Skip rather than search noise.
+                logger.info("Search skipped: no concrete external target")
+                plan.search_needed = False
+            else:
+                logger.info("Reasoner triggered search for: %s", query[:80])
             backend_name = self.search_tool.backend_name
             extraction_budget = self.search_tool.max_results_for_extraction
             relevance_threshold = (
@@ -1519,17 +1527,18 @@ class Orchestrator:
             )
 
             user_consent = getattr(request, 'search_consent', False)
-            try:
-                search_results, search_info = await self.search_tool.search_with_info(
-                    query,
-                    num_results=extraction_budget,
-                    llm_client=self.llm_client,
-                    user_consent=user_consent
-                )
-            except Exception as e:
-                logger.warning("Search failed, continuing without results: %s", e)
-                search_results = []
-                search_info = None
+            if query:
+                try:
+                    search_results, search_info = await self.search_tool.search_with_info(
+                        query,
+                        num_results=extraction_budget,
+                        llm_client=self.llm_client,
+                        user_consent=user_consent
+                    )
+                except Exception as e:
+                    logger.warning("Search failed, continuing without results: %s", e)
+                    search_results = []
+                    search_info = None
 
             if search_info and search_info.consent_required:
                 sensitivity = search_info.sensitivity
