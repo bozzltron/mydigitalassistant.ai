@@ -9,7 +9,7 @@ from assistant.backend.pipeline.llm_client import ChatResponse
 from assistant.backend.pipeline.orchestrator import ChatRequest, Orchestrator, OrchestratorDeps
 from assistant.backend.pipeline.search import WebSearchTool
 
-from .conftest import StubLLMClient
+from .conftest import StubLLMClient, add_embedding_cluster
 
 
 class StorageTurnStub(StubLLMClient):
@@ -25,8 +25,25 @@ class StorageTurnStub(StubLLMClient):
         return await super().chat(messages, **kwargs)
 
 
+class SearchWantedStub(StubLLMClient):
+    """Router verdict: functional query the model judges needs a current source."""
+
+    async def chat(self, messages, **kwargs):
+        if "classify" in messages[0].content.lower():
+            return ChatResponse(
+                content='{"task_type": "functional", "wants_search": true, '
+                '"search_query": "are standing desks worth it"}',
+                model=self.utility_model,
+                done=True,
+            )
+        return await super().chat(messages, **kwargs)
+
+
 class SearchSpy:
     """Records search calls; never returns results."""
+
+    backend_name = "test"
+    max_results_for_extraction = 5
 
     def __init__(self) -> None:
         self.queries: list[str] = []
@@ -75,6 +92,65 @@ async def test_storage_turn_vetoes_search(store):
     assert response.task_type == "functional"
     assert response.extraction_summary is not None
     assert response.extraction_summary["slots_applied"] == 1
+
+
+async def test_router_wants_search_forces_search_despite_reasoner_heuristic(store):
+    """The router's positive judgment overrides the reasoner's length heuristic.
+
+    "Are standing desks worth it?" is five words with no question word, so
+    `_is_non_info_seeking` declines search; the router knows it needs a current
+    source. Regression for the borderline gap measured in
+    `assistant/experiments/search_trigger_borderline/` (30% recall before the fix).
+    """
+    llm = SearchWantedStub()
+    llm.set_extraction_result(slots=[], associations=[])
+    spy = SearchSpy()
+    orchestrator = Orchestrator(
+        deps=OrchestratorDeps(
+            store=store,
+            retriever=Retriever(store=store, llm_client=llm),
+            llm_client=llm,
+            search_tool=spy,
+        )
+    )
+    user = await store.create_user("alice")
+    request = ChatRequest(user_id=user.id, message="Are standing desks worth it?")
+
+    await orchestrator.chat(request)
+
+    assert spy.queries, "router wants_search=true must search when memory is empty"
+
+
+async def test_router_wants_search_does_not_override_memory(store):
+    """The force applies only with empty memory; a stored answer still wins."""
+    add_embedding_cluster("standing", "desks")
+    llm = SearchWantedStub()
+    llm.set_extraction_result(slots=[], associations=[])
+    spy = SearchSpy()
+    retriever = Retriever(store=store, llm_client=llm)
+    orchestrator = Orchestrator(
+        deps=OrchestratorDeps(
+            store=store,
+            retriever=retriever,
+            llm_client=llm,
+            search_tool=spy,
+        )
+    )
+    user = await store.create_user("alice")
+
+    frame = await store.create_frame(
+        "standing_desks", "topic", confidence=0.9, priority=0.9, owner_user_id=user.id
+    )
+    await store.upsert_slot(frame.id, "verdict", "worth it with a treadmill")
+    await retriever.embed_frame(frame, await store.get_slots_for_frame(frame.id))
+    await store.create_episode(
+        user.id, "s1", "user", "Standing desks are worth it with a treadmill", [frame.id]
+    )
+
+    request = ChatRequest(user_id=user.id, message="Are standing desks worth it?")
+    await orchestrator.chat(request)
+
+    assert spy.queries == [], "sufficient memory must not be overridden by the router"
 
 
 async def test_stored_facts_injected_into_system_prompt(store):

@@ -1,10 +1,14 @@
-"""Does the assistant search when it should? Pre-registered in ``plan.md``.
+"""Does the router search on borderline queries? Pre-registered in ``plan.md``.
+
+Borderline = the answer could come from knowledge but would be better with a
+current source (recommendations, "recent research", "current best practices").
+Control = stable, definitional knowledge that should not search.
 
 Drives the decision path only — router (``route``) → reasoner
-(``classify_intent``) → the storage veto, as in ``_run_turn`` — with the utility
-model. No generation, no brain writes.
+(``classify_intent``) → the storage veto, as in ``_run_turn``. No generation, no
+brain writes.
 
-    python assistant/experiments/search_trigger/experiment.py
+    python assistant/experiments/search_trigger_borderline/experiment.py
 
 Writes ``result.json``.
 """
@@ -24,32 +28,33 @@ from assistant.backend.pipeline.task_router import TaskType, route
 
 HERE = Path(__file__).resolve().parent
 
-# ("must_search" | "must_not_search", query)
+# ("borderline_search" | "general_knowledge", query)
 QUERIES: list[tuple[str, str]] = [
-    # Needs the internet: current, live, or external facts the user cannot know.
-    ("must_search", "What are the latest developments in celestial holography?"),
-    ("must_search", "What is the current price of a Nintendo Switch 2?"),
-    ("must_search", "Who won the most recent Austin mayoral election?"),
-    ("must_search", "What events are happening in Austin this weekend?"),
-    ("must_search", "Is the new Dune movie out yet?"),
-    ("must_search", "What is the weather in Chicago tomorrow?"),
-    ("must_search", "What is the latest news about the James Webb telescope?"),
-    ("must_search", "What are the 2026 ACL submission deadlines?"),
-    # Must NOT search: storage, the user's own files/memory, general knowledge.
-    ("must_not_search", "My name is Ada and I live in Austin."),
-    ("must_not_search", "Remember that I drive a Subaru Outback."),
-    ("must_not_search", "What files do I have?"),
-    ("must_not_search", "What is my name?"),
-    ("must_not_search", "Explain what a confidence interval is."),
-    ("must_not_search", "What did we decide about the launch?"),
-    ("must_not_search", "Add eggs to my shopping list."),
+    # Borderline: a current source would improve the answer.
+    ("borderline_search", "What's the best electric guitar for a beginner?"),
+    ("borderline_search", "Explain recent research on lithium-ion battery degradation."),
+    ("borderline_search", "What are the current best practices for password managers?"),
+    ("borderline_search", "Which laptop should I buy for video editing?"),
+    ("borderline_search", "Summarize the latest research on sleep and memory."),
+    ("borderline_search", "What's the current state of quantum computing?"),
+    ("borderline_search", "Are standing desks worth it?"),
+    ("borderline_search", "What's a good budget air fryer?"),
+    ("borderline_search", "Is intermittent fasting still recommended?"),
+    ("borderline_search", "Compare the top project management tools."),
+    # Control: stable, definitional knowledge; no search needed.
+    ("general_knowledge", "Explain how photosynthesis works."),
+    ("general_knowledge", "What is a confidence interval?"),
+    ("general_knowledge", "How do I convert Celsius to Fahrenheit?"),
+    ("general_knowledge", "Explain recursion with an example."),
+    ("general_knowledge", "What causes a rainbow?"),
+    ("general_knowledge", "What is the Pythagorean theorem?"),
+    ("general_knowledge", "Explain the difference between TCP and UDP."),
+    ("general_knowledge", "What is the difference between affect and effect?"),
 ]
 
 
 async def _decide(query: str, llm: OllamaClient) -> dict:
     classification = await route(query, llm)
-    # The reasoner runs on an empty context in production only when memory is
-    # empty; here it isolates the trigger. Same call signature as _run_turn.
     empty = MemoryContext(
         query=query, retrieved_frames=[], recent_episodes=[], formatted=""
     )
@@ -100,26 +105,26 @@ async def main() -> None:
             rows.append(row)
             flag = "SEARCH" if row["final_search"] else "  no  "
             print(
-                f"  [{klass:15}] {flag}  wants={row['wants_search']!s:5} "
+                f"  [{klass:17}] {flag}  wants={row['wants_search']!s:5} "
                 f"q={row['search_query']!r}"
             )
     finally:
         await llm.close()
 
-    must = [r for r in rows if r["class"] == "must_search"]
-    must_not = [r for r in rows if r["class"] == "must_not_search"]
-    hits = sum(1 for r in must if r["final_search"])
-    correct = sum(1 for r in must_not if not r["final_search"])
-    recall = hits / len(must) * 100
-    specificity = correct / len(must_not) * 100
-    print(f"\nmust-search recall:      {recall:.0f}% ({hits}/{len(must)})")
-    print(f"must-not specificity:    {specificity:.0f}% ({correct}/{len(must_not)})")
-    print("\nmissed (should search, did not):")
-    for r in must:
+    border = [r for r in rows if r["class"] == "borderline_search"]
+    general = [r for r in rows if r["class"] == "general_knowledge"]
+    b_hits = sum(1 for r in border if r["final_search"])
+    g_correct = sum(1 for r in general if not r["final_search"])
+    b_recall = b_hits / len(border) * 100
+    g_spec = g_correct / len(general) * 100
+    print(f"\nborderline recall:       {b_recall:.0f}% ({b_hits}/{len(border)})")
+    print(f"general-knowledge spec:  {g_spec:.0f}% ({g_correct}/{len(general)})")
+    print("\nmissed borderline (should search, did not):")
+    for r in border:
         if not r["final_search"]:
             print(f"  - {r['query']!r} (wants_search={r['wants_search']})")
-    print("false searches (should not, did):")
-    for r in must_not:
+    print("false searches (general knowledge, did search):")
+    for r in general:
         if r["final_search"]:
             print(f"  - {r['query']!r} (wants_search={r['wants_search']})")
 
@@ -127,8 +132,8 @@ async def main() -> None:
     out.write_text(
         json.dumps(
             {
-                "must_search_recall_pct": round(recall, 1),
-                "must_not_specificity_pct": round(specificity, 1),
+                "borderline_recall_pct": round(b_recall, 1),
+                "general_knowledge_specificity_pct": round(g_spec, 1),
                 "rows": rows,
             },
             indent=2,

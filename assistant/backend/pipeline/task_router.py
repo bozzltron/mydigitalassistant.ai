@@ -121,11 +121,22 @@ Examples:
 IMPORTANT: When uncertain, prefer INTROSPECTIVE for queries about your own memory/knowledge/files.
 When uncertain between FUNCTIONAL and CORRECTION, look for explicit disagreement signals.
 
-Also decide wants_search: true ONLY if answering well requires fetching external or
-current information from the web. Statements that give information to remember are
-wants_search=false. General-knowledge questions you can answer without looking
-anything up are also wants_search=false. Questions about your own memory/files are
-wants_search=false — the answer is in your local memory, not on the web.
+Also decide wants_search.
+
+wants_search=true if answering well requires external or current information —
+something you cannot know reliably from training alone. This includes:
+- live and external facts: prices, weather, events, scores, election results,
+  schedules, deadlines, news;
+- recommendations and buying advice: "best X for a beginner", "which Y should I buy",
+  "a good budget Z", "is X worth it" — products and rankings change;
+- research and state of the art: "recent research on X", "current best practices for
+  Y", "is X still recommended" — findings move;
+- any freshness cue: latest, current, recent, new, now, this year.
+
+wants_search=false only when the answer is local or stable:
+- statements that give information to remember;
+- questions about your own memory/files (the answer is in local memory, not the web);
+- stable, self-contained knowledge (definitions, formulas, how something works).
 
 When wants_search is true, also return "search_query": a short keyword query
 (3-8 words) for a search engine — strip greetings, filler and personal details,

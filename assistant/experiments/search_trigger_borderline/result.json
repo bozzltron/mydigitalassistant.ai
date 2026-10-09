@@ -1,0 +1,204 @@
+{
+  "borderline_recall_pct": 100.0,
+  "general_knowledge_specificity_pct": 100.0,
+  "rows": [
+    {
+      "query": "What's the best electric guitar for a beginner?",
+      "task_type": "functional",
+      "wants_search": true,
+      "search_query": "best electric guitar for beginners 2024",
+      "search_needed": true,
+      "vetoed": false,
+      "forced": false,
+      "final_search": true,
+      "class": "borderline_search"
+    },
+    {
+      "query": "Explain recent research on lithium-ion battery degradation.",
+      "task_type": "functional",
+      "wants_search": true,
+      "search_query": "recent research lithium-ion battery degradation",
+      "search_needed": true,
+      "vetoed": false,
+      "forced": false,
+      "final_search": true,
+      "class": "borderline_search"
+    },
+    {
+      "query": "What are the current best practices for password managers?",
+      "task_type": "functional",
+      "wants_search": true,
+      "search_query": "current best practices for password managers",
+      "search_needed": true,
+      "vetoed": false,
+      "forced": false,
+      "final_search": true,
+      "class": "borderline_search"
+    },
+    {
+      "query": "Which laptop should I buy for video editing?",
+      "task_type": "functional",
+      "wants_search": true,
+      "search_query": "best laptop for video editing 2024",
+      "search_needed": true,
+      "vetoed": false,
+      "forced": false,
+      "final_search": true,
+      "class": "borderline_search"
+    },
+    {
+      "query": "Summarize the latest research on sleep and memory.",
+      "task_type": "search",
+      "wants_search": true,
+      "search_query": "latest research on sleep and memory",
+      "search_needed": true,
+      "vetoed": false,
+      "forced": false,
+      "final_search": true,
+      "class": "borderline_search"
+    },
+    {
+      "query": "What's the current state of quantum computing?",
+      "task_type": "functional",
+      "wants_search": true,
+      "search_query": "current state of quantum computing 2024",
+      "search_needed": true,
+      "vetoed": false,
+      "forced": false,
+      "final_search": true,
+      "class": "borderline_search"
+    },
+    {
+      "query": "Are standing desks worth it?",
+      "task_type": "functional",
+      "wants_search": true,
+      "search_query": "are standing desks worth it",
+      "search_needed": false,
+      "vetoed": false,
+      "forced": true,
+      "final_search": true,
+      "class": "borderline_search"
+    },
+    {
+      "query": "What's a good budget air fryer?",
+      "task_type": "functional",
+      "wants_search": true,
+      "search_query": "best budget air fryers 2024",
+      "search_needed": true,
+      "vetoed": false,
+      "forced": false,
+      "final_search": true,
+      "class": "borderline_search"
+    },
+    {
+      "query": "Is intermittent fasting still recommended?",
+      "task_type": "functional",
+      "wants_search": true,
+      "search_query": "is intermittent fasting still recommended 2024",
+      "search_needed": false,
+      "vetoed": false,
+      "forced": true,
+      "final_search": true,
+      "class": "borderline_search"
+    },
+    {
+      "query": "Compare the top project management tools.",
+      "task_type": "functional",
+      "wants_search": true,
+      "search_query": "top project management tools comparison 2024",
+      "search_needed": true,
+      "vetoed": false,
+      "forced": false,
+      "final_search": true,
+      "class": "borderline_search"
+    },
+    {
+      "query": "Explain how photosynthesis works.",
+      "task_type": "functional",
+      "wants_search": false,
+      "search_query": null,
+      "search_needed": true,
+      "vetoed": true,
+      "forced": false,
+      "final_search": false,
+      "class": "general_knowledge"
+    },
+    {
+      "query": "What is a confidence interval?",
+      "task_type": "functional",
+      "wants_search": false,
+      "search_query": null,
+      "search_needed": true,
+      "vetoed": true,
+      "forced": false,
+      "final_search": false,
+      "class": "general_knowledge"
+    },
+    {
+      "query": "How do I convert Celsius to Fahrenheit?",
+      "task_type": "functional",
+      "wants_search": false,
+      "search_query": null,
+      "search_needed": true,
+      "vetoed": true,
+      "forced": false,
+      "final_search": false,
+      "class": "general_knowledge"
+    },
+    {
+      "query": "Explain recursion with an example.",
+      "task_type": "functional",
+      "wants_search": false,
+      "search_query": null,
+      "search_needed": true,
+      "vetoed": true,
+      "forced": false,
+      "final_search": false,
+      "class": "general_knowledge"
+    },
+    {
+      "query": "What causes a rainbow?",
+      "task_type": "functional",
+      "wants_search": false,
+      "search_query": null,
+      "search_needed": false,
+      "vetoed": false,
+      "forced": false,
+      "final_search": false,
+      "class": "general_knowledge"
+    },
+    {
+      "query": "What is the Pythagorean theorem?",
+      "task_type": "functional",
+      "wants_search": false,
+      "search_query": null,
+      "search_needed": true,
+      "vetoed": true,
+      "forced": false,
+      "final_search": false,
+      "class": "general_knowledge"
+    },
+    {
+      "query": "Explain the difference between TCP and UDP.",
+      "task_type": "functional",
+      "wants_search": false,
+      "search_query": null,
+      "search_needed": true,
+      "vetoed": true,
+      "forced": false,
+      "final_search": false,
+      "class": "general_knowledge"
+    },
+    {
+      "query": "What is the difference between affect and effect?",
+      "task_type": "functional",
+      "wants_search": false,
+      "search_query": null,
+      "search_needed": true,
+      "vetoed": true,
+      "forced": false,
+      "final_search": false,
+      "class": "general_knowledge"
+    }
+  ]
+}

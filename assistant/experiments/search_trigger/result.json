@@ -9,6 +9,7 @@
       "search_query": "latest developments in celestial holography",
       "search_needed": true,
       "vetoed": false,
+      "forced": false,
       "final_search": true,
       "class": "must_search"
     },
@@ -16,9 +17,10 @@
       "query": "What is the current price of a Nintendo Switch 2?",
       "task_type": "functional",
       "wants_search": true,
-      "search_query": "Nintendo Switch 2 current price",
+      "search_query": "current price Nintendo Switch 2",
       "search_needed": true,
       "vetoed": false,
+      "forced": false,
       "final_search": true,
       "class": "must_search"
     },
@@ -29,36 +31,40 @@
       "search_query": "most recent Austin mayoral election winner",
       "search_needed": true,
       "vetoed": false,
+      "forced": false,
       "final_search": true,
       "class": "must_search"
     },
     {
       "query": "What events are happening in Austin this weekend?",
-      "task_type": "functional",
+      "task_type": "search",
       "wants_search": true,
       "search_query": "events happening in Austin this weekend",
       "search_needed": true,
       "vetoed": false,
+      "forced": false,
       "final_search": true,
       "class": "must_search"
     },
     {
       "query": "Is the new Dune movie out yet?",
-      "task_type": "functional",
+      "task_type": "search",
       "wants_search": true,
-      "search_query": "Dune movie release date 2024",
+      "search_query": "new Dune movie release date",
       "search_needed": true,
       "vetoed": false,
+      "forced": false,
       "final_search": true,
       "class": "must_search"
     },
     {
       "query": "What is the weather in Chicago tomorrow?",
-      "task_type": "search",
+      "task_type": "functional",
       "wants_search": true,
       "search_query": "weather in Chicago tomorrow",
       "search_needed": true,
       "vetoed": false,
+      "forced": false,
       "final_search": true,
       "class": "must_search"
     },
@@ -69,6 +75,7 @@
       "search_query": "latest news James Webb telescope",
       "search_needed": true,
       "vetoed": false,
+      "forced": false,
       "final_search": true,
       "class": "must_search"
     },
@@ -79,6 +86,7 @@
       "search_query": "2026 ACL submission deadlines",
       "search_needed": true,
       "vetoed": false,
+      "forced": false,
       "final_search": true,
       "class": "must_search"
     },
@@ -89,6 +97,7 @@
       "search_query": null,
       "search_needed": true,
       "vetoed": true,
+      "forced": false,
       "final_search": false,
       "class": "must_not_search"
     },
@@ -99,6 +108,7 @@
       "search_query": null,
       "search_needed": true,
       "vetoed": true,
+      "forced": false,
       "final_search": false,
       "class": "must_not_search"
     },
@@ -109,6 +119,7 @@
       "search_query": null,
       "search_needed": false,
       "vetoed": false,
+      "forced": false,
       "final_search": false,
       "class": "must_not_search"
     },
@@ -119,6 +130,7 @@
       "search_query": null,
       "search_needed": false,
       "vetoed": false,
+      "forced": false,
       "final_search": false,
       "class": "must_not_search"
     },
@@ -129,6 +141,7 @@
       "search_query": null,
       "search_needed": true,
       "vetoed": true,
+      "forced": false,
       "final_search": false,
       "class": "must_not_search"
     },
@@ -139,6 +152,7 @@
       "search_query": null,
       "search_needed": false,
       "vetoed": false,
+      "forced": false,
       "final_search": false,
       "class": "must_not_search"
     },
@@ -149,6 +163,7 @@
       "search_query": null,
       "search_needed": true,
       "vetoed": true,
+      "forced": false,
       "final_search": false,
       "class": "must_not_search"
     }

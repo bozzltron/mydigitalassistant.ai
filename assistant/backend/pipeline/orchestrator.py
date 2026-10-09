@@ -34,6 +34,7 @@ from assistant.backend.pipeline.llm_client import (
 )
 from assistant.backend.pipeline.reasoner import (
     Action,
+    MemorySufficiency,
     Plan,
     classify_intent,
     format_plan_for_prompt,
@@ -1426,6 +1427,23 @@ class Orchestrator:
             logger.info("Search vetoed by router for storage-style turn")
             plan.action = Action.ANSWER
             plan.search_needed = False
+        elif (
+            not plan.search_needed
+            and task_type != TaskType.SEARCH
+            and not skip_route
+            and classification is not None
+            and classification.wants_search is True
+            and plan.sufficiency == MemorySufficiency.NONE
+        ):
+            # The router's positive judgment overrides the reasoner's coarse
+            # length heuristic (``_is_non_info_seeking``), which declines short
+            # recommendation/research questions ("are standing desks worth
+            # it?") the model knows need a current source. Symmetric with the
+            # veto above: an explicit router judgment wins. Memory still wins —
+            # the force applies only when nothing relevant is stored.
+            logger.info("Search forced by router (no relevant memory)")
+            plan.action = Action.SEARCH
+            plan.search_needed = True
 
         # 5a-bis. A turn transforming user-supplied content answers from that
         # content; search must not become the subject (see chat() for the full

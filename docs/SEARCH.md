@@ -75,13 +75,17 @@ It is **suppressed** by:
 - **user-supplied content** — a turn that transforms content the user pasted
   answers from that content; search must not become the subject.
 
-**Known sharp edge (measured, `assistant/experiments/search_trigger/`):** the
-router's `wants_search` is a model judgment. On unambiguous external queries it is
-reliable — must-search recall **8/8 (100%)**, must-not specificity **7/7 (100%)**.
-The gap is **borderline** queries ("explain recent research…", "best X for
-beginners"): the router judges them general knowledge and vetoes search, even
-where a current source would answer better. The trigger is not systematically
-suppressed; the router under-searches borderline queries.
+**The trigger (measured, `assistant/experiments/search_trigger*/`):** the router's
+`wants_search` decides. Measured across three classes, unambiguous external was
+sound (8/8) and stable knowledge was quiet (8/8), but **borderline** recall
+(recommendation / "recent research") was only **3/10**. The fix has two parts, both
+in the decision path: the router prompt now treats a current source that answers
+*better* as a reason to search (recommendations, "recent research", freshness
+cues), and the router's explicit `wants_search=True` now **forces** search —
+symmetric with its veto — when memory is empty, overriding the reasoner's coarse
+length heuristic. All four numbers are now **100%**. The router's judgment wins in
+both directions; a stored answer is never overridden (the force requires
+`sufficiency == NONE`).
 
 ## 3. Backends
 
@@ -141,6 +145,22 @@ Measured (`assistant/experiments/image_quality/`): web-result previews are alway
 ~200px; ~76% of web results carry a distinct full image at 1200–2048px; only ~9%
 of full images are hotlink-blocked. Brave image thumbnails are 500px and reliable.
 
+**Brave image API limits (read before raising `count` or the per-turn call count):**
+
+- **Quota is shared with web search.** The image endpoint is part of the Search
+  plan — one request per call, counted against the same pool ($5 / 1,000
+  requests; **$5 free credits/month ≈ 1,000 free requests**, and the old free
+  tier is gone). A Brave turn makes **two** requests (web + images), so the free
+  ceiling is ~500 search turns/month. Capacity is **50 req/s**.
+- **`count` is 1–200, default 50.** We send `min(num_results, 20)` (8 from the
+  extraction budget). Image search is **not paginated** (no `offset`) — raise
+  `count` to get more, not a page parameter.
+- **`safesearch` accepts only `off` | `strict`** (default `strict`). `moderate`
+  — valid for web — returns **422** here.
+- **`q` is capped at 400 chars / 50 words.** Thumbnails are Brave-CDN, **500px
+  wide**; `properties.url` is the source image and may be hotlink-blocked.
+- **Errors:** `401` auth, `422` bad params, `429` rate limit, `404`.
+
 ## 7. Config (`.env`)
 
 `SEARCH_BASE_URL`, `SEARCH_TIMEOUT`, `SEARCH_LANGUAGE`, `SEARCH_SAFESEARCH`,
@@ -149,11 +169,11 @@ of full images are hotlink-blocked. Brave image thumbnails are 500px and reliabl
 
 ## 8. Measuring (do this before changing the trigger or the gate)
 
-- **Search-trigger rate** — does a query that should search actually search?
-  Measured once (`assistant/experiments/search_trigger/`): **100% recall on
-  unambiguous must-search**, 100% specificity on must-not-search. **Still open:**
-  the **borderline** class (research / recommendation queries), where the router
-  under-searches — pre-register a separate probe before biasing it toward search.
+- **Search-trigger rate** — measured across three classes
+  (`assistant/experiments/search_trigger/` and `..._borderline/`): unambiguous
+  external, stable knowledge, and borderline (recommendation / "recent research").
+  All at 100% after the router-prompt + router-force fix. **Re-run both
+  experiments after touching the router prompt or the search decision path.**
 - **Corroboration** — from live searches, the share of extracted slots with ≥2
   independent `source_domains`; single-source facts are claims, not knowledge.
 - The query that actually left is logged: `Reasoner triggered search for: …`, and
