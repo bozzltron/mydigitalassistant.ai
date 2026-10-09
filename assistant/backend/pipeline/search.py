@@ -11,6 +11,7 @@ Result quality is guarded in three layers:
   so unrelated links never reach the system prompt.
 """
 
+import asyncio
 import json
 import logging
 import re
@@ -923,10 +924,14 @@ class WebSearchTool(SearchBackend):
                     consent_required=True,
                 )
         
-        results, video_results = await self._backend.search(raw_query, num_results)
-        # Query-relevant images for the hero (Brave's image index; other backends
-        # return none via the ABC default). Best-effort -- never fails the search.
-        image_results = await self._backend.search_images(raw_query, num_results)
+        # Web and image results are independent requests: run them together so
+        # the turn waits for the slower one, not for the sum. Both are graceful
+        # (empty on error), and the sensitivity/consent gate above has already
+        # run, so a sensitive query never reaches either call.
+        (results, video_results), image_results = await asyncio.gather(
+            self._backend.search(raw_query, num_results),
+            self._backend.search_images(raw_query, num_results),
+        )
         info = SearchInfo(
             backend=self.backend_name,
             query=raw_query,

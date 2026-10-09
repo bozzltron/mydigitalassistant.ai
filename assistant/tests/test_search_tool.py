@@ -387,6 +387,57 @@ class TestBraveImageSearch:
         backend = SearXNGBackend(base_url="http://127.0.0.1:8080")
         assert await backend.search_images("q") == []
 
+    @pytest.mark.asyncio
+    async def test_search_with_info_wires_image_results(self):
+        """search_with_info fetches web + images and carries both on SearchInfo."""
+        from assistant.backend.pipeline.search import (
+            SearchBackend,
+            SearchResult,
+            WebSearchTool,
+        )
+
+        class FakeBackend(SearchBackend):
+            def __init__(self) -> None:
+                self.calls: list[str] = []
+
+            @property
+            def backend_name(self) -> str:
+                return "fake"
+
+            async def search(self, query, num_results=5):
+                self.calls.append("search")
+                return [
+                    SearchResult(
+                        title="w", url="https://w", snippet="", engine="fake"
+                    )
+                ], []
+
+            async def search_images(self, query, num_results=8):
+                self.calls.append("search_images")
+                return [
+                    SearchResult(
+                        title="i",
+                        url="https://i",
+                        snippet="site.com",
+                        engine="fake-images",
+                        thumbnail="https://cdn/500.jpg",
+                    )
+                ]
+
+            async def health_check(self) -> bool:
+                return True
+
+        tool = WebSearchTool(enabled=True)
+        backend = FakeBackend()
+        tool._backend = backend
+
+        results, info = await tool.search_with_info("guitar strings", num_results=5)
+
+        # Both requests are made (in parallel) and both feed the SearchInfo.
+        assert sorted(backend.calls) == ["search", "search_images"]
+        assert len(results) == 1
+        assert info.image_results and info.image_results[0].thumbnail == "https://cdn/500.jpg"
+
     def test_payload_includes_image_results(self):
         import json
 
