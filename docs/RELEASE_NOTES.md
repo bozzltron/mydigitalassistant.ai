@@ -1,5 +1,50 @@
 # MyDigitalAssistant.ai — release notes
 
+## v0.11.12-alpha
+
+**Search now targets the right thing, shows real images, and searches when it
+should — each measured, not assumed.**
+
+Search is one of the project's two sources, so this release is about making it
+*identify the target*, *learn from it*, and *render it well* — and proving each
+change rather than trusting it.
+
+**Targeting**
+- **The query is distilled, never the raw instruction.** The query that leaves is
+  the router's `search_query`, or `distill_search_query` (utility model), which can
+  decline (`NONE`). The old `sanitize_query(request.message)` fallback is gone:
+  stripping filler does not turn an instruction into a target, which is how
+  scheduled tasks came to search for "Monitor and alert for Mozilla release
+  dates…" and return "how to search" results.
+- **The trigger is measured and fixed.** Across three classes the router searched
+  unambiguous external queries (8/8) and stayed quiet on stable knowledge (8/8),
+  but under-searched *borderline* queries — recommendations and "recent research"
+  — at 3/10. The router prompt now treats a current source that answers *better*
+  as a reason to search, and the router's explicit `wants_search=True` now forces
+  search (symmetric with its veto) when memory is empty, overriding the reasoner's
+  coarse length heuristic. All four numbers are now 100%
+  (`assistant/experiments/search_trigger*/`).
+
+**Imagery**
+- **Brave's image index feeds the hero.** Web-result previews are always ~200px
+  and their og:image is chosen for social sharing; Brave's image index returns
+  images that match the *query*, each with a reliable ~500px CDN copy.
+- **The hero prefers a real full-resolution image** and never upscales a ~200px
+  preview into a banner — it renders near its natural size instead. Measured: ~76%
+  of web results carry a distinct full image at 1200–2048px.
+- **Web and image requests run in parallel**, so a Brave turn waits for the slower
+  call, not for the sum.
+
+**A negative result, kept**
+- **No response cache.** 39% of stored queries repeat — but they are scheduled
+  tasks (interactive repeat 1%, scheduled 76%), and a standing task must stay
+  fresh. A query-keyed cache would have made every daily monitor report stale
+  (`assistant/experiments/search_query_reuse/`).
+
+The end-to-end search architecture and its contracts are documented in
+**`docs/SEARCH.md`** — the pipeline, the query rule, backends, the relevance gate,
+extraction, imagery, config, and the Brave image API limits.
+
 ## v0.11.11-alpha
 
 **A faster math model on trial, a leaner image, and the fleet re-assessed.**
