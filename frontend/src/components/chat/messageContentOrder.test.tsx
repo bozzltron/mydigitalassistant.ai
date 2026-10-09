@@ -62,7 +62,7 @@ describe('MessageContent dynamic ordering', () => {
     const { container } = render(() => <MessageContent message={() => m} />)
     const classes = childClasses(container)
 
-    expect(classes[0]).toBe('msg-media-hero')
+    expect(classes[0]).toContain('msg-media-hero')
     expect(classes).not.toContain('msg-video-links')
   })
 })

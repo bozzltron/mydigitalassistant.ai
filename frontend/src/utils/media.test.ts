@@ -229,6 +229,25 @@ describe('composition', () => {
   it('getHeroMedia is null for an empty list, never undefined', () => {
     expect(getHeroMedia([])).toBeNull()
   })
+
+  it('hero prefers a full-resolution image over a preview-only first result', () => {
+    // Brave's preview is ~200px; the hero renders at message width, so a
+    // preview-only first result would be a blurry banner. Prefer a later result
+    // that carries a distinct full image.
+    const m = msg({
+      search_info: {
+        backend: 'brave',
+        query: 'guitar strings',
+        results: [
+          { title: 'A', url: 'https://page/a', snippet: '', engine: 'brave', thumbnail: 'https://img/a.png' },
+          { title: 'B', url: 'https://page/b', snippet: '', engine: 'brave', thumbnail: 'https://img/b.png', image: 'https://img/b-full.jpg' },
+        ],
+        video_results: [],
+      },
+    })
+    const hero = getHeroMedia(searchMedia(m))
+    expect(hero?.fullUrl).toBe('https://img/b-full.jpg')
+  })
 })
 
 describe('imageSrc', () => {

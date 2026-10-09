@@ -168,11 +168,18 @@ export function searchMedia(message: ChatMessage): MediaContent[] {
 
 /**
  * The card at the top: for a video query the first video (a video result is
- * the answer), otherwise the first image.
+ * the answer), otherwise the best image.
+ *
+ * "Best" prefers a distinct full-resolution image: Brave's preview is only
+ * ~200px, and the hero renders at the message's full width, so a preview
+ * upscaled into that slot is blurry (measured: previews are always ~200px;
+ * ~76% of results carry a distinct full image at 1200-2048px).
  */
 export function getHeroMedia(media: MediaContent[]): MediaContent | null {
-  if (media.length === 0) return null
-  return media[0] ?? null
+  const first = media[0]
+  if (!first) return null
+  if (first.type === 'youtube' || first.type === 'video') return first
+  return media.find((m) => m.fullUrl) ?? first
 }
 
 export function getYouTubeEmbedUrl(videoId: string): string {

@@ -27,6 +27,17 @@
   display: block;
 }
 
+/* A preview-only hero (no distinct full image) is a ~200px thumbnail; stretching
+   it to the message width makes it blurry. Show it at its own size, centered,
+   rather than upscaling it into a banner. */
+.msg-media-hero.is-low-res img {
+  width: auto;
+  max-width: 100%;
+  max-height: var(--hero-preview-max-height);
+  margin: 0 auto;
+  object-fit: contain;
+}
+
 .msg-media-hero .media-hero-caption {
   position: absolute;
   bottom: 0;

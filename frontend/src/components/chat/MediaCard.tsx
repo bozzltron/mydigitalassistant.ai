@@ -87,7 +87,7 @@ export default function MediaCard(props: MediaCardProps) {
       </Show>
 
       <Show when={!isYoutube() && !isVideo()}>
-        <div class="msg-media-hero">
+        <div class={`msg-media-hero${props.media.fullUrl ? '' : ' is-low-res'}`}>
           <Show when={!imageError()}>
             <img
               src={displaySrc()}

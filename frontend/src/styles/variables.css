@@ -58,6 +58,9 @@
 
   /* Media specific */
   --hero-image-max-height: 400px;
+  /* A preview-only hero image is ~200px; cap it near its natural size rather
+     than upscaling it to the message width. */
+  --hero-preview-max-height: 220px;
   --preview-card-image-size: 80px;
 
   /* Chat content column max width (shared by the transcript and input row). */
