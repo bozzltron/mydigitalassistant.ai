@@ -75,9 +75,13 @@ It is **suppressed** by:
 - **user-supplied content** — a turn that transforms content the user pasted
   answers from that content; search must not become the subject.
 
-**Known sharp edge:** the router's `wants_search` is a model judgment, so a query
-that *should* search sometimes does not (observed live: 2 of 3 search-worthy
-questions did not search). The trigger rate is not yet measured — see *Measuring*.
+**Known sharp edge (measured, `assistant/experiments/search_trigger/`):** the
+router's `wants_search` is a model judgment. On unambiguous external queries it is
+reliable — must-search recall **8/8 (100%)**, must-not specificity **7/7 (100%)**.
+The gap is **borderline** queries ("explain recent research…", "best X for
+beginners"): the router judges them general knowledge and vetoes search, even
+where a current source would answer better. The trigger is not systematically
+suppressed; the router under-searches borderline queries.
 
 ## 3. Backends
 
@@ -145,9 +149,11 @@ of full images are hotlink-blocked. Brave image thumbnails are 500px and reliabl
 
 ## 8. Measuring (do this before changing the trigger or the gate)
 
-- **Search-trigger rate** — does a query that should search actually search? A
-  fixed must-search / must-not-search set through the router; recall on
-  must-search is the number that matters (a suppressed search answers blind).
+- **Search-trigger rate** — does a query that should search actually search?
+  Measured once (`assistant/experiments/search_trigger/`): **100% recall on
+  unambiguous must-search**, 100% specificity on must-not-search. **Still open:**
+  the **borderline** class (research / recommendation queries), where the router
+  under-searches — pre-register a separate probe before biasing it toward search.
 - **Corroboration** — from live searches, the share of extracted slots with ≥2
   independent `source_domains`; single-source facts are claims, not knowledge.
 - The query that actually left is logged: `Reasoner triggered search for: …`, and
