@@ -580,7 +580,16 @@ class SearchFileArgs(BaseModel):
         description=(
             "Sandbox path, or an uploaded file's name/frame name (e.g. "
             "'contacts.csv' or 'file_contacts.csv'). Omit when using "
-            "frame_id/frame_name."
+            "frame_id/frame_name, or when using glob."
+        ),
+    )
+    glob: str | None = Field(
+        None,
+        description=(
+            "Search EVERY sandbox file matching this glob (e.g. "
+            "'shared/mail/**/*.eml') in one call instead of one file — for a "
+            "mailbox dump or any tree of files. Mutually exclusive with "
+            "path/frame_id/frame_name."
         ),
     )
     frame_id: int | None = Field(
@@ -782,7 +791,9 @@ def builtin_tools(
             "email already in the list?') and targeted lookup without holding the "
             "whole file. Generic across formats. Case-insensitive substring by "
             "default; set regex=true for a pattern. Returns matching lines with "
-            "their line numbers, capped.",
+            "their line numbers, capped. Give `glob` (e.g. 'shared/mail/**/*.eml') "
+            "to search EVERY file matching it in one call — for a mailbox dump or "
+            "any tree of files — and each match names its file.",
             SearchFileArgs,
         ),
         _make_def(

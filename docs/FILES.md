@@ -146,6 +146,27 @@ assumption, and no new format-specific tool to maintain. If an airtight
 guarantee is ever wanted it belongs as a generic option (`unique_lines=True`),
 never as CSV awareness.
 
+## Mailbox dumps (a tree of `.eml` files)
+
+A mailbox dump is thousands of `.eml` messages in a tree. Drop it into the
+host-visible `shared/` folder (`/app/data/shared`) — nobody uploads a thousand
+files, and `.eml` is deliberately not in the upload allowlist.
+
+- **Read one:** `read_file("shared/mail/2026-03/msg-001.eml")` extracts the
+  `From`/`To`/`Cc`/`Subject`/`Date` headers and the plain-text body
+  (`extract_text_from_eml`) — never the MIME boundaries.
+- **Find across the tree:** `search_file(glob="shared/mail/**/*.eml",
+  query="invoice")` searches **every** matching file in one call and names the
+  file for each match. Each file is read through `_read_file_text`, so an `.eml` is
+  searched as its *extracted* text — the same text `read_file` returns.
+- **Bounded:** `max_matches` (≤ `MAX_SEARCH_MATCHES` 80), at most
+  `MAX_SEARCH_FILES` 200 files scanned, and files over `MAX_SEARCH_FILE_BYTES`
+  5 MB are skipped — each with a note. A narrow glob touches none of them.
+- **No frames needed.** A file that arrives on disk has no memory frame:
+  `list_files` lists it with `frame_id: null`, `glob` finds it, and
+  `search_file` / `read_file` reach it by path. Nothing has to be uploaded or
+  indexed first.
+
 ## Renaming
 
 `rename_file(path, new_name)` — the agent tool — and `PATCH /files/{frame_id}

@@ -273,3 +273,112 @@ class TestDedupIsComposition:
         assert _path("phase4_contacts.csv").read_text() == (
             "ada@x.com,Ada\ngrace@x.com,Grace"
         )
+
+
+class TestSearchAcrossFiles:
+    """`search_file(glob=…)`: search a whole tree in one call.
+
+    The mailbox-dump path — a tree of `.eml` files is thousands of messages, and
+    searching them one at a time cannot fit the tool loop's rounds.
+    """
+
+    _DIR = "glob_mail"
+
+    def _write(self, rel: str, content: str) -> None:
+        from assistant.backend.pipeline import filesystem
+
+        filesystem.write_sandbox_bytes(
+            f"{self._DIR}/{rel}", content.encode(), overwrite=True
+        )
+
+    def _cleanup(self) -> None:
+        import shutil
+
+        from assistant.backend.pipeline import filesystem
+
+        shutil.rmtree(filesystem.SANDBOX_ROOT / self._DIR, ignore_errors=True)
+
+    @pytest.mark.asyncio
+    async def test_glob_searches_a_tree_and_names_each_file(self):
+        from assistant.backend.pipeline.tool_executor import execute_search_file
+
+        self._write("a.eml", "From: alice@x.com\nSubject: invoice\n\nbody\n")
+        self._write("sub/b.eml", "From: bob@x.com\nSubject: hello\n\nbody\n")
+        try:
+            r = await execute_search_file(
+                {"glob": f"{self._DIR}/**/*.eml", "query": "invoice"},
+                user_id="1",
+                session_id="s",
+            )
+            assert r.success, r.error
+            assert r.data["files_scanned"] == 2
+            assert r.data["files_matched"] == 1
+            assert r.data["total_matches"] == 1
+            assert r.data["matches"][0]["file"] == f"{self._DIR}/a.eml"
+            assert "invoice" in r.data["matches"][0]["text"]
+        finally:
+            self._cleanup()
+
+    @pytest.mark.asyncio
+    async def test_eml_is_searched_as_extracted_text_not_raw_mime(self):
+        from assistant.backend.pipeline.tool_executor import execute_search_file
+
+        # A multipart message: the extracted text is the headers plus the plain
+        # body, so the body matches and the MIME boundary never reaches the model.
+        self._write(
+            "multi.eml",
+            'From: alice@x.com\nSubject: report\nMIME-Version: 1.0\n'
+            'Content-Type: multipart/mixed; boundary="XYZ"\n\n'
+            "--XYZ\nContent-Type: text/plain\n\nThe plain body.\n--XYZ--\n",
+        )
+        try:
+            body = await execute_search_file(
+                {"glob": f"{self._DIR}/*.eml", "query": "plain body"},
+                user_id="1",
+                session_id="s",
+            )
+            assert body.data["total_matches"] == 1
+
+            boundary = await execute_search_file(
+                {"glob": f"{self._DIR}/*.eml", "query": "XYZ"},
+                user_id="1",
+                session_id="s",
+            )
+            assert boundary.data["total_matches"] == 0, (
+                "the MIME boundary must not reach the model — an .eml is searched "
+                "as its extracted text"
+            )
+        finally:
+            self._cleanup()
+
+    @pytest.mark.asyncio
+    async def test_max_matches_caps_and_says_so(self):
+        from assistant.backend.pipeline.tool_executor import execute_search_file
+
+        for i in range(3):
+            self._write(f"m{i}.eml", f"Subject: invoice {i}\n\nbody\n")
+        try:
+            r = await execute_search_file(
+                {"glob": f"{self._DIR}/*.eml", "query": "invoice", "max_matches": 1},
+                user_id="1",
+                session_id="s",
+            )
+            assert r.data["match_count"] == 1
+            assert r.data["total_matches"] == 3
+            assert r.data["truncated"] is True
+            assert "1 of 3" in r.data["note"]
+        finally:
+            self._cleanup()
+
+    @pytest.mark.asyncio
+    async def test_a_glob_with_no_files_is_a_clean_zero(self):
+        from assistant.backend.pipeline.tool_executor import execute_search_file
+
+        r = await execute_search_file(
+            {"glob": f"{self._DIR}/none/**/*.eml", "query": "anything"},
+            user_id="1",
+            session_id="s",
+        )
+        assert r.success, r.error
+        assert r.data["total_matches"] == 0
+        assert "no files match" in r.data["note"]

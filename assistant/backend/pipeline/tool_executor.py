@@ -1554,6 +1554,115 @@ async def _resolve_frame_reference(
     return safe, None
 
 
+# A glob search is bounded twice: the files it will scan in one call, and the size
+# of any single file it will read. A narrow glob (`mail/**/*.eml`) touches neither;
+# a bare `**/*` does, and must degrade with an honest note rather than walk the
+# whole disk or read a 40 MB file into the match loop.
+MAX_SEARCH_FILES = 200
+MAX_SEARCH_FILE_BYTES = 5_000_000
+
+
+def _line_matches(
+    line: str, pattern: re.Pattern[str] | None, needle: str, case_sensitive: bool
+) -> bool:
+    if pattern is not None:
+        return pattern.search(line) is not None
+    return needle in (line if case_sensitive else line.lower())
+
+
+async def _search_across_files(
+    glob_pattern: str,
+    pattern: re.Pattern[str] | None,
+    needle: str,
+    case_sensitive: bool,
+    max_matches: int,
+) -> ToolResult:
+    """Search every sandbox file matching ``glob_pattern`` in one call.
+
+    The capability a mailbox dump needs: a tree of `.eml` files is thousands of
+    messages, and searching them one at a time cannot fit the tool loop's rounds.
+    Each file is read through ``_read_file_text``, so an `.eml` is searched as its
+    **extracted** text (headers + body) — the same text ``read_file`` returns.
+    """
+    from assistant.backend.pipeline.filesystem import list_sandbox_files
+
+    entries = list_sandbox_files(glob_pattern)
+    if not entries:
+        return ToolResult(success=True, data={
+            "glob": glob_pattern,
+            "files_scanned": 0,
+            "files_matched": 0,
+            "matches": [],
+            "match_count": 0,
+            "total_matches": 0,
+            "truncated": False,
+            "note": f"no files match {glob_pattern!r}",
+        })
+
+    char_budget = _read_char_limit()
+    used_chars = 0
+    matches: list[dict] = []
+    total_matches = 0
+    files_matched = 0
+    files_scanned = 0
+    skipped_large: list[str] = []
+
+    for entry in entries[:MAX_SEARCH_FILES]:
+        path = entry["path"]
+        if (entry.get("size") or 0) > MAX_SEARCH_FILE_BYTES:
+            skipped_large.append(path)
+            continue
+        try:
+            text, _error = await _read_file_text(path, entry.get("ext") or "")
+        except Exception:
+            continue
+        files_scanned += 1
+        if not text:
+            continue
+        file_matched = False
+        for number, line in enumerate(text.splitlines(), start=1):
+            if not _line_matches(line, pattern, needle, case_sensitive):
+                continue
+            total_matches += 1
+            file_matched = True
+            if len(matches) < max_matches:
+                clipped = _clip_line(line)
+                if matches and used_chars + len(clipped) > char_budget:
+                    continue
+                matches.append({"file": path, "line": number, "text": clipped})
+                used_chars += len(clipped)
+        if file_matched:
+            files_matched += 1
+
+    data: dict = {
+        "glob": glob_pattern,
+        "files_scanned": files_scanned,
+        "files_matched": files_matched,
+        "matches": matches,
+        "match_count": len(matches),
+        "total_matches": total_matches,
+        "truncated": total_matches > len(matches),
+    }
+    notes: list[str] = []
+    if total_matches > len(matches):
+        notes.append(
+            f"showing the first {len(matches)} of {total_matches} matching lines"
+        )
+    if len(entries) > MAX_SEARCH_FILES:
+        notes.append(
+            f"scanned {MAX_SEARCH_FILES} of {len(entries)} matching files; "
+            "narrow the glob"
+        )
+    if skipped_large:
+        notes.append(
+            f"skipped {len(skipped_large)} file(s) larger than "
+            f"{MAX_SEARCH_FILE_BYTES} bytes: {', '.join(skipped_large[:3])}"
+        )
+    if notes:
+        data["note"] = "; ".join(notes) + "."
+    return ToolResult(success=True, data=data)
+
+
 async def execute_search_file(args: dict, user_id: str, session_id: str) -> ToolResult:
     """Find the lines in a file that match a query.
 
@@ -1578,25 +1687,6 @@ async def execute_search_file(args: dict, user_id: str, session_id: str) -> Tool
         if not query:
             return ToolResult(success=False, error="query is required")
 
-        if not path and (frame_id is not None or frame_name is not None):
-            path, error = await _resolve_frame_reference(frame_id, frame_name, user_id)
-            if error:
-                return ToolResult(success=False, error=error)
-
-        if not path:
-            return ToolResult(
-                success=False,
-                error="path is required (or provide frame_id/frame_name)",
-            )
-
-        content, resolved_path, resolved_frame, unreadable = (
-            await _read_by_path_strategies(path, user_id)
-        )
-        if content is None:
-            if unreadable:
-                return ToolResult(success=False, error=f"Could not read {unreadable}.")
-            return ToolResult(success=False, error=f"File not found: {path!r}")
-
         regex = bool(args.get("regex", False))
         case_sensitive = bool(args.get("case_sensitive", False))
         max_matches = max(1, min(int(args.get("max_matches") or 50), MAX_SEARCH_MATCHES))
@@ -1609,17 +1699,41 @@ async def execute_search_file(args: dict, user_id: str, session_id: str) -> Tool
                 return ToolResult(success=False, error=f"Invalid regex: {e}")
         needle = query if case_sensitive else query.lower()
 
+        # A glob searches every file matching it — the mailbox-dump path, where a
+        # tree of `.eml` files is far too large to search one at a time. It is
+        # mutually exclusive with a single path/frame.
+        glob_pattern = args.get("glob")
+        if glob_pattern:
+            return await _search_across_files(
+                glob_pattern, pattern, needle, case_sensitive, max_matches
+            )
+
+        if not path and (frame_id is not None or frame_name is not None):
+            path, error = await _resolve_frame_reference(frame_id, frame_name, user_id)
+            if error:
+                return ToolResult(success=False, error=error)
+
+        if not path:
+            return ToolResult(
+                success=False,
+                error="path is required (or provide frame_id/frame_name, or glob)",
+            )
+
+        content, resolved_path, resolved_frame, unreadable = (
+            await _read_by_path_strategies(path, user_id)
+        )
+        if content is None:
+            if unreadable:
+                return ToolResult(success=False, error=f"Could not read {unreadable}.")
+            return ToolResult(success=False, error=f"File not found: {path!r}")
+
         lines = content.splitlines()
         matches: list[dict] = []
         total_matches = 0
         used_chars = 0
         char_budget = _read_char_limit()
         for number, line in enumerate(lines, start=1):
-            if pattern is not None:
-                hit = pattern.search(line) is not None
-            else:
-                hit = needle in (line if case_sensitive else line.lower())
-            if not hit:
+            if not _line_matches(line, pattern, needle, case_sensitive):
                 continue
             total_matches += 1
             if len(matches) < max_matches:
