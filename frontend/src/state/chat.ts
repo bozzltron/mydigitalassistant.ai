@@ -218,9 +218,11 @@ export async function postChatMessageStream(
           // renders (Brave indicator, "what I learned", trace panel, media).
           if (session_id && (event.task_type || event.extraction_summary ||
               event.search_extraction_summary || event.search_info ||
-              event.context_window)) {
+              event.memory_context || event.citations || event.context_window)) {
             mergeStreamingMessageMeta(session_id, assistantMessageId, {
               ...(event.task_type ? { task_type: event.task_type } : {}),
+              ...(event.memory_context ? { memory_context: event.memory_context } : {}),
+              ...(event.citations ? { citations: event.citations } : {}),
               ...(event.extraction_summary ? { extraction_summary: event.extraction_summary } : {}),
               ...(event.search_extraction_summary
                 ? { search_extraction_summary: event.search_extraction_summary }

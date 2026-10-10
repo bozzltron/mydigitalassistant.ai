@@ -84,7 +84,13 @@ Everything below was read, not assumed. Corrections to earlier drafts are noted.
   Settings checkbox and close button.
 - R1.3 It shows the **last assistant turn's** `task_type`, `memory_context`,
   `citations`, and — when the turn searched — the search query/backend.
-- R1.4 The data is present both for a **live turn** and after a **history reload**.
+- R1.4 The data is present for a **live turn**. **Correction (found while
+  implementing):** the backend does not persist `task_type`/`memory_context`/
+  `citations` per episode and `SessionMessage` (`main.py:1270–1276`) returns only
+  `role/content/timestamp/search_info`, so a reloaded history cannot show them
+  without an episode column (and persisting the full memory context per turn is a
+  DB-size tradeoff). Deferred: the panel shows the persisted search info on reload
+  and a clear "captured for the current turn" note otherwise, never `-`.
 
 ### R2 — File rename
 - R2.1 A **copy file name** button copies the display name and confirms with a toast.
@@ -146,9 +152,10 @@ Everything below was read, not assumed. Corrections to earlier drafts are noted.
   `citations`, and `search_info` into the panel. Reveal the search section only
   when `search_info` is present (the current `hidden` is hardcoded).
 - **Carry the fields.** Add `memory_context` and `citations` to the live merge
-  (`state/chat.ts`) and to `SessionMessageSchema` (`services/api.ts`) so a history
-  reload shows them too; add them to the `StreamEvent` type.
-- Empty state: a clear "No turn yet" rather than `-`.
+  (`state/chat.ts`) and to the `StreamEvent` type so the panel can bind them.
+  (History persistence is deferred — see R1.4.)
+- Empty state: a clear "No turn yet" / "captured for the current turn" rather
+  than `-`.
 
 ### Phase 2 — Sort
 

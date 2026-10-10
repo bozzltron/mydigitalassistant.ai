@@ -1,7 +1,8 @@
-import { createSignal, createEffect, Show, For, onMount, onCleanup } from 'solid-js'
+import { createSignal, createEffect, createMemo, Show, For, onMount, onCleanup } from 'solid-js'
 import MessageList from './MessageList'
 import InputBar from './InputBar'
 import StatusIndicator from './StatusIndicator'
+import TracePanel from './TracePanel'
 import { Modal } from '../ui/Modal'
 import { messages, sessionId, isTurnActive, useConversationTurnId, addMessageToConversation, isStreaming } from '../../state/chat'
 import { getQueue, getQueueLength, dequeue, enqueue, isProcessing, setActiveConversation, isDrainBlocked } from '../../state/messageQueue'
@@ -44,6 +45,18 @@ export default function ChatPage(props: {
 
   // Get the current conversation's turnId
   const currentConvTurnId = useConversationTurnId(sessionId)
+
+  // The trace panel reflects the most recent assistant turn's transparency data.
+  // The live meta event carries task_type / memory_context / citations /
+  // search_info; a reloaded turn carries only what was persisted (search_info).
+  const lastTraceMeta = createMemo(() => {
+    const msgs = messages()
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      const m = msgs[i]
+      if (m && m.role === 'assistant' && m.meta) return m.meta
+    }
+    return undefined
+  })
 
   // Auto-scroll to bottom when messages change
   let scrollTimeout: number | null = null
@@ -393,37 +406,11 @@ export default function ChatPage(props: {
         </div>
       </div>
 
-      <div id="trace-panel" class={`trace-panel ${settings.traceVisible ? '' : 'hidden'}`}>
-        <div class="trace-header">
-          <span>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="trace-header-icon"><line x1="18" x2="18" y1="20" y2="10"/><line x1="12" x2="12" y1="20" y2="4"/><line x1="6" x2="6" y1="20" y2="14"/></svg>
-            Trace
-          </span>
-          <button 
-            class="trace-close" 
-            onClick={() => updateSetting('traceVisible', false)}
-            id="trace-close"
-          >&times;</button>
-        </div>
-        <div class="trace-content">
-          <div class="trace-section">
-            <div class="trace-label">Task type</div>
-            <div class="trace-value" id="trace-task-type">-</div>
-          </div>
-          <div class="trace-section">
-            <div class="trace-label">Memory context</div>
-            <div class="trace-value" id="trace-memory">-</div>
-          </div>
-          <div class="trace-section">
-            <div class="trace-label">Citations</div>
-            <div class="trace-value" id="trace-citations">-</div>
-          </div>
-          <div class="trace-section" id="trace-search-section" hidden>
-            <div class="trace-label">Search</div>
-            <div class="trace-value" id="trace-search-info">-</div>
-          </div>
-        </div>
-      </div>
+      <TracePanel
+        visible={settings.traceVisible}
+        meta={lastTraceMeta()}
+        onClose={() => updateSetting('traceVisible', false)}
+      />
 
       {/* Search Consent Modal */}
       <Show when={pendingSearchConsent()} keyed>

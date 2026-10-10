@@ -69,6 +69,13 @@
   padding: 0.35rem;
 }
 
+/* A toggle that is on (e.g. the trace panel): the same accent affordance the
+   alerts button uses, rather than inventing a new active look. */
+.topbar-btn--icon.is-active {
+  border-color: var(--accent2);
+  color: var(--accent2);
+}
+
 /* Something is waiting: mint, not red. These are things to talk about, not
    errors, so the colour invites rather than alarms. The badge carries the count. */
 .topbar-btn.has-alerts {

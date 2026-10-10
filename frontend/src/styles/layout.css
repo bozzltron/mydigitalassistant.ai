@@ -196,16 +196,24 @@
   cursor: not-allowed;
 }
 
+/* Right-docked slide-in, mirroring the Settings panel (#settings-panel): fixed,
+   so the trace overlays the chat column instead of pushing it. */
 #trace-panel {
+  position: fixed;
+  top: 0;
+  right: -420px;
   width: 420px;
+  max-width: 92vw;
+  height: 100vh;
   border-left: 1px solid var(--border);
   background: var(--surface);
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  flex-shrink: 0;
+  z-index: 100;
+  transition: right 0.25s ease;
 }
 
-#trace-panel.hidden {
-  display: none;
+#trace-panel.open {
+  right: 0;
 }

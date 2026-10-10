@@ -10,7 +10,7 @@ import { AlertsPanel } from './AlertsPanel'
 import { EditModal } from './EditModal'
 import { Modal } from './Modal'
 import styles from './TopBar.module.css'
-import { PlusIcon, MicIcon, FolderIcon, BrainIcon, GearIcon } from './TopBarIcons'
+import { PlusIcon, MicIcon, FolderIcon, BrainIcon, GearIcon, TraceIcon } from './TopBarIcons'
 
 interface TopBarProps {
   conversations: Session[]
@@ -362,6 +362,16 @@ export default function TopBar(props: TopBarProps) {
             <BrainIcon />
             Brain
           </a>
+          <button
+            class={`topbar-btn topbar-btn--icon${settings.traceVisible ? ' is-active' : ''}`}
+            id="trace-toggle"
+            title="Trace"
+            aria-label="Trace"
+            aria-pressed={settings.traceVisible}
+            onClick={() => updateSetting('traceVisible', !settings.traceVisible)}
+          >
+            <TraceIcon />
+          </button>
           <button
             class="topbar-btn topbar-btn--icon"
             id="settings-toggle"

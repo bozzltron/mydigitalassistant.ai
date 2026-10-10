@@ -43,6 +43,14 @@ export const GearIcon = (props: { class?: string }) => (
   </Icon>
 )
 
+export const TraceIcon = (props: { class?: string }) => (
+  <Icon class={props.class}>
+    <line x1="18" y1="20" x2="18" y2="10" />
+    <line x1="12" y1="20" x2="12" y2="4" />
+    <line x1="6" y1="20" x2="6" y2="14" />
+  </Icon>
+)
+
 export const BellIcon = (props: { class?: string }) => (
   <Icon class={props.class}>
     <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />

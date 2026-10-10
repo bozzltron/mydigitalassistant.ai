@@ -233,6 +233,10 @@ export interface StreamEvent {
   detail?: string
   session_id?: string
   task_type?: string
+  // The trace panel's data: the memory injected into this turn and the sources
+  // it cited. Present on a live `meta` event; not persisted per episode.
+  memory_context?: string
+  citations?: string[]
   extraction_summary?: ExtractionSummary
   search_extraction_summary?: ExtractionSummary
   search_info?: SearchInfo

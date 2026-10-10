@@ -147,19 +147,20 @@ describe('TopBar', () => {
     expect(saved.voiceSpeed).toBe(1.6)
   })
 
-  it('orders the right side Alerts, Let\'s talk, Files, Brain, Settings, Trash', () => {
+  it('orders the right side Alerts, Let\'s talk, Files, Brain, Trace, Settings, Trash', () => {
     render(() => <TopBar {...defaultProps} />)
     const labels = Array.from(
       document.querySelectorAll('.header-right .topbar-btn')
     ).map((el) => (el.getAttribute('aria-label') || el.textContent || '').trim())
 
-    expect(labels).toHaveLength(6)
+    expect(labels).toHaveLength(7)
     expect(labels[0]).toMatch(/for you/i)
     expect(labels[1]).toMatch(/let's talk/i)
     expect(labels[2]).toBe('Files')
     expect(labels[3]).toBe('Brain')
-    expect(labels[4]).toBe('Settings')
-    expect(labels[5]).toMatch(/trash/i)
+    expect(labels[4]).toBe('Trace')
+    expect(labels[5]).toBe('Settings')
+    expect(labels[6]).toMatch(/trash/i)
   })
 
   it('gives New a plus icon and every right-side control an svg icon', () => {
@@ -170,7 +171,7 @@ describe('TopBar', () => {
     expect(newBtn.querySelector('svg')).not.toBeNull()
 
     const controls = document.querySelectorAll('.header-right .topbar-btn')
-    expect(controls).toHaveLength(6)
+    expect(controls).toHaveLength(7)
     controls.forEach((el) => expect(el.querySelector('svg')).not.toBeNull())
   })
 })
