@@ -1,0 +1,199 @@
+{
+  "experiment": "max_model_choice",
+  "models": {
+    "incumbent (qwen3.8:27b)": "qwen3.8:27b",
+    "candidate (opus-q4:9b)": "sorc/qwen3.5-claude-4.6-opus-q4:9b"
+  },
+  "incumbent_correct": 9,
+  "candidate_correct": 6,
+  "n_problems": 10,
+  "incumbent_median_wall_s": 45.68,
+  "candidate_median_wall_s": 36.655,
+  "speedup": 1.25,
+  "rows": {
+    "incumbent (qwen3.8:27b)": [
+      {
+        "prompt": "How many trailing zeros are there in 100! (100 factorial)?",
+        "expected": 24,
+        "got": 24.0,
+        "correct": true,
+        "wall_s": 50.25,
+        "error": "",
+        "answer_tail": "tribute an *extra* 5): \u230a100/25\u230b = **4**\n- Multiples of 125: \u230a100/125\u230b = **0**\n\n## Total\n\n20 + 4 + 0 = **24**\n\nANSWER: 24"
+      },
+      {
+        "prompt": "What is the sum of all integers from 1 to 1000 that are divisible by 3",
+        "expected": 234168,
+        "got": 234168.0,
+        "correct": true,
+        "wall_s": 229.22,
+        "error": "",
+        "answer_tail": "} = 15 \\cdot 2{,}211 = 33{,}165$\n\n## Final Calculation\n\n$$166{,}833 + 100{,}500 - 33{,}165 = 234{,}168$$\n\nANSWER: 234168"
+      },
+      {
+        "prompt": "A 3x3x3 cube is painted on all faces and then cut into 27 unit cubes. ",
+        "expected": 12,
+        "got": 12.0,
+        "correct": true,
+        "wall_s": 27.62,
+        "error": "",
+        "answer_tail": "unit cube that is not a corner.\n\nSo the number of unit cubes with exactly two painted faces is:\n\n12 \u00d7 1 = 12\n\nANSWER: 12"
+      },
+      {
+        "prompt": "How many distinct ways are there to make change for $1.00 using quarte",
+        "expected": 242,
+        "got": 242.0,
+        "correct": true,
+        "wall_s": 222.96,
+        "error": "",
+        "answer_tail": "emaining \\(25\\), count \\(=12\\)\n- \\(q=4\\): remaining \\(0\\), count \\(=1\\)\n\nTotal:\n\n\\[\n121+72+36+12+1 = 242\n\\]\n\nANSWER: 242"
+      },
+      {
+        "prompt": "A password has 4 digits (0-9), no digit repeats, and the first digit i",
+        "expected": 2520,
+        "got": 2520.0,
+        "correct": true,
+        "wall_s": 34.39,
+        "error": "",
+        "answer_tail": "rd, and 7 for the fourth.\n\nSo the total number of passwords is:\n\n\\[\n5 \\times 9 \\times 8 \\times 7 = 2520\n\\]\n\nANSWER: 2520"
+      },
+      {
+        "prompt": "Two trains are 200 km apart and approach each other at 60 km/h and 40 ",
+        "expected": 180,
+        "got": 180.0,
+        "correct": true,
+        "wall_s": 41.11,
+        "error": "",
+        "answer_tail": "inite series of back-and-forth trips, we simply multiply the fly's speed by the total time it's in the air.\n\nANSWER: 180"
+      },
+      {
+        "prompt": "What is the smallest positive integer that has exactly 24 positive div",
+        "expected": 360,
+        "got": null,
+        "correct": false,
+        "wall_s": 360.94,
+        "error": "ReadTimeout: ",
+        "answer_tail": ""
+      },
+      {
+        "prompt": "If x + 1/x = 5, what is x^2 + 1/x^2?",
+        "expected": 23,
+        "got": 23.0,
+        "correct": true,
+        "wall_s": 27.84,
+        "error": "",
+        "answer_tail": "{1}{x^2} = 25$$\n\n$$x^2 + 2 + \\frac{1}{x^2} = 25$$\n\nSubtract 2 from both sides:\n\n$$x^2 + \\frac{1}{x^2} = 23$$\n\nANSWER: 23"
+      },
+      {
+        "prompt": "How many times do the hour and minute hands of a clock overlap during ",
+        "expected": 22,
+        "got": 22.0,
+        "correct": true,
+        "wall_s": 75.62,
+        "error": "",
+        "answer_tail": " 12:00 again, which is the start of the next cycle).\n\n## Counting Overlaps in 24 Hours\n\n$$11 \\times 2 = 22$$\n\nANSWER: 22"
+      },
+      {
+        "prompt": "A lily pad doubles in area every day. It covers the entire lake on day",
+        "expected": 47,
+        "got": 47.0,
+        "correct": true,
+        "wall_s": 26.99,
+        "error": "",
+        "answer_tail": "y to the next, the day *before* full coverage is exactly when the pad was at half coverage.\n\n**48 \u2212 1 = 47**\n\nANSWER: 47"
+      }
+    ],
+    "candidate (opus-q4:9b)": [
+      {
+        "prompt": "How many trailing zeros are there in 100! (100 factorial)?",
+        "expected": 24,
+        "got": 24.0,
+        "correct": true,
+        "wall_s": 25.45,
+        "error": "",
+        "answer_tail": "xtra factor): 25, 50, 75, 100 \u2192 **4 extra factors**\n\nTotal = 20 + 4 = **24 trailing zeros**\n\n## Final Answer\n\nANSWER: 24"
+      },
+      {
+        "prompt": "What is the sum of all integers from 1 to 1000 that are divisible by 3",
+        "expected": 234168,
+        "got": 234168.0,
+        "correct": true,
+        "wall_s": 53.4,
+        "error": "",
+        "answer_tail": "500$ \u2713\n- Multiples of 15: $15 \\times \\frac{66 \\times 67}{2} = 33,165$ \u2713\n\nAll calculations verified.\n\n---\n\nANSWER: 234168"
+      },
+      {
+        "prompt": "A 3x3x3 cube is painted on all faces and then cut into 27 unit cubes. ",
+        "expected": 12,
+        "got": null,
+        "correct": false,
+        "wall_s": 37.44,
+        "error": "",
+        "answer_tail": "s is:\n\n$$\\boxed{12}$$\n\nThese are the 12 edge cubes (excluding corners) that lie along the 12 edges of the original cube."
+      },
+      {
+        "prompt": "How many distinct ways are there to make change for $1.00 using quarte",
+        "expected": 242,
+        "got": 262.0,
+        "correct": false,
+        "wall_s": 106.33,
+        "error": "",
+        "answer_tail": "imes 11 = 131$ \u2713\n\n## Total Number of Ways\n\n$$\\text{Total} = 1 + 12 + 36 + 82 + 131 = 262$$\n\n## Final Answer\n\nANSWER: 262"
+      },
+      {
+        "prompt": "A password has 4 digits (0-9), no digit repeats, and the first digit i",
+        "expected": 2520,
+        "got": 2520.0,
+        "correct": true,
+        "wall_s": 29.98,
+        "error": "",
+        "answer_tail": "ly handled by reducing choices each time\n- All odd digits are correctly identified as {1, 3, 5, 7, 9}\n\n---\n\nANSWER: 2520"
+      },
+      {
+        "prompt": "Two trains are 200 km apart and approach each other at 60 km/h and 40 ",
+        "expected": 180,
+        "got": null,
+        "correct": false,
+        "wall_s": 106.25,
+        "error": "",
+        "answer_tail": ""
+      },
+      {
+        "prompt": "What is the smallest positive integer that has exactly 24 positive div",
+        "expected": 360,
+        "got": null,
+        "correct": false,
+        "wall_s": 50.64,
+        "error": "",
+        "answer_tail": "gement would yield larger values\n\nTherefore, the smallest positive integer with exactly 24 divisors is:\n\n$$\\boxed{420}$$"
+      },
+      {
+        "prompt": "If x + 1/x = 5, what is x^2 + 1/x^2?",
+        "expected": 23,
+        "got": 23.0,
+        "correct": true,
+        "wall_s": 20.5,
+        "error": "",
+        "answer_tail": "ify by checking the algebra:\n- $(x + \\frac{1}{x})^2 = x^2 + 2 + \\frac{1}{x^2}$ \u2713\n- $5^2 - 2 = 25 - 2 = 23$ \u2713\n\nANSWER: 23"
+      },
+      {
+        "prompt": "How many times do the hour and minute hands of a clock overlap during ",
+        "expected": 22,
+        "got": 22.0,
+        "correct": true,
+        "wall_s": 35.87,
+        "error": "",
+        "answer_tail": "dary.\n\n## Final Answer\n\nIn a 24-hour day, the hour and minute hands of a clock overlap exactly **22 times**.\n\nANSWER: 22"
+      },
+      {
+        "prompt": "A lily pad doubles in area every day. It covers the entire lake on day",
+        "expected": 47,
+        "got": 47.0,
+        "correct": true,
+        "wall_s": 18.61,
+        "error": "",
+        "answer_tail": "it must have been half covered on the previous day.\n\n**Therefore, the lily pad was half covered on day 47.**\n\nANSWER: 47"
+      }
+    ]
+  }
+}

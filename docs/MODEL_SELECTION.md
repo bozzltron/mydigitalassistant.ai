@@ -151,6 +151,24 @@ quality run found no win but is too small and too noisy to be conclusive — a s
 would need the larger run described in
 `assistant/experiments/chat_quality_q4/result.md`.
 
+### MAX re-assessment: the same candidate, against the 27B (Oct 2026)
+
+The natural follow-up — "if the Q4 9B matches the 27B for math, make it MAX too" —
+was measured and **rejected** (`assistant/experiments/max_model_choice/`). Ten
+hard, multi-step problems with exact answers, `think=True`:
+
+| Role | Incumbent | Candidate | Result |
+|---|---|---|---|
+| Max | `qwen3.8:27b` | `q4:9b` | incumbent **wins** — 9/10 vs 6/10 (the incumbent's single miss was a timeout, not a wrong answer), and only **1.25×** faster on the median |
+
+**Decision:** MAX stays `qwen3.8:27b`. The math probe used *eight easy* problems
+where both scored 8/8 — a ceiling that cannot separate a 9B from a 27B. The MAX
+role is open-ended hard reasoning, and there the candidate is 30% less accurate
+and not meaningfully faster. The reason the 27B felt unusable was that
+*mechanical* turns were being escalated to it (see
+`assistant/experiments/escalation_trigger/`), not that the role needs a smaller
+model.
+
 ## Re-assessment cadence
 
 - **Trigger:** a new notable Ollama model family (bigger qwen, llama, mistral,
