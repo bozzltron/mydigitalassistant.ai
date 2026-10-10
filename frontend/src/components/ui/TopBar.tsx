@@ -368,7 +368,12 @@ export default function TopBar(props: TopBarProps) {
             title="Trace"
             aria-label="Trace"
             aria-pressed={settings.traceVisible}
-            onClick={() => updateSetting('traceVisible', !settings.traceVisible)}
+            onClick={() => {
+              // The trace and the settings panels are both right-docked, so
+              // opening one closes the other rather than overlapping.
+              updateSetting('traceVisible', !settings.traceVisible)
+              setShowSettings(false)
+            }}
           >
             <TraceIcon />
           </button>
@@ -377,7 +382,11 @@ export default function TopBar(props: TopBarProps) {
             id="settings-toggle"
             title="Settings"
             aria-label="Settings"
-            onClick={() => setShowSettings(true)}
+            onClick={() => {
+              setShowSettings(true)
+              // Both panels dock right; do not let them overlap.
+              updateSetting('traceVisible', false)
+            }}
           >
             <GearIcon />
           </button>

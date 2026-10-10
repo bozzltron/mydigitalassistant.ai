@@ -2736,7 +2736,10 @@ async def update_file_content(
     CSV rows stay true to the bytes.
     """
     from assistant.backend.pipeline.files import apply_file_to_memory
-    from assistant.backend.pipeline.filesystem import PathTraversalError
+    from assistant.backend.pipeline.filesystem import (
+        PathTraversalError,
+        write_sandbox_bytes,
+    )
     from assistant.backend.pipeline.tool_executor import BINARY_DOCUMENT_EXTS
 
     frame = await store.get_frame(frame_id)
@@ -2762,7 +2765,10 @@ async def update_file_content(
         raise HTTPException(status_code=404, detail="File not found")
 
     data = body.content.encode("utf-8")
-    file_path.write_bytes(data)
+    # Atomic write through the one sandbox writer (temp file + rename, plus the
+    # traversal/symlink check) rather than a bare write_bytes: a crash mid-save
+    # must not leave a truncated file.
+    write_sandbox_bytes(file_safe_name, data, overwrite=True)
 
     display_name = slots_dict.get("file_name") or frame.name
     try:

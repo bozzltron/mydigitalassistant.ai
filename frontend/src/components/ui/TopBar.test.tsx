@@ -174,4 +174,25 @@ describe('TopBar', () => {
     expect(controls).toHaveLength(7)
     controls.forEach((el) => expect(el.querySelector('svg')).not.toBeNull())
   })
+
+  it('keeps the trace and settings panels mutually exclusive', async () => {
+    // Both dock on the right, so opening one must close the other.
+    const { settings, updateSetting } = await import('../../state/settings')
+    updateSetting('traceVisible', false)
+    render(() => <TopBar {...defaultProps} />)
+
+    fireEvent.click(document.getElementById('settings-toggle')!)
+    expect(
+      document.getElementById('settings-panel')?.classList.contains('open')
+    ).toBe(true)
+
+    fireEvent.click(document.getElementById('trace-toggle')!)
+    expect(
+      document.getElementById('settings-panel')?.classList.contains('open')
+    ).toBe(false)
+    expect(settings.traceVisible).toBe(true)
+
+    fireEvent.click(document.getElementById('settings-toggle')!)
+    expect(settings.traceVisible).toBe(false)
+  })
 })
