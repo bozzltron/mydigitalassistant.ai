@@ -68,6 +68,9 @@ export const FileViewer = (props: { fileId?: string | null }) => {
   const ext = createMemo(() => (fileData()?.file_ext || '').toLowerCase());
   const isMarkdown = createMemo(() => MARKDOWN_EXTS.has(ext()));
   const isText = createMemo(() => TEXT_EXTS.has(ext()));
+  // The browser renders PDFs natively, so a PDF opens in a tab instead of
+  // showing "no preview".
+  const isPdf = createMemo(() => ext() === 'pdf');
   // Sanitized before it touches innerHTML, exactly like chat markdown.
   const markdownHtml = createMemo(() =>
     DOMPurify.sanitize(marked.parse(fileData()?.content || '') as string)
@@ -114,10 +117,28 @@ export const FileViewer = (props: { fileId?: string | null }) => {
             <pre class="file-content-text">{fileData()?.content || '(empty file)'}</pre>
           </Show>
           <Show when={!isMarkdown() && !isText()}>
-            <div class="file-no-preview">
-              <p>No preview for this file type</p>
-              <p class="file-no-preview-hint">Download it to open it in the right app.</p>
-            </div>
+            <Show
+              when={isPdf()}
+              fallback={
+                <div class="file-no-preview">
+                  <p>No preview for this file type</p>
+                  <p class="file-no-preview-hint">Download it to open it in the right app.</p>
+                </div>
+              }
+            >
+              <div class="file-no-preview">
+                <p>PDF document</p>
+                <p class="file-no-preview-hint">The browser renders PDFs natively.</p>
+                <a
+                  class="btn-primary"
+                  href={`/files/${props.fileId}/download?inline=true`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Open in new tab
+                </a>
+              </div>
+            </Show>
           </Show>
         </div>
       </Show>

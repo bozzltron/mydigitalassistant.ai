@@ -34,9 +34,22 @@ describe('FileViewer', () => {
     expect(document.querySelector('.file-content-text')).toBeNull()
   })
 
-  it('does not preview a binary file', async () => {
+  it('offers to open a PDF in a new tab instead of "no preview"', async () => {
     vi.mocked(api.api).mockResolvedValue(
       content({ content: '%PDF-1.4 binary', file_name: 'report.pdf', file_ext: 'pdf' }) as never,
+    )
+    render(() => <FileViewer fileId="9" />)
+
+    await screen.findByText('PDF document')
+    const link = screen.getByText('Open in new tab').closest('a')
+    // Served inline so the browser renders it rather than saving it.
+    expect(link?.getAttribute('href')).toBe('/files/9/download?inline=true')
+    expect(link?.getAttribute('target')).toBe('_blank')
+  })
+
+  it('does not preview a binary document', async () => {
+    vi.mocked(api.api).mockResolvedValue(
+      content({ content: 'PK binary', file_name: 'report.docx', file_ext: 'docx' }) as never,
     )
     render(() => <FileViewer fileId="1" />)
 

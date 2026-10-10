@@ -60,6 +60,10 @@ export const FileGrid = (props: { onFileSelect?: (file: FileEntry) => void }) =>
 
   const displayName = (file: FileEntry) => file.file_name || file.name;
 
+  // The browser renders PDFs natively; a click opens one in a new tab rather
+  // than selecting it into the (text-only) viewer.
+  const isPdf = (file: FileEntry) => (file.file_ext || '').toLowerCase() === 'pdf';
+
   // Most recently updated first: the file the user just changed is the one they
   // want at the top. The backend lists by id (oldest first), so this is a view
   // concern. Frames with no `updated_at` sort last.
@@ -115,7 +119,20 @@ export const FileGrid = (props: { onFileSelect?: (file: FileEntry) => void }) =>
           </div>
           <div class="files-list">
             <For each={sortedFiles()}>{file => (
-              <div class="file-item" onClick={() => props.onFileSelect?.(file)}>
+              <div
+                class="file-item"
+                onClick={() => {
+                  if (isPdf(file)) {
+                    window.open(
+                      `/files/${file.id}/download?inline=true`,
+                      '_blank',
+                      'noopener'
+                    );
+                  } else {
+                    props.onFileSelect?.(file);
+                  }
+                }}
+              >
                 <div class="file-cell file-name-cell">
                   <span class="file-icon"><FileIcon kind={fileKind(file.file_ext || file.type)} /></span>
                   <span class="file-name" title={displayName(file)}>{displayName(file)}</span>

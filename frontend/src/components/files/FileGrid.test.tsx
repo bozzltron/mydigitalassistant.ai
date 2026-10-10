@@ -58,6 +58,23 @@ describe('FileGrid', () => {
     expect(names).toEqual(['report.pdf', 'notes.md'])
   })
 
+  it('opens a PDF in a new tab instead of selecting it into the viewer', async () => {
+    const open = vi.spyOn(window, 'open').mockReturnValue(null)
+    const onFileSelect = vi.fn()
+    render(() => <FileGrid onFileSelect={onFileSelect} />)
+    await screen.findByText('report.pdf')
+
+    fireEvent.click(screen.getByText('report.pdf'))
+
+    expect(open).toHaveBeenCalledWith(
+      '/files/2/download?inline=true',
+      '_blank',
+      'noopener'
+    )
+    expect(onFileSelect).not.toHaveBeenCalled()
+    open.mockRestore()
+  })
+
   it('asks for confirmation before deleting and does nothing on cancel', async () => {
     render(() => <FileGrid />)
     await screen.findByText('notes.md')

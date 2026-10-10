@@ -2590,13 +2590,18 @@ async def _file_response(store: MemoryStore, frame_id: int) -> "FileContentRespo
 @app.get("/files/{frame_id}/download")
 async def download_file(
     frame_id: int,
+    inline: bool = False,
     store: MemoryStore = _Depends(get_store),
 ):
-    """Serve the stored file's original bytes as an attachment.
+    """Serve the stored file's original bytes.
 
-    The `/content` route reads the file as UTF-8 text, which is lossy for any
-    binary document (a PDF read as text is garbage), so downloading goes through
-    the bytes on disk instead.
+    Default: as an attachment (a download). The `/content` route reads the file
+    as UTF-8 text, which is lossy for any binary document (a PDF read as text is
+    garbage), so downloading goes through the bytes on disk instead.
+
+    With ``inline=true`` the bytes are served with the file's real MIME type and
+    no attachment disposition, so the browser renders what it can — a PDF opens
+    in a tab rather than being saved.
     """
     frame = await store.get_frame(frame_id)
     if not frame:
@@ -2615,6 +2620,14 @@ async def download_file(
         file_path = None
     if file_path is None or not file_path.exists():
         raise HTTPException(status_code=404, detail="File not found")
+
+    if inline:
+        import mimetypes
+
+        media_type = (
+            mimetypes.guess_type(file_path.name)[0] or "application/octet-stream"
+        )
+        return FileResponse(file_path, media_type=media_type)
 
     return FileResponse(
         file_path,

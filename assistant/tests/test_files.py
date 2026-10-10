@@ -1173,6 +1173,29 @@ class TestFileListMetadataAndDownload:
         assert "notes.md" in disposition
 
     @pytest.mark.asyncio
+    async def test_inline_serves_the_real_mime_type_without_attachment(
+        self, client, store, tmp_path
+    ):
+        """`?inline=true` renders in the browser (a PDF opens in a tab)."""
+        body = b"%PDF-1.4 minimal"
+        test_file = tmp_path / "doc.pdf"
+        test_file.write_bytes(body)
+        with open(test_file, "rb") as f:
+            resp = client.post(
+                "/files/upload",
+                files={"file": ("doc.pdf", f.read(), "application/pdf")},
+            )
+        assert resp.status_code == 200
+        frame_id = resp.json()["frame_id"]
+
+        inline = client.get(f"/files/{frame_id}/download?inline=true")
+        assert inline.status_code == 200
+        assert inline.content == body
+        assert inline.headers["content-type"].startswith("application/pdf")
+        # Inline: no attachment disposition, so the browser renders it.
+        assert "content-disposition" not in inline.headers
+
+    @pytest.mark.asyncio
     async def test_download_missing_file_is_404(self, client, store):
         assert client.get("/files/999999/download").status_code == 404
 
