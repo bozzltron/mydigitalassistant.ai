@@ -5,7 +5,11 @@ import { Modal } from '../ui/Modal';
 import { FileIcon, fileKind } from '../ui/Icons';
 import type { FileEntry } from '../../types';
 
-export const FileGrid = (props: { onFileSelect?: (file: FileEntry) => void }) => {
+export const FileGrid = (props: {
+  onFileSelect?: (file: FileEntry) => void;
+  /** The file currently shown in the preview, highlighted in the list. */
+  selectedFileId?: string | null;
+}) => {
   const [files, setFiles] = createSignal<FileEntry[]>([]);
   const [isLoading, setIsLoading] = createSignal(false);
   const [toast, setToast] = createSignal<{ message: string; type: 'success' | 'error' } | null>(null);
@@ -45,6 +49,19 @@ export const FileGrid = (props: { onFileSelect?: (file: FileEntry) => void }) =>
       window.removeEventListener('files-changed', handleFilesChanged)
     })
   })
+
+  // Bring the selected row into view — it matters when a deep link selects a
+  // file far down the list. `nearest` does nothing when it is already visible.
+  createEffect(() => {
+    const id = props.selectedFileId;
+    if (!id) return;
+    for (const row of document.querySelectorAll<HTMLElement>('.file-item')) {
+      if (row.dataset.fileId === id) {
+        row.scrollIntoView?.({ block: 'nearest' });
+        break;
+      }
+    }
+  });
 
   const confirmDelete = async (file: FileEntry) => {
     setPendingDelete(null);
@@ -120,7 +137,9 @@ export const FileGrid = (props: { onFileSelect?: (file: FileEntry) => void }) =>
           <div class="files-list">
             <For each={sortedFiles()}>{file => (
               <div
-                class="file-item"
+                class={`file-item${props.selectedFileId === file.id ? ' is-selected' : ''}`}
+                data-file-id={file.id}
+                aria-current={props.selectedFileId === file.id ? 'true' : undefined}
                 onClick={() => {
                   if (isPdf(file)) {
                     window.open(

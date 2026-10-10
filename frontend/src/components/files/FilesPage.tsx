@@ -30,7 +30,10 @@ export default function FilesPage() {
           </section>
 
           <section class="files-grid-section">
-            <FileGrid onFileSelect={(file) => setSelectedFileId(file.id)} />
+            <FileGrid
+              selectedFileId={selectedFileId()}
+              onFileSelect={(file) => setSelectedFileId(file.id)}
+            />
           </section>
         </div>
 

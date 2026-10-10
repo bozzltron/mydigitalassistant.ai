@@ -75,6 +75,15 @@ describe('FileGrid', () => {
     open.mockRestore()
   })
 
+  it('marks the row for the file currently shown in the preview', async () => {
+    render(() => <FileGrid selectedFileId="2" />)
+    await screen.findByText('report.pdf')
+
+    const selected = document.querySelectorAll('.file-item.is-selected')
+    expect(selected).toHaveLength(1)
+    expect(selected[0]?.getAttribute('data-file-id')).toBe('2')
+  })
+
   it('asks for confirmation before deleting and does nothing on cancel', async () => {
     render(() => <FileGrid />)
     await screen.findByText('notes.md')
