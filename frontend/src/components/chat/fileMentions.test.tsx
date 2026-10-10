@@ -1,12 +1,16 @@
 import { render, cleanup } from '@solidjs/testing-library'
-import { describe, it, expect, afterEach } from 'vitest'
+import { describe, it, expect, afterEach, vi } from 'vitest'
 import MessageContent from './MessageContent'
-import { setFileList } from '../../state/files'
+import { refreshFileList } from '../../state/files'
+import * as api from '../../services/api'
 import type { ChatMessage, FileEntry } from '../../types/chat'
 
 // Regression: a filename mention was linked only after a page reload. The live
-// turn rendered the message before the file list had loaded, and the link had to
-// appear when the list arrived — so the render must track the list.
+// turn rendered the message before the file list had loaded, so the link had to
+// appear when the list arrived — the render must track the list. Drives the real
+// `refreshFileList`, so the test covers the path production uses.
+
+vi.mock('../../services/api', () => ({ listFiles: vi.fn() }))
 
 const entry = (id: string, name: string): FileEntry => ({
   id,
@@ -19,14 +23,17 @@ const entry = (id: string, name: string): FileEntry => ({
   updated_at: '2024-01-01T00:00:00Z',
 })
 
-afterEach(() => {
+afterEach(async () => {
   cleanup()
-  setFileList([])
+  vi.mocked(api.listFiles).mockResolvedValue([])
+  await refreshFileList()
 })
 
 describe('filename mention linking (live)', () => {
   it('links a mention when the file list arrives after the message rendered', async () => {
-    setFileList([])
+    vi.mocked(api.listFiles).mockResolvedValue([])
+    await refreshFileList()
+
     const message: ChatMessage = {
       role: 'assistant',
       content: 'I updated report.md for you.',
@@ -38,17 +45,19 @@ describe('filename mention linking (live)', () => {
     // Before the list loads there is nothing to link to.
     expect(container.querySelector('a.file-mention')).toBeNull()
 
-    // The list arrives (the live turn's mount / files-changed refresh).
-    setFileList([entry('7', 'report.md')])
+    // The list arrives (the live turn's mount / meta refresh).
+    vi.mocked(api.listFiles).mockResolvedValue([entry('7', 'report.md')])
+    await refreshFileList()
 
-    await Promise.resolve()
     const link = container.querySelector('a.file-mention')
     expect(link).not.toBeNull()
     expect(link?.getAttribute('href')).toBe('/files?file=7')
   })
 
-  it('links immediately when the list is already loaded', () => {
-    setFileList([entry('9', 'notes.txt')])
+  it('links immediately when the list is already loaded', async () => {
+    vi.mocked(api.listFiles).mockResolvedValue([entry('9', 'notes.txt')])
+    await refreshFileList()
+
     const message: ChatMessage = {
       role: 'assistant',
       content: 'Saved notes.txt',

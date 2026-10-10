@@ -12,9 +12,7 @@ import type { FileEntry } from '../types'
  */
 const [fileList, setFileList] = createSignal<FileEntry[]>([])
 
-// Exported so a caller (and tests) can seed the list directly; mirrors
-// `setUser` in state/user.
-export { fileList, setFileList }
+export { fileList }
 
 export async function refreshFileList(): Promise<void> {
   try {
