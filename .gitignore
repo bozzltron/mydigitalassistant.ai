@@ -64,6 +64,10 @@ docker-compose.override.yml
 # Caddy auto-generated certs (keep local)
 .data/caddy/
 
+# Host-visible shared folder (bind-mounted into the sandbox at /app/data/shared)
+.data/shared/
+.data/shared-dev/
+
 # ----- IDE & editor -----
 .vscode/
 .idea/

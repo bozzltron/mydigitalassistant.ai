@@ -330,6 +330,32 @@ only place a value appears, and it is a count, not the file.
   `list_files` enriches from frames (only `file_upload` / `file_create` frames
   with metadata are reported).
 
+## Host-visible shared folder
+
+`/app/data/shared` is bind-mounted to a folder on the host, so the user can open,
+edit, and drop files with their own tools while the agent reads them. It is
+**nested inside the sandbox**, so every file tool reaches it unchanged
+(`read_file("shared/notes.md")`, `glob("shared/**/*.eml")`) — no code special-cases
+it.
+
+- **Additive, not a move.** The sandbox and the brain stay in the named volume
+  (`/app/data`, `assistant.db`); the bind mount only shadows the `shared/`
+  subdirectory. An existing install keeps its data and gains the folder, and
+  removing the mount line restores the previous state exactly. There is **no
+  migration** — which is the point: a volume→bind move would start an existing
+  install with an empty `/app/data` and look like data loss.
+- **Configured per environment.** `SHARED_DIR` (env) overrides the host path; dev
+  defaults to `./.data/shared-dev` and prod to `./.data/shared`, so two assistants
+  do not index the same folder unless deliberately pointed at it.
+- **Dropped files have no frame.** `list_files` lists them with `frame_id: null`,
+  `glob` finds them, and `read_file` resolves them by path. They carry no memory
+  until something writes them through `apply_file_to_memory`.
+- **A host edit does not refresh memory.** `read_file` reads the current bytes, so
+  an answer is current, but the cached `file_profile` / `file_size` (built at
+  upload/write time) can lag until the file is written through the app again.
+- **Permissions:** the container runs as uid `1000`; on Linux the host folder must
+  be writable by it (Docker Desktop on macOS/Windows maps this).
+
 ## Ownership
 
 File frames are owner-scoped (`owner_user_id`). `read_file` / `list_files`

@@ -68,6 +68,11 @@ services:
       - TOOLS_ENABLED=${TOOLS_ENABLED:-false}
     volumes:
       - assistant-data:/app/data
+      # Host-visible shared folder, nested inside the sandbox so the agent's
+      # tools reach it unchanged (`shared/…`). Additive: the volume above is
+      # untouched, so an existing install keeps its brain and files and only
+      # gains this folder. Set SHARED_DIR to point it anywhere on the host.
+      - ${SHARED_DIR:-./.data/shared-dev}:/app/data/shared
     extra_hosts:
       - "host.docker.internal:host-gateway"
     # $${...} = expanded at RUNTIME inside the container (container env wins);
