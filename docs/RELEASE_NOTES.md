@@ -1,5 +1,48 @@
 # MyDigitalAssistant.ai — release notes
 
+## v0.11.13-alpha
+
+**The Files page becomes an editor, the trace panel finally shows data, and a
+filename in chat is one click from its contents.**
+
+**Files page**
+- **Rename.** A Rename button opens a modal (the extension is fixed); Copy name
+  copies the display name. Rename and the agent's `rename_file` tool now share one
+  implementation — and it fixes a real memory bug: it wrote the sandbox *path*
+  into `file_name`, so a nested file's display name became `notes/x.txt`. It now
+  sets the display name and the path separately and renames the CSV row children
+  too.
+- **Edit text in place.** An Edit button (text and markdown) opens a monospace
+  editor; Save writes the bytes and refreshes memory through the one write path
+  (`apply_file_to_memory`), so the profile and CSV rows stay true. A binary
+  document is refused (415) — a textarea cannot round-trip its bytes.
+- **Sorted by last updated**, newest first; the column shows the value it sorts by.
+- **PDFs open in a new tab** — `?inline=true` serves `application/pdf` with no
+  attachment disposition — instead of downloading.
+- **The open file is marked in the list** (accent bar, `aria-current`) and the row
+  is scrolled into view, so a deep link lands on it.
+- **Back to chat**, and the chat links a filename mention straight to the file:
+  `/files?file=<frame_id>`. Only names of files that *exist* become links (matched
+  against the loaded list, never a filename-shaped pattern), so there are no dead
+  links.
+
+**Trace panel**
+- Docked right like Settings (and mutually exclusive with it), and it **actually
+  shows the turn**: task type, the memory context the agent used, citations, and
+  the search backend/query. It was a placeholder that rendered `-` with no binding
+  at all, and `memory_context`/`citations` never reached the message meta.
+- The live turn only: the backend does not persist those per episode, so a
+  reloaded turn shows the persisted search info and says so plainly.
+
+**Agent**
+- `edit_file` now steers the model to line-addressed edits ("PREFER
+  start_line/end_line") — the path that cannot fail on an ambiguous or
+  whitespace-drifted anchor, which is why editing a file through chat took several
+  turns.
+
+The file contracts (rename/save routes, the two names, text-only editing) are in
+`docs/FILES.md`; the trace panel's scope is in `assistant/AGENTS.md`.
+
 ## v0.11.12-alpha
 
 **Search now targets the right thing, shows real images, and searches when it
