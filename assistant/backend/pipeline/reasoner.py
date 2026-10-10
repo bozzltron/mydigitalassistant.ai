@@ -178,7 +178,6 @@ def _has_explicit_think_intent(query: str) -> bool:
 
 
 def _should_use_max_intelligence(
-    query: str,
     task_type: str,
     sufficiency: MemorySufficiency,
     escalate: bool,
@@ -216,9 +215,7 @@ def classify_intent(
     # measured to fire on mechanical file tasks and never on hard reasoning; see
     # assistant/experiments/escalation_trigger/.
     escalate = _has_explicit_think_intent(query)
-    max_intelligence = _should_use_max_intelligence(
-        query, task_type, sufficiency, escalate
-    )
+    max_intelligence = _should_use_max_intelligence(task_type, sufficiency, escalate)
 
     if task_type == "correction":
         return Plan(

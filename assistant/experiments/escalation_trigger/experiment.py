@@ -53,7 +53,7 @@ def evaluate(query: str) -> dict:
     # sufficiency is NONE here (empty memory); after the fix `escalate` is the
     # explicit cue alone, so `max_intelligence == explicit`.
     max_intel = _should_use_max_intelligence(
-        query, "functional", MemorySufficiency.NONE, explicit
+        "functional", MemorySufficiency.NONE, explicit
     )
     return {
         "query": query,
