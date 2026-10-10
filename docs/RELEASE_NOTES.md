@@ -1,5 +1,23 @@
 # MyDigitalAssistant.ai — release notes
 
+## v0.11.14-alpha
+
+**A filename the agent mentions now links on the live turn, not only after a
+reload.**
+
+- **The link appears immediately.** The chat refreshed its file list only from a
+  `files-changed` event fired by a fixed set of tools, which missed an
+  `append_file`/`rename_file` (neither was in the set) and a chat attachment
+  upload (which dispatches no event at all). A file created or renamed that turn
+  was therefore absent from the list, and the response's mention of it stayed
+  plain text until a page reload. The list now refreshes on the turn's terminal
+  `meta` event, so it is current when the answer is on screen, and
+  `append_file`/`rename_file` are in the refresh set too.
+- **The first fetch is no longer queued** behind the user fetch: the file-list
+  load and its `files-changed` listener moved to their own synchronous `onMount`
+  (the listener's cleanup was also registered after an `await`, outside the
+  reactive owner).
+
 ## v0.11.13-alpha
 
 **The Files page becomes an editor, the trace panel finally shows data, and a
