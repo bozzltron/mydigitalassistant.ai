@@ -561,6 +561,15 @@ class Orchestrator:
                 )
                 use_max = False
         if use_max:
+            # Log the escalation and its source. Before this, the logs showed
+            # only the model name inside the tool loop, so a slow 27B turn could
+            # not be traced to a user toggle versus the reasoner's auto path —
+            # which is what made the inverted trigger hard to see.
+            logger.info(
+                "Generation escalated to max model %s (source=%s)",
+                max_model,
+                "user-toggle" if request.max_intelligence else "reasoner-auto",
+            )
             return max_model, True
 
         probe = self.llm_client.chat_model

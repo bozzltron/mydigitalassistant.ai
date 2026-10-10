@@ -243,22 +243,24 @@ class TestThinkEscalation:
             )
             assert plan.think is True, marker
 
-    def test_partial_memory_plus_multi_step_escalates(self):
+    def test_partial_memory_multi_step_does_not_escalate(self):
+        # Multi-step phrasing is a tool recipe, not a reasoning cue; it no longer
+        # turns thinking on (see the escalation_trigger experiment).
         memory = make_memory([(make_frame(1, confidence=0.4), [], 0.5)])
         plan = classify_intent(
             "First check my guitar strings then compare after that with bob's kayak gear",
             "functional",
             memory,
         )
-        assert plan.think is True
+        assert plan.think is False
 
-    def test_none_memory_plus_multi_step_escalates(self):
+    def test_none_memory_multi_step_does_not_escalate(self):
         plan = classify_intent(
             "and then work out the schedule, because timing matters for everything else here",
             "functional",
             make_memory([]),
         )
-        assert plan.think is True
+        assert plan.think is False
 
     def test_high_sufficiency_multi_step_does_not_escalate(self):
         memory = make_memory([(make_frame(1, confidence=0.9), [], 0.8)])
@@ -290,50 +292,59 @@ class TestThinkEscalation:
 
 
 class TestMaxIntelligenceEscalation:
-    """Phase 6 M6: max-intelligence tier auto-escalation by the reasoner."""
+    """Phase 6 M6: max-intelligence tier auto-escalation by the reasoner.
 
-    def test_none_memory_multi_step_search_max_escalates(self):
-        plan = classify_intent(
-            "and then work out the schedule, because timing matters for everything else here",
-            "search",
-            make_memory([]),
-        )
-        assert plan.think is True
-        assert plan.max_intelligence is True
+    Escalation keys on an **explicit reasoning cue**, not on a "multi-step"
+    phrase. The escalation_trigger experiment measured the multi-step proxy
+    firing on 100% of mechanical file tasks and 0% of hard reasoning, so it
+    selected exactly the work that should stay on the warm model.
+    """
 
-    def test_none_memory_multi_step_introspective_max_escalates(self):
+    def test_mechanical_multi_step_does_not_escalate(self):
+        # "read it and then regenerate it" is many *tool* steps, not hard
+        # reasoning — the live turn this was fixed for.
         plan = classify_intent(
-            "first, summarize what you learned about my guitar setup, "
-            "and then compare after that with what you know about my barge",
-            "introspective",
-            make_memory([]),
-        )
-        assert plan.max_intelligence is True
-
-    def test_partial_memory_multi_step_uses_thinking_only(self):
-        memory = make_memory([(make_frame(1, confidence=0.4), [], 0.5)])
-        plan = classify_intent(
-            "First check my guitar strings then compare after that with bob's kayak gear",
+            "I've updated muso-soup-offers.txt. Let's read it and then "
+            "regenerate Muso Soup Priority.md",
             "functional",
-            memory,
-        )
-        assert plan.think is True
-        assert plan.max_intelligence is False
-
-    def test_high_sufficiency_multi_step_no_escalation(self):
-        memory = make_memory([(make_frame(1, confidence=0.9), [], 0.8)])
-        plan = classify_intent(
-            "compare my guitar and then my amp and then my pedals for the gig",
-            "functional",
-            memory,
+            make_memory([]),
         )
         assert plan.think is False
         assert plan.max_intelligence is False
 
+    def test_explicit_cue_with_no_memory_escalates_to_max(self):
+        plan = classify_intent(
+            "Work through whether we should switch the max model, and reason "
+            "about the tradeoffs",
+            "functional",
+            make_memory([]),
+        )
+        assert plan.think is True
+        assert plan.max_intelligence is True
+
+    def test_explicit_cue_with_partial_memory_uses_thinking_only(self):
+        memory = make_memory([(make_frame(1, confidence=0.4), [], 0.5)])
+        plan = classify_intent(
+            "Think it through: compare my guitar with bob's kayak gear",
+            "functional",
+            memory,
+        )
+        assert plan.think is True
+        assert plan.max_intelligence is False
+
+    def test_explicit_cue_with_high_memory_does_not_reach_max(self):
+        memory = make_memory([(make_frame(1, confidence=0.9), [], 0.8)])
+        plan = classify_intent(
+            "Think it through: what are my guitar strings?",
+            "functional",
+            memory,
+        )
+        assert plan.think is True
+        assert plan.max_intelligence is False
+
     def test_correction_never_max_escalates(self):
         plan = classify_intent(
-            "actually my guitar has 7 strings and then my amp changed too, "
-            "because I swapped everything out last week",
+            "Think it through — actually my guitar has 7 strings",
             "correction",
             make_memory([]),
         )

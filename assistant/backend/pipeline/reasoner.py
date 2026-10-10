@@ -61,11 +61,6 @@ _EXPLICIT_THINK_MARKERS = (
     "take your time",
 )
 
-# Structural sequencing markers for multi-step query detection
-_SEQUENCE_MARKERS = ("and then", "after that", "afterwards", "before that",
-                     "first,", "first of all", "next,", "finally,")
-_CLAUSE_CONJUNCTIONS = (" and then ", " then ", " after ", " while ", " because ")
-
 _NON_INFO_PATTERNS = [
     r"^(hi|hello|hey|howdy|hiya|greetings|good morning|good afternoon|good evening)[!.?]*$",
     r"^(thanks|thank you|thx|ty)[!.?]*$",
@@ -182,16 +177,6 @@ def _has_explicit_think_intent(query: str) -> bool:
     return any(marker in q for marker in _EXPLICIT_THINK_MARKERS)
 
 
-def _is_multi_step(query: str) -> bool:
-    """Structural detection of multi-step queries: sequencing markers or
-    multiple clause-joining conjunctions in a longer query."""
-    q = query.lower()
-    if any(marker in q for marker in _SEQUENCE_MARKERS):
-        return True
-    conjunction_hits = sum(1 for c in _CLAUSE_CONJUNCTIONS if f" {c.strip()} " in f" {q} ")
-    return conjunction_hits >= 2 and len(q.split()) > 12
-
-
 def _should_use_max_intelligence(
     query: str,
     task_type: str,
@@ -200,18 +185,19 @@ def _should_use_max_intelligence(
 ) -> bool:
     """Whether to escalate to the max-intelligence tier (§6.2 M6).
 
-    Auto-escalation is reserved for genuinely hard problems: the query needs
-    thinking (or is otherwise escalated), memory has nothing to lean on, and
-    the query is structurally multi-step. Corrections are targeted edits and
-    never jump to the max tier.
+    Reserved for a query that explicitly asks for careful reasoning AND has no
+    memory to lean on. Corrections are targeted edits and never jump to the max
+    tier.
+
+    It deliberately does **not** key on "multi-step": the escalation_trigger
+    experiment measured that proxy (a sequence phrase like "and then") firing on
+    100% of mechanical file tasks and 0% of hard reasoning — it selected exactly
+    the work that should stay on the warm model. A file recipe ("read it and then
+    regenerate it") is many *tool* steps, not many *reasoning* steps.
     """
     if task_type == "correction":
         return False
-    return (
-        escalate
-        and sufficiency == MemorySufficiency.NONE
-        and _is_multi_step(query)
-    )
+    return escalate and sufficiency == MemorySufficiency.NONE
 
 
 def classify_intent(
@@ -225,10 +211,11 @@ def classify_intent(
     Here we map task_type to an Action and assess memory sufficiency.
     """
     sufficiency, cited_ids = assess_memory_sufficiency(query, memory)
-    escalate = _has_explicit_think_intent(query) or (
-        sufficiency in (MemorySufficiency.PARTIAL, MemorySufficiency.NONE)
-        and _is_multi_step(query)
-    )
+    # Only an explicit reasoning cue escalates — thinking mode, and the max tier
+    # when memory is empty. The "multi-step" proxy that used to escalate here was
+    # measured to fire on mechanical file tasks and never on hard reasoning; see
+    # assistant/experiments/escalation_trigger/.
+    escalate = _has_explicit_think_intent(query)
     max_intelligence = _should_use_max_intelligence(
         query, task_type, sufficiency, escalate
     )

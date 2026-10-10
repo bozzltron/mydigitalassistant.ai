@@ -1,0 +1,133 @@
+{
+  "experiment": "escalation_trigger",
+  "tool_task_escalation_pct": 0.0,
+  "hard_reasoning_escalation_pct": 50.0,
+  "rows": [
+    {
+      "query": "I've updated muso-soup-offers.txt. Let's read it and then regenerate Muso Soup Priority.md",
+      "explicit_think": false,
+      "escalate": false,
+      "max_intelligence": false,
+      "class": "tool_task"
+    },
+    {
+      "query": "Read the emails in the inbox folder and then write a summary to summary.md",
+      "explicit_think": false,
+      "escalate": false,
+      "max_intelligence": false,
+      "class": "tool_task"
+    },
+    {
+      "query": "Find all the .eml files and then count how many there are",
+      "explicit_think": false,
+      "escalate": false,
+      "max_intelligence": false,
+      "class": "tool_task"
+    },
+    {
+      "query": "Read contacts.csv and then append the new rows to it",
+      "explicit_think": false,
+      "escalate": false,
+      "max_intelligence": false,
+      "class": "tool_task"
+    },
+    {
+      "query": "List the files in the sandbox and then rename the reports",
+      "explicit_think": false,
+      "escalate": false,
+      "max_intelligence": false,
+      "class": "tool_task"
+    },
+    {
+      "query": "Search the mailbox dump for invoices and then save the matches to a file",
+      "explicit_think": false,
+      "escalate": false,
+      "max_intelligence": false,
+      "class": "tool_task"
+    },
+    {
+      "query": "Read the notes and then update the todo list",
+      "explicit_think": false,
+      "escalate": false,
+      "max_intelligence": false,
+      "class": "tool_task"
+    },
+    {
+      "query": "Open the spreadsheet and then add a column for the totals",
+      "explicit_think": false,
+      "escalate": false,
+      "max_intelligence": false,
+      "class": "tool_task"
+    },
+    {
+      "query": "Go through the .eml files and then write out the senders",
+      "explicit_think": false,
+      "escalate": false,
+      "max_intelligence": false,
+      "class": "tool_task"
+    },
+    {
+      "query": "Read the release notes and then draft the summary file",
+      "explicit_think": false,
+      "escalate": false,
+      "max_intelligence": false,
+      "class": "tool_task"
+    },
+    {
+      "query": "Work through whether we should switch the max model, and reason about the tradeoffs",
+      "explicit_think": true,
+      "escalate": true,
+      "max_intelligence": true,
+      "class": "hard_reasoning"
+    },
+    {
+      "query": "Think through the failure modes of the current escalation logic",
+      "explicit_think": false,
+      "escalate": false,
+      "max_intelligence": false,
+      "class": "hard_reasoning"
+    },
+    {
+      "query": "Step by step, derive the memory budget for running two 30B models at once",
+      "explicit_think": true,
+      "escalate": true,
+      "max_intelligence": true,
+      "class": "hard_reasoning"
+    },
+    {
+      "query": "Reason through the tradeoffs of caching versus recomputing the embeddings",
+      "explicit_think": true,
+      "escalate": true,
+      "max_intelligence": true,
+      "class": "hard_reasoning"
+    },
+    {
+      "query": "Prove that the confidence ladder is order-independent",
+      "explicit_think": false,
+      "escalate": false,
+      "max_intelligence": false,
+      "class": "hard_reasoning"
+    },
+    {
+      "query": "Design a corroboration scheme across sources and justify the thresholds",
+      "explicit_think": false,
+      "escalate": false,
+      "max_intelligence": false,
+      "class": "hard_reasoning"
+    },
+    {
+      "query": "Analyse whether a 9B can replace a 27B in the max role, and say why",
+      "explicit_think": false,
+      "escalate": false,
+      "max_intelligence": false,
+      "class": "hard_reasoning"
+    },
+    {
+      "query": "Work through the root cause of a turn that runs for fifteen minutes",
+      "explicit_think": true,
+      "escalate": true,
+      "max_intelligence": true,
+      "class": "hard_reasoning"
+    }
+  ]
+}
