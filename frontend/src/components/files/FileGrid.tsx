@@ -1,4 +1,4 @@
-import { createSignal, Show, For, createEffect, onCleanup } from 'solid-js';
+import { createSignal, createMemo, Show, For, createEffect, onCleanup } from 'solid-js';
 import { listFiles, deleteFile } from '../../services/api';
 import { Toast } from '../ui/Toast';
 import { Modal } from '../ui/Modal';
@@ -60,6 +60,20 @@ export const FileGrid = (props: { onFileSelect?: (file: FileEntry) => void }) =>
 
   const displayName = (file: FileEntry) => file.file_name || file.name;
 
+  // Most recently updated first: the file the user just changed is the one they
+  // want at the top. The backend lists by id (oldest first), so this is a view
+  // concern. Frames with no `updated_at` sort last.
+  const sortedFiles = createMemo(() =>
+    [...files()].sort((a, b) => {
+      const at = a.updated_at ? Date.parse(a.updated_at) : NaN;
+      const bt = b.updated_at ? Date.parse(b.updated_at) : NaN;
+      if (Number.isNaN(at) && Number.isNaN(bt)) return 0;
+      if (Number.isNaN(at)) return 1;
+      if (Number.isNaN(bt)) return -1;
+      return bt - at;
+    })
+  );
+
   const formatFileSize = (bytes: number | null | undefined) => {
     // The list response only carries a size once the backend supplies the
     // `file_size` slot; guard so a missing value reads as "—", never "NaN MB".
@@ -96,11 +110,11 @@ export const FileGrid = (props: { onFileSelect?: (file: FileEntry) => void }) =>
           <div class="files-table-header">
             <span>Name</span>
             <span>Size</span>
-            <span>Date</span>
+            <span>Updated</span>
             <span>Actions</span>
           </div>
           <div class="files-list">
-            <For each={files()}>{file => (
+            <For each={sortedFiles()}>{file => (
               <div class="file-item" onClick={() => props.onFileSelect?.(file)}>
                 <div class="file-cell file-name-cell">
                   <span class="file-icon"><FileIcon kind={fileKind(file.file_ext || file.type)} /></span>
@@ -110,7 +124,7 @@ export const FileGrid = (props: { onFileSelect?: (file: FileEntry) => void }) =>
                   <span class="file-size">{formatFileSize(file.file_size)}</span>
                 </div>
                 <div class="file-cell file-date-cell">
-                  <span class="file-date">{formatDate(file.created_at)}</span>
+                  <span class="file-date">{formatDate(file.updated_at || file.created_at)}</span>
                 </div>
                 <div class="file-cell file-actions-cell">
                   <a

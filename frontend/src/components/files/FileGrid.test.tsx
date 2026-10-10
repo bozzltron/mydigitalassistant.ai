@@ -38,9 +38,24 @@ describe('FileGrid', () => {
     render(() => <FileGrid />)
     await screen.findByText('notes.md')
 
+    // Rows are sorted newest-updated first, so report.pdf (id 2) precedes
+    // notes.md (id 1).
     const downloadLinks = screen.getAllByText('Download').map((el) => el.closest('a'))
-    expect(downloadLinks[0]?.getAttribute('href')).toBe('/files/1/download')
-    expect(downloadLinks[1]?.getAttribute('href')).toBe('/files/2/download')
+    expect(downloadLinks[0]?.getAttribute('href')).toBe('/files/2/download')
+    expect(downloadLinks[1]?.getAttribute('href')).toBe('/files/1/download')
+  })
+
+  it('sorts by last updated, newest first, regardless of the input order', async () => {
+    // Reverse the fixture so the order cannot be an accident of how the backend
+    // returned it (the backend lists by id, oldest first).
+    vi.mocked(api.listFiles).mockResolvedValue([...files].reverse())
+    render(() => <FileGrid />)
+    await screen.findByText('report.pdf')
+
+    const names = Array.from(document.querySelectorAll('.file-name')).map(
+      (el) => el.textContent
+    )
+    expect(names).toEqual(['report.pdf', 'notes.md'])
   })
 
   it('asks for confirmation before deleting and does nothing on cancel', async () => {
@@ -60,10 +75,11 @@ describe('FileGrid', () => {
     render(() => <FileGrid />)
     await screen.findByText('notes.md')
 
+    // Sorted newest-first, the first row is report.pdf (id 2).
     fireEvent.click(screen.getAllByText('Delete')[0])
     const deleteButtons = screen.getAllByText('Delete')
     fireEvent.click(deleteButtons[deleteButtons.length - 1])
 
-    await vi.waitFor(() => expect(api.deleteFile).toHaveBeenCalledWith('1'))
+    await vi.waitFor(() => expect(api.deleteFile).toHaveBeenCalledWith('2'))
   })
 })
