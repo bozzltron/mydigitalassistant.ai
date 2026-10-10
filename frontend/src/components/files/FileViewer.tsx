@@ -1,8 +1,9 @@
 import { createSignal, Show, createMemo, createEffect } from 'solid-js';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
-import { api } from '../../services/api';
+import { api, renameFile } from '../../services/api';
 import { Toast } from '../ui/Toast';
+import { Modal } from '../ui/Modal';
 import { FileIcon, fileKind } from '../ui/Icons';
 
 interface FileContentResponse {
@@ -71,6 +72,62 @@ export const FileViewer = (props: { fileId?: string | null }) => {
   // The browser renders PDFs natively, so a PDF opens in a tab instead of
   // showing "no preview".
   const isPdf = createMemo(() => ext() === 'pdf');
+
+  const displayName = createMemo(
+    () => fileData()?.file_name || fileData()?.frame_name || ''
+  );
+  // The rename modal edits the base name; the extension is fixed (the backend
+  // refuses a change, and the file's bytes would not match a new one anyway).
+  const baseName = createMemo(() => {
+    const name = displayName();
+    const e = ext();
+    return e && name.toLowerCase().endsWith(`.${e}`)
+      ? name.slice(0, -(e.length + 1))
+      : name;
+  });
+
+  const [renameOpen, setRenameOpen] = createSignal(false);
+  const [renameDraft, setRenameDraft] = createSignal('');
+  const [isRenaming, setIsRenaming] = createSignal(false);
+
+  const copyName = async () => {
+    try {
+      await navigator.clipboard.writeText(displayName());
+      showToast('File name copied', 'success');
+    } catch {
+      showToast('Could not copy the file name', 'error');
+    }
+  };
+
+  const openRename = () => {
+    setRenameDraft(baseName());
+    setRenameOpen(true);
+  };
+
+  const saveRename = async () => {
+    const fileId = props.fileId;
+    const draft = renameDraft().trim();
+    if (!fileId || !draft) return;
+    setIsRenaming(true);
+    try {
+      await renameFile(fileId, `${draft}.${ext()}`);
+      setRenameOpen(false);
+      // The frame id is unchanged by a rename, so reload by id to pick up the
+      // new name, and let the grid refresh.
+      await loadFile();
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('files-changed'));
+      }
+      showToast('File renamed', 'success');
+    } catch (error) {
+      showToast(
+        error instanceof Error ? error.message : 'Failed to rename file',
+        'error'
+      );
+    } finally {
+      setIsRenaming(false);
+    }
+  };
   // Sanitized before it touches innerHTML, exactly like chat markdown.
   const markdownHtml = createMemo(() =>
     DOMPurify.sanitize(marked.parse(fileData()?.content || '') as string)
@@ -100,13 +157,17 @@ export const FileViewer = (props: { fileId?: string | null }) => {
                 <span class="file-size">{formatFileSize(fileData()?.file_size)}</span>
               </div>
             </div>
-            <a
-              class="btn-secondary file-download"
-              href={`/files/${props.fileId}/download`}
-              download=""
-            >
-              Download
-            </a>
+            <div class="file-viewer-actions">
+              <button class="btn-secondary" onClick={copyName}>Copy name</button>
+              <button class="btn-secondary" onClick={openRename}>Rename</button>
+              <a
+                class="btn-secondary file-download"
+                href={`/files/${props.fileId}/download`}
+                download=""
+              >
+                Download
+              </a>
+            </div>
           </div>
 
           <Show when={isMarkdown()}>
@@ -155,6 +216,46 @@ export const FileViewer = (props: { fileId?: string | null }) => {
           <p>Select a file to view its content</p>
         </div>
       </Show>
+
+      <Modal
+        isOpen={renameOpen()}
+        onClose={() => setRenameOpen(false)}
+        title="Rename file"
+        size="small"
+      >
+        <div class="modal-content">
+          <label class="modal-field-label" for="rename-input">File name</label>
+          <div class="rename-row">
+            <input
+              id="rename-input"
+              class="modal-field"
+              value={renameDraft()}
+              onInput={(e) => setRenameDraft(e.currentTarget.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void saveRename()
+              }}
+              autofocus
+            />
+            <span class="rename-ext">.{ext()}</span>
+          </div>
+          <p class="modal-hint">
+            The extension is kept. Renaming updates the file's memory so the agent
+            knows it by the new name.
+          </p>
+          <div class="modal-actions">
+            <button class="btn-secondary" onClick={() => setRenameOpen(false)}>
+              Cancel
+            </button>
+            <button
+              class="btn-primary"
+              onClick={() => void saveRename()}
+              disabled={isRenaming() || !renameDraft().trim()}
+            >
+              {isRenaming() ? 'Saving…' : 'Save'}
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       <Show when={toast()}>
         <Toast message={toast()!.message} type={toast()!.type} />

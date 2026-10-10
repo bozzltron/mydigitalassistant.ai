@@ -2675,6 +2675,49 @@ async def delete_file(
     return {"status": "ok", "message": "File deleted successfully"}
 
 
+class FileRenameRequest(BaseModel):
+    new_name: str
+
+
+@app.patch("/files/{frame_id}")
+async def rename_file_endpoint(
+    frame_id: int,
+    body: FileRenameRequest,
+    store: MemoryStore = _Depends(get_store),
+):
+    """Rename a file and its memory frame (the Files-page rename action).
+
+    Renames the disk file and the ``file_<name>`` frame together via
+    ``files.rename_file`` — the same implementation the agent's ``rename_file``
+    tool uses — so memory names the file correctly afterwards. The extension is
+    kept fixed.
+    """
+    from assistant.backend.pipeline.files import FileRenameError, rename_file
+
+    frame = await store.get_frame(frame_id)
+    if not frame:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    slots_dict = await _file_slots_for_frame(store, frame_id)
+    file_safe_name = slots_dict.get("file_safe_name")
+    if not file_safe_name:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    try:
+        result = await rename_file(
+            store, path=file_safe_name, new_name=body.new_name
+        )
+    except FileRenameError as e:
+        message = str(e)
+        # A name clash is a conflict; an extension change or a missing file is a
+        # bad request. The message is the tool's, so the reason is identical on
+        # both surfaces.
+        status = 409 if "already exists" in message else 400
+        raise HTTPException(status_code=status, detail=message) from e
+
+    return {"status": "ok", **result}
+
+
 
 # --- SolidJS SPA catch-all (must be last) ---
 # Serves the SPA index.html for any path that doesn't match an API route or static file.

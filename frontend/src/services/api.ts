@@ -435,6 +435,26 @@ export async function deleteFile(file_id: string): Promise<{ success: boolean }>
   return response.json()
 }
 
+export async function renameFile(
+  file_id: string,
+  new_name: string,
+): Promise<{ status: string; path: string; old_path: string }> {
+  debug('Renaming file:', file_id, new_name)
+  const response = await fetch(`${BASE_URL}/files/${file_id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ new_name }),
+    credentials: 'include',
+  })
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Unknown error' }))
+    throw new Error(error.detail || `HTTP ${response.status}`)
+  }
+
+  return response.json()
+}
+
 export async function getUserSessions(user_id: number): Promise<SessionSummary[]> {
   debug('Fetching sessions for user:', user_id)
   const data = await api<unknown>(`/users/${user_id}/sessions`)

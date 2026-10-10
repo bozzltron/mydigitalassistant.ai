@@ -371,6 +371,31 @@
   min-width: 0;
 }
 
+/* The viewer header's actions: Copy name / Rename / Download. */
+.file-viewer-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+/* Rename modal: a base-name input with the fixed extension shown beside it. */
+.rename-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.rename-row .modal-field {
+  margin-bottom: 0;
+  flex: 1;
+}
+
+.rename-ext {
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+
 .file-meta-info h3 {
   font-size: 1rem;
   font-weight: 600;

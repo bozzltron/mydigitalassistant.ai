@@ -1945,78 +1945,20 @@ async def execute_rename_file(args: dict, user_id: str, session_id: str) -> Tool
     """Rename a sandbox file, and its memory frame with it.
 
     A rename is a first-class operation, not a read+write+delete dance the model
-    has to compose: the disk file and the ``file_<name>`` frame move together, so
-    the old name stops resolving and the new one works immediately. The extension
-    is kept fixed — renaming a ``.txt`` to ``.docx`` would leave text bytes under a
-    document name.
+    has to compose: the disk file and the ``file_<name>`` frame move together
+    (``files.rename_file`` is the one implementation, shared with the Files-page
+    HTTP route), so the old name stops resolving and the new one works
+    immediately. The extension is kept fixed — renaming a ``.txt`` to ``.docx``
+    would leave text bytes under a document name.
     """
+    from assistant.backend.pipeline.files import FileRenameError, rename_file
+
     try:
-        from pathlib import Path
-
-        from assistant.backend.pipeline.filesystem import (
-            PathTraversalError,
-            get_sandbox_root,
-            rename_sandbox_file,
+        data = await rename_file(
+            _store, path=args.get("path", ""), new_name=args.get("new_name", "")
         )
-
-        path = args.get("path", "")
-        new_name = args.get("new_name", "")
-        if not path or not new_name:
-            return ToolResult(success=False, error="path and new_name are required")
-
-        if Path(new_name).suffix.lower() != Path(path).suffix.lower():
-            return ToolResult(
-                success=False,
-                error=(
-                    "new_name must keep the same extension "
-                    f"({Path(path).suffix or 'none'}) — use write_file to change a "
-                    "file's format"
-                ),
-            )
-
-        new_base = Path(new_name).name
-        new_frame_name = f"file_{new_base}"
-
-        # Check the memory-name clash *before* touching disk, so a refusal cannot
-        # leave a renamed file whose frame name collides with another file.
-        old_frame = None
-        if _store is not None:
-            old_frame = await _store.get_frame_by_name(f"file_{Path(path).name}")
-            clash = await _store.get_frame_by_name(new_frame_name)
-            if clash is not None and (old_frame is None or clash.id != old_frame.id):
-                return ToolResult(
-                    success=False,
-                    error=f"a file named '{new_base}' already exists",
-                )
-
-        old_path, new_path = rename_sandbox_file(path, new_name)
-        new_rel = str(new_path.relative_to(get_sandbox_root()))
-
-        frame_moved = False
-        if old_frame is not None:
-            await _store.update_frame(old_frame.id, name=new_frame_name)
-            # Derived state, not a belief: a file's name is a fact about where it
-            # is, and a rename is a mutation, not a contradicting claim. These
-            # overwrite rather than going through the conflict ladder, which would
-            # keep the old name (both sides are file metadata at the same rung).
-            await _store.set_derived_slot(
-                old_frame.id, "file_name", new_rel, source_type="file_create"
-            )
-            await _store.set_derived_slot(
-                old_frame.id, "file_safe_name", new_rel, source_type="file_create"
-            )
-            frame_moved = True
-
-        return ToolResult(success=True, data={
-            "old_path": str(old_path.relative_to(get_sandbox_root())),
-            "path": new_rel,
-            "frame_moved": frame_moved,
-        })
-    except PathTraversalError as e:
-        return ToolResult(success=False, error=str(e))
-    except FileNotFoundError as e:
-        return ToolResult(success=False, error=str(e))
-    except FileExistsError as e:
+        return ToolResult(success=True, data=data)
+    except FileRenameError as e:
         return ToolResult(success=False, error=str(e))
     except Exception as e:
         logger.error(f"rename_file failed: {e}", exc_info=True)

@@ -278,6 +278,20 @@ select {
   margin-bottom: var(--space-md);
 }
 
+.modal-field-label {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  margin-bottom: 0.35rem;
+}
+
+.modal-hint {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  margin: 0.5rem 0 0;
+  line-height: 1.4;
+}
+
 .modal-content input::placeholder {
   color: var(--text-dim);
 }

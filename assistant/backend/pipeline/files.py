@@ -991,3 +991,97 @@ async def apply_file_to_memory(
         "row_count": row_count,
         "row_frame_ids": row_frame_ids,
     }
+
+
+class FileRenameError(Exception):
+    """A rename was refused (clash, extension change, traversal, missing file)."""
+
+
+async def rename_file(store, *, path: str, new_name: str) -> dict:
+    """Move a sandbox file and its memory frame together. THE one rename path.
+
+    The disk file and the ``file_<name>`` frame move as one, so the old name
+    stops resolving and the new one works immediately. The extension is kept
+    fixed — renaming a ``.txt`` to a ``.docx`` would leave text bytes under a
+    document name.
+
+    Memory is updated so it *names the file correctly*: ``file_name`` becomes the
+    new display name (the basename the user sees) and ``file_safe_name`` the new
+    sandbox path. The two are distinct for a nested file (``notes/x.txt``), and a
+    rename previously wrote the path into both — so a nested file's display name
+    became ``notes/x.txt``. The CSV row children (``file_<base>.csv_row_N``) embed
+    the parent's base, so they are renamed too.
+
+    Raises ``FileRenameError`` on any refusal; the caller maps it to a tool error
+    or an HTTP status.
+    """
+    from pathlib import Path
+
+    from assistant.backend.pipeline.filesystem import (
+        PathTraversalError,
+        get_sandbox_root,
+        rename_sandbox_file,
+    )
+
+    if not path or not new_name:
+        raise FileRenameError("path and new_name are required")
+
+    if Path(new_name).suffix.lower() != Path(path).suffix.lower():
+        raise FileRenameError(
+            "new_name must keep the same extension "
+            f"({Path(path).suffix or 'none'}) — use write_file to change a "
+            "file's format"
+        )
+
+    new_base = Path(new_name).name
+    new_frame_name = f"file_{new_base}"
+
+    # Check the memory-name clash *before* touching disk, so a refusal cannot
+    # leave a renamed file whose frame name collides with another file.
+    old_frame = None
+    if store is not None:
+        old_frame = await store.get_frame_by_name(f"file_{Path(path).name}")
+        clash = await store.get_frame_by_name(new_frame_name)
+        if clash is not None and (old_frame is None or clash.id != old_frame.id):
+            raise FileRenameError(f"a file named '{new_base}' already exists")
+
+    try:
+        old_path, new_path = rename_sandbox_file(path, new_name)
+    except (PathTraversalError, FileNotFoundError, FileExistsError) as e:
+        raise FileRenameError(str(e)) from e
+
+    new_rel = str(new_path.relative_to(get_sandbox_root()))
+
+    frame_moved = False
+    if store is not None and old_frame is not None:
+        old_base = Path(path).stem
+        await store.update_frame(old_frame.id, name=new_frame_name)
+        # Derived state, not a belief: a file's name is a fact about where it is,
+        # and a rename is a mutation, not a contradicting claim. These overwrite
+        # rather than going through the conflict ladder, which would keep the old
+        # name (both sides are file metadata at the same rung).
+        await store.set_derived_slot(
+            old_frame.id, "file_name", new_base, source_type="file_create"
+        )
+        await store.set_derived_slot(
+            old_frame.id, "file_safe_name", new_rel, source_type="file_create"
+        )
+
+        # CSV row children embed the parent's base in their name; rename them so a
+        # rename does not leave `file_<old>.csv_row_N` behind.
+        new_stem = Path(new_rel).stem
+        for assoc in await store.get_all_associations_for_frame(old_frame.id):
+            if assoc.relation_type != "part_of":
+                continue
+            child = await store.get_frame(assoc.to_frame_id)
+            prefix = f"file_{old_base}.csv_row_"
+            if child and child.name.startswith(prefix):
+                suffix = child.name[len(prefix):]
+                await store.update_frame(child.id, name=f"file_{new_stem}.csv_row_{suffix}")
+        frame_moved = True
+
+    return {
+        "old_path": str(old_path.relative_to(get_sandbox_root())),
+        "path": new_rel,
+        "frame_moved": frame_moved,
+    }

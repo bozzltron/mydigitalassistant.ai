@@ -1,10 +1,11 @@
-import { render, screen } from '@solidjs/testing-library'
+import { render, screen, fireEvent } from '@solidjs/testing-library'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { FileViewer } from './FileViewer'
 import * as api from '../../services/api'
 
 vi.mock('../../services/api', () => ({
   api: vi.fn(),
+  renameFile: vi.fn(),
 }))
 
 const content = (over: Record<string, unknown>) => ({
@@ -75,5 +76,49 @@ describe('FileViewer', () => {
 
     await screen.findByText('Download')
     expect(screen.getByText('Download').closest('a')?.getAttribute('href')).toBe('/files/7/download')
+  })
+
+  it('copies the display name to the clipboard', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    })
+    vi.mocked(api.api).mockResolvedValue(
+      content({ content: 'hi', file_name: 'notes.txt', file_ext: 'txt' }) as never,
+    )
+    render(() => <FileViewer fileId="5" />)
+
+    await screen.findByText('notes.txt')
+    fireEvent.click(screen.getByText('Copy name'))
+
+    await vi.waitFor(() => expect(writeText).toHaveBeenCalledWith('notes.txt'))
+  })
+
+  it('renames via a modal that edits the base name and keeps the extension', async () => {
+    vi.mocked(api.api).mockResolvedValue(
+      content({ content: 'hi', file_name: 'notes.txt', file_ext: 'txt' }) as never,
+    )
+    vi.mocked(api.renameFile).mockResolvedValue({
+      status: 'ok',
+      path: 'renamed.txt',
+      old_path: 'notes.txt',
+    })
+    render(() => <FileViewer fileId="5" />)
+
+    await screen.findByText('notes.txt')
+    fireEvent.click(screen.getByText('Rename'))
+
+    // Seeded with the base name; the extension is shown, not editable.
+    const input = document.getElementById('rename-input') as HTMLInputElement
+    expect(input.value).toBe('notes')
+    expect(document.querySelector('.rename-ext')?.textContent).toBe('.txt')
+
+    fireEvent.input(input, { target: { value: 'renamed' } })
+    fireEvent.click(screen.getByText('Save'))
+
+    await vi.waitFor(() =>
+      expect(api.renameFile).toHaveBeenCalledWith('5', 'renamed.txt')
+    )
   })
 })

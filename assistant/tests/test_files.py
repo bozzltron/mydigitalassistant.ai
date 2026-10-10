@@ -1199,3 +1199,49 @@ class TestFileListMetadataAndDownload:
     async def test_download_missing_file_is_404(self, client, store):
         assert client.get("/files/999999/download").status_code == 404
 
+
+def _upload_file(client, tmp_path, name: str, content: bytes = b"hello") -> int:
+    path = tmp_path / name
+    path.write_bytes(content)
+    with open(path, "rb") as f:
+        resp = client.post("/files/upload", files={"file": (name, f.read())})
+    assert resp.status_code == 200
+    return resp.json()["frame_id"]
+
+
+class TestFileRenameEndpoint:
+    """`PATCH /files/{id}` renames the disk file and its memory frame together."""
+
+    @pytest.mark.asyncio
+    async def test_rename_updates_the_listed_display_name(self, client, store, tmp_path):
+        frame_id = _upload_file(client, tmp_path, "old.md", b"# hi")
+
+        renamed = client.patch(f"/files/{frame_id}", json={"new_name": "new.md"})
+        assert renamed.status_code == 200
+        assert renamed.json()["path"] == "new.md"
+
+        entry = next(
+            e for e in client.get("/files/list").json() if e["id"] == frame_id
+        )
+        assert entry["file_name"] == "new.md"
+
+    @pytest.mark.asyncio
+    async def test_rename_clash_is_409(self, client, store, tmp_path):
+        a = _upload_file(client, tmp_path, "a.md")
+        _upload_file(client, tmp_path, "b.md")
+
+        resp = client.patch(f"/files/{a}", json={"new_name": "b.md"})
+        assert resp.status_code == 409
+
+    @pytest.mark.asyncio
+    async def test_rename_extension_change_is_400(self, client, store, tmp_path):
+        frame_id = _upload_file(client, tmp_path, "old.md")
+
+        resp = client.patch(f"/files/{frame_id}", json={"new_name": "new.docx"})
+        assert resp.status_code == 400
+
+    def test_rename_missing_file_is_404(self, client, store):
+        assert (
+            client.patch("/files/999999", json={"new_name": "x.md"}).status_code == 404
+        )
+
