@@ -6,6 +6,7 @@ import * as api from '../../services/api'
 vi.mock('../../services/api', () => ({
   api: vi.fn(),
   renameFile: vi.fn(),
+  saveFileContent: vi.fn(),
 }))
 
 const content = (over: Record<string, unknown>) => ({
@@ -93,6 +94,38 @@ describe('FileViewer', () => {
     fireEvent.click(screen.getByText('Copy name'))
 
     await vi.waitFor(() => expect(writeText).toHaveBeenCalledWith('notes.txt'))
+  })
+
+  it('edits a text file in place and saves it', async () => {
+    vi.mocked(api.api).mockResolvedValue(
+      content({ content: 'old body', file_name: 'notes.txt', file_ext: 'txt' }) as never,
+    )
+    vi.mocked(api.saveFileContent).mockResolvedValue({ status: 'ok', size: 8 })
+    render(() => <FileViewer fileId="5" />)
+
+    await screen.findByText('old body')
+    fireEvent.click(screen.getByText('Edit'))
+
+    // The editor is seeded with the current content.
+    const textarea = document.querySelector('.file-edit-textarea') as HTMLTextAreaElement
+    expect(textarea.value).toBe('old body')
+
+    fireEvent.input(textarea, { target: { value: 'new body' } })
+    fireEvent.click(screen.getByText('Save'))
+
+    await vi.waitFor(() =>
+      expect(api.saveFileContent).toHaveBeenCalledWith('5', 'new body')
+    )
+  })
+
+  it('does not offer to edit a binary document', async () => {
+    vi.mocked(api.api).mockResolvedValue(
+      content({ content: 'PK binary', file_name: 'report.docx', file_ext: 'docx' }) as never,
+    )
+    render(() => <FileViewer fileId="1" />)
+
+    await screen.findByText('No preview for this file type')
+    expect(screen.queryByText('Edit')).toBeNull()
   })
 
   it('renames via a modal that edits the base name and keeps the extension', async () => {

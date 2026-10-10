@@ -396,6 +396,28 @@
   font-size: 0.85rem;
 }
 
+/* In-place editor: a monospace textarea and its Save/Cancel row. */
+.file-edit-textarea {
+  width: 100%;
+  min-height: 320px;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem;
+  resize: vertical;
+}
+
+.file-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
 .file-meta-info h3 {
   font-size: 1rem;
   font-weight: 600;

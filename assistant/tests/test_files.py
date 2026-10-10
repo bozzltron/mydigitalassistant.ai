@@ -1245,3 +1245,50 @@ class TestFileRenameEndpoint:
             client.patch("/files/999999", json={"new_name": "x.md"}).status_code == 404
         )
 
+
+class TestFileContentSaveEndpoint:
+    """`PUT /files/{id}/content` saves edited text through the one memory path."""
+
+    @pytest.mark.asyncio
+    async def test_save_writes_the_file_and_refreshes_memory(
+        self, client, store, tmp_path
+    ):
+        frame_id = _upload_file(client, tmp_path, "notes.md", b"# old")
+
+        resp = client.put(
+            f"/files/{frame_id}/content", json={"content": "# new\n\nmore"}
+        )
+        assert resp.status_code == 200
+        assert resp.json()["size"] == len(b"# new\n\nmore")
+
+        # The bytes changed on disk...
+        assert (
+            client.get(f"/files/{frame_id}/content").json()["content"]
+            == "# new\n\nmore"
+        )
+        # ...and memory followed (apply_file_to_memory ran: the size slot moved).
+        entry = next(
+            e for e in client.get("/files/list").json() if e["id"] == frame_id
+        )
+        assert entry["file_size"] == len(b"# new\n\nmore")
+
+    @pytest.mark.asyncio
+    async def test_save_refuses_a_binary_document(self, client, store):
+        # A textarea cannot round-trip binary bytes; the ext gate refuses before
+        # any write, so the frame needs only the slots the route reads.
+        user = await store.create_user("save_binary_user")
+        frame = await store.create_frame(
+            "file_report.docx", "entity", owner_user_id=user.id
+        )
+        await store.upsert_slot(frame.id, "file_ext", "docx")
+        await store.upsert_slot(frame.id, "file_safe_name", "report.docx")
+
+        resp = client.put(f"/files/{frame.id}/content", json={"content": "text"})
+        assert resp.status_code == 415
+
+    def test_save_missing_file_is_404(self, client, store):
+        assert (
+            client.put("/files/999999/content", json={"content": "x"}).status_code
+            == 404
+        )
+

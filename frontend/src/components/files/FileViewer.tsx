@@ -1,7 +1,7 @@
 import { createSignal, Show, createMemo, createEffect } from 'solid-js';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
-import { api, renameFile } from '../../services/api';
+import { api, renameFile, saveFileContent } from '../../services/api';
 import { Toast } from '../ui/Toast';
 import { Modal } from '../ui/Modal';
 import { FileIcon, fileKind } from '../ui/Icons';
@@ -90,6 +90,40 @@ export const FileViewer = (props: { fileId?: string | null }) => {
   const [renameDraft, setRenameDraft] = createSignal('');
   const [isRenaming, setIsRenaming] = createSignal(false);
 
+  // In-place editing: text files only (a textarea cannot round-trip binary bytes,
+  // and the backend refuses them with 415 anyway).
+  const canEdit = createMemo(() => isText() || isMarkdown());
+  const [isEditing, setIsEditing] = createSignal(false);
+  const [editDraft, setEditDraft] = createSignal('');
+  const [isSavingEdit, setIsSavingEdit] = createSignal(false);
+
+  const startEdit = () => {
+    setEditDraft(fileData()?.content ?? '');
+    setIsEditing(true);
+  };
+
+  const saveEdit = async () => {
+    const fileId = props.fileId;
+    if (!fileId) return;
+    setIsSavingEdit(true);
+    try {
+      await saveFileContent(fileId, editDraft());
+      setIsEditing(false);
+      await loadFile();
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('files-changed'));
+      }
+      showToast('File saved', 'success');
+    } catch (error) {
+      showToast(
+        error instanceof Error ? error.message : 'Failed to save file',
+        'error'
+      );
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
+
   const copyName = async () => {
     try {
       await navigator.clipboard.writeText(displayName());
@@ -158,6 +192,9 @@ export const FileViewer = (props: { fileId?: string | null }) => {
               </div>
             </div>
             <div class="file-viewer-actions">
+              <Show when={canEdit() && !isEditing()}>
+                <button class="btn-secondary" onClick={startEdit}>Edit</button>
+              </Show>
               <button class="btn-secondary" onClick={copyName}>Copy name</button>
               <button class="btn-secondary" onClick={openRename}>Rename</button>
               <a
@@ -170,35 +207,58 @@ export const FileViewer = (props: { fileId?: string | null }) => {
             </div>
           </div>
 
-          <Show when={isMarkdown()}>
-            {/* eslint-disable-next-line solid/no-innerhtml -- sanitized by DOMPurify */}
-            <div class="file-content-markdown" innerHTML={markdownHtml()} />
+          <Show when={isEditing()}>
+            <textarea
+              class="file-edit-textarea"
+              value={editDraft()}
+              onInput={(e) => setEditDraft(e.currentTarget.value)}
+              spellcheck={false}
+            />
+            <div class="file-edit-actions">
+              <button class="btn-secondary" onClick={() => setIsEditing(false)}>
+                Cancel
+              </button>
+              <button
+                class="btn-primary"
+                onClick={() => void saveEdit()}
+                disabled={isSavingEdit()}
+              >
+                {isSavingEdit() ? 'Saving…' : 'Save'}
+              </button>
+            </div>
           </Show>
-          <Show when={!isMarkdown() && isText()}>
-            <pre class="file-content-text">{fileData()?.content || '(empty file)'}</pre>
-          </Show>
-          <Show when={!isMarkdown() && !isText()}>
-            <Show
-              when={isPdf()}
-              fallback={
+
+          <Show when={!isEditing()}>
+            <Show when={isMarkdown()}>
+              {/* eslint-disable-next-line solid/no-innerhtml -- sanitized by DOMPurify */}
+              <div class="file-content-markdown" innerHTML={markdownHtml()} />
+            </Show>
+            <Show when={!isMarkdown() && isText()}>
+              <pre class="file-content-text">{fileData()?.content || '(empty file)'}</pre>
+            </Show>
+            <Show when={!isMarkdown() && !isText()}>
+              <Show
+                when={isPdf()}
+                fallback={
+                  <div class="file-no-preview">
+                    <p>No preview for this file type</p>
+                    <p class="file-no-preview-hint">Download it to open it in the right app.</p>
+                  </div>
+                }
+              >
                 <div class="file-no-preview">
-                  <p>No preview for this file type</p>
-                  <p class="file-no-preview-hint">Download it to open it in the right app.</p>
+                  <p>PDF document</p>
+                  <p class="file-no-preview-hint">The browser renders PDFs natively.</p>
+                  <a
+                    class="btn-primary"
+                    href={`/files/${props.fileId}/download?inline=true`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    Open in new tab
+                  </a>
                 </div>
-              }
-            >
-              <div class="file-no-preview">
-                <p>PDF document</p>
-                <p class="file-no-preview-hint">The browser renders PDFs natively.</p>
-                <a
-                  class="btn-primary"
-                  href={`/files/${props.fileId}/download?inline=true`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  Open in new tab
-                </a>
-              </div>
+              </Show>
             </Show>
           </Show>
         </div>

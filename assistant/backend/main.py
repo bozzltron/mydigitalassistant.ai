@@ -2718,6 +2718,73 @@ async def rename_file_endpoint(
     return {"status": "ok", **result}
 
 
+class FileContentUpdate(BaseModel):
+    content: str
+
+
+@app.put("/files/{frame_id}/content")
+async def update_file_content(
+    frame_id: int,
+    body: FileContentUpdate,
+    store: MemoryStore = _Depends(get_store),
+):
+    """Save edited text back to a file (the Files-page editor).
+
+    Text only: a binary document is refused, because a textarea cannot round-trip
+    its bytes and the editor would corrupt it. The write goes through
+    ``apply_file_to_memory`` — the one memory write path — so the file profile and
+    CSV rows stay true to the bytes.
+    """
+    from assistant.backend.pipeline.files import apply_file_to_memory
+    from assistant.backend.pipeline.filesystem import PathTraversalError
+    from assistant.backend.pipeline.tool_executor import BINARY_DOCUMENT_EXTS
+
+    frame = await store.get_frame(frame_id)
+    if not frame:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    slots_dict = await _file_slots_for_frame(store, frame_id)
+    file_safe_name = slots_dict.get("file_safe_name")
+    if not file_safe_name:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    ext = (slots_dict.get("file_ext") or "").lower()
+    if ext in BINARY_DOCUMENT_EXTS:
+        raise HTTPException(
+            status_code=415, detail="This file type cannot be edited as text"
+        )
+
+    try:
+        file_path = _contained_file_path(file_safe_name)
+    except (PathTraversalError, ValueError):
+        raise HTTPException(status_code=400, detail="Invalid file path") from None
+    if file_path is None or not file_path.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+
+    data = body.content.encode("utf-8")
+    file_path.write_bytes(data)
+
+    display_name = slots_dict.get("file_name") or frame.name
+    try:
+        await apply_file_to_memory(
+            store,
+            frame_name=frame.name,
+            safe_filename=file_safe_name,
+            ext=ext,
+            content_bytes=data,
+            user_id=frame.owner_user_id or 1,
+            source_type="file_create",
+            source_reliability=0.8,
+            display_name=display_name,
+        )
+    except Exception as e:
+        # The bytes are already saved; a memory refresh failure must not report
+        # the edit as failed, or a retry would re-apply it. Mirrors edit_file.
+        logger.warning("file content memory refresh failed for %s: %s", frame_id, e)
+
+    return {"status": "ok", "size": len(data)}
+
+
 
 # --- SolidJS SPA catch-all (must be last) ---
 # Serves the SPA index.html for any path that doesn't match an API route or static file.

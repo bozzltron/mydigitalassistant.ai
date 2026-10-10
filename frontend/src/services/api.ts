@@ -455,6 +455,26 @@ export async function renameFile(
   return response.json()
 }
 
+export async function saveFileContent(
+  file_id: string,
+  content: string,
+): Promise<{ status: string; size: number }> {
+  debug('Saving file content:', file_id)
+  const response = await fetch(`${BASE_URL}/files/${file_id}/content`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content }),
+    credentials: 'include',
+  })
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ detail: 'Unknown error' }))
+    throw new Error(error.detail || `HTTP ${response.status}`)
+  }
+
+  return response.json()
+}
+
 export async function getUserSessions(user_id: number): Promise<SessionSummary[]> {
   debug('Fetching sessions for user:', user_id)
   const data = await api<unknown>(`/users/${user_id}/sessions`)
