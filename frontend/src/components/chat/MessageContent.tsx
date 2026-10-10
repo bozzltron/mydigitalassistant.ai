@@ -3,6 +3,8 @@ import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { searchMedia, getHeroMedia } from '../../utils/media'
 import { collectGroundingSlots, applyGrounding } from '../../utils/grounding'
+import { fileLinksFrom, linkifyFileMentions } from '../../utils/fileLinks'
+import { fileList } from '../../state/files'
 import MediaCard from './MediaCard'
 import type { ChatMessage } from '../../types/chat'
 
@@ -45,8 +47,13 @@ export default function MessageContent(props: { message: () => ChatMessage }) {
   const bodyHtml = createMemo(() =>
     // Sanitize first, then annotate: `applyGrounding` only ever adds our own
     // spans (with a controlled `data-confidence` tooltip) to the safe markup.
+    // Filename mentions of known files become links to the Files page; grounding
+    // skips inside links, so the two passes do not fight.
     applyGrounding(
-      DOMPurify.sanitize(marked.parse(parts().body) as string),
+      linkifyFileMentions(
+        DOMPurify.sanitize(marked.parse(parts().body) as string),
+        fileLinksFrom(fileList())
+      ),
       collectGroundingSlots(props.message())
     )
   )

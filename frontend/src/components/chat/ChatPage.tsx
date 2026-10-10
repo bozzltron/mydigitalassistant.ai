@@ -14,6 +14,7 @@ import { useVoiceRecording } from '../../hooks/useVoiceRecording'
 import { useConversationVoiceRecording } from '../../hooks/useConversationVoiceRecording'
 import { speakReplacing, startDictation, endDictation, isVoiceModeActive, voice } from '../../state/voice'
 import { settings, updateSetting } from '../../state/settings'
+import { refreshFileList } from '../../state/files'
 import { initQueue } from '../../state/messageQueue'
 import type {
   SearchInfo,
@@ -90,6 +91,12 @@ export default function ChatPage(props: {
     } catch (e) {
       console.error('Failed to load user:', e)
     }
+    // The file list powers filename links in messages (see utils/fileLinks).
+    // Refresh it here and whenever a tool changes files.
+    void refreshFileList()
+    const onFilesChanged = () => void refreshFileList()
+    window.addEventListener('files-changed', onFilesChanged)
+    onCleanup(() => window.removeEventListener('files-changed', onFilesChanged))
   })
 
   // Read file and convert to AttachedFile format

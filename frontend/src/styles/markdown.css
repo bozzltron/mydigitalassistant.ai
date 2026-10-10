@@ -54,6 +54,13 @@
   color: var(--accent2);
 }
 
+/* A filename mention that links to the Files page. A dotted underline marks it
+   as an internal memory reference, not an external source. */
+.msg-assistant .content a.file-mention {
+  color: var(--accent2);
+  border-bottom: 1px dotted var(--accent2);
+}
+
 .msg-assistant .content code {
   background: rgba(255, 255, 255, 0.08);
   padding: 0.12em 0.4em;
