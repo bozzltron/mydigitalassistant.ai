@@ -114,6 +114,12 @@ not replace this with a bare "not found".
 file's `file_profile` and CSV row frames stay true to the bytes. It writes no
 content slot: memory holds what the file *is*, not what it contains.
 
+**The Files page saves directly.** `PUT /files/{frame_id}/content {content}` writes
+the bytes and runs the same `apply_file_to_memory`, so editing in the browser and
+editing through the tool leave identical memory. Text only: a binary document is
+refused with 415 (a textarea cannot round-trip its bytes), and the viewer offers
+no Edit button for one.
+
 ## Building and querying without reading
 
 `append_file(path, content)` and `search_file(path, query)` are the format-agnostic
@@ -142,13 +148,23 @@ never as CSV awareness.
 
 ## Renaming
 
-`rename_file(path, new_name)` moves the disk file and its `file_<name>` frame
+`rename_file(path, new_name)` — the agent tool — and `PATCH /files/{frame_id}
+{new_name}` — the Files-page route — share **one implementation**
+(`files.rename_file`). It moves the disk file and its `file_<name>` frame
 together, so the old name stops resolving and the new one works immediately. It
 keeps the extension fixed — renaming a `.txt` to `.docx` would leave text bytes
 under a document name — and refuses to overwrite an existing file rather than
 silently clobber it. A bare `new_name` keeps the file in its folder; include a
 slash to move it. It is a first-class operation on purpose: the model should not
 have to compose read+write+delete, which can lose the file if it fails midway.
+
+**A rename updates memory so it names the file correctly.** `file_name` becomes
+the new **display name** (the basename) and `file_safe_name` the new path — the
+two differ for a nested file (`notes/x.txt`), and writing the path into both was a
+bug that made a nested file's display name `notes/x.txt`. The CSV row children
+(`file_<base>.csv_row_N`) embed the parent's base, so they are renamed too. Old
+episodes still quote the old name; that is history, and the fuzzy resolver
+("Why this bites") still reads it.
 
 ## The two names of every file
 
@@ -166,8 +182,9 @@ file bugs:
 - **Frame name = `file_` + disk name.** It is readable on purpose: the Files UI
   and the brain graph show it, and `frames.name` is UNIQUE so re-uploads of the
   same name *merge* into the existing frame.
-- The `file_name` slot stores the display name (same as disk name in the
-  current design; keep them in sync).
+- The `file_name` slot stores the display name — the basename the user sees
+  (`notes/x.txt` → `x.txt`), which is **not** the same as `file_safe_name` (the
+  path) for a nested file.
 
 ### Why this bites (the logged bug)
 The model reads uploaded files via `read_file`. It frequently quotes the

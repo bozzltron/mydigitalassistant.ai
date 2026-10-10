@@ -225,6 +225,16 @@ not add a second loop.
 `memory_context` — so the adapter loses no field. Every terminal branch (normal,
 scheduled, correction, consent, generation-failure) emits exactly one `meta`.
 
+**The trace panel reads the live turn's `meta`, not the prompt.** The chat trace
+panel (`frontend/src/components/chat/TracePanel.tsx`) shows the most recent
+assistant turn's `task_type`, `memory_context`, `citations`, and `search_info`,
+bound from the `meta` event. `memory_context` and `citations` ride the live `meta`
+(and the `StreamEvent` type); they are **not persisted per episode**, and
+`SessionMessage` returns only `search_info`, so a reloaded history shows the search
+info and an honest note rather than those fields. Persisting them would need an
+episode column and a DB-size tradeoff for the memory context — a deliberate
+deferral, not an oversight. Do not "fix" the empty state by inventing values.
+
 **Scheduled tasks run the loop too.** `run_scheduled_task(prompt, …)` builds a
 `ChatRequest` with `force_search=True` (a standing task always checks for new
 information; the router's storage-style veto must not suppress it) and
