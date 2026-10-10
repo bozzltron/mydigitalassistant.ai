@@ -1,5 +1,6 @@
 import { createSignal, createMemo } from 'solid-js'
 import { createStore } from 'solid-js/store'
+import { refreshFileList } from './files'
 import { postChatStream, createTurnId } from '../services/api'
 import { user } from './user'
 import { beginTurnStatus, endTurnStatus, setStreamStage } from '../services/status'
@@ -233,9 +234,18 @@ export async function postChatMessageStream(
             })
           }
           signalNameChangeIfNeeded(event.extraction_summary)
+          // Refresh the file list on the terminal event, so a filename the
+          // response mentions links immediately. Waiting for a `files-changed`
+          // tool event missed every file the turn did not create through the
+          // covered tools (an `append_file`/`rename_file`, or a chat attachment
+          // upload), so the mention stayed plain text until a page reload.
+          void refreshFileList()
         } else if (event.type === 'tool_result') {
           // Tool completed - check if it's a file operation that should refresh the file list
-          const fileOps = ['write_file', 'edit_file', 'delete_file', 'glob', 'list_files']
+          const fileOps = [
+            'write_file', 'edit_file', 'append_file', 'rename_file',
+            'delete_file', 'glob', 'list_files',
+          ]
           if (event.tool_name && fileOps.includes(event.tool_name)) {
             // Dispatch a custom event that FileGrid can listen for
             if (typeof window !== 'undefined') {

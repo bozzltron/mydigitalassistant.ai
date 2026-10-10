@@ -91,8 +91,13 @@ export default function ChatPage(props: {
     } catch (e) {
       console.error('Failed to load user:', e)
     }
-    // The file list powers filename links in messages (see utils/fileLinks).
-    // Refresh it here and whenever a tool changes files.
+  })
+
+  // The file list powers filename links in messages (see utils/fileLinks). Its
+  // own synchronous onMount: the first fetch is not queued behind the user
+  // fetch, and the listener's cleanup is owned (it was registered after an
+  // `await` inside the async onMount above, outside the reactive owner).
+  onMount(() => {
     void refreshFileList()
     const onFilesChanged = () => void refreshFileList()
     window.addEventListener('files-changed', onFilesChanged)
