@@ -1,5 +1,33 @@
 # MyDigitalAssistant.ai — release notes
 
+## v0.11.15-alpha
+
+**Escalation stops sending mechanical work to the 27B, the MAX model is measured,
+and the sandbox gets a host-visible folder.**
+
+- **The auto-escalation was inverted.** A live turn — *"read muso-soup-offers.txt
+  and then regenerate Muso Soup Priority.md"* — escalated to `qwen3.8:27b` with
+  thinking on and ran **~22 minutes** to the 12-round cap. The trigger keyed on
+  `_is_multi_step`, which fires on a sequence phrase like "and then": measured
+  (`assistant/experiments/escalation_trigger/`) it fired on **100% of mechanical
+  file tasks and 0% of hard reasoning**. It now keys on an **explicit reasoning
+  cue** — re-measured **0% / 50%** — and the escalation and its source
+  (user-toggle vs auto) are logged, which is what made the inverted trigger hard
+  to see. The manual **Max** toggle is unchanged.
+- **MAX stays `qwen3.8:27b`.** The opus Q4 9B was measured against it for the max
+  role (`assistant/experiments/max_model_choice/`): on hard multi-step reasoning it
+  scored **6/10 vs 9/10** and was only **1.25× faster** on the median — not the 2× a
+  swap required. The earlier math-role probe used *eight easy* problems where both
+  scored 8/8, a ceiling that cannot separate a 9B from a 27B. No `.env` change;
+  `docs/MODEL_SELECTION.md` records why the swap is not re-proposed.
+- **A host-visible shared folder.** `/app/data/shared` is bind-mounted to the host
+  so files can be opened and edited with host tools — a spreadsheet edited in
+  Excel, or a mailbox dump dropped in and read by the agent. It is nested inside
+  the sandbox, so every file tool reaches it unchanged (`read_file("shared/…")`,
+  `glob("shared/**")`). **Additive by design**: the volume, the DB, and every
+  existing file stay where they are, so there is no migration and an update cannot
+  orphan the brain. See `docs/FILES.md`.
+
 ## v0.11.14-alpha
 
 **A filename the agent mentions now links on the live turn, not only after a
