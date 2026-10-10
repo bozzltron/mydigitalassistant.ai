@@ -75,6 +75,15 @@ that found it:
   **whitespace-tolerant** (exact match first, then any run of whitespace matches
   any other) but never fuzzy beyond that.
 
+**Prefer the line range.** The anchor mode asks the model to reproduce text
+exactly; whitespace tolerance covers small drift, but an ambiguous or slightly
+different anchor costs a turn to retry — which is why editing a file through chat
+was observed to take several turns. The line range is the cheaper path (`read_file`
+already shows the numbers), and the tool description steers the model to it. The
+turns that prompted this are no longer in the container log (the backend was
+rebuilt and `docker logs` had rotated), so the reason is recorded here rather than
+cited from a log line.
+
 **Ambiguity is refused, not guessed.** An `old_text` that matches more than one
 region is refused unless `replace_all=true` is explicit, and the error names the
 line number of every match so the model can add context or switch to a line range.

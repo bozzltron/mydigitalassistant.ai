@@ -63,6 +63,19 @@ def test_tool_def_shape():
     assert "parameters" in d["function"]
 
 
+def test_edit_file_description_steers_to_line_addressed_edits():
+    """Editing via chat took several turns on ambiguous anchors; prefer the range.
+
+    The line range (the numbers read_file shows) needs no exact-text anchor, so it
+    cannot fail on whitespace or an ambiguous match — the retries that cost turns.
+    """
+    tools = builtin_tools(WebSearchTool(enabled=False))
+    edit = next(t for t in tools if t["function"]["name"] == "edit_file")
+    desc = edit["function"]["description"]
+    assert "PREFER start_line/end_line" in desc
+    assert "several attempts" in desc
+
+
 async def test_upsert_slot_handler(store):
     from assistant.backend.pipeline.tool_executor import execute_tool, init_store
     init_store(str(store.db_path))

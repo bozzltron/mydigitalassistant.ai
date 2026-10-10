@@ -787,16 +787,17 @@ def builtin_tools(
         ),
         _make_def(
             "edit_file",
-            "Make a precise edit to an existing TEXT file. Two ways to say where: "
-            "give start_line/end_line (1-based, exactly the numbers read_file shows) "
-            "to replace that range, or give old_text to replace a matched region. "
-            "old_text must be unique unless replace_all=true; an ambiguous match is "
-            "refused with the line numbers of every occurrence. When both are given, "
-            "old_text is verified against the line range before replacing. Read the "
-            "file first and copy old_text verbatim (whitespace is tolerated; the "
-            "words must match). For a binary document (.docx, .pdf, .xlsx, ...) read "
-            "it and rewrite the whole file with write_file instead — documents "
-            "cannot be edited in place.",
+            "Make a precise edit to an existing TEXT file. PREFER start_line/end_line "
+            "(1-based, exactly the numbers read_file shows) to replace that range — "
+            "it needs no exact-text anchor, so it cannot fail on whitespace or an "
+            "ambiguous match, which is what turns a simple edit into several "
+            "attempts. Alternatively give old_text to replace a matched region; "
+            "old_text must be unique unless replace_all=true, and an ambiguous match "
+            "is refused with the line numbers of every occurrence. When both are "
+            "given, old_text is verified against the line range before replacing. "
+            "For a binary document (.docx, .pdf, .xlsx, ...) read it and rewrite the "
+            "whole file with write_file instead — documents cannot be edited in "
+            "place.",
             EditFileArgs,
         ),
         _make_def(
