@@ -1586,7 +1586,8 @@ async def _search_across_files(
     """
     from assistant.backend.pipeline.filesystem import list_sandbox_files
 
-    entries = list_sandbox_files(glob_pattern)
+    # Deterministic order, so a capped scan takes the same files every run.
+    entries = sorted(list_sandbox_files(glob_pattern), key=lambda e: e["path"])
     if not entries:
         return ToolResult(success=True, data={
             "glob": glob_pattern,
@@ -1606,6 +1607,7 @@ async def _search_across_files(
     files_matched = 0
     files_scanned = 0
     skipped_large: list[str] = []
+    unreadable: list[str] = []
 
     for entry in entries[:MAX_SEARCH_FILES]:
         path = entry["path"]
@@ -1614,10 +1616,15 @@ async def _search_across_files(
             continue
         try:
             text, _error = await _read_file_text(path, entry.get("ext") or "")
-        except Exception:
+        except Exception as e:
+            # A file that cannot be read is named in the note, not dropped
+            # silently — "no match" must not mean "could not look".
+            logger.debug("glob search: could not read %s: %s", path, e)
+            unreadable.append(path)
             continue
         files_scanned += 1
         if not text:
+            unreadable.append(path)
             continue
         file_matched = False
         for number, line in enumerate(text.splitlines(), start=1):
@@ -1658,19 +1665,29 @@ async def _search_across_files(
             f"skipped {len(skipped_large)} file(s) larger than "
             f"{MAX_SEARCH_FILE_BYTES} bytes: {', '.join(skipped_large[:3])}"
         )
+    if unreadable:
+        notes.append(
+            f"could not read {len(unreadable)} file(s): "
+            f"{', '.join(unreadable[:3])}"
+        )
     if notes:
         data["note"] = "; ".join(notes) + "."
     return ToolResult(success=True, data=data)
 
 
 async def execute_search_file(args: dict, user_id: str, session_id: str) -> ToolResult:
-    """Find the lines in a file that match a query.
+    """Find the lines matching a query — in one file, or across a tree.
 
     Membership and targeted lookup without holding the file: "is this email
     already in the list?", "which rows mention Acme?". Generic across formats —
     it matches lines, so CSV rows, JSONL records, log lines and prose all behave
     the same. Pair it with `append_file` to add only what is not already there
     (dedup as composition, with no format assumption).
+
+    `path`/`frame_id`/`frame_name` search one file. `glob` searches every sandbox
+    file matching it in one call — the mailbox-dump path, where a tree of `.eml`
+    files is far too large to search one at a time — and each match names its
+    file. The two are mutually exclusive.
 
     Matching is a case-insensitive substring by default; `regex=true` treats the
     query as a regular expression. The number of returned matches is capped, and
