@@ -1,6 +1,6 @@
 """The deterministic file profile: what a file is, computed not inferred.
 
-Phase 5 of plans/2026-10-07-large-file-context.md. The model kept hand-rolling
+Phase 5 of the file profile contract in `docs/FILES.md`. The model kept hand-rolling
 this ("~92% radio, ~8% venue") and getting it wrong; a profile is arithmetic over
 the file, stored on the frame so the answer is a memory read, not a file read.
 """

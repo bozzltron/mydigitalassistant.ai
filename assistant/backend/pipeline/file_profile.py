@@ -8,8 +8,8 @@ so "what is this file?" is a memory read, not a file read.
 
 Format-agnostic by construction. Each format fills what it can and a format with
 nothing special to say still gets its size and shape; nothing here assumes CSV —
-the delimited branch is one case among several. See
-``plans/2026-10-07-large-file-context.md`` (Phase 5).
+the delimited branch is one case among several. See ``docs/FILES.md``
+("The file profile").
 """
 
 from __future__ import annotations

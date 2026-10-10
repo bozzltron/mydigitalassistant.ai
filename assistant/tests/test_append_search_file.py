@@ -1,6 +1,6 @@
 """`append_file` and `search_file`: build and query a file without reading it.
 
-Phase 4 of plans/2026-10-07-large-file-context.md. The rejected `add_rows` was
+Phase 4 of the append/search contract in `docs/FILES.md`. The rejected `add_rows` was
 CSV-centric; these two are format-agnostic. `append_file` adds a line without
 pulling the file into the window, and `search_file` answers "is this already
 here?" by matching lines. Dedup is composition — search, then append only what is

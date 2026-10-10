@@ -1,6 +1,6 @@
 """Precise editing: address by line, refuse ambiguity.
 
-Phase 6 of plans/2026-10-07-large-file-context.md. Read hands the model a
+Phase 6 of the file-editing contract in `docs/FILES.md`. Read hands the model a
 line-numbered view (`[lines 201-250 of 628]`); editing accepts the same handle.
 The old `edit_file` was anchor-only and defaulted to `replace_all=true`, so a
 short `old_text` silently rewrote every occurrence — the opposite of precision.
