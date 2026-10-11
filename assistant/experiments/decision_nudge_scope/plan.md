@@ -108,3 +108,32 @@ python assistant/experiments/decision_nudge_scope/experiment.py
 - **`search` is a watch item.** If the change-scoped question drops search entirely,
   that is expected — but whether the router's `wants_search` covers it is a separate
   measurement, flagged, not assumed.
+
+## Addendum (2026-10-10): the union wording
+
+**Added after the first run, before this arm's data is collected.** The plan named
+`search` a watch item and said the router's coverage would be measured, not assumed.
+That check was done: the router forces search only when
+`plan.sufficiency == MemorySufficiency.NONE` (`orchestrator.py:1450–1466`), so a
+lookup with a relevant-but-stale memory fact is **not** forced. Change-only therefore
+drops a real guard.
+
+The principle sharpens to: **the nudge should fire when the deed's result is something
+words can counterfeit** — a write (a claimed state change) and an external lookup (the
+model holds parametric stand-ins for the answer) — but not a read of the user's own
+stored content (if the model has it, answering is the design; if not, it cannot answer
+and reads).
+
+### Hypothesis
+
+- **H4.** The union wording ("changes something **or** fetches current external
+  information") keeps `change` recall at **≥ 90%**, fires on all `search` cases, and
+  stays silent on **0** `read`/`answer` cases.
+
+### Falsification conditions
+
+1. Union `change` recall **< 90%** OR it fires on **≥ 1** `read`/`answer` → the
+   two-part question is worse than change-only; fall back to change-only (accepting the
+   search gap) or split into two questions.
+2. Union `change` recall **≥ 90%** AND `search` **3/3** AND `read`/`answer` **0/15** →
+   ship the union wording.

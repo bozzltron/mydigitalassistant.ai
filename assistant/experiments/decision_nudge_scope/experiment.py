@@ -77,6 +77,7 @@ QUESTIONS: dict[str, dict] = {
             "answer": "the assistant can just reply with words",
         },
         "positive": "action",
+        "target_classes": ("change",),
     },
     "needs_change": {
         "instructions": (
@@ -90,6 +91,25 @@ QUESTIONS: dict[str, dict] = {
             "answer": "the assistant can satisfy the request by telling the user something",
         },
         "positive": "change",
+        "target_classes": ("change",),
+    },
+    # Addendum: the union -- changes OR external lookups; a read of the user's own
+    # stored content is excluded (an answer can satisfy it).
+    "needs_change_or_lookup": {
+        "instructions": (
+            "Does this user request ask the assistant to PERFORM an action with a tool "
+            "that changes something (create, edit, rename, delete, append, or move a file "
+            "or record; run a task that changes state) or that fetches current external "
+            "information (search the web) — as opposed to satisfying the request by "
+            "answering from what it already knows (including reading its own stored "
+            "memory)?"
+        ),
+        "criteria": {
+            "do": "the assistant must change something or fetch current external information",
+            "answer": "the assistant can satisfy the request by answering from what it already knows",
+        },
+        "positive": "do",
+        "target_classes": ("change", "search"),
     },
 }
 
@@ -142,7 +162,7 @@ async def run_arm(question_name: str, model: str) -> dict:
             got = await ask(client, model, question_name, spec, request)
             got.update({"class": cls, "request": request})
             got["fire"] = fires(got, spec)
-            got["target"] = cls == "change"  # should fire iff a state change
+            got["target"] = cls in spec["target_classes"]  # should fire for this question
             got["match"] = got["fire"] == got["target"]
             rows.append(got)
             flag = "  " if got["match"] else "!!"
@@ -189,14 +209,14 @@ async def run_arm(question_name: str, model: str) -> dict:
 
 async def main() -> None:
     results: list[dict] = []
-    for question_name in ("needs_action", "needs_change"):
+    for question_name in ("needs_action", "needs_change", "needs_change_or_lookup"):
         for model in MODELS:
             print(f"\n[{question_name}] {model}")
             results.append(await run_arm(question_name, model))
 
     print("\n=== summary ===")
     print(
-        f"  {'question':12} {'model':10} {'change_recall':>13} "
+        f"  {'question':22} {'model':10} {'change_recall':>13} "
         f"{'read+ans fired':>15} {'search fired':>13} {'target acc':>10} {'median':>8}"
     )
     for r in results:
@@ -204,7 +224,7 @@ async def main() -> None:
         ra = f"{r['read_answer_fired']}/{r['read_answer_n']}"
         se = f"{r['search_fired']}/{r['search_n']}"
         print(
-            f"  {r['question']:12} {r['model']:10} {recall:>13} {ra:>15} "
+            f"  {r['question']:22} {r['model']:10} {recall:>13} {ra:>15} "
             f"{se:>13} {r['target_accuracy']:>10.3f} {r['median_ms']:>7.0f}ms"
         )
 
