@@ -83,3 +83,30 @@ Scratch store and sandbox only; no brain, no network beyond localhost.
 - **Not measured:** whether the model obeys the terminal contract in production, where
   the prompt carries memory and the tools carry state.
 - A scripted model (H4) proves the loop's policy, not the world.
+
+## Addendum (2026-10-11): the tightened contract
+
+**Added after the first run, before this arm's data is collected.** The first run showed
+F is correct but costs ~1–2 rounds on action turns, and the traces show why: told to
+*end* by declaring, the model verifies first (`write_file, read_file, finalize`, and once
+`write_file ×4`). If that verification pass is what costs the rounds, a contract that
+forbids it should close the gap.
+
+### Hypothesis
+
+- **H5.** A terminal contract that forbids the pre-`finalize` re-check keeps compliance
+  (answer-turn `finalize` ≥ 90%) and completion (change/announce ≥ C), while bringing
+  action-turn rounds back to **≤ C + 0.5**.
+
+### Falsification conditions
+
+1. F2 compliance **< 90%** or completion **< C** → the tightening breaks the policy →
+   retire the structural idea.
+2. F2 action-turn rounds still **> C + 0.5** → the cost is inherent to an explicit end
+   state, not to the re-check → retire the structural idea and keep the judgement.
+
+### Policy F2
+
+Same as F, with the contract amended: *"Once the tool has succeeded, call `finalize`
+immediately — do not re-read the file, re-write it, or otherwise check your work before
+declaring."* All three policies are run interleaved on the same 11 requests.

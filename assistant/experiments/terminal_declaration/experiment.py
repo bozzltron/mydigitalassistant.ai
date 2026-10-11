@@ -64,7 +64,12 @@ from assistant.backend.config import settings  # noqa: E402
 from assistant.backend.db.schema import init_db  # noqa: E402
 from assistant.backend.memory.store import MemoryStore  # noqa: E402
 from assistant.backend.pipeline import decision, tool_executor  # noqa: E402
-from assistant.backend.pipeline.llm_client import OllamaClient, build_system_prompt  # noqa: E402
+from assistant.backend.pipeline.llm_client import (  # noqa: E402
+    _TOOL_CONTRACT_TERMINAL,
+    _TOOL_CONTRACT_TERMINAL_TIGHT,
+    OllamaClient,
+    build_system_prompt,
+)
 from assistant.backend.pipeline.streaming import stream_tool_loop  # noqa: E402
 from assistant.backend.pipeline.tools import builtin_tools  # noqa: E402
 
@@ -127,12 +132,17 @@ class CountingClient:
 
 
 async def run_turn(policy: str, request: str, name: str, tools: list[dict]) -> dict:
-    """One turn under ``policy`` ('C' | 'F')."""
-    require_terminal = policy == "F"
+    """One turn under ``policy`` ('C' judged | 'F' terminal | 'F2' terminal-tight)."""
+    require_terminal = policy in ("F", "F2")
+    contract = {
+        "C": None,
+        "F": _TOOL_CONTRACT_TERMINAL,
+        "F2": _TOOL_CONTRACT_TERMINAL_TIGHT,
+    }[policy]
     system = build_system_prompt(
         memory_context="",
         task_type="functional",
-        require_terminal=require_terminal,
+        contract=contract,
     )
     messages = [
         {"role": "system", "content": system},
@@ -239,11 +249,12 @@ async def main() -> None:
     print("[D] deterministic -- the structural catch, no judgement")
     deterministic = await arm_deterministic()
 
-    print("\n[live] C = judged, F = terminal declaration (interleaved, paired)")
+    print("\n[live] C = judged, F = terminal, F2 = terminal-tight (interleaved, paired)")
     rows: list[dict] = []
+    policies = ["C", "F", "F2"]
     for i, (cls, tmpl) in enumerate(REQUESTS):
-        # Alternate which policy runs first, to control for warm-up/state order.
-        order = ["C", "F"] if i % 2 == 0 else ["F", "C"]
+        # Rotate the order per request, to control for warm-up/state order.
+        order = policies[i % 3:] + policies[: i % 3]
         for policy in order:
             name = f"term_{policy.lower()}_{i}.md"
             request = tmpl.format(name=name)
@@ -274,7 +285,7 @@ async def main() -> None:
 
     print("\n=== summary ===")
     print("  policy  answer finalized  change acted  announce acted  mean rounds")
-    for p in ("C", "F"):
+    for p in ("C", "F", "F2"):
         print(
             f"  {p:6}  {rate(p, 'answer', 'finalized'):>16}  {rate(p, 'change', 'acted'):>12}  "
             f"{rate(p, 'announce', 'acted'):>14}  {mean_rounds(p):>11}"

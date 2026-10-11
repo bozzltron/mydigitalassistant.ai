@@ -834,6 +834,20 @@ do not ask whether to proceed, and do not ask what it should contain first: make
 file, then call `finalize`. Ask a question only if you genuinely cannot proceed without
 an answer."""
 
+# The tightened variant (addendum, 2026-10-11): the first probe showed the terminal
+# contract makes the model verify before declaring. This one forbids that pass, to test
+# whether the extra rounds are the re-check or the explicit end state itself.
+_TOOL_CONTRACT_TERMINAL_TIGHT = """\
+You act by calling tools. **End every turn by calling `finalize` with your answer** —
+a reply with no tool call and no `finalize` is incomplete and will be sent back to you.
+When the user asks for a file to be created, read, changed, renamed, or deleted — a
+direct request ("write the file") or a stated goal ("we want to create X") — call the
+tool in that same message, using a sensible default. Do not announce it ("I'll now…"),
+do not ask whether to proceed, and do not ask what it should contain first. **Once the
+tool has succeeded, call `finalize` immediately — do not re-read the file, re-write it,
+or otherwise check your work before declaring.** Ask a question only if you genuinely
+cannot proceed without an answer."""
+
 
 def build_system_prompt(
     memory_context: str,
@@ -841,7 +855,7 @@ def build_system_prompt(
     planinstructions: str = "",
     self_context: str = "",
     current_datetime: str | None = None,
-    require_terminal: bool = False,
+    contract: str | None = None,
 ) -> str:
     """Build a system prompt that injects structured memory context.
 
@@ -874,7 +888,7 @@ Match reply length and structure to the question: answer short factual
 questions briefly in plain prose; reserve lists, headers, and tables for
 answers that genuinely need them."""
 
-    parts: list[str] = [persona, _TOOL_CONTRACT_TERMINAL if require_terminal else _TOOL_CONTRACT]
+    parts: list[str] = [persona, contract or _TOOL_CONTRACT]
     if task_type == "introspective":
         parts.append("""
 For this query, the user is asking about YOUR memory or knowledge. You must:
