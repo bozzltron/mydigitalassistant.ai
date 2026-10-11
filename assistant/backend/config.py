@@ -140,6 +140,17 @@ class Settings(BaseSettings):
     max_num_ctx: int = 16384
     max_keep_alive: str = "10m"
 
+    # Local decision model (ollama's /v1/systemone) for typed judgements. The
+    # first use is `needs_action`, which gates the tool loop's one-shot nudge.
+    # Empty disables it (the judgement returns "unknown" and nothing nudges).
+    # Measured in assistant/experiments/decision_model_routing/: tev1:0.8b judges
+    # it at 95% / 70 ms against a qwen3.5:4b chat call's 90% / 7,162 ms.
+    decision_model: str = "tev1:0.8b"
+    # Biased toward `action`: a wrong `answer` skips the fix entirely, a wrong
+    # `action` costs one nudge round.
+    decision_action_threshold: float = 0.4
+    decision_timeout: float = 10.0
+
     # Streaming responses (SSE) - enabled by default
     streaming_enabled: bool = True
 

@@ -1892,6 +1892,14 @@ class Orchestrator:
                 else settings.max_tool_rounds
             )
 
+            # Does the request need an action? A local decision model judges it
+            # (decision.needs_action) — the model-first half of the fix for a turn
+            # that announces an action and never calls the tool. The loop's
+            # structural check (no tool call) is the other half.
+            from assistant.backend.pipeline.decision import needs_action
+
+            expects_action = bool(await needs_action(request.message))
+
             # Stream using the tool loop (Phase 4: stream full tool loop including tools)
             # We need to capture the final answer to persist it as an episode
             
@@ -1909,6 +1917,7 @@ class Orchestrator:
                     user_id=str(request.user_id),
                     session_id=session_id,
                     max_turns=loop_max_turns,
+                    expects_action=expects_action,
                 ):
                     # Parse event to capture final answer
                     try:

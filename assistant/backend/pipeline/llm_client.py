@@ -805,6 +805,22 @@ def system_prompt_overhead(
     return len(build_system_prompt("", task_type, plan_instructions, self_context))
 
 
+# The tool loop's contract, stated once. A message with no tool call ends the turn
+# as the final answer, so a model that narrates an action ("let me write that
+# now") performs nothing — a live session created no file across three attempts
+# for exactly that reason. The loop cannot tell a promise from an answer, and
+# scripting that detection would be a guess about phrasing; telling the model the
+# contract is the model-first fix.
+_TOOL_CONTRACT = """\
+You act by calling tools. A message with no tool call ends your turn and is taken
+as your final answer — nothing runs after it. When the user asks for a file to be
+created, read, changed, renamed, or deleted — a direct request ("write the file")
+or a stated goal ("we want to create X") — call the tool in that same message,
+using a sensible default. Do not announce it ("I'll now…"), do not ask whether to
+proceed, and do not ask what it should contain first: make the file, then offer to
+adjust it. Ask a question only if you genuinely cannot proceed without an answer."""
+
+
 def build_system_prompt(
     memory_context: str,
     task_type: str,    # "functional" | "introspective"
@@ -843,7 +859,7 @@ Match reply length and structure to the question: answer short factual
 questions briefly in plain prose; reserve lists, headers, and tables for
 answers that genuinely need them."""
 
-    parts: list[str] = [persona]
+    parts: list[str] = [persona, _TOOL_CONTRACT]
     if task_type == "introspective":
         parts.append("""
 For this query, the user is asking about YOUR memory or knowledge. You must:

@@ -621,3 +621,106 @@ async def test_stream_tool_loop_collapses_older_results_when_the_budget_is_spent
         for call in llm.calls
         for m in call
     )
+
+
+async def test_stream_tool_loop_nudges_once_when_an_action_was_expected(tmp_path):
+    """Regression: a request that needs an action but gets a reply is nudged once.
+
+    The live failure: asked for a file, the agent announced it ("I'll now create
+    X") and called no tool, so nothing was written. A decision model judges that
+    the request needs an action (``decision.needs_action``); the loop hands the
+    model its own message back once and lets it act.
+    """
+    from assistant.backend.pipeline.llm_client import ChatResponse, ToolCall
+    from assistant.backend.pipeline.streaming import stream_tool_loop
+    from assistant.backend.pipeline.tool_executor import init_store
+
+    init_store(str(tmp_path / "nudge.db"))
+
+    class StubLLM:
+        def __init__(self):
+            self.tools_model = "test-model"
+            self.calls: list = []
+
+        async def chat(self, messages, **kwargs):
+            self.calls.append(messages)
+            if len(self.calls) == 1:
+                # The failure: it announces the action and calls no tool.
+                return ChatResponse(
+                    content="I'll now create the file. Let me write that now!",
+                    model="m",
+                    done=True,
+                )
+            if len(self.calls) == 2:
+                # After the nudge it acts (read_file on a missing path is enough
+                # to prove a tool call happened; no file is written by the test).
+                return ChatResponse(
+                    content="",
+                    model="m",
+                    done=True,
+                    tool_calls=[
+                        ToolCall(name="read_file", arguments={"path": "nudge_probe.txt"})
+                    ],
+                )
+            return ChatResponse(content="Done.", model="m", done=True)
+
+        def context_window(self, model=None):
+            return 16384
+
+    llm = StubLLM()
+    events = [
+        ev
+        async for ev in stream_tool_loop(
+            llm,
+            [{"role": "user", "content": "Create a file called nudge_probe.txt"}],
+            tools=[],
+            expects_action=True,
+        )
+    ]
+
+    assert len(llm.calls) >= 2, "the loop must give the model a second chance"
+    second = llm.calls[1]
+    assert any(
+        getattr(m, "role", "") == "user"
+        and "without performing the action" in (getattr(m, "content", "") or "")
+        for m in second
+    ), "the nudge note must reach the model"
+    assert any(
+        getattr(m, "role", "") == "assistant"
+        and "Let me write that now" in (getattr(m, "content", "") or "")
+        for m in second
+    ), "the model's own message is handed back"
+    assert events and '"type": "finalize"' in events[-1]
+
+
+async def test_stream_tool_loop_does_not_nudge_when_no_action_expected(tmp_path):
+    """The other half: a plain reply finalizes with no extra round."""
+    from assistant.backend.pipeline.llm_client import ChatResponse
+    from assistant.backend.pipeline.streaming import stream_tool_loop
+    from assistant.backend.pipeline.tool_executor import init_store
+
+    init_store(str(tmp_path / "nonudge.db"))
+
+    class StubLLM:
+        def __init__(self):
+            self.tools_model = "test-model"
+            self.calls: list = []
+
+        async def chat(self, messages, **kwargs):
+            self.calls.append(messages)
+            return ChatResponse(content="Paris.", model="m", done=True)
+
+        def context_window(self, model=None):
+            return 16384
+
+    llm = StubLLM()
+    _ = [
+        ev
+        async for ev in stream_tool_loop(
+            llm,
+            [{"role": "user", "content": "What's the capital of France?"}],
+            tools=[],
+            expects_action=False,
+        )
+    ]
+    assert len(llm.calls) == 1, "no nudge round when no action is expected"

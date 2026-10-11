@@ -209,6 +209,12 @@ def serialize_event(event: ToolLoopEvent) -> str:
         return f"data: {json.dumps({'type': 'unknown'}, default=_event_json_default)}\n\n"
 
 
+_ACTION_NUDGE = (
+    "You ended your turn without performing the action the user asked for. "
+    "Do it now — call the tool in this message."
+)
+
+
 async def stream_tool_loop(
     llm_client,
     messages: list[dict],
@@ -219,10 +225,16 @@ async def stream_tool_loop(
     user_id: str = "",
     session_id: str = "",
     max_turns: int | None = None,
+    expects_action: bool = False,
 ) -> AsyncGenerator[str, None]:
     """Stream the full tool loop including tool calls and final answer (SSE format).
 
     This is Phase 4: stream tool calls too.
+
+    ``expects_action``: a decision model judged that the request needs a tool
+    action (``decision.needs_action``). If the model then ends its turn with no
+    tool call, it is handed its own message back once and asked to act — the
+    model-first fix for a turn that announces an action and never performs it.
     """
     import logging
 
@@ -269,6 +281,9 @@ async def stream_tool_loop(
     turn = 0
     reasoning_trace: list[str] = []
     empty_retried = False
+    # The action nudge: fired at most once, and only when no tool was ever called.
+    made_tool_call = False
+    action_nudged = False
 
     while turn < max_turns:
         turn += 1
@@ -325,6 +340,7 @@ async def stream_tool_loop(
             max_prompt_tokens = max(max_prompt_tokens, response.prompt_eval_count)
 
         if response.tool_calls:
+            made_tool_call = True
             # Yield tool call events
             tool_calls_data = [
                 {"name": tc.name, "arguments": tc.arguments}
@@ -398,6 +414,22 @@ async def stream_tool_loop(
                 chat_messages.append(result_message)
                 peak_tool_result_chars = max(peak_tool_result_chars, tool_result_chars)
         else:
+            # No tool calls. If the request needs an action and none was taken,
+            # hand the model its own message back once and let it act — the
+            # model-first fix for a turn that announces an action ("I'll now
+            # create X") and never calls the tool. A decision model judged that
+            # the request needs an action (decision.needs_action); this is the
+            # structural half, and it fires at most once.
+            if expects_action and not made_tool_call and not action_nudged:
+                action_nudged = True
+                logger.info(
+                    "Action nudge: the request needs an action but no tool was called"
+                )
+                chat_messages.append(
+                    ChatMessage(role="assistant", content=response.content or "")
+                )
+                chat_messages.append(ChatMessage(role="user", content=_ACTION_NUDGE))
+                continue
             # No tool calls = direct answer
             answer = (response.content or "").strip() or EMPTY_GENERATION_FALLBACK
             event = FinalizeEvent(
