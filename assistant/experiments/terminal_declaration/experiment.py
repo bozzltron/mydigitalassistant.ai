@@ -232,7 +232,9 @@ async def main() -> None:
     tool_executor._store = store
     await store.create_user("exp_user")
 
-    tools = builtin_tools(None, store=store, llm_client=OllamaClient(base_url=OLLAMA), embed_fn=None)
+    tools = builtin_tools(
+        None, store=store, llm_client=OllamaClient(base_url=OLLAMA), embed_fn=None
+    )
 
     print("[D] deterministic -- the structural catch, no judgement")
     deterministic = await arm_deterministic()
