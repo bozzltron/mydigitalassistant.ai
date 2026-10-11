@@ -54,10 +54,10 @@ state, so the judgement stays.
 **Keep the judgement; retire the structural idea.** Per falsification condition 5, the
 extra rounds are inherent, so there is nothing to gain by re-contracting.
 
-- Remove the `require_terminal` path from `stream_tool_loop`, the contract variants from
-  `llm_client`, and the terminal regression test — they exist only for this experiment,
-  and the experiment is closed. (They are retained in this commit history; the removal
-  is the clean-ship follow-up.)
+- The `require_terminal` path was **removed** from `stream_tool_loop`, the contract
+  variants from `llm_client`, and the terminal regression test — they existed only for
+  this experiment, and the experiment is closed. `experiment.py` is kept as the record of
+  what was run; re-running it needs that diff, which is in this commit history.
 - The durable lesson is the one to carry forward: **redundancy and guarding have a
   measured cost, and two independent attempts to buy reliability cheaper than the
   current judgement both failed.** Any "council of models" should be pre-registered

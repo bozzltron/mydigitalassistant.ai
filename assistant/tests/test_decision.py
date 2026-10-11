@@ -69,6 +69,20 @@ def test_the_action_threshold_is_biased_toward_firing():
     assert decision._yes(below, "tev1:0.8b", 0.4, positive_key="do") is False
 
 
+def test_completion_nudge_is_off_by_default():
+    """The completion nudge is opt-in, and this pins the default.
+
+    It needs a ~9.5 GB model (`nimble`) and fires only on a turn that already needed
+    an action, ran a tool, and *still* left it undone (`nudge_bound`: the first nudge
+    fired on 0 of 10 live write-class turns). If this default flips back, the second
+    nudge silently costs a model load on every install.
+    """
+    from assistant.backend.config import Settings
+
+    default = Settings.model_fields["decision_completion_model"].default
+    assert default == "", "the completion nudge must stay opt-in"
+
+
 def test_log_decision_reads_the_positive_key(caplog):
     """Regression: the log looked up a hardcoded ``action`` probability.
 
