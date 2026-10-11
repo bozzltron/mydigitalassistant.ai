@@ -93,3 +93,25 @@ math and that compute is "unreliable on hard math (42–67%) for every model." *
 withdrawn** — they rested on a metric that was never validated. The harness now records the
 generated code, so the question is answerable; it has not been re-run, because hard math is
 not what this project needs.
+
+## Addendum: the hard-math re-run, and what it actually measured
+
+Re-run with the code captured. **Every failure is a `ModuleNotFoundError` or a removed
+API** — `sympy` and `scipy` are not installed, and `np.irr` was removed in numpy 2.0. The
+models wrote *correct* code that imported libraries the sandbox lacks.
+
+So the arm measured **library choice, not maths** — and the ranking is inverted: the model
+that reached for the proper tool most often scored worst. **The dedicated 9B's 4/12 is that
+artifact, and there is still no valid evidence that it is worse at anything.**
+
+**And that closes the loop on the earlier question.** The dedicated model was retired on a
+**tie** (business arithmetic, 30/30 each) plus a **cost** (a load that evicted a warm model)
+— and the cost was then removed by raising `OLLAMA_MAX_LOADED_MODELS` to 4. The hard-math
+axis that could have justified keeping it has never been measured validly.
+
+**The real bug this exposes is not a model choice.** `execute_python`'s system prompt tells
+the model to "Use numpy, scipy, sympy, pandas, statistics as needed" — and **scipy and sympy
+are not installed**. The prompt promises tools the sandbox does not have, so the model is
+punished for following instructions. Fixing that (install them, or stop promising them) is a
+prompt/image fix, not a fleet change, and it must come **before** any model comparison is
+worth running again.

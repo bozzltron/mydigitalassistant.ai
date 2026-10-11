@@ -23,13 +23,16 @@ class Settings(BaseSettings):
     register_user_content: bool = True
 
     # Math/computation model (Phase: Math Model Integration). Empty = math
-    # computation disabled (compute tool is dropped from the tool loop).
-    # NOTE: a large model here (e.g. qwen3-coder:30b) competes with chat +
-    # utility + embedding for host RAM/VRAM and must not be left resident on
-    # the hot path — the default is deliberately OFF. Opt in with MATH_MODEL
-    # and keep math_num_ctx small so it loads alongside the always-warm set.
-    math_model: str = ""
-    math_num_ctx: int = 16384
+    # computation disabled (the `compute` tool is dropped from the tool loop).
+    # The default is the **already-warm utility model**, so compute costs no extra
+    # load and no eviction — it ties the dedicated 9B on business arithmetic and
+    # beats it on hard math (experiments/business_math/). MATH_NUM_CTX MUST equal
+    # UTILITY_NUM_CTX: Ollama reloads a runner when the requested context changes.
+    # A *dedicated* large model here (e.g. qwen3-coder:30b) competes with chat +
+    # utility + embedding for host RAM and must not be left resident on the hot
+    # path — opt into one deliberately, with a small num_ctx.
+    math_model: str = "qwen3.5:4b"
+    math_num_ctx: int = 4096
     math_keep_alive: str = "10m"
 
     # Thinking-mode plumbing (Phase 6 M4 wires the escalation policy).

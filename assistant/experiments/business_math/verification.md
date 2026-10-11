@@ -99,18 +99,29 @@ Changing the requested context **reloads the model** — ~2.1 s of the ~3 s, wit
 `MATH_NUM_CTX` **must** match `UTILITY_NUM_CTX` (4096) or every compute call trades an
 eviction for a reload — worse than the problem it was meant to solve.
 
-### H5 — the dedicated model earns its keep on hard math: **VOID — the arm undermined itself**
+### H5 — the dedicated model earns its keep on hard math: **VOID — and now I know why**
 
-The arm scored hard math by parsing numbers out of stdout. On the hard problems the numbers
-it "saw" were unexplained small integers, and a 4B "beat" a 9B — which is the tell that the
-metric was **not measuring the answer**. The scores reproduced on a second run, but
-reproducible is not valid: the scoring was never shown to distinguish a wrong answer from a
-traceback from a correct answer the parser missed.
+Re-run with the generated code captured (addendum in `plan.md`). The scores reproduced
+(dedicated 4/12, chat 6/12, utility 8/12) — and **every failure is a traceback**:
 
-**No model ranking is claimed from this arm.** It is recorded as a measurement that could
-not support the conclusion drawn from it — and as the reason the harness now **records the
-generated code** (`experiment.py`), so a re-run could settle it. It has not been re-run:
-hard math is not what this project needs.
+```
+import sympy as sp              -> ModuleNotFoundError: No module named 'sympy'
+from scipy.stats import binom   -> ModuleNotFoundError: No module named 'scipy'
+from scipy.integrate import quad-> ModuleNotFoundError: No module named 'scipy'
+irr = np.irr(cash_flows)        -> AttributeError  (np.irr was removed in numpy 2.0)
+```
+
+**The models wrote correct code that imported libraries the sandbox does not have.** So
+the arm measured **which library a model reached for**, not its maths — and the ranking
+is *inverted*: the model that reached for the proper tool (`sympy`/`scipy`) most often
+scored worst. The dedicated 9B's 4/12 is that artifact, not a capability gap.
+
+The compute prompt makes this worse by **promising libraries that are absent** —
+`execute_python`'s system prompt says "Use numpy, scipy, sympy, pandas, statistics as
+needed", and `scipy` and `sympy` are not installed.
+
+**No model ranking is claimed from this arm**, and the *business* arm is unaffected: it
+needs no imports, and its 30/30 twice stands.
 
 ## What survives — and what does not
 

@@ -2,42 +2,48 @@
   "dedicated math (incumbent)": {
     "label": "dedicated math (incumbent)",
     "model": "sorc/qwen3.5-claude-4.6-opus-q4:9b",
-    "correct": 0,
+    "correct": 4,
     "n": 12,
-    "reliability": 0.0,
-    "empty_stdout": 12,
-    "empty_rate": 1.0,
-    "median_s": 0.0,
+    "reliability": 0.333,
+    "empty_stdout": 0,
+    "empty_rate": 0.0,
+    "median_s": 5.94,
     "rows": [
       {
         "trial": 1,
         "prompt": "Compute the determinant of the 3x3 matrix [[2, -1, 3], [0,",
         "expected": -53,
         "tol": 0.01,
-        "matched": null,
-        "numbers_seen": [],
-        "correct": false,
-        "empty_stdout": true,
+        "matched": -52.999999999999986,
+        "numbers_seen": [
+          -53.0
+        ],
+        "correct": true,
+        "empty_stdout": false,
         "errored": false,
-        "code": "",
-        "stdout_head": "",
-        "error": "ValueError: Model sorc/qwen3.5-claude-4.6-opus-q4:9b does not support tool calling",
-        "wall_s": 0.05
+        "code": "import numpy as np\n\nmatrix = np.array([[2, -1, 3], [0, 4, 5], [1, 2, -2]])\ndeterminant = np.linalg.det(matrix)\nprint(f\"Determinant: {determinant}\")",
+        "stdout_head": "Determinant: -52.999999999999986\n",
+        "error": "",
+        "wall_s": 15.97
       },
       {
         "trial": 1,
         "prompt": "What is the larger root of the equation x^2 - 5x + 6 = 0?",
         "expected": 3.0,
         "tol": 0.01,
-        "matched": null,
-        "numbers_seen": [],
-        "correct": false,
-        "empty_stdout": true,
+        "matched": 3.0,
+        "numbers_seen": [
+          3.0,
+          2.0,
+          3.0
+        ],
+        "correct": true,
+        "empty_stdout": false,
         "errored": false,
-        "code": "",
-        "stdout_head": "",
-        "error": "ValueError: Model sorc/qwen3.5-claude-4.6-opus-q4:9b does not support tool calling",
-        "wall_s": 0.0
+        "code": "import numpy as np\n\n# Coefficients of the quadratic equation ax^2 + bx + c = 0\na = 1\nb = -5\nc = 6\n\n# Calculate the discriminant\ndiscriminant = b**2 - 4*a*c\n\n# Calculate the two roots\nroot1 = (-b + np.sqrt(discriminant)) / (2*a)\nroot2 = (-b - np.sqrt(discriminant)) / (2*a)\n\nprint(f\"Roots: {root1}, {root2}\")\nprint(f\"Larger root: {max(root1, root2)}\")",
+        "stdout_head": "Roots: 3.0, 2.0\nLarger root: 3.0\n",
+        "error": "",
+        "wall_s": 8.66
       },
       {
         "trial": 1,
@@ -45,14 +51,19 @@
         "expected": 5.8696,
         "tol": 0.001,
         "matched": null,
-        "numbers_seen": [],
+        "numbers_seen": [
+          6.0,
+          39.0,
+          13.0,
+          1.0
+        ],
         "correct": false,
-        "empty_stdout": true,
-        "errored": false,
-        "code": "",
-        "stdout_head": "",
-        "error": "ValueError: Model sorc/qwen3.5-claude-4.6-opus-q4:9b does not support tool calling",
-        "wall_s": 0.0
+        "empty_stdout": false,
+        "errored": true,
+        "code": "import sympy as sp\n\nx = sp.symbols('x')\nintegrand = x**2 * sp.sin(x)\nresult = sp.integrate(integrand, (x, 0, sp.pi))\nnumeric_result = float(result.evalf())\nprint(f\"Exact result: {result}\")\nprint(f\"Numeric result: {numeric_result:.4f}\")",
+        "stdout_head": "\nSTDERR: Traceback (most recent call last):\n  File \"/tmp/tmp6_vyn39k.py\", line 13, in <module>\n    import sympy as sp\nModuleNotFoundError: No module named 'sympy'\n\nExit code: 1",
+        "error": "",
+        "wall_s": 4.61
       },
       {
         "trial": 1,
@@ -60,14 +71,20 @@
         "expected": 18.0282,
         "tol": 0.05,
         "matched": null,
-        "numbers_seen": [],
+        "numbers_seen": [
+          6.0,
+          19.0,
+          3.11,
+          792.0,
+          1.0
+        ],
         "correct": false,
-        "empty_stdout": true,
-        "errored": false,
-        "code": "",
-        "stdout_head": "",
-        "error": "ValueError: Model sorc/qwen3.5-claude-4.6-opus-q4:9b does not support tool calling",
-        "wall_s": 0.0
+        "empty_stdout": false,
+        "errored": true,
+        "code": "import numpy as np\n\n# Cash flows: -10000 at year 0, then 3000, 4000, 5000, 3000 for years 1-4\ncash_flows = [-10000, 3000, 4000, 5000, 3000]\n\n# Calculate IRR using numpy's irr function\nirr = np.irr(cash_flows)\n\n# Convert to percentage and round to one decimal place\nirr_percentage = irr * 100\nirr_rounded = round(irr_percentage, 1)\n\nprint(f\"IRR: {irr_percentage}%\")\nprint(f\"Rounded IRR: {irr_rounded}%",
+        "stdout_head": "\nSTDERR: Traceback (most recent call last):\n  File \"/tmp/tmpphr6_mdn.py\", line 19, in <module>\n    irr = np.irr(cash_flows)\n          ^^^^^^\n  File \"/usr/local/lib/python3.11/site-packages/numpy/__ini",
+        "error": "",
+        "wall_s": 7.09
       },
       {
         "trial": 1,
@@ -75,14 +92,19 @@
         "expected": 0.2503,
         "tol": 0.0005,
         "matched": null,
-        "numbers_seen": [],
+        "numbers_seen": [
+          6.0,
+          1.0,
+          13.0,
+          1.0
+        ],
         "correct": false,
-        "empty_stdout": true,
-        "errored": false,
-        "code": "",
-        "stdout_head": "",
-        "error": "ValueError: Model sorc/qwen3.5-claude-4.6-opus-q4:9b does not support tool calling",
-        "wall_s": 0.0
+        "empty_stdout": false,
+        "errored": true,
+        "code": "from scipy.stats import binom\n\n# Parameters\nn = 10  # number of trials\np = 0.25  # probability of success\nk = 3  # number of successes\n\n# Calculate the probability using the binomial distribution formula:\n# P(X=k) = C(n, k) * p^k * (1-p)^(n-k)\nprobability = binom.pmf(k, n, p)\n\nprint(f\"{probability:.4f}\")",
+        "stdout_head": "\nSTDERR: Traceback (most recent call last):\n  File \"/tmp/tmp6ob1gebo.py\", line 13, in <module>\n    from scipy.stats import binom\nModuleNotFoundError: No module named 'scipy'\n\nExit code: 1",
+        "error": "",
+        "wall_s": 5.28
       },
       {
         "trial": 1,
@@ -90,44 +112,55 @@
         "expected": 3.0,
         "tol": 0.01,
         "matched": null,
-        "numbers_seen": [],
+        "numbers_seen": [
+          6.0,
+          7.0,
+          13.0,
+          1.0
+        ],
         "correct": false,
-        "empty_stdout": true,
-        "errored": false,
-        "code": "",
-        "stdout_head": "",
-        "error": "ValueError: Model sorc/qwen3.5-claude-4.6-opus-q4:9b does not support tool calling",
-        "wall_s": 0.01
+        "empty_stdout": false,
+        "errored": true,
+        "code": "from sympy import symbols, Eq, solve\n\n# Define the variables\nx, y = symbols('x y')\n\n# Define the equations\neq1 = Eq(2*x + 3*y, 12)\neq2 = Eq(x - y, 1)\n\n# Solve the system of equations\nsolution = solve((eq1, eq2), (x, y))\n\nprint(solution)",
+        "stdout_head": "\nSTDERR: Traceback (most recent call last):\n  File \"/tmp/tmp6uhfdp7t.py\", line 13, in <module>\n    from sympy import symbols, Eq, solve\nModuleNotFoundError: No module named 'sympy'\n\nExit code: 1",
+        "error": "",
+        "wall_s": 4.8
       },
       {
         "trial": 2,
         "prompt": "Compute the determinant of the 3x3 matrix [[2, -1, 3], [0,",
         "expected": -53,
         "tol": 0.01,
-        "matched": null,
-        "numbers_seen": [],
-        "correct": false,
-        "empty_stdout": true,
+        "matched": -52.999999999999986,
+        "numbers_seen": [
+          -53.0
+        ],
+        "correct": true,
+        "empty_stdout": false,
         "errored": false,
-        "code": "",
-        "stdout_head": "",
-        "error": "ValueError: Model sorc/qwen3.5-claude-4.6-opus-q4:9b does not support tool calling",
-        "wall_s": 0.01
+        "code": "import numpy as np\n\nmatrix = np.array([[2, -1, 3], [0, 4, 5], [1, 2, -2]])\ndeterminant = np.linalg.det(matrix)\nprint(f\"Determinant: {determinant}\")",
+        "stdout_head": "Determinant: -52.999999999999986\n",
+        "error": "",
+        "wall_s": 3.66
       },
       {
         "trial": 2,
         "prompt": "What is the larger root of the equation x^2 - 5x + 6 = 0?",
         "expected": 3.0,
         "tol": 0.01,
-        "matched": null,
-        "numbers_seen": [],
-        "correct": false,
-        "empty_stdout": true,
+        "matched": 3.0,
+        "numbers_seen": [
+          3.0,
+          2.0,
+          3.0
+        ],
+        "correct": true,
+        "empty_stdout": false,
         "errored": false,
-        "code": "",
-        "stdout_head": "",
-        "error": "ValueError: Model sorc/qwen3.5-claude-4.6-opus-q4:9b does not support tool calling",
-        "wall_s": 0.01
+        "code": "import numpy as np\n\n# Coefficients of the quadratic equation ax^2 + bx + c = 0\na = 1\nb = -5\nc = 6\n\n# Calculate the discriminant\ndiscriminant = b**2 - 4*a*c\n\n# Calculate the two roots\nroot1 = (-b + np.sqrt(discriminant)) / (2*a)\nroot2 = (-b - np.sqrt(discriminant)) / (2*a)\n\nprint(f\"Roots: {root1}, {root2}\")\nprint(f\"Larger root: {max(root1, root2)}\")",
+        "stdout_head": "Roots: 3.0, 2.0\nLarger root: 3.0\n",
+        "error": "",
+        "wall_s": 5.75
       },
       {
         "trial": 2,
@@ -135,14 +168,17 @@
         "expected": 5.8696,
         "tol": 0.001,
         "matched": null,
-        "numbers_seen": [],
+        "numbers_seen": [
+          13.0,
+          1.0
+        ],
         "correct": false,
-        "empty_stdout": true,
-        "errored": false,
-        "code": "",
-        "stdout_head": "",
-        "error": "ValueError: Model sorc/qwen3.5-claude-4.6-opus-q4:9b does not support tool calling",
-        "wall_s": 0.0
+        "empty_stdout": false,
+        "errored": true,
+        "code": "import sympy as sp\n\nx = sp.symbols('x')\nintegrand = x**2 * sp.sin(x)\nresult = sp.integrate(integrand, (x, 0, sp.pi))\nnumeric_result = float(result.evalf())\nprint(f\"Exact result: {result}\")\nprint(f\"Numeric result: {numeric_result:.4f}\")",
+        "stdout_head": "\nSTDERR: Traceback (most recent call last):\n  File \"/tmp/tmpw_gxyhvq.py\", line 13, in <module>\n    import sympy as sp\nModuleNotFoundError: No module named 'sympy'\n\nExit code: 1",
+        "error": "",
+        "wall_s": 4.75
       },
       {
         "trial": 2,
@@ -150,14 +186,20 @@
         "expected": 18.0282,
         "tol": 0.05,
         "matched": null,
-        "numbers_seen": [],
+        "numbers_seen": [
+          6.0,
+          19.0,
+          3.11,
+          792.0,
+          1.0
+        ],
         "correct": false,
-        "empty_stdout": true,
-        "errored": false,
-        "code": "",
-        "stdout_head": "",
-        "error": "ValueError: Model sorc/qwen3.5-claude-4.6-opus-q4:9b does not support tool calling",
-        "wall_s": 0.0
+        "empty_stdout": false,
+        "errored": true,
+        "code": "import numpy as np\n\n# Cash flows: -10000 at year 0, then 3000, 4000, 5000, 3000 for years 1-4\ncash_flows = [-10000, 3000, 4000, 5000, 3000]\n\n# Calculate IRR using numpy's irr function\nirr = np.irr(cash_flows)\n\n# Convert to percentage and round to one decimal place\nirr_percentage = irr * 100\nirr_rounded = round(irr_percentage, 1)\n\nprint(f\"IRR: {irr_percentage}%\")\nprint(f\"Rounded IRR: {irr_rounded}%",
+        "stdout_head": "\nSTDERR: Traceback (most recent call last):\n  File \"/tmp/tmplpi6ziug.py\", line 19, in <module>\n    irr = np.irr(cash_flows)\n          ^^^^^^\n  File \"/usr/local/lib/python3.11/site-packages/numpy/__ini",
+        "error": "",
+        "wall_s": 7.55
       },
       {
         "trial": 2,
@@ -165,14 +207,19 @@
         "expected": 0.2503,
         "tol": 0.0005,
         "matched": null,
-        "numbers_seen": [],
+        "numbers_seen": [
+          72.0,
+          1.0,
+          13.0,
+          1.0
+        ],
         "correct": false,
-        "empty_stdout": true,
-        "errored": false,
-        "code": "",
-        "stdout_head": "",
-        "error": "ValueError: Model sorc/qwen3.5-claude-4.6-opus-q4:9b does not support tool calling",
-        "wall_s": 0.0
+        "empty_stdout": false,
+        "errored": true,
+        "code": "from scipy.stats import binom\n\n# Parameters\nn = 10  # number of trials\np = 0.25  # probability of success\nk = 3  # number of successes\n\n# Calculate the probability using the binomial distribution formula:\n# P(X=k) = C(n, k) * p^k * (1-p)^(n-k)\nprobability = binom.pmf(k, n, p)\n\nprint(f\"{probability:.4f}\")",
+        "stdout_head": "\nSTDERR: Traceback (most recent call last):\n  File \"/tmp/tmpcw72g1xn.py\", line 13, in <module>\n    from scipy.stats import binom\nModuleNotFoundError: No module named 'scipy'\n\nExit code: 1",
+        "error": "",
+        "wall_s": 6.13
       },
       {
         "trial": 2,
@@ -180,14 +227,18 @@
         "expected": 3.0,
         "tol": 0.01,
         "matched": null,
-        "numbers_seen": [],
+        "numbers_seen": [
+          0.0,
+          13.0,
+          1.0
+        ],
         "correct": false,
-        "empty_stdout": true,
-        "errored": false,
-        "code": "",
-        "stdout_head": "",
-        "error": "ValueError: Model sorc/qwen3.5-claude-4.6-opus-q4:9b does not support tool calling",
-        "wall_s": 0.0
+        "empty_stdout": false,
+        "errored": true,
+        "code": "from sympy import symbols, Eq, solve\n\n# Define the variables\nx, y = symbols('x y')\n\n# Define the equations\neq1 = Eq(2*x + 3*y, 12)\neq2 = Eq(x - y, 1)\n\n# Solve the system of equations\nsolution = solve((eq1, eq2), (x, y))\n\nprint(solution)",
+        "stdout_head": "\nSTDERR: Traceback (most recent call last):\n  File \"/tmp/tmpolud0sly.py\", line 13, in <module>\n    from sympy import symbols, Eq, solve\nModuleNotFoundError: No module named 'sympy'\n\nExit code: 1",
+        "error": "",
+        "wall_s": 13.79
       }
     ]
   },
@@ -199,7 +250,7 @@
     "reliability": 0.5,
     "empty_stdout": 0,
     "empty_rate": 0.0,
-    "median_s": 3.55,
+    "median_s": 4.21,
     "rows": [
       {
         "trial": 1,
@@ -216,7 +267,7 @@
         "code": "import numpy as np\n\nmatrix = np.array([[2, -1, 3], [0, 4, 5], [1, 2, -2]])\ndeterminant = np.linalg.det(matrix)\nprint(determinant)",
         "stdout_head": "-52.999999999999986\n",
         "error": "",
-        "wall_s": 7.71
+        "wall_s": 35.68
       },
       {
         "trial": 1,
@@ -235,7 +286,7 @@
         "code": "import numpy as np\n\n# Coefficients of the quadratic equation ax^2 + bx + c = 0\na = 1\nb = -5\nc = 6\n\n# Calculate the roots using the quadratic formula\nroots = np.roots([a, b, c])\n\n# Identify the larger root\nlarger_root = max(roots)\n\nprint(f\"The roots are: {roots}\")\nprint(f\"The larger root is: {larger_root}\")",
         "stdout_head": "The roots are: [3. 2.]\nThe larger root is: 3.0\n",
         "error": "",
-        "wall_s": 4.41
+        "wall_s": 47.36
       },
       {
         "trial": 1,
@@ -244,9 +295,9 @@
         "tol": 0.001,
         "matched": null,
         "numbers_seen": [
-          3.0,
-          3.0,
           4.0,
+          0.0,
+          7.0,
           13.0,
           1.0
         ],
@@ -254,9 +305,9 @@
         "empty_stdout": false,
         "errored": true,
         "code": "import sympy as sp\n\nx = sp.symbols('x')\nintegrand = x**2 * sp.sin(x)\nintegral_result = sp.integrate(integrand, (x, 0, sp.pi))\nnumeric_value = float(integral_result.evalf())\nprint(numeric_value)",
-        "stdout_head": "\nSTDERR: Traceback (most recent call last):\n  File \"/tmp/tmpb3d3mq4y.py\", line 13, in <module>\n    import sympy as sp\nModuleNotFoundError: No module named 'sympy'\n\nExit code: 1",
+        "stdout_head": "\nSTDERR: Traceback (most recent call last):\n  File \"/tmp/tmp4vvr0r7h.py\", line 13, in <module>\n    import sympy as sp\nModuleNotFoundError: No module named 'sympy'\n\nExit code: 1",
         "error": "",
-        "wall_s": 3.45
+        "wall_s": 4.24
       },
       {
         "trial": 1,
@@ -265,9 +316,8 @@
         "tol": 0.05,
         "matched": null,
         "numbers_seen": [
-          66.0,
           7.0,
-          9.0,
+          40.0,
           16.0,
           3.11,
           792.0,
@@ -277,9 +327,9 @@
         "empty_stdout": false,
         "errored": true,
         "code": "import numpy as np\n\ncash_flows = [-10000, 3000, 4000, 5000, 3000]\nirr = np.irr(cash_flows)\nprint(f\"{irr * 100:.1f}\")",
-        "stdout_head": "\nSTDERR: Traceback (most recent call last):\n  File \"/tmp/tmp66a7sg9u.py\", line 16, in <module>\n    irr = np.irr(cash_flows)\n          ^^^^^^\n  File \"/usr/local/lib/python3.11/site-packages/numpy/__ini",
+        "stdout_head": "\nSTDERR: Traceback (most recent call last):\n  File \"/tmp/tmp7oub40qx.py\", line 16, in <module>\n    irr = np.irr(cash_flows)\n          ^^^^^^\n  File \"/usr/local/lib/python3.11/site-packages/numpy/__ini",
         "error": "",
-        "wall_s": 3.55
+        "wall_s": 4.17
       },
       {
         "trial": 1,
@@ -288,9 +338,6 @@
         "tol": 0.0005,
         "matched": null,
         "numbers_seen": [
-          1.0,
-          8.0,
-          6.0,
           13.0,
           1.0
         ],
@@ -298,9 +345,9 @@
         "empty_stdout": false,
         "errored": true,
         "code": "from scipy.stats import binom\n\nn = 10\np = 0.25\nk = 3\n\nprobability = binom.pmf(k, n, p)\nprint(f\"{probability:.4f}\")",
-        "stdout_head": "\nSTDERR: Traceback (most recent call last):\n  File \"/tmp/tmp1eei8pf6.py\", line 13, in <module>\n    from scipy.stats import binom\nModuleNotFoundError: No module named 'scipy'\n\nExit code: 1",
+        "stdout_head": "\nSTDERR: Traceback (most recent call last):\n  File \"/tmp/tmpsumloszs.py\", line 13, in <module>\n    from scipy.stats import binom\nModuleNotFoundError: No module named 'scipy'\n\nExit code: 1",
         "error": "",
-        "wall_s": 3.04
+        "wall_s": 3.63
       },
       {
         "trial": 1,
@@ -317,7 +364,7 @@
         "code": "import numpy as np\n\n# Coefficients matrix A\nA = np.array([[2, 3], [1, -1]])\n\n# Constants vector B\nB = np.array([12, 1])\n\n# Solve the linear system\nX = np.linalg.solve(A, B)\n\nx_value = X[0]\nprint(f\"The value of x is: {x_value}\")",
         "stdout_head": "The value of x is: 3.0\n",
         "error": "",
-        "wall_s": 3.9
+        "wall_s": 4.55
       },
       {
         "trial": 2,
@@ -334,7 +381,7 @@
         "code": "import numpy as np\n\nmatrix = np.array([[2, -1, 3], [0, 4, 5], [1, 2, -2]])\ndeterminant = np.linalg.det(matrix)\nprint(determinant)",
         "stdout_head": "-52.999999999999986\n",
         "error": "",
-        "wall_s": 3.14
+        "wall_s": 3.73
       },
       {
         "trial": 2,
@@ -353,7 +400,7 @@
         "code": "import numpy as np\n\n# Coefficients of the quadratic equation ax^2 + bx + c = 0\na = 1\nb = -5\nc = 6\n\n# Calculate the roots using the quadratic formula\nroots = np.roots([a, b, c])\n\n# Identify the larger root\nlarger_root = max(roots)\n\nprint(f\"The roots are: {roots}\")\nprint(f\"The larger root is: {larger_root}\")",
         "stdout_head": "The roots are: [3. 2.]\nThe larger root is: 3.0\n",
         "error": "",
-        "wall_s": 4.29
+        "wall_s": 4.88
       },
       {
         "trial": 2,
@@ -362,8 +409,8 @@
         "tol": 0.001,
         "matched": null,
         "numbers_seen": [
-          0.0,
-          3.0,
+          6.0,
+          7.0,
           13.0,
           1.0
         ],
@@ -371,9 +418,9 @@
         "empty_stdout": false,
         "errored": true,
         "code": "import sympy as sp\n\nx = sp.symbols('x')\nintegrand = x**2 * sp.sin(x)\nintegral_result = sp.integrate(integrand, (x, 0, sp.pi))\nnumeric_value = float(integral_result.evalf())\nprint(numeric_value)",
-        "stdout_head": "\nSTDERR: Traceback (most recent call last):\n  File \"/tmp/tmpvdzjb0n3.py\", line 13, in <module>\n    import sympy as sp\nModuleNotFoundError: No module named 'sympy'\n\nExit code: 1",
+        "stdout_head": "\nSTDERR: Traceback (most recent call last):\n  File \"/tmp/tmpvhxk6_7z.py\", line 13, in <module>\n    import sympy as sp\nModuleNotFoundError: No module named 'sympy'\n\nExit code: 1",
         "error": "",
-        "wall_s": 3.4
+        "wall_s": 3.9
       },
       {
         "trial": 2,
@@ -382,8 +429,8 @@
         "tol": 0.05,
         "matched": null,
         "numbers_seen": [
+          4.0,
           5.0,
-          39.0,
           16.0,
           3.11,
           792.0,
@@ -393,9 +440,9 @@
         "empty_stdout": false,
         "errored": true,
         "code": "import numpy as np\n\ncash_flows = [-10000, 3000, 4000, 5000, 3000]\nirr = np.irr(cash_flows)\nprint(f\"{irr * 100:.1f}\")",
-        "stdout_head": "\nSTDERR: Traceback (most recent call last):\n  File \"/tmp/tmphn5a39ye.py\", line 16, in <module>\n    irr = np.irr(cash_flows)\n          ^^^^^^\n  File \"/usr/local/lib/python3.11/site-packages/numpy/__ini",
+        "stdout_head": "\nSTDERR: Traceback (most recent call last):\n  File \"/tmp/tmpbqey4q5e.py\", line 16, in <module>\n    irr = np.irr(cash_flows)\n          ^^^^^^\n  File \"/usr/local/lib/python3.11/site-packages/numpy/__ini",
         "error": "",
-        "wall_s": 3.55
+        "wall_s": 4.03
       },
       {
         "trial": 2,
@@ -404,9 +451,8 @@
         "tol": 0.0005,
         "matched": null,
         "numbers_seen": [
-          29.0,
-          4.0,
-          5.0,
+          71.0,
+          7.0,
           13.0,
           1.0
         ],
@@ -414,9 +460,9 @@
         "empty_stdout": false,
         "errored": true,
         "code": "from scipy.stats import binom\n\nn = 10\np = 0.25\nk = 3\n\nprobability = binom.pmf(k, n, p)\nprint(f\"{probability:.4f}\")",
-        "stdout_head": "\nSTDERR: Traceback (most recent call last):\n  File \"/tmp/tmp29qd4s5a.py\", line 13, in <module>\n    from scipy.stats import binom\nModuleNotFoundError: No module named 'scipy'\n\nExit code: 1",
+        "stdout_head": "\nSTDERR: Traceback (most recent call last):\n  File \"/tmp/tmpsape71z7.py\", line 13, in <module>\n    from scipy.stats import binom\nModuleNotFoundError: No module named 'scipy'\n\nExit code: 1",
         "error": "",
-        "wall_s": 3.0
+        "wall_s": 3.41
       },
       {
         "trial": 2,
@@ -433,7 +479,7 @@
         "code": "import numpy as np\n\n# Coefficients matrix A\nA = np.array([[2, 3], [1, -1]])\n\n# Constants vector B\nB = np.array([12, 1])\n\n# Solve the linear system\nX = np.linalg.solve(A, B)\n\nx_value = X[0]\nprint(f\"The value of x is: {x_value}\")",
         "stdout_head": "The value of x is: 3.0\n",
         "error": "",
-        "wall_s": 3.92
+        "wall_s": 4.35
       }
     ]
   },
@@ -445,7 +491,7 @@
     "reliability": 0.667,
     "empty_stdout": 0,
     "empty_rate": 0.0,
-    "median_s": 2.98,
+    "median_s": 3.25,
     "rows": [
       {
         "trial": 1,
@@ -462,7 +508,7 @@
         "code": "import numpy as np\n\nmatrix = np.array([[2, -1, 3], [0, 4, 5], [1, 2, -2]])\ndeterminant = np.linalg.det(matrix)\nprint(determinant)",
         "stdout_head": "-52.999999999999986\n",
         "error": "",
-        "wall_s": 2.43
+        "wall_s": 4.41
       },
       {
         "trial": 1,
@@ -481,7 +527,7 @@
         "code": "import numpy as np\n\n# Coefficients for the quadratic equation ax^2 + bx + c = 0\na = 1\nb = -5\nc = 6\n\n# Calculate the discriminant\ndiscriminant = b**2 - 4*a*c\n\n# Calculate the two roots using the quadratic formula\nroot1 = (-b + np.sqrt(discriminant)) / (2*a)\nroot2 = (-b - np.sqrt(discriminant)) / (2*a)\n\n# Find the larger root\nlarger_root = max(root1, root2)\n\nprint(f\"Roots: {root1}, {root2}\")\nprint(f",
         "stdout_head": "Roots: 3.0, 2.0\nLarger root: 3.0\n",
         "error": "",
-        "wall_s": 3.53
+        "wall_s": 3.52
       },
       {
         "trial": 1,
@@ -490,7 +536,8 @@
         "tol": 0.001,
         "matched": null,
         "numbers_seen": [
-          407.0,
+          650.0,
+          5.0,
           14.0,
           1.0
         ],
@@ -498,9 +545,9 @@
         "empty_stdout": false,
         "errored": true,
         "code": "import numpy as np\nfrom scipy.integrate import quad\n\n# Define the integrand function f(x) = x^2 * sin(x)\ndef integrand(x):\n    return x**2 * np.sin(x)\n\n# Compute the definite integral from 0 to pi\nresult, error = quad(integrand, 0, np.pi)\n\n# Round to 4 decimal places\nrounded_result = round(result, 4)\n\nprint(f\"Exact numeric value: {result}\")\nprint(f\"Rounded to 4 decimal places: {rounded_result}\")",
-        "stdout_head": "\nSTDERR: Traceback (most recent call last):\n  File \"/tmp/tmp407vpiu_.py\", line 14, in <module>\n    from scipy.integrate import quad\nModuleNotFoundError: No module named 'scipy'\n\nExit code: 1",
+        "stdout_head": "\nSTDERR: Traceback (most recent call last):\n  File \"/tmp/tmp650i5fxi.py\", line 14, in <module>\n    from scipy.integrate import quad\nModuleNotFoundError: No module named 'scipy'\n\nExit code: 1",
         "error": "",
-        "wall_s": 3.16
+        "wall_s": 3.32
       },
       {
         "trial": 1,
@@ -519,9 +566,9 @@
         "empty_stdout": false,
         "errored": true,
         "code": "import numpy as np\n\n# Cash flows: -10000 at year 0, then 3000, 4000, 5000, 3000 in years 1-4\ncash_flows = [-10000, 3000, 4000, 5000, 3000]\n\n# Calculate IRR using numpy's irr function\nirr = np.irr(cash_flows)\nirr_percentage = irr * 100\n\nprint(f\"IRR: {irr_percentage:.1f}%\")",
-        "stdout_head": "\nSTDERR: Traceback (most recent call last):\n  File \"/tmp/tmpistaiah9.py\", line 19, in <module>\n    irr = np.irr(cash_flows)\n          ^^^^^^\n  File \"/usr/local/lib/python3.11/site-packages/numpy/__ini",
+        "stdout_head": "\nSTDERR: Traceback (most recent call last):\n  File \"/tmp/tmploe9kbur.py\", line 19, in <module>\n    irr = np.irr(cash_flows)\n          ^^^^^^\n  File \"/usr/local/lib/python3.11/site-packages/numpy/__ini",
         "error": "",
-        "wall_s": 3.34
+        "wall_s": 3.49
       },
       {
         "trial": 1,
@@ -538,7 +585,7 @@
         "code": "import math\n\n# Parameters\nn = 10  # number of trials\nk = 3   # number of successes\np = 0.25  # probability of success\n\n# Binomial probability formula: P(X=k) = C(n, k) * p^k * (1-p)^(n-k)\nfrom math import comb\n\nprobability = comb(n, k) * (p ** k) * ((1 - p) ** (n - k))\n\nprint(f\"{probability:.4f}\")",
         "stdout_head": "0.2503\n",
         "error": "",
-        "wall_s": 2.9
+        "wall_s": 3.08
       },
       {
         "trial": 1,
@@ -556,7 +603,7 @@
         "code": "import numpy as np\n\n# Coefficients matrix for the system:\n# 2x + 3y = 12\n# 1x - 1y = 1\nA = np.array([[2, 3], [1, -1]])\nB = np.array([12, 1])\n\n# Solve the linear system\nsolution = np.linalg.solve(A, B)\nx, y = solution\n\nprint(f\"x = {x}\")\nprint(f\"y = {y}\")",
         "stdout_head": "x = 3.0\ny = 2.0\n",
         "error": "",
-        "wall_s": 2.89
+        "wall_s": 2.99
       },
       {
         "trial": 2,
@@ -573,7 +620,7 @@
         "code": "import numpy as np\n\nmatrix = np.array([[2, -1, 3], [0, 4, 5], [1, 2, -2]])\ndeterminant = np.linalg.det(matrix)\nprint(determinant)",
         "stdout_head": "-52.999999999999986\n",
         "error": "",
-        "wall_s": 1.99
+        "wall_s": 2.06
       },
       {
         "trial": 2,
@@ -592,7 +639,7 @@
         "code": "import numpy as np\n\n# Coefficients for the quadratic equation ax^2 + bx + c = 0\na = 1\nb = -5\nc = 6\n\n# Calculate the discriminant\ndiscriminant = b**2 - 4*a*c\n\n# Calculate the two roots using the quadratic formula\nroot1 = (-b + np.sqrt(discriminant)) / (2*a)\nroot2 = (-b - np.sqrt(discriminant)) / (2*a)\n\n# Find the larger root\nlarger_root = max(root1, root2)\n\nprint(f\"Roots: {root1}, {root2}\")\nprint(f",
         "stdout_head": "Roots: 3.0, 2.0\nLarger root: 3.0\n",
         "error": "",
-        "wall_s": 3.6
+        "wall_s": 3.66
       },
       {
         "trial": 2,
@@ -601,7 +648,7 @@
         "tol": 0.001,
         "matched": null,
         "numbers_seen": [
-          16.0,
+          2.0,
           14.0,
           1.0
         ],
@@ -609,9 +656,9 @@
         "empty_stdout": false,
         "errored": true,
         "code": "import numpy as np\nfrom scipy.integrate import quad\n\n# Define the integrand function f(x) = x^2 * sin(x)\ndef integrand(x):\n    return x**2 * np.sin(x)\n\n# Compute the definite integral from 0 to pi\nresult, error = quad(integrand, 0, np.pi)\n\n# Round to 4 decimal places\nrounded_result = round(result, 4)\n\nprint(f\"Exact numeric value: {result}\")\nprint(f\"Rounded to 4 decimal places: {rounded_result}\")",
-        "stdout_head": "\nSTDERR: Traceback (most recent call last):\n  File \"/tmp/tmpohbbk16q.py\", line 14, in <module>\n    from scipy.integrate import quad\nModuleNotFoundError: No module named 'scipy'\n\nExit code: 1",
+        "stdout_head": "\nSTDERR: Traceback (most recent call last):\n  File \"/tmp/tmpmsz2rory.py\", line 14, in <module>\n    from scipy.integrate import quad\nModuleNotFoundError: No module named 'scipy'\n\nExit code: 1",
         "error": "",
-        "wall_s": 3.06
+        "wall_s": 3.19
       },
       {
         "trial": 2,
@@ -620,8 +667,8 @@
         "tol": 0.05,
         "matched": null,
         "numbers_seen": [
-          8.0,
-          716.0,
+          3.0,
+          5.0,
           19.0,
           3.11,
           792.0,
@@ -631,9 +678,9 @@
         "empty_stdout": false,
         "errored": true,
         "code": "import numpy as np\n\n# Cash flows: -10000 at year 0, then 3000, 4000, 5000, 3000 in years 1-4\ncash_flows = [-10000, 3000, 4000, 5000, 3000]\n\n# Calculate IRR using numpy's irr function\nirr = np.irr(cash_flows)\nirr_percentage = irr * 100\n\nprint(f\"IRR: {irr_percentage:.1f}%\")",
-        "stdout_head": "\nSTDERR: Traceback (most recent call last):\n  File \"/tmp/tmpha8to716.py\", line 19, in <module>\n    irr = np.irr(cash_flows)\n          ^^^^^^\n  File \"/usr/local/lib/python3.11/site-packages/numpy/__ini",
+        "stdout_head": "\nSTDERR: Traceback (most recent call last):\n  File \"/tmp/tmpnkmxx3s5.py\", line 19, in <module>\n    irr = np.irr(cash_flows)\n          ^^^^^^\n  File \"/usr/local/lib/python3.11/site-packages/numpy/__ini",
         "error": "",
-        "wall_s": 3.31
+        "wall_s": 3.43
       },
       {
         "trial": 2,
@@ -650,7 +697,7 @@
         "code": "import math\n\n# Parameters\nn = 10  # number of trials\nk = 3   # number of successes\np = 0.25  # probability of success\n\n# Binomial probability formula: P(X=k) = C(n, k) * p^k * (1-p)^(n-k)\nfrom math import comb\n\nprobability = comb(n, k) * (p ** k) * ((1 - p) ** (n - k))\n\nprint(f\"{probability:.4f}\")",
         "stdout_head": "0.2503\n",
         "error": "",
-        "wall_s": 2.87
+        "wall_s": 3.0
       },
       {
         "trial": 2,
@@ -668,7 +715,7 @@
         "code": "import numpy as np\n\n# Coefficients matrix for the system:\n# 2x + 3y = 12\n# 1x - 1y = 1\nA = np.array([[2, 3], [1, -1]])\nB = np.array([12, 1])\n\n# Solve the linear system\nsolution = np.linalg.solve(A, B)\nx, y = solution\n\nprint(f\"x = {x}\")\nprint(f\"y = {y}\")",
         "stdout_head": "x = 3.0\ny = 2.0\n",
         "error": "",
-        "wall_s": 2.82
+        "wall_s": 2.93
       }
     ]
   }
