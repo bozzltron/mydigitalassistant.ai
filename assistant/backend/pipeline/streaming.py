@@ -222,6 +222,15 @@ _COMPLETION_NUDGE = (
     "perform it. Call the tool that performs it now."
 )
 
+# The structural alternative to the judged nudge (``require_terminal``): when a turn
+# must end by calling ``finalize``, prose with no tool call is incomplete *by
+# construction*, so the loop re-prompts without any model judgement about the request.
+_TERMINAL_NUDGE = (
+    "Your turn is not finished: you replied without calling `finalize`. If the "
+    "request asked for a change or a lookup that has not happened yet, do it now; "
+    "then call `finalize` with your answer."
+)
+
 
 def _summarize_call(name: str, args: dict) -> str:
     """A short ``name(key=value, …)`` line for the completion judgement.
@@ -285,6 +294,7 @@ async def stream_tool_loop(
     session_id: str = "",
     max_turns: int | None = None,
     expects_action: bool = False,
+    require_terminal: bool = False,
 ) -> AsyncGenerator[str, None]:
     """Stream the full tool loop including tool calls and final answer (SSE format).
 
@@ -294,6 +304,13 @@ async def stream_tool_loop(
     action (``decision.needs_action``). If the model then ends its turn with no
     tool call, it is handed its own message back once and asked to act — the
     model-first fix for a turn that announces an action and never performs it.
+
+    ``require_terminal``: the *structural* alternative. The turn is expected to end
+    by calling ``finalize``; a round with no tool call and no ``finalize`` is
+    incomplete by construction, so the loop re-prompts once without any judgement
+    about the request. Mutually exclusive with ``expects_action`` in effect — the
+    structural check supersedes it. Measured in
+    ``assistant/experiments/terminal_declaration/``.
     """
     from assistant.backend.config import settings
     from assistant.backend.pipeline.context_budget import content_char_limit
@@ -345,6 +362,7 @@ async def stream_tool_loop(
     # The action nudge: fired at most once, and only when the action is missing.
     made_tool_call = False
     action_nudged = False
+    terminal_nudged = False
     tool_calls_made: list[str] = []
 
     while turn < max_turns:
@@ -477,17 +495,26 @@ async def stream_tool_loop(
                 chat_messages.append(result_message)
                 peak_tool_result_chars = max(peak_tool_result_chars, tool_result_chars)
         else:
-            # No tool calls. A nudge is handed back once when the request needed
-            # an action the turn did not perform (see _maybe_nudge).
-            nudge = await _maybe_nudge(
-                expects_action=expects_action,
-                made_tool_call=made_tool_call,
-                already_nudged=action_nudged,
-                request_text=request_text,
-                tool_calls_made=tool_calls_made,
-            )
+            # No tool calls. A nudge is handed back once when the turn is not
+            # finished — judged (the request needed an action; see _maybe_nudge) or
+            # structural (``require_terminal``: the model must end by calling
+            # ``finalize``, so prose alone is incomplete by construction).
+            nudge: str | None = None
+            if require_terminal:
+                if not terminal_nudged:
+                    nudge = _TERMINAL_NUDGE
+                    terminal_nudged = True
+            else:
+                nudge = await _maybe_nudge(
+                    expects_action=expects_action,
+                    made_tool_call=made_tool_call,
+                    already_nudged=action_nudged,
+                    request_text=request_text,
+                    tool_calls_made=tool_calls_made,
+                )
+                if nudge:
+                    action_nudged = True
             if nudge:
-                action_nudged = True
                 # Surface it: a self-correction the user cannot see is just latency.
                 yield serialize_event(
                     StageEvent(stage="acting", detail="making sure that was done")
