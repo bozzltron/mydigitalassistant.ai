@@ -31,7 +31,7 @@ decision.
 | Utility | `UTILITY_MODEL` | Extraction, routing, summarization | warm | fast, cheap, structured output |
 | Embedding | `EMBEDDING_MODEL` | Frame/query vectors | warm | fixed output dims (see re-embed rule) |
 | Max | `MAX_MODEL` | Escalation tier (auto reasoner / "Max" toggle) | **on-demand** (short `keep_alive`) | thinking + tools, high quality |
-| Math | `MATH_MODEL` | `compute` tool: writes Python for sandboxed exec | on-demand | tools + codegen quality |
+| Math | `MATH_MODEL` | `compute` tool: the model writes Python, the backend executes it, the answer is **stdout** (`docs/COMPUTE.md`) | on-demand | tools + codegen quality |
 | Coder | `CODER_MODEL` | Reserved for tool codegen | — | empty = chat model handles it |
 | Decision | `DECISION_MODEL`, `DECISION_COMPLETION_MODEL` | Typed judgements for the tool loop (`needs_action`, `outstanding`) | on-demand (short `keep_alive`) | decision model — ollama's `/v1/systemone` |
 
