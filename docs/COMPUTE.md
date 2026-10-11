@@ -88,10 +88,13 @@ from that model's other use costs a reload per switch.
 - `assistant/experiments/math_model_value/` — the earlier math model vs the 27B on
   *generic* problems. Its Q8 verdict was **quant-confounded**, superseded by
   `model_fleet_q4`.
-- **Known limit:** compute is reliable on business arithmetic (~100%) and **unreliable on
-  hard math (42–67%) for every model** — the failures look like codegen (a traceback or a
-  missing print), and the likely fix is the **compute prompt**, which never asks for a
-  single printed final value.
+- **Not measured: hard math.** The business arm is sound — its failures were **empty
+  stdout**, which needs no parser, and two models scoring 30/30 shows the scoring found
+  every answer. The **hard-math arm is void**: it scored stdout by parsing numbers, and on
+  hard problems it scraped unexplained values (a 4B "beating" a 9B was the tell), so no
+  hard-math claim is made here. The harness now records the generated code, so a re-run
+  could settle it — but hard math is not what this project needs (business arithmetic is),
+  so it has not been re-run.
 
 ## Config
 

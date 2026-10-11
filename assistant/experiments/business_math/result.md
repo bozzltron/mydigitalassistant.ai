@@ -73,30 +73,23 @@ Two things to decide first, both cheap:
 flipping (and 2.89 s to reload back). So the switch is only a win if `MATH_NUM_CTX` is
 **4096**, matching `UTILITY_NUM_CTX`.
 
-**H5 fails — the dedicated model earns nothing.** On hard math it is the **worst** of the
-three:
-
-| model | business | hard | residency |
-|---|---|---|---|
-| dedicated (`sorc/…-q4:9b`) | 30/30 | **5/12** | on-demand — evicts a warm model |
-| warm chat (`qwen3.5:9b`) | 27/30 | 6/12 | warm |
-| **warm utility (`qwen3.5:4b`)** | **30/30** | **8/12** | **warm** |
+**H5 is void — the arm undermined itself.** It scored hard math by parsing numbers out of
+stdout, and on hard problems it scraped unexplained values (a 4B "beating" a 9B was the
+tell). **No model ranking is claimed from it** — see `verification.md`.
 
 ### Decision
 
-**Set `MATH_MODEL=qwen3.5:4b` with `MATH_NUM_CTX=4096`.** The warm utility model ties the
-dedicated one on business math, **beats** it on hard math, and is already resident — no
-load, no eviction, and no reload once the context matches. That removes the dedicated
-6.6 GB on-demand model from the fleet: **seven models to six.**
+**Set `MATH_MODEL=qwen3.5:4b` with `MATH_NUM_CTX=4096`** — on the **business arm alone**,
+which is sound: its signal is empty-vs-non-empty stdout (needs no parser), and 30/30 twice
+proves the scoring found every answer. The warm utility model **ties** the dedicated one on
+business arithmetic and reuses a resident runner: no load, no eviction, and no reload once
+the context matches. That removes the dedicated 6.6 GB on-demand model — **seven models to
+six, and the minimum fleet is four** (see `docs/MODEL_SELECTION.md`).
 
-### What this does not settle — and the next lever
+### The retraction
 
-- **Hard math is unreliable on every model** (42–67%), and the failures are the *same two
-  problems* for all of them, with output that looks like tracebacks rather than wrong
-  numbers. That points at **codegen**, and the most likely fix is the **compute prompt**:
-  it asks for "Python code" but never for *a single printed final value*. That is a
-  prompt fix on an already-loaded model, and it is the next thing worth measuring — not a
-  bigger model.
-- The hard-math failures were **not inspected at the stdout level**; "codegen, not
-  arithmetic" is inferred from the numbers seen.
-- A 4B beating a 9B on 12 hard problems is a probe, not a law.
+An earlier version of this file claimed the dedicated model was "the worst of three" on hard
+math and that compute is "unreliable on hard math (42–67%) for every model." **Both are
+withdrawn** — they rested on a metric that was never validated. The harness now records the
+generated code, so the question is answerable; it has not been re-run, because hard math is
+not what this project needs.

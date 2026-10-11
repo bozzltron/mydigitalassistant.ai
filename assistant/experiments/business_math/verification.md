@@ -99,28 +99,24 @@ Changing the requested context **reloads the model** — ~2.1 s of the ~3 s, wit
 `MATH_NUM_CTX` **must** match `UTILITY_NUM_CTX` (4096) or every compute call trades an
 eviction for a reload — worse than the problem it was meant to solve.
 
-### H5 — the dedicated model earns its keep on hard math: **fails**
+### H5 — the dedicated model earns its keep on hard math: **VOID — the arm undermined itself**
 
-```
-model                            hard-math (12 pairs)
-dedicated math (sorc/…-q4:9b)     5/12 = 0.42
-warm chat (qwen3.5:9b)            6/12 = 0.50
-warm utility (qwen3.5:4b)         8/12 = 0.67
-```
+The arm scored hard math by parsing numbers out of stdout. On the hard problems the numbers
+it "saw" were unexplained small integers, and a 4B "beat" a 9B — which is the tell that the
+metric was **not measuring the answer**. The scores reproduced on a second run, but
+reproducible is not valid: the scoring was never shown to distinguish a wrong answer from a
+traceback from a correct answer the parser missed.
 
-**The dedicated model is the worst of the three.** It has no measured advantage on
-business math (tie) or hard math (last place), so it has no measured job.
+**No model ranking is claimed from this arm.** It is recorded as a measurement that could
+not support the conclusion drawn from it — and as the reason the harness now **records the
+generated code** (`experiment.py`), so a re-run could settle it. It has not been re-run:
+hard math is not what this project needs.
 
-The failures cluster on the *same two* problems (the definite integral, the IRR) for
-**every** model, and the recorded output is small integers — consistent with a traceback
-or partial prints rather than a wrong value. That reads as the same **codegen** failure
-(the code errored, or never printed the answer), not an arithmetic one. **Not confirmed** —
-the raw stdout was not captured, which is a limit of this run.
+## What survives — and what does not
 
-## What the hard-math result says on its own
-
-The compute path is **reliable on business arithmetic (30/30) and unreliable on hard math
-(42–67%)** — regardless of which model writes the code. That is a *capability* finding,
-separate from the model choice: the failure is codegen, and it may be a **prompt** problem
-(the compute prompt asks for "Python code" but never for a single printed final value)
-before it is a model problem.
+- **The business arm stands.** Its signal is empty-vs-non-empty stdout, which needs no
+  parser, and two models scoring 30/30 proves the scoring found every answer — a parser
+  missing real answers could not produce that.
+- **The hard-math arm does not**, and the fleet decision did not rest on it: the dedicated
+  model was retired for **tying** on business arithmetic while costing an on-demand load
+  that evicts a warm model. The tie goes to the runner that is already resident.

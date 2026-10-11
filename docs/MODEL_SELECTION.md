@@ -103,12 +103,25 @@ new model. Scheduler is off in this deployment, so the CLI is the only top-up.
 | Max | `qwen3.8:27b` | 17GB | `10m` (on-demand) | 16384 |
 | Math | `qwen3.5:4b` (the warm utility runner) | — shares utility | `-1` (warm) | 4096 |
 | Coder | (empty → chat) | — | — | — |
-| Decision | `tev1:0.8b` + `nimble` | 0.8 GB + 9.5 GB | `10m` (on-demand) | — |
+| Decision | `tev1:0.8b` (**required**) + `nimble` (opt-in) | 0.8 GB (+ 9.5 GB) | `10m` (on-demand) | — |
 
-**Six models, ~38 GB on disk.** Three are resident: chat and tools share one runner
-(`qwen3.5:9b`), plus utility and embedding. Everything else loads on demand. **Compute
-shares the utility runner** (`MATH_MODEL=qwen3.5:4b`, `MATH_NUM_CTX=4096` — the context
-must match `UTILITY_NUM_CTX` or the runner reloads; see `docs/COMPUTE.md`).
+**The minimum fleet is four models (~11.4 GB):**
+
+| required | why |
+|---|---|
+| `qwen3.5:9b` | chat + tools — one runner, shared context |
+| `qwen3.5:4b` | utility (extraction/routing) **and** compute |
+| `qwen3-embedding:0.6b` | memory retrieval |
+| `tev1:0.8b` | the `needs_action` judgement that gates the nudge |
+
+Three of the four are resident. **Compute shares the utility runner** (`MATH_MODEL=qwen3.5:4b`,
+`MATH_NUM_CTX=4096` — the context must match `UTILITY_NUM_CTX` or the runner reloads; see
+`docs/COMPUTE.md`).
+
+**Two opt-in tiers are OFF by default**, each costing a model load and adding no required
+capability: **`nimble`** (the *completion* nudge — see "Considered and not adopted") and
+**`qwen3.8:27b`** (MAX escalation). Empty them and the corresponding feature degrades
+cleanly rather than failing.
 
 > **The binding constraint is `OLLAMA_MAX_LOADED_MODELS`, not RAM.** It defaults to
 > **3**, and the warm set fills it. A fourth model *evicts a warm one* — measured while
@@ -220,7 +233,8 @@ first principles. Each has an experiment under `assistant/experiments/`.
 | **An explicit terminal declaration** replacing the `needs_action` judgement | **retired** | Correct — the model complies and completion holds — but it costs ~1–2 extra rounds on action turns, and a contract forbidding the pre-`finalize` re-check made it *worse* (mean rounds 2.60 → 3.18). The cost is inherent to an explicit end state. `experiments/terminal_declaration/` |
 | **A per-kind nudge bound** | **not adopted** | The one-nudge-per-turn bound *can* suppress a warranted completion nudge, but on 10 live write-class turns it never did — the model wrote in round 1 every time. `experiments/nudge_bound/` |
 | **`math_model_value`: swap MATH to the Q8 `sorc/…:latest`** | **superseded — the proof was faulty** | It compared a **Q8** candidate against **Q4** incumbents and concluded "keep the 27B" (7/8 vs 8/8, the miss being a forgotten `print()`). `model_fleet_q4` found the confound: at equal quant the `-q4:9b` build is **8/8** (ties the 27B), 4–10× faster, 6.6 GB. The Q8 verdict is void. |
-| **A dedicated `MATH_MODEL` at all** | **retired — no measured job** | On business arithmetic it **ties** the warm utility model (30/30 each); on hard math it is the **worst** of three (5/12 vs the utility's 8/12, the chat's 6/12). It costs a 6.6 GB on-demand load that evicts a warm model. `MATH_MODEL` now points at the utility runner (`MATH_NUM_CTX=4096`). `experiments/business_math/` |
+| **A dedicated `MATH_MODEL` at all** | **retired — no measured advantage** | On business arithmetic it **ties** the warm utility model (30/30 each) while costing a 6.6 GB on-demand load that evicts a warm model — so the tie goes to the resident runner. Its only possible edge was hard math, and that was **not established**: the hard arm scored stdout by parsing numbers, and on hard problems it scraped unexplained values, so its model ranking is **void** (see `experiments/business_math/verification.md`). `MATH_MODEL` now points at the utility runner. |
+| **The completion nudge (`nimble`)** | **opt-in, off by default** | It fires only on a turn that already needed an action, ran a tool, and *still* left it undone. `experiments/nudge_bound/` found the **first** nudge fired on **0 of 10** live write-class turns, so the second is rarer still — and it needs a ~9.5 GB model that `tev1:0.8b` cannot replace. `DECISION_COMPLETION_MODEL=nimble` re-enables it. |
 
 **The pattern worth remembering:** four probes, **zero** net additions to the fleet. The
 instinct has been to reach for another model or another guard; the measurement has said

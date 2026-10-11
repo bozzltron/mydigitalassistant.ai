@@ -150,10 +150,14 @@ class Settings(BaseSettings):
     # `action` costs one nudge round.
     decision_action_threshold: float = 0.4
     # The completion judgement — "did the tool calls leave the action undone?" —
-    # needs a *different* model: tev1:0.8b cannot separate the classes (0.44 vs
-    # 0.42), while nimble can (0.79 vs 0.16). It runs only on turns that already
-    # need an action, so its ~600 ms is rare. Empty disables the second nudge.
-    decision_completion_model: str = "nimble"
+    # is a SECOND guard, for a shape never observed in practice: it fires only on
+    # a turn that already needed an action, ran a tool, and *still* left it undone
+    # (experiments/nudge_bound/: the *first* nudge itself fired on 0 of 10 live
+    # turns). It needs a *different* model — tev1:0.8b cannot separate the classes
+    # (0.44 vs 0.42), nimble can (0.79 vs 0.16) — and nimble is ~9.5 GB. So it is
+    # OFF by default: an opt-in tier alongside MAX and MATH, not part of the
+    # minimum fleet. Set it to `nimble` to re-enable the second nudge.
+    decision_completion_model: str = ""
     decision_outstanding_threshold: float = 0.4
     decision_timeout: float = 10.0
 

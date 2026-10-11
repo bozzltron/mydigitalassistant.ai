@@ -109,9 +109,21 @@ async def run_arm(
         math_model=model,
         math_num_ctx=settings.math_num_ctx,
     )
+
+    # Capture the generated code, so a failure can be told apart from a mis-parse.
+    captured: dict = {}
+    _orig = llm._execute_python_subprocess
+
+    async def _spy(code, timeout):
+        captured["code"] = code
+        return await _orig(code, timeout)
+
+    llm._execute_python_subprocess = _spy
+
     rows: list[dict] = []
     for trial in range(1, trials + 1):
         for prompt, expected, tol in problems:
+            captured.clear()
             started = time.time()
             try:
                 stdout = await llm.execute_python(prompt)
@@ -131,6 +143,9 @@ async def run_arm(
                     "numbers_seen": [round(n, 4) for n in numbers][:8],
                     "correct": matched is not None and not error,
                     "empty_stdout": not (stdout or "").strip(),
+                    "errored": "Traceback" in (stdout or ""),
+                    "code": (captured.get("code") or "")[:400],
+                    "stdout_head": (stdout or "")[:200],
                     "error": error,
                     "wall_s": wall,
                 }

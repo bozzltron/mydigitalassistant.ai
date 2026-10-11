@@ -66,18 +66,19 @@ docker compose exec assistant python -m assistant.scripts.verify_security
 - Ollama running on the **host** (not in a container), with these models pulled:
 
   ```bash
+  # Required — the minimum fleet (~11 GB):
   ollama pull qwen3.5:9b            # chat + tools
-  ollama pull qwen3.5:4b            # extraction + routing
+  ollama pull qwen3.5:4b            # extraction + routing + compute
   ollama pull qwen3-embedding:0.6b  # embeddings
   ollama pull tev1:0.8b             # decision model: "does this need an action?"
-  ollama pull nimble                # decision model: "did the calls do it?"
-  ollama pull qwen3.8:27b           # on-demand MAX tier (escalation)
-  ollama pull sorc/qwen3.5-claude-4.6-opus-q4:9b   # on-demand math (`compute` tool)
+
+  # Optional tiers — opt-in, each adds a model load:
+  ollama pull nimble                # the completion nudge (off by default)
+  ollama pull qwen3.8:27b           # MAX escalation (off by default)
   ```
 
-  The two on-demand tiers are optional: without `MATH_MODEL` the `compute` tool is
-  disabled (see `docs/COMPUTE.md`), and without `MAX_MODEL` escalation falls back to
-  thinking-mode on the chat model.
+  Emptying a role's model disables its feature cleanly rather than failing — see
+  `docs/MODEL_SELECTION.md` for the minimum fleet and what each tier buys.
 
 - Recommended host environment so large models stay resident between turns —
   reloading a 27B model costs tens of seconds. **The host daemon also caps how many
