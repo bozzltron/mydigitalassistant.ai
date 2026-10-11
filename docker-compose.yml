@@ -75,7 +75,7 @@ services:
       - DAILY_TASKS_TZ=${DAILY_TASKS_TZ:-}
       - TZ=${TZ:-}
       # Tool calling (Phase 6 M5): enables list_files, read_file, web_search, etc.
-      - TOOLS_ENABLED=${TOOLS_ENABLED:-false}
+      - TOOLS_ENABLED=${TOOLS_ENABLED:-true}
     volumes:
       - assistant-data:/app/data
       # Host-visible shared folder, nested inside the sandbox so the agent's
