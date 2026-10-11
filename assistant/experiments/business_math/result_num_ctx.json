@@ -1,0 +1,65 @@
+{
+  "model": "qwen3.5:4b",
+  "rows": [
+    {
+      "num_ctx": 4096,
+      "wall_s": 3.36,
+      "loaded": [
+        {
+          "name": "qwen3.5:4b",
+          "size_vram": 3179576032,
+          "context_length": 4096
+        }
+      ],
+      "error": ""
+    },
+    {
+      "num_ctx": 4096,
+      "wall_s": 0.75,
+      "loaded": [
+        {
+          "name": "qwen3.5:4b",
+          "size_vram": 3179576032,
+          "context_length": 4096
+        }
+      ],
+      "error": ""
+    },
+    {
+      "num_ctx": 16384,
+      "wall_s": 2.83,
+      "loaded": [
+        {
+          "name": "qwen3.5:4b",
+          "size_vram": 3709316627,
+          "context_length": 16384
+        }
+      ],
+      "error": ""
+    },
+    {
+      "num_ctx": 16384,
+      "wall_s": 0.78,
+      "loaded": [
+        {
+          "name": "qwen3.5:4b",
+          "size_vram": 3709316627,
+          "context_length": 16384
+        }
+      ],
+      "error": ""
+    },
+    {
+      "num_ctx": 4096,
+      "wall_s": 2.89,
+      "loaded": [
+        {
+          "name": "qwen3.5:4b",
+          "size_vram": 3179576032,
+          "context_length": 4096
+        }
+      ],
+      "error": ""
+    }
+  ]
+}

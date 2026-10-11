@@ -65,3 +65,38 @@ Two things to decide first, both cheap:
 2. **Decide whether hard math matters.** If it does, keep the dedicated model behind an
    opt-in and route only business arithmetic to the utility model — but that is a second
    model, and the probe says the simple option is sufficient for the stated use case.
+
+## Addendum: the final checks, and the decision
+
+**H4 holds — the `num_ctx` match is required.** Requesting 16384 on a runner loaded at
+4096 reloads it: 2.83 s against 0.75 s warm, with `context_length` and `size_vram` both
+flipping (and 2.89 s to reload back). So the switch is only a win if `MATH_NUM_CTX` is
+**4096**, matching `UTILITY_NUM_CTX`.
+
+**H5 fails — the dedicated model earns nothing.** On hard math it is the **worst** of the
+three:
+
+| model | business | hard | residency |
+|---|---|---|---|
+| dedicated (`sorc/…-q4:9b`) | 30/30 | **5/12** | on-demand — evicts a warm model |
+| warm chat (`qwen3.5:9b`) | 27/30 | 6/12 | warm |
+| **warm utility (`qwen3.5:4b`)** | **30/30** | **8/12** | **warm** |
+
+### Decision
+
+**Set `MATH_MODEL=qwen3.5:4b` with `MATH_NUM_CTX=4096`.** The warm utility model ties the
+dedicated one on business math, **beats** it on hard math, and is already resident — no
+load, no eviction, and no reload once the context matches. That removes the dedicated
+6.6 GB on-demand model from the fleet: **seven models to six.**
+
+### What this does not settle — and the next lever
+
+- **Hard math is unreliable on every model** (42–67%), and the failures are the *same two
+  problems* for all of them, with output that looks like tracebacks rather than wrong
+  numbers. That points at **codegen**, and the most likely fix is the **compute prompt**:
+  it asks for "Python code" but never for *a single printed final value*. That is a
+  prompt fix on an already-loaded model, and it is the next thing worth measuring — not a
+  bigger model.
+- The hard-math failures were **not inspected at the stdout level**; "codegen, not
+  arithmetic" is inferred from the numbers seen.
+- A 4B beating a 9B on 12 hard problems is a probe, not a law.

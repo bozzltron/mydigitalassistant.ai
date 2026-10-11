@@ -101,12 +101,14 @@ new model. Scheduler is off in this deployment, so the CLI is the only top-up.
 | Utility | `qwen3.5:4b` | 3.4GB | `-1` (warm) | 4096 |
 | Embedding | `qwen3-embedding:0.6b` | 0.6GB | `-1` (warm) | — |
 | Max | `qwen3.8:27b` | 17GB | `10m` (on-demand) | 16384 |
-| Math | `sorc/qwen3.5-claude-4.6-opus-q4:9b` | 6.6GB | `10m` (on-demand) | 16384 |
+| Math | `qwen3.5:4b` (the warm utility runner) | — shares utility | `-1` (warm) | 4096 |
 | Coder | (empty → chat) | — | — | — |
 | Decision | `tev1:0.8b` + `nimble` | 0.8 GB + 9.5 GB | `10m` (on-demand) | — |
 
-**Seven models, ~45 GB on disk.** Three are resident: chat and tools share one runner
-(`qwen3.5:9b`), plus utility and embedding. Everything else loads on demand.
+**Six models, ~38 GB on disk.** Three are resident: chat and tools share one runner
+(`qwen3.5:9b`), plus utility and embedding. Everything else loads on demand. **Compute
+shares the utility runner** (`MATH_MODEL=qwen3.5:4b`, `MATH_NUM_CTX=4096` — the context
+must match `UTILITY_NUM_CTX` or the runner reloads; see `docs/COMPUTE.md`).
 
 > **The binding constraint is `OLLAMA_MAX_LOADED_MODELS`, not RAM.** It defaults to
 > **3**, and the warm set fills it. A fourth model *evicts a warm one* — measured while
@@ -218,6 +220,7 @@ first principles. Each has an experiment under `assistant/experiments/`.
 | **An explicit terminal declaration** replacing the `needs_action` judgement | **retired** | Correct — the model complies and completion holds — but it costs ~1–2 extra rounds on action turns, and a contract forbidding the pre-`finalize` re-check made it *worse* (mean rounds 2.60 → 3.18). The cost is inherent to an explicit end state. `experiments/terminal_declaration/` |
 | **A per-kind nudge bound** | **not adopted** | The one-nudge-per-turn bound *can* suppress a warranted completion nudge, but on 10 live write-class turns it never did — the model wrote in round 1 every time. `experiments/nudge_bound/` |
 | **`math_model_value`: swap MATH to the Q8 `sorc/…:latest`** | **superseded — the proof was faulty** | It compared a **Q8** candidate against **Q4** incumbents and concluded "keep the 27B" (7/8 vs 8/8, the miss being a forgotten `print()`). `model_fleet_q4` found the confound: at equal quant the `-q4:9b` build is **8/8** (ties the 27B), 4–10× faster, 6.6 GB. The Q8 verdict is void. |
+| **A dedicated `MATH_MODEL` at all** | **retired — no measured job** | On business arithmetic it **ties** the warm utility model (30/30 each); on hard math it is the **worst** of three (5/12 vs the utility's 8/12, the chat's 6/12). It costs a 6.6 GB on-demand load that evicts a warm model. `MATH_MODEL` now points at the utility runner (`MATH_NUM_CTX=4096`). `experiments/business_math/` |
 
 **The pattern worth remembering:** four probes, **zero** net additions to the fleet. The
 instinct has been to reach for another model or another guard; the measurement has said

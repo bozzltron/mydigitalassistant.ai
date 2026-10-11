@@ -128,6 +128,7 @@ async def run_arm(
                     "expected": round(expected, 4),
                     "tol": tol,
                     "matched": matched,
+                    "numbers_seen": [round(n, 4) for n in numbers][:8],
                     "correct": matched is not None and not error,
                     "empty_stdout": not (stdout or "").strip(),
                     "error": error,
@@ -205,7 +206,7 @@ def _hard() -> list[tuple[str, float, float]]:
 async def arm_hard() -> None:
     problems = _hard()
     results: dict[str, dict] = {}
-    for label, model in MODELS[:2]:  # dedicated vs utility (H5)
+    for label, model in MODELS:  # dedicated, chat, utility (H5)
         print(f"\n[{label}] {model}")
         res = await run_arm(label, model, problems=problems, trials=2)
         results[label] = res

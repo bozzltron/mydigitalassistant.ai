@@ -39,9 +39,13 @@ utility model (`qwen3.5:4b`), the math model and the max tier. The **decision mo
 write code.
 
 The role is `MATH_MODEL`. **Empty disables the `compute` tool entirely** — it is dropped
-from the tool set and math requests fall back to the chat model's own arithmetic. Setting
-`MATH_MODEL` to the already-warm chat model is a valid configuration (being measured in
-`assistant/experiments/business_math/`).
+from the tool set and math requests fall back to the chat model's own arithmetic.
+
+**The shipped configuration points `MATH_MODEL` at the warm utility model**
+(`qwen3.5:4b`): it **ties** the dedicated 9B on business arithmetic (30/30 each) and
+**beats** it on hard math (8/12 vs 5/12), and it reuses a runner that is already
+resident. `MATH_NUM_CTX` **must** equal `UTILITY_NUM_CTX` (4096) — Ollama reloads a model
+when the requested context changes (measured: 2.8 s vs 0.75 s warm).
 
 ## What is executed — and what is *not* protected
 
@@ -65,19 +69,29 @@ restriction** — it removes nothing.
 
 ## Cost and residency
 
-`MATH_MODEL` is on-demand (`MATH_KEEP_ALIVE=10m`), so it does not sit beside the warm set.
-**But loading it evicts a warm model** when `OLLAMA_MAX_LOADED_MODELS` is saturated
-(default 3, and the warm set fills it) — the next normal turn then pays a reload. See
-`docs/MODEL_SELECTION.md`.
+As shipped, `compute` shares the **warm utility runner**, so it adds no model load and no
+eviction. That is a deliberate change: pointing `MATH_MODEL` at a *dedicated* on-demand
+model means loading it **evicts a warm model** when `OLLAMA_MAX_LOADED_MODELS` is
+saturated (default 3, and the warm set fills it) — the next normal turn then pays a
+reload. See `docs/MODEL_SELECTION.md`.
+
+**If you do point `MATH_MODEL` at a different model**, remember that Ollama reloads a
+runner whenever the requested context size changes — so a `MATH_NUM_CTX` that differs
+from that model's other use costs a reload per switch.
 
 ## What is measured — and what is not
 
-- `assistant/experiments/math_model_value/` — the math model vs the 27B on *generic*
-  problems. Its Q8 verdict was **quant-confounded** and is superseded by `model_fleet_q4`.
-- `assistant/experiments/business_math/` — the dedicated math model vs the **warm chat
-  model** on business problems (invoice totals, tax, inventory, margin).
-- **Unmeasured:** hard/reasoning math, and anything beyond business arithmetic. A win on
-  business arithmetic says nothing about the 27B's reasoning edge.
+- `assistant/experiments/business_math/` — **the deciding probe.** Business arithmetic:
+  the warm utility model **ties** the dedicated 9B (30/30 each) and **beats** it on hard
+  math (8/12 vs 5/12); the chat model is worse on business (27/30, a deterministic
+  empty-stdout miss). The dedicated model was retired on this evidence.
+- `assistant/experiments/math_model_value/` — the earlier math model vs the 27B on
+  *generic* problems. Its Q8 verdict was **quant-confounded**, superseded by
+  `model_fleet_q4`.
+- **Known limit:** compute is reliable on business arithmetic (~100%) and **unreliable on
+  hard math (42–67%) for every model** — the failures look like codegen (a traceback or a
+  missing print), and the likely fix is the **compute prompt**, which never asks for a
+  single printed final value.
 
 ## Config
 

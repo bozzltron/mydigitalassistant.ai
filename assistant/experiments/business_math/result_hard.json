@@ -1,0 +1,613 @@
+{
+  "dedicated math (incumbent)": {
+    "label": "dedicated math (incumbent)",
+    "model": "sorc/qwen3.5-claude-4.6-opus-q4:9b",
+    "correct": 5,
+    "n": 12,
+    "reliability": 0.417,
+    "empty_stdout": 0,
+    "empty_rate": 0.0,
+    "median_s": 5.42,
+    "rows": [
+      {
+        "trial": 1,
+        "prompt": "Compute the determinant of the 3x3 matrix [[2, -1, 3], [0,",
+        "expected": -53,
+        "tol": 0.01,
+        "matched": -52.999999999999986,
+        "numbers_seen": [
+          -53.0
+        ],
+        "correct": true,
+        "empty_stdout": false,
+        "error": "",
+        "wall_s": 21.69
+      },
+      {
+        "trial": 1,
+        "prompt": "What is the larger root of the equation x^2 - 5x + 6 = 0?",
+        "expected": 3.0,
+        "tol": 0.01,
+        "matched": 3.0,
+        "numbers_seen": [
+          3.0,
+          2.0,
+          3.0
+        ],
+        "correct": true,
+        "empty_stdout": false,
+        "error": "",
+        "wall_s": 21.02
+      },
+      {
+        "trial": 1,
+        "prompt": "Evaluate the definite integral of x^2 * sin(x) with respec",
+        "expected": 5.8696,
+        "tol": 0.001,
+        "matched": null,
+        "numbers_seen": [
+          13.0,
+          1.0
+        ],
+        "correct": false,
+        "empty_stdout": false,
+        "error": "",
+        "wall_s": 7.81
+      },
+      {
+        "trial": 1,
+        "prompt": "A project has cash flows of -10000, 3000, 4000, 5000, and ",
+        "expected": 18.0282,
+        "tol": 0.05,
+        "matched": null,
+        "numbers_seen": [
+          4.0,
+          19.0,
+          3.11,
+          792.0,
+          1.0
+        ],
+        "correct": false,
+        "empty_stdout": false,
+        "error": "",
+        "wall_s": 7.63
+      },
+      {
+        "trial": 1,
+        "prompt": "In 10 independent trials, each with probability 0.25 of su",
+        "expected": 0.2503,
+        "tol": 0.0005,
+        "matched": null,
+        "numbers_seen": [
+          3.0,
+          3.0,
+          13.0,
+          1.0
+        ],
+        "correct": false,
+        "empty_stdout": false,
+        "error": "",
+        "wall_s": 5.19
+      },
+      {
+        "trial": 1,
+        "prompt": "Solve the linear system 2x + 3y = 12 and x - y = 1. What i",
+        "expected": 3.0,
+        "tol": 0.01,
+        "matched": 3.0,
+        "numbers_seen": [
+          41.0,
+          3.0,
+          13.0,
+          1.0
+        ],
+        "correct": true,
+        "empty_stdout": false,
+        "error": "",
+        "wall_s": 4.89
+      },
+      {
+        "trial": 2,
+        "prompt": "Compute the determinant of the 3x3 matrix [[2, -1, 3], [0,",
+        "expected": -53,
+        "tol": 0.01,
+        "matched": -52.999999999999986,
+        "numbers_seen": [
+          -53.0
+        ],
+        "correct": true,
+        "empty_stdout": false,
+        "error": "",
+        "wall_s": 3.72
+      },
+      {
+        "trial": 2,
+        "prompt": "What is the larger root of the equation x^2 - 5x + 6 = 0?",
+        "expected": 3.0,
+        "tol": 0.01,
+        "matched": 3.0,
+        "numbers_seen": [
+          3.0,
+          2.0,
+          3.0
+        ],
+        "correct": true,
+        "empty_stdout": false,
+        "error": "",
+        "wall_s": 5.61
+      },
+      {
+        "trial": 2,
+        "prompt": "Evaluate the definite integral of x^2 * sin(x) with respec",
+        "expected": 5.8696,
+        "tol": 0.001,
+        "matched": null,
+        "numbers_seen": [
+          8.0,
+          13.0,
+          1.0
+        ],
+        "correct": false,
+        "empty_stdout": false,
+        "error": "",
+        "wall_s": 4.55
+      },
+      {
+        "trial": 2,
+        "prompt": "A project has cash flows of -10000, 3000, 4000, 5000, and ",
+        "expected": 18.0282,
+        "tol": 0.05,
+        "matched": null,
+        "numbers_seen": [
+          2.0,
+          19.0,
+          3.11,
+          792.0,
+          1.0
+        ],
+        "correct": false,
+        "empty_stdout": false,
+        "error": "",
+        "wall_s": 7.14
+      },
+      {
+        "trial": 2,
+        "prompt": "In 10 independent trials, each with probability 0.25 of su",
+        "expected": 0.2503,
+        "tol": 0.0005,
+        "matched": null,
+        "numbers_seen": [
+          7.0,
+          2.0,
+          13.0,
+          1.0
+        ],
+        "correct": false,
+        "empty_stdout": false,
+        "error": "",
+        "wall_s": 5.22
+      },
+      {
+        "trial": 2,
+        "prompt": "Solve the linear system 2x + 3y = 12 and x - y = 1. What i",
+        "expected": 3.0,
+        "tol": 0.01,
+        "matched": null,
+        "numbers_seen": [
+          2.0,
+          0.0,
+          9.0,
+          13.0,
+          1.0
+        ],
+        "correct": false,
+        "empty_stdout": false,
+        "error": "",
+        "wall_s": 4.78
+      }
+    ]
+  },
+  "warm chat (qwen3.5:9b)": {
+    "label": "warm chat (qwen3.5:9b)",
+    "model": "qwen3.5:9b",
+    "correct": 6,
+    "n": 12,
+    "reliability": 0.5,
+    "empty_stdout": 0,
+    "empty_rate": 0.0,
+    "median_s": 3.79,
+    "rows": [
+      {
+        "trial": 1,
+        "prompt": "Compute the determinant of the 3x3 matrix [[2, -1, 3], [0,",
+        "expected": -53,
+        "tol": 0.01,
+        "matched": -52.999999999999986,
+        "numbers_seen": [
+          -53.0
+        ],
+        "correct": true,
+        "empty_stdout": false,
+        "error": "",
+        "wall_s": 3.79
+      },
+      {
+        "trial": 1,
+        "prompt": "What is the larger root of the equation x^2 - 5x + 6 = 0?",
+        "expected": 3.0,
+        "tol": 0.01,
+        "matched": 3.0,
+        "numbers_seen": [
+          3.0,
+          2.0,
+          3.0
+        ],
+        "correct": true,
+        "empty_stdout": false,
+        "error": "",
+        "wall_s": 4.83
+      },
+      {
+        "trial": 1,
+        "prompt": "Evaluate the definite integral of x^2 * sin(x) with respec",
+        "expected": 5.8696,
+        "tol": 0.001,
+        "matched": null,
+        "numbers_seen": [
+          5.0,
+          13.0,
+          1.0
+        ],
+        "correct": false,
+        "empty_stdout": false,
+        "error": "",
+        "wall_s": 3.72
+      },
+      {
+        "trial": 1,
+        "prompt": "A project has cash flows of -10000, 3000, 4000, 5000, and ",
+        "expected": 18.0282,
+        "tol": 0.05,
+        "matched": null,
+        "numbers_seen": [
+          47.0,
+          16.0,
+          3.11,
+          792.0,
+          1.0
+        ],
+        "correct": false,
+        "empty_stdout": false,
+        "error": "",
+        "wall_s": 3.97
+      },
+      {
+        "trial": 1,
+        "prompt": "In 10 independent trials, each with probability 0.25 of su",
+        "expected": 0.2503,
+        "tol": 0.0005,
+        "matched": null,
+        "numbers_seen": [
+          55.0,
+          5.0,
+          13.0,
+          1.0
+        ],
+        "correct": false,
+        "empty_stdout": false,
+        "error": "",
+        "wall_s": 3.38
+      },
+      {
+        "trial": 1,
+        "prompt": "Solve the linear system 2x + 3y = 12 and x - y = 1. What i",
+        "expected": 3.0,
+        "tol": 0.01,
+        "matched": 3.0,
+        "numbers_seen": [
+          3.0
+        ],
+        "correct": true,
+        "empty_stdout": false,
+        "error": "",
+        "wall_s": 4.21
+      },
+      {
+        "trial": 2,
+        "prompt": "Compute the determinant of the 3x3 matrix [[2, -1, 3], [0,",
+        "expected": -53,
+        "tol": 0.01,
+        "matched": -52.999999999999986,
+        "numbers_seen": [
+          -53.0
+        ],
+        "correct": true,
+        "empty_stdout": false,
+        "error": "",
+        "wall_s": 3.4
+      },
+      {
+        "trial": 2,
+        "prompt": "What is the larger root of the equation x^2 - 5x + 6 = 0?",
+        "expected": 3.0,
+        "tol": 0.01,
+        "matched": 3.0,
+        "numbers_seen": [
+          3.0,
+          2.0,
+          3.0
+        ],
+        "correct": true,
+        "empty_stdout": false,
+        "error": "",
+        "wall_s": 4.63
+      },
+      {
+        "trial": 2,
+        "prompt": "Evaluate the definite integral of x^2 * sin(x) with respec",
+        "expected": 5.8696,
+        "tol": 0.001,
+        "matched": null,
+        "numbers_seen": [
+          9.0,
+          6.0,
+          13.0,
+          1.0
+        ],
+        "correct": false,
+        "empty_stdout": false,
+        "error": "",
+        "wall_s": 3.69
+      },
+      {
+        "trial": 2,
+        "prompt": "A project has cash flows of -10000, 3000, 4000, 5000, and ",
+        "expected": 18.0282,
+        "tol": 0.05,
+        "matched": null,
+        "numbers_seen": [
+          5.0,
+          16.0,
+          3.11,
+          792.0,
+          1.0
+        ],
+        "correct": false,
+        "empty_stdout": false,
+        "error": "",
+        "wall_s": 3.79
+      },
+      {
+        "trial": 2,
+        "prompt": "In 10 independent trials, each with probability 0.25 of su",
+        "expected": 0.2503,
+        "tol": 0.0005,
+        "matched": null,
+        "numbers_seen": [
+          12.0,
+          13.0,
+          1.0
+        ],
+        "correct": false,
+        "empty_stdout": false,
+        "error": "",
+        "wall_s": 3.29
+      },
+      {
+        "trial": 2,
+        "prompt": "Solve the linear system 2x + 3y = 12 and x - y = 1. What i",
+        "expected": 3.0,
+        "tol": 0.01,
+        "matched": 3.0,
+        "numbers_seen": [
+          3.0
+        ],
+        "correct": true,
+        "empty_stdout": false,
+        "error": "",
+        "wall_s": 4.14
+      }
+    ]
+  },
+  "warm utility (qwen3.5:4b)": {
+    "label": "warm utility (qwen3.5:4b)",
+    "model": "qwen3.5:4b",
+    "correct": 8,
+    "n": 12,
+    "reliability": 0.667,
+    "empty_stdout": 0,
+    "empty_rate": 0.0,
+    "median_s": 3.25,
+    "rows": [
+      {
+        "trial": 1,
+        "prompt": "Compute the determinant of the 3x3 matrix [[2, -1, 3], [0,",
+        "expected": -53,
+        "tol": 0.01,
+        "matched": -52.999999999999986,
+        "numbers_seen": [
+          -53.0
+        ],
+        "correct": true,
+        "empty_stdout": false,
+        "error": "",
+        "wall_s": 4.46
+      },
+      {
+        "trial": 1,
+        "prompt": "What is the larger root of the equation x^2 - 5x + 6 = 0?",
+        "expected": 3.0,
+        "tol": 0.01,
+        "matched": 3.0,
+        "numbers_seen": [
+          3.0,
+          2.0,
+          3.0
+        ],
+        "correct": true,
+        "empty_stdout": false,
+        "error": "",
+        "wall_s": 3.49
+      },
+      {
+        "trial": 1,
+        "prompt": "Evaluate the definite integral of x^2 * sin(x) with respec",
+        "expected": 5.8696,
+        "tol": 0.001,
+        "matched": null,
+        "numbers_seen": [
+          1.0,
+          0.0,
+          6.0,
+          0.0,
+          14.0,
+          1.0
+        ],
+        "correct": false,
+        "empty_stdout": false,
+        "error": "",
+        "wall_s": 3.06
+      },
+      {
+        "trial": 1,
+        "prompt": "A project has cash flows of -10000, 3000, 4000, 5000, and ",
+        "expected": 18.0282,
+        "tol": 0.05,
+        "matched": null,
+        "numbers_seen": [
+          4.0,
+          46.0,
+          19.0,
+          3.11,
+          792.0,
+          1.0
+        ],
+        "correct": false,
+        "empty_stdout": false,
+        "error": "",
+        "wall_s": 3.44
+      },
+      {
+        "trial": 1,
+        "prompt": "In 10 independent trials, each with probability 0.25 of su",
+        "expected": 0.2503,
+        "tol": 0.0005,
+        "matched": 0.2503,
+        "numbers_seen": [
+          0.2503
+        ],
+        "correct": true,
+        "empty_stdout": false,
+        "error": "",
+        "wall_s": 3.04
+      },
+      {
+        "trial": 1,
+        "prompt": "Solve the linear system 2x + 3y = 12 and x - y = 1. What i",
+        "expected": 3.0,
+        "tol": 0.01,
+        "matched": 3.0,
+        "numbers_seen": [
+          3.0,
+          2.0
+        ],
+        "correct": true,
+        "empty_stdout": false,
+        "error": "",
+        "wall_s": 3.01
+      },
+      {
+        "trial": 2,
+        "prompt": "Compute the determinant of the 3x3 matrix [[2, -1, 3], [0,",
+        "expected": -53,
+        "tol": 0.01,
+        "matched": -52.999999999999986,
+        "numbers_seen": [
+          -53.0
+        ],
+        "correct": true,
+        "empty_stdout": false,
+        "error": "",
+        "wall_s": 2.09
+      },
+      {
+        "trial": 2,
+        "prompt": "What is the larger root of the equation x^2 - 5x + 6 = 0?",
+        "expected": 3.0,
+        "tol": 0.01,
+        "matched": 3.0,
+        "numbers_seen": [
+          3.0,
+          2.0,
+          3.0
+        ],
+        "correct": true,
+        "empty_stdout": false,
+        "error": "",
+        "wall_s": 3.69
+      },
+      {
+        "trial": 2,
+        "prompt": "Evaluate the definite integral of x^2 * sin(x) with respec",
+        "expected": 5.8696,
+        "tol": 0.001,
+        "matched": null,
+        "numbers_seen": [
+          53.0,
+          14.0,
+          1.0
+        ],
+        "correct": false,
+        "empty_stdout": false,
+        "error": "",
+        "wall_s": 3.22
+      },
+      {
+        "trial": 2,
+        "prompt": "A project has cash flows of -10000, 3000, 4000, 5000, and ",
+        "expected": 18.0282,
+        "tol": 0.05,
+        "matched": null,
+        "numbers_seen": [
+          19.0,
+          3.11,
+          792.0,
+          1.0
+        ],
+        "correct": false,
+        "empty_stdout": false,
+        "error": "",
+        "wall_s": 3.48
+      },
+      {
+        "trial": 2,
+        "prompt": "In 10 independent trials, each with probability 0.25 of su",
+        "expected": 0.2503,
+        "tol": 0.0005,
+        "matched": 0.2503,
+        "numbers_seen": [
+          0.2503
+        ],
+        "correct": true,
+        "empty_stdout": false,
+        "error": "",
+        "wall_s": 3.06
+      },
+      {
+        "trial": 2,
+        "prompt": "Solve the linear system 2x + 3y = 12 and x - y = 1. What i",
+        "expected": 3.0,
+        "tol": 0.01,
+        "matched": 3.0,
+        "numbers_seen": [
+          3.0,
+          2.0
+        ],
+        "correct": true,
+        "empty_stdout": false,
+        "error": "",
+        "wall_s": 3.29
+      }
+    ]
+  }
+}

@@ -81,3 +81,46 @@ which is the cost this whole exercise is trying to avoid. **Not measured here.**
   external oracle.
 - `execute_python` returns only stdout, so "no tool call" and "forgot to print" are
   merged into one signal.
+
+## Addendum: the two final checks
+
+### H4 — a `num_ctx` change reloads the model: **holds**
+
+```
+num_ctx=  4096  wall= 3.36s   loaded context_length 4096   size_vram 3.18GB
+num_ctx=  4096  wall= 0.75s   (warm)
+num_ctx= 16384  wall= 2.83s   loaded context_length 16384  size_vram 3.71GB   <- reload
+num_ctx= 16384  wall= 0.78s   (warm)
+num_ctx=  4096  wall= 2.89s                                                   <- reload back
+```
+
+Changing the requested context **reloads the model** — ~2.1 s of the ~3 s, with the loaded
+`context_length` and `size_vram` both flipping. So if compute shares the utility runner,
+`MATH_NUM_CTX` **must** match `UTILITY_NUM_CTX` (4096) or every compute call trades an
+eviction for a reload — worse than the problem it was meant to solve.
+
+### H5 — the dedicated model earns its keep on hard math: **fails**
+
+```
+model                            hard-math (12 pairs)
+dedicated math (sorc/…-q4:9b)     5/12 = 0.42
+warm chat (qwen3.5:9b)            6/12 = 0.50
+warm utility (qwen3.5:4b)         8/12 = 0.67
+```
+
+**The dedicated model is the worst of the three.** It has no measured advantage on
+business math (tie) or hard math (last place), so it has no measured job.
+
+The failures cluster on the *same two* problems (the definite integral, the IRR) for
+**every** model, and the recorded output is small integers — consistent with a traceback
+or partial prints rather than a wrong value. That reads as the same **codegen** failure
+(the code errored, or never printed the answer), not an arithmetic one. **Not confirmed** —
+the raw stdout was not captured, which is a limit of this run.
+
+## What the hard-math result says on its own
+
+The compute path is **reliable on business arithmetic (30/30) and unreliable on hard math
+(42–67%)** — regardless of which model writes the code. That is a *capability* finding,
+separate from the model choice: the failure is codegen, and it may be a **prompt** problem
+(the compute prompt asks for "Python code" but never for a single printed final value)
+before it is a model problem.
