@@ -13,6 +13,13 @@ services:
   assistant:
     build: .
     container_name: assistant-backend-dev
+    # Forward the WHOLE .env, so every documented setting reaches the container.
+    # The `environment:` block below stays as the compose-internal override +
+    # default layer — it wins over env_file for the vars it names. Without this,
+    # a var documented in .env.example but absent from that block silently falls
+    # back to its config.py default (38 of 68 did).
+    env_file:
+      - .env
     # Ollama runs on the HOST (see OLLAMA_URL). For model residency (Option A)
     # the host daemon needs: OLLAMA_KEEP_ALIVE=-1 and
     # OLLAMA_MAX_LOADED_MODELS>=2 (chat + utility stay warm side-by-side).

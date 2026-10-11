@@ -96,14 +96,23 @@ new model. Scheduler is off in this deployment, so the CLI is the only top-up.
 
 | Role | Model | Size | keep_alive | num_ctx |
 |------|-------|------|------------|---------|
-| Chat | `qwen3.5:9b` | 6.6GB | global (30m) | 16384 |
+| Chat | `qwen3.5:9b` | 6.6GB | `-1` (warm) | 16384 |
 | Tools | `qwen3.5:9b` | — shares chat | `-1` | shares chat (16384) |
-| Utility | `qwen3.5:4b` | 3.4GB | global | 4096 |
-| Embedding | `qwen3-embedding:0.6b` | 0.6GB | — | — |
-| Max | `qwen3.8:27b` | 17GB | `10m` | 16384 |
-| Math | `sorc/qwen3.5-claude-4.6-opus-q4:9b` | 6.6GB | `10m` | 16384 |
+| Utility | `qwen3.5:4b` | 3.4GB | `-1` (warm) | 4096 |
+| Embedding | `qwen3-embedding:0.6b` | 0.6GB | `-1` (warm) | — |
+| Max | `qwen3.8:27b` | 17GB | `10m` (on-demand) | 16384 |
+| Math | `sorc/qwen3.5-claude-4.6-opus-q4:9b` | 6.6GB | `10m` (on-demand) | 16384 |
 | Coder | (empty → chat) | — | — | — |
-| Decision | `tev1:0.8b` + `nimble` | 0.8 GB + 9.5 GB | `10m` | — |
+| Decision | `tev1:0.8b` + `nimble` | 0.8 GB + 9.5 GB | `10m` (on-demand) | — |
+
+**Seven models, ~45 GB on disk.** Three are resident: chat and tools share one runner
+(`qwen3.5:9b`), plus utility and embedding. Everything else loads on demand.
+
+> **The binding constraint is `OLLAMA_MAX_LOADED_MODELS`, not RAM.** It defaults to
+> **3**, and the warm set fills it. A fourth model *evicts a warm one* — measured while
+> probing the extraction council: running `sorc/q4:4b` alone evicted `qwen3.5:4b`, and
+> the next turn pays its reload. Host RAM (48 GB on the reference box) is not the limit;
+> the cap is. Raise it deliberately if a new role must coexist with the warm set.
 
 Rationale highlights:
 
@@ -197,6 +206,22 @@ of the user's own stored content, which an answer can satisfy
 already need an action; `tev1:0.8b` is 0.8 GB and runs every turn, in parallel with
 routing and retrieval. **Both are best-effort** — if a model is missing the
 judgement returns "unknown" and nothing nudges, never a guess.
+
+## Considered and not adopted (Oct 2026)
+
+Work that was built, measured, and **rejected** — recorded so it is not re-proposed from
+first principles. Each has an experiment under `assistant/experiments/`.
+
+| Idea | Verdict | Evidence |
+|---|---|---|
+| **A council of models over extraction** | **not adopted** | A two-model council raises extraction recall to **1.00** from the best single's 0.89 — but the member that does the work is `sorc/qwen3.5-claude-4.6-opus-q4:4b`, **already on disk**. The two *cross-lineage* models pulled for the probe added **nothing**: `llama3.2:3b` ties the fine-tune at ~2× latency, `gemma3:4b` is simply a worse extractor (0.56). Cross-lineage miss-overlap (0.20) *exceeded* same-lineage (0.15) — the hypothesis that a different lineage buys diversity **failed**. Cost: a second model on the learning path for ~one fact in nine. `experiments/extraction_council/` |
+| **An explicit terminal declaration** replacing the `needs_action` judgement | **retired** | Correct — the model complies and completion holds — but it costs ~1–2 extra rounds on action turns, and a contract forbidding the pre-`finalize` re-check made it *worse* (mean rounds 2.60 → 3.18). The cost is inherent to an explicit end state. `experiments/terminal_declaration/` |
+| **A per-kind nudge bound** | **not adopted** | The one-nudge-per-turn bound *can* suppress a warranted completion nudge, but on 10 live write-class turns it never did — the model wrote in round 1 every time. `experiments/nudge_bound/` |
+| **`math_model_value`: swap MATH to the Q8 `sorc/…:latest`** | **superseded — the proof was faulty** | It compared a **Q8** candidate against **Q4** incumbents and concluded "keep the 27B" (7/8 vs 8/8, the miss being a forgotten `print()`). `model_fleet_q4` found the confound: at equal quant the `-q4:9b` build is **8/8** (ties the 27B), 4–10× faster, 6.6 GB. The Q8 verdict is void. |
+
+**The pattern worth remembering:** four probes, **zero** net additions to the fleet. The
+instinct has been to reach for another model or another guard; the measurement has said
+the simple setup was fine every time. Propose, pre-register, and expect to be told no.
 
 ## Re-assessment cadence
 

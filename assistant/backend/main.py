@@ -383,11 +383,14 @@ async def health():
         "ollama_reachable": ollama_ok,
         "models": {
             "chat": settings.chat_model,
+            "tools": settings.tools_model,
             "utility": settings.utility_model,
             "embedding": settings.embedding_model,
             "coder": settings.coder_model or settings.chat_model,
             "max": settings.max_model or settings.chat_model,
             "math": settings.math_model or "(disabled)",
+            "decision": settings.decision_model or "(disabled)",
+            "decision_completion": settings.decision_completion_model or "(disabled)",
         },
         "thinking_supported": thinking_supported,
     }

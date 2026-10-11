@@ -14,6 +14,10 @@ services:
   assistant:
     build: .
     container_name: assistant-backend
+    # Forward the WHOLE .env (see docker-compose.yml) — same contract in dev and
+    # prod, so both environments get the identical model fleet.
+    env_file:
+      - .env
     # Ollama runs on the HOST (see OLLAMA_URL). For model residency (Option A)
     # the host daemon needs: OLLAMA_KEEP_ALIVE=-1 and
     # OLLAMA_MAX_LOADED_MODELS>=2 (chat + utility stay warm side-by-side).
