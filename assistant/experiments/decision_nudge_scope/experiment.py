@@ -106,7 +106,9 @@ QUESTIONS: dict[str, dict] = {
         ),
         "criteria": {
             "do": "the assistant must change something or fetch current external information",
-            "answer": "the assistant can satisfy the request by answering from what it already knows",
+            "answer": (
+                "the assistant can satisfy the request by answering from what it already knows"
+            ),
         },
         "positive": "do",
         "target_classes": ("change", "search"),
