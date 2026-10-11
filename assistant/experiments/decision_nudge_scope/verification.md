@@ -16,17 +16,33 @@ Pure model I/O. No brain is opened, so `preflight.py` does not apply.
 
 ## Raw output (summary)
 
-Firing = P(positive) ≥ 0.4 (the deployed bias). Target = fire iff `class == change`.
+Firing = P(positive) ≥ 0.4 (the deployed bias). Target = fire iff `class` is in the
+question's `target_classes` (change for the first two; change **or** search for the
+union).
 
 ```
-question     model      change_recall  read+ans fired  search fired target acc   median
-needs_action tev1:0.8b          10/10            4/15           3/3      0.750      72ms
-needs_action tev1               10/10            6/15           3/3      0.679     304ms
-needs_action nimble             10/10            7/15           3/3      0.643     606ms
-needs_change tev1:0.8b          10/10            0/15           0/3      1.000      78ms
-needs_change tev1               10/10            0/15           0/3      1.000     347ms
-needs_change nimble             10/10            0/15           0/3      1.000      673ms
+question               model      change_recall  read+ans fired  search fired target acc   median
+needs_action           tev1:0.8b          10/10            4/15           3/3      0.750      72ms
+needs_action           tev1               10/10            6/15           3/3      0.679     304ms
+needs_action           nimble             10/10            7/15           3/3      0.643     607ms
+needs_change           tev1:0.8b          10/10            0/15           0/3      1.000      74ms
+needs_change           tev1               10/10            0/15           0/3      1.000     347ms
+needs_change           nimble             10/10            0/15           0/3      1.000     673ms
+needs_change_or_lookup tev1:0.8b          10/10            0/15           3/3      1.000      80ms
+needs_change_or_lookup tev1               10/10            7/15           3/3      0.750     351ms
+needs_change_or_lookup nimble             10/10            0/15           3/3      1.000     677ms
 ```
+
+The first two arms reproduced across two runs (4/15 and 0/15 unchanged), so the
+near-tie concern did not bite here.
+
+## The union arm (addendum)
+
+`needs_change_or_lookup` on the deployed model (`tev1:0.8b`) is **1.000 target
+accuracy**: change 10/10, search 3/3, read+answer 0/15, at 80 ms. It restores the
+search guard change-only dropped, without re-admitting the read band. `nimble` also
+scores 1.000; `tev1` does not (it fires on 7/15 read/answer). The deployed model is
+the right one for this wording.
 
 ## The cases behind the numbers
 
@@ -67,6 +83,8 @@ rather than re-tuning the threshold against it.
 - **Classification only.** This measures how each question classifies. Whether the
   model then performs the action on a read-class turn is a behavioural check on the
   live scenario, not here.
-- **Search coverage is unmeasured here.** `needs_action` fires on all three search
-  cases; `needs_change` on none. The router's `wants_search` is believed to own this,
-  but that is a separate measurement and is flagged, not assumed.
+- **Search coverage was checked, and the router only partly owns it.** The router
+  forces search only when `plan.sufficiency == MemorySufficiency.NONE`
+  (`orchestrator.py:1450–1466`), so a lookup with a relevant-but-stale memory fact is
+  **not** forced. This is why the recommended scope is the **union** (change + lookup),
+  not change-only — see the addendum.
