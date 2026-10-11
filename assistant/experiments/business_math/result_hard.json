@@ -2,12 +2,12 @@
   "dedicated math (incumbent)": {
     "label": "dedicated math (incumbent)",
     "model": "sorc/qwen3.5-claude-4.6-opus-q4:9b",
-    "correct": 4,
+    "correct": 8,
     "n": 12,
-    "reliability": 0.333,
+    "reliability": 0.667,
     "empty_stdout": 0,
     "empty_rate": 0.0,
-    "median_s": 5.94,
+    "median_s": 5.71,
     "rows": [
       {
         "trial": 1,
@@ -21,10 +21,10 @@
         "correct": true,
         "empty_stdout": false,
         "errored": false,
-        "code": "import numpy as np\n\nmatrix = np.array([[2, -1, 3], [0, 4, 5], [1, 2, -2]])\ndeterminant = np.linalg.det(matrix)\nprint(f\"Determinant: {determinant}\")",
-        "stdout_head": "Determinant: -52.999999999999986\n",
+        "code": "import numpy as np\n\nmatrix = np.array([[2, -1, 3], [0, 4, 5], [1, 2, -2]])\ndet_value = np.linalg.det(matrix)\nprint(det_value)",
+        "stdout_head": "-52.999999999999986\n",
         "error": "",
-        "wall_s": 15.97
+        "wall_s": 6.53
       },
       {
         "trial": 1,
@@ -40,30 +40,27 @@
         "correct": true,
         "empty_stdout": false,
         "errored": false,
-        "code": "import numpy as np\n\n# Coefficients of the quadratic equation ax^2 + bx + c = 0\na = 1\nb = -5\nc = 6\n\n# Calculate the discriminant\ndiscriminant = b**2 - 4*a*c\n\n# Calculate the two roots\nroot1 = (-b + np.sqrt(discriminant)) / (2*a)\nroot2 = (-b - np.sqrt(discriminant)) / (2*a)\n\nprint(f\"Roots: {root1}, {root2}\")\nprint(f\"Larger root: {max(root1, root2)}\")",
+        "code": "import math\n\n# Coefficients of the quadratic equation ax^2 + bx + c = 0\na = 1\nb = -5\nc = 6\n\n# Calculate the discriminant\ndiscriminant = b**2 - 4*a*c\n\n# Calculate the two roots\nroot1 = (-b + math.sqrt(discriminant)) / (2*a)\nroot2 = (-b - math.sqrt(discriminant)) / (2*a)\n\nprint(f\"Roots: {root1}, {root2}\")\nprint(f\"Larger root: {max(root1, root2)}\")",
         "stdout_head": "Roots: 3.0, 2.0\nLarger root: 3.0\n",
         "error": "",
-        "wall_s": 8.66
+        "wall_s": 5.83
       },
       {
         "trial": 1,
         "prompt": "Evaluate the definite integral of x^2 * sin(x) with respec",
         "expected": 5.8696,
         "tol": 0.001,
-        "matched": null,
+        "matched": 5.869604401088209,
         "numbers_seen": [
-          6.0,
-          39.0,
-          13.0,
-          1.0
+          5.8696
         ],
-        "correct": false,
+        "correct": true,
         "empty_stdout": false,
-        "errored": true,
-        "code": "import sympy as sp\n\nx = sp.symbols('x')\nintegrand = x**2 * sp.sin(x)\nresult = sp.integrate(integrand, (x, 0, sp.pi))\nnumeric_result = float(result.evalf())\nprint(f\"Exact result: {result}\")\nprint(f\"Numeric result: {numeric_result:.4f}\")",
-        "stdout_head": "\nSTDERR: Traceback (most recent call last):\n  File \"/tmp/tmp6_vyn39k.py\", line 13, in <module>\n    import sympy as sp\nModuleNotFoundError: No module named 'sympy'\n\nExit code: 1",
+        "errored": false,
+        "code": "import math\n\n# Define the function and limits\ndef integrand(x):\n    return (x**2) * math.sin(x)\n\nlower_limit = 0\nupper_limit = math.pi\n\n# Calculate the integral using numerical integration (Simpson's rule for higher accuracy)\nn = 1000  # Number of intervals\nh = (upper_limit - lower_limit) / n\n\nintegral_sum = 0.0\nfor i in range(n + 1):\n    x_i = lower_limit + i * h\n    if i == 0 or i == n:\n        ",
+        "stdout_head": "Integral value: 5.869604401088209\n",
         "error": "",
-        "wall_s": 4.61
+        "wall_s": 8.31
       },
       {
         "trial": 1,
@@ -72,6 +69,7 @@
         "tol": 0.05,
         "matched": null,
         "numbers_seen": [
+          4.0,
           6.0,
           19.0,
           3.11,
@@ -81,30 +79,27 @@
         "correct": false,
         "empty_stdout": false,
         "errored": true,
-        "code": "import numpy as np\n\n# Cash flows: -10000 at year 0, then 3000, 4000, 5000, 3000 for years 1-4\ncash_flows = [-10000, 3000, 4000, 5000, 3000]\n\n# Calculate IRR using numpy's irr function\nirr = np.irr(cash_flows)\n\n# Convert to percentage and round to one decimal place\nirr_percentage = irr * 100\nirr_rounded = round(irr_percentage, 1)\n\nprint(f\"IRR: {irr_percentage}%\")\nprint(f\"Rounded IRR: {irr_rounded}%",
-        "stdout_head": "\nSTDERR: Traceback (most recent call last):\n  File \"/tmp/tmpphr6_mdn.py\", line 19, in <module>\n    irr = np.irr(cash_flows)\n          ^^^^^^\n  File \"/usr/local/lib/python3.11/site-packages/numpy/__ini",
+        "code": "import numpy as np\n\n# Cash flows: -10000 at year 0, then 3000, 4000, 5000, 3000 for years 1-4\ncash_flows = [-10000, 3000, 4000, 5000, 3000]\n\n# Calculate IRR using numpy's financial function\nirr = np.irr(cash_flows)\n\n# Convert to percentage and round to one decimal place\nirr_percentage = irr * 100\nprint(f\"{irr_percentage:.1f}\")",
+        "stdout_head": "\nSTDERR: Traceback (most recent call last):\n  File \"/tmp/tmpmodp4im6.py\", line 19, in <module>\n    irr = np.irr(cash_flows)\n          ^^^^^^\n  File \"/usr/local/lib/python3.11/site-packages/numpy/__ini",
         "error": "",
-        "wall_s": 7.09
+        "wall_s": 6.02
       },
       {
         "trial": 1,
         "prompt": "In 10 independent trials, each with probability 0.25 of su",
         "expected": 0.2503,
         "tol": 0.0005,
-        "matched": null,
+        "matched": 0.2503,
         "numbers_seen": [
-          6.0,
-          1.0,
-          13.0,
-          1.0
+          0.2503
         ],
-        "correct": false,
+        "correct": true,
         "empty_stdout": false,
-        "errored": true,
-        "code": "from scipy.stats import binom\n\n# Parameters\nn = 10  # number of trials\np = 0.25  # probability of success\nk = 3  # number of successes\n\n# Calculate the probability using the binomial distribution formula:\n# P(X=k) = C(n, k) * p^k * (1-p)^(n-k)\nprobability = binom.pmf(k, n, p)\n\nprint(f\"{probability:.4f}\")",
-        "stdout_head": "\nSTDERR: Traceback (most recent call last):\n  File \"/tmp/tmp6ob1gebo.py\", line 13, in <module>\n    from scipy.stats import binom\nModuleNotFoundError: No module named 'scipy'\n\nExit code: 1",
+        "errored": false,
+        "code": "import math\n\n# Parameters\nn = 10  # number of trials\nk = 3   # number of successes\np = 0.25  # probability of success\n\n# Calculate binomial coefficient C(n, k)\nC_n_k = math.comb(n, k)\n\n# Calculate probability using the formula: P(X=k) = C(n,k) * p^k * (1-p)^(n-k)\nprobability = C_n_k * (p ** k) * ((1 - p) ** (n - k))\n\nprint(f\"{probability:.4f}\")",
+        "stdout_head": "0.2503\n",
         "error": "",
-        "wall_s": 5.28
+        "wall_s": 5.6
       },
       {
         "trial": 1,
@@ -113,18 +108,18 @@
         "tol": 0.01,
         "matched": null,
         "numbers_seen": [
-          6.0,
           7.0,
-          13.0,
+          17.0,
+          3.11,
           1.0
         ],
         "correct": false,
         "empty_stdout": false,
         "errored": true,
-        "code": "from sympy import symbols, Eq, solve\n\n# Define the variables\nx, y = symbols('x y')\n\n# Define the equations\neq1 = Eq(2*x + 3*y, 12)\neq2 = Eq(x - y, 1)\n\n# Solve the system of equations\nsolution = solve((eq1, eq2), (x, y))\n\nprint(solution)",
-        "stdout_head": "\nSTDERR: Traceback (most recent call last):\n  File \"/tmp/tmp6uhfdp7t.py\", line 13, in <module>\n    from sympy import symbols, Eq, solve\nModuleNotFoundError: No module named 'sympy'\n\nExit code: 1",
+        "code": "# Solve the system:\n# 2x + 3y = 12\n# x - y = 1\n\nfrom numpy.linalg import inv, matrix\n\nA = matrix([[2, 3], [1, -1]])\nB = matrix([12, 1])\n\nX = inv(A) * B\nprint(X[0, 0])",
+        "stdout_head": "\nSTDERR: Traceback (most recent call last):\n  File \"/tmp/tmpkopju7aa.py\", line 17, in <module>\n    from numpy.linalg import inv, matrix\nImportError: cannot import name 'matrix' from 'numpy.linalg' (/u",
         "error": "",
-        "wall_s": 4.8
+        "wall_s": 4.26
       },
       {
         "trial": 2,
@@ -138,10 +133,10 @@
         "correct": true,
         "empty_stdout": false,
         "errored": false,
-        "code": "import numpy as np\n\nmatrix = np.array([[2, -1, 3], [0, 4, 5], [1, 2, -2]])\ndeterminant = np.linalg.det(matrix)\nprint(f\"Determinant: {determinant}\")",
-        "stdout_head": "Determinant: -52.999999999999986\n",
+        "code": "import numpy as np\n\nmatrix = np.array([[2, -1, 3], [0, 4, 5], [1, 2, -2]])\ndet_value = np.linalg.det(matrix)\nprint(det_value)",
+        "stdout_head": "-52.999999999999986\n",
         "error": "",
-        "wall_s": 3.66
+        "wall_s": 3.6
       },
       {
         "trial": 2,
@@ -157,28 +152,27 @@
         "correct": true,
         "empty_stdout": false,
         "errored": false,
-        "code": "import numpy as np\n\n# Coefficients of the quadratic equation ax^2 + bx + c = 0\na = 1\nb = -5\nc = 6\n\n# Calculate the discriminant\ndiscriminant = b**2 - 4*a*c\n\n# Calculate the two roots\nroot1 = (-b + np.sqrt(discriminant)) / (2*a)\nroot2 = (-b - np.sqrt(discriminant)) / (2*a)\n\nprint(f\"Roots: {root1}, {root2}\")\nprint(f\"Larger root: {max(root1, root2)}\")",
+        "code": "import math\n\n# Coefficients of the quadratic equation ax^2 + bx + c = 0\na = 1\nb = -5\nc = 6\n\n# Calculate the discriminant\ndiscriminant = b**2 - 4*a*c\n\n# Calculate the two roots\nroot1 = (-b + math.sqrt(discriminant)) / (2*a)\nroot2 = (-b - math.sqrt(discriminant)) / (2*a)\n\nprint(f\"Roots: {root1}, {root2}\")\nprint(f\"Larger root: {max(root1, root2)}\")",
         "stdout_head": "Roots: 3.0, 2.0\nLarger root: 3.0\n",
         "error": "",
-        "wall_s": 5.75
+        "wall_s": 5.56
       },
       {
         "trial": 2,
         "prompt": "Evaluate the definite integral of x^2 * sin(x) with respec",
         "expected": 5.8696,
         "tol": 0.001,
-        "matched": null,
+        "matched": 5.869604401088209,
         "numbers_seen": [
-          13.0,
-          1.0
+          5.8696
         ],
-        "correct": false,
+        "correct": true,
         "empty_stdout": false,
-        "errored": true,
-        "code": "import sympy as sp\n\nx = sp.symbols('x')\nintegrand = x**2 * sp.sin(x)\nresult = sp.integrate(integrand, (x, 0, sp.pi))\nnumeric_result = float(result.evalf())\nprint(f\"Exact result: {result}\")\nprint(f\"Numeric result: {numeric_result:.4f}\")",
-        "stdout_head": "\nSTDERR: Traceback (most recent call last):\n  File \"/tmp/tmpw_gxyhvq.py\", line 13, in <module>\n    import sympy as sp\nModuleNotFoundError: No module named 'sympy'\n\nExit code: 1",
+        "errored": false,
+        "code": "import math\n\n# Define the function and limits\ndef integrand(x):\n    return (x**2) * math.sin(x)\n\nlower_limit = 0\nupper_limit = math.pi\n\n# Calculate the integral using numerical integration (Simpson's rule for higher accuracy)\nn = 1000  # Number of intervals\nh = (upper_limit - lower_limit) / n\n\nintegral_sum = 0.0\nfor i in range(n + 1):\n    x_i = lower_limit + i * h\n    if i == 0 or i == n:\n        ",
+        "stdout_head": "Integral value: 5.869604401088209\n",
         "error": "",
-        "wall_s": 4.75
+        "wall_s": 8.1
       },
       {
         "trial": 2,
@@ -187,7 +181,8 @@
         "tol": 0.05,
         "matched": null,
         "numbers_seen": [
-          6.0,
+          1.0,
+          3.0,
           19.0,
           3.11,
           792.0,
@@ -196,30 +191,27 @@
         "correct": false,
         "empty_stdout": false,
         "errored": true,
-        "code": "import numpy as np\n\n# Cash flows: -10000 at year 0, then 3000, 4000, 5000, 3000 for years 1-4\ncash_flows = [-10000, 3000, 4000, 5000, 3000]\n\n# Calculate IRR using numpy's irr function\nirr = np.irr(cash_flows)\n\n# Convert to percentage and round to one decimal place\nirr_percentage = irr * 100\nirr_rounded = round(irr_percentage, 1)\n\nprint(f\"IRR: {irr_percentage}%\")\nprint(f\"Rounded IRR: {irr_rounded}%",
-        "stdout_head": "\nSTDERR: Traceback (most recent call last):\n  File \"/tmp/tmplpi6ziug.py\", line 19, in <module>\n    irr = np.irr(cash_flows)\n          ^^^^^^\n  File \"/usr/local/lib/python3.11/site-packages/numpy/__ini",
+        "code": "import numpy as np\n\n# Cash flows: -10000 at year 0, then 3000, 4000, 5000, 3000 for years 1-4\ncash_flows = [-10000, 3000, 4000, 5000, 3000]\n\n# Calculate IRR using numpy's financial function\nirr = np.irr(cash_flows)\n\n# Convert to percentage and round to one decimal place\nirr_percentage = irr * 100\nprint(f\"{irr_percentage:.1f}\")",
+        "stdout_head": "\nSTDERR: Traceback (most recent call last):\n  File \"/tmp/tmp1x3ychfo.py\", line 19, in <module>\n    irr = np.irr(cash_flows)\n          ^^^^^^\n  File \"/usr/local/lib/python3.11/site-packages/numpy/__ini",
         "error": "",
-        "wall_s": 7.55
+        "wall_s": 5.87
       },
       {
         "trial": 2,
         "prompt": "In 10 independent trials, each with probability 0.25 of su",
         "expected": 0.2503,
         "tol": 0.0005,
-        "matched": null,
+        "matched": 0.2503,
         "numbers_seen": [
-          72.0,
-          1.0,
-          13.0,
-          1.0
+          0.2503
         ],
-        "correct": false,
+        "correct": true,
         "empty_stdout": false,
-        "errored": true,
-        "code": "from scipy.stats import binom\n\n# Parameters\nn = 10  # number of trials\np = 0.25  # probability of success\nk = 3  # number of successes\n\n# Calculate the probability using the binomial distribution formula:\n# P(X=k) = C(n, k) * p^k * (1-p)^(n-k)\nprobability = binom.pmf(k, n, p)\n\nprint(f\"{probability:.4f}\")",
-        "stdout_head": "\nSTDERR: Traceback (most recent call last):\n  File \"/tmp/tmpcw72g1xn.py\", line 13, in <module>\n    from scipy.stats import binom\nModuleNotFoundError: No module named 'scipy'\n\nExit code: 1",
+        "errored": false,
+        "code": "import math\n\n# Parameters\nn = 10  # number of trials\nk = 3   # number of successes\np = 0.25  # probability of success\n\n# Calculate binomial coefficient C(n, k)\nC_n_k = math.comb(n, k)\n\n# Calculate probability using the formula: P(X=k) = C(n,k) * p^k * (1-p)^(n-k)\nprobability = C_n_k * (p ** k) * ((1 - p) ** (n - k))\n\nprint(f\"{probability:.4f}\")",
+        "stdout_head": "0.2503\n",
         "error": "",
-        "wall_s": 6.13
+        "wall_s": 5.58
       },
       {
         "trial": 2,
@@ -228,29 +220,31 @@
         "tol": 0.01,
         "matched": null,
         "numbers_seen": [
-          0.0,
-          13.0,
+          8.0,
+          5.0,
+          17.0,
+          3.11,
           1.0
         ],
         "correct": false,
         "empty_stdout": false,
         "errored": true,
-        "code": "from sympy import symbols, Eq, solve\n\n# Define the variables\nx, y = symbols('x y')\n\n# Define the equations\neq1 = Eq(2*x + 3*y, 12)\neq2 = Eq(x - y, 1)\n\n# Solve the system of equations\nsolution = solve((eq1, eq2), (x, y))\n\nprint(solution)",
-        "stdout_head": "\nSTDERR: Traceback (most recent call last):\n  File \"/tmp/tmpolud0sly.py\", line 13, in <module>\n    from sympy import symbols, Eq, solve\nModuleNotFoundError: No module named 'sympy'\n\nExit code: 1",
+        "code": "# Solve the system:\n# 2x + 3y = 12\n# x - y = 1\n\nfrom numpy.linalg import inv, matrix\n\nA = matrix([[2, 3], [1, -1]])\nB = matrix([12, 1])\n\nX = inv(A) * B\nprint(X[0, 0])",
+        "stdout_head": "\nSTDERR: Traceback (most recent call last):\n  File \"/tmp/tmp8wcr5nht.py\", line 17, in <module>\n    from numpy.linalg import inv, matrix\nImportError: cannot import name 'matrix' from 'numpy.linalg' (/u",
         "error": "",
-        "wall_s": 13.79
+        "wall_s": 4.31
       }
     ]
   },
   "warm chat (qwen3.5:9b)": {
     "label": "warm chat (qwen3.5:9b)",
     "model": "qwen3.5:9b",
-    "correct": 6,
+    "correct": 12,
     "n": 12,
-    "reliability": 0.5,
+    "reliability": 1.0,
     "empty_stdout": 0,
     "empty_rate": 0.0,
-    "median_s": 4.21,
+    "median_s": 4.78,
     "rows": [
       {
         "trial": 1,
@@ -267,7 +261,7 @@
         "code": "import numpy as np\n\nmatrix = np.array([[2, -1, 3], [0, 4, 5], [1, 2, -2]])\ndeterminant = np.linalg.det(matrix)\nprint(determinant)",
         "stdout_head": "-52.999999999999986\n",
         "error": "",
-        "wall_s": 35.68
+        "wall_s": 7.46
       },
       {
         "trial": 1,
@@ -276,78 +270,66 @@
         "tol": 0.01,
         "matched": 3.0,
         "numbers_seen": [
-          3.0,
-          2.0,
           3.0
         ],
         "correct": true,
         "empty_stdout": false,
         "errored": false,
-        "code": "import numpy as np\n\n# Coefficients of the quadratic equation ax^2 + bx + c = 0\na = 1\nb = -5\nc = 6\n\n# Calculate the roots using the quadratic formula\nroots = np.roots([a, b, c])\n\n# Identify the larger root\nlarger_root = max(roots)\n\nprint(f\"The roots are: {roots}\")\nprint(f\"The larger root is: {larger_root}\")",
-        "stdout_head": "The roots are: [3. 2.]\nThe larger root is: 3.0\n",
+        "code": "import math\n\na = 1\nb = -5\nc = 6\n\n# Calculate discriminant\ndiscriminant = b**2 - 4*a*c\n\n# Calculate roots\nroot1 = (-b + math.sqrt(discriminant)) / (2*a)\nroot2 = (-b - math.sqrt(discriminant)) / (2*a)\n\nlarger_root = max(root1, root2)\nprint(larger_root)",
+        "stdout_head": "3.0\n",
         "error": "",
-        "wall_s": 47.36
+        "wall_s": 4.42
       },
       {
         "trial": 1,
         "prompt": "Evaluate the definite integral of x^2 * sin(x) with respec",
         "expected": 5.8696,
         "tol": 0.001,
-        "matched": null,
+        "matched": 5.8696,
         "numbers_seen": [
-          4.0,
-          0.0,
-          7.0,
-          13.0,
-          1.0
+          5.8696
         ],
-        "correct": false,
+        "correct": true,
         "empty_stdout": false,
-        "errored": true,
-        "code": "import sympy as sp\n\nx = sp.symbols('x')\nintegrand = x**2 * sp.sin(x)\nintegral_result = sp.integrate(integrand, (x, 0, sp.pi))\nnumeric_value = float(integral_result.evalf())\nprint(numeric_value)",
-        "stdout_head": "\nSTDERR: Traceback (most recent call last):\n  File \"/tmp/tmp4vvr0r7h.py\", line 13, in <module>\n    import sympy as sp\nModuleNotFoundError: No module named 'sympy'\n\nExit code: 1",
+        "errored": false,
+        "code": "import math\n\n# Define the function f(x) = x^2 * sin(x)\ndef f(x):\n    return x**2 * math.sin(x)\n\n# We need to evaluate the definite integral from 0 to pi.\n# Since we cannot use scipy.integrate, we will use numerical integration (Simpson's rule or similar).\n# Let's use a simple Riemann sum with a large number of intervals for high precision.\n\na = 0\nb = math.pi\nn = 1000000  # Number of intervals\nh = ",
+        "stdout_head": "5.8696\n",
         "error": "",
-        "wall_s": 4.24
+        "wall_s": 7.0
       },
       {
         "trial": 1,
         "prompt": "A project has cash flows of -10000, 3000, 4000, 5000, and ",
         "expected": 18.0282,
         "tol": 0.05,
-        "matched": null,
+        "matched": 18.0,
         "numbers_seen": [
-          7.0,
-          40.0,
-          16.0,
-          3.11,
-          792.0,
-          1.0
+          18.0
         ],
-        "correct": false,
+        "correct": true,
         "empty_stdout": false,
-        "errored": true,
-        "code": "import numpy as np\n\ncash_flows = [-10000, 3000, 4000, 5000, 3000]\nirr = np.irr(cash_flows)\nprint(f\"{irr * 100:.1f}\")",
-        "stdout_head": "\nSTDERR: Traceback (most recent call last):\n  File \"/tmp/tmp7oub40qx.py\", line 16, in <module>\n    irr = np.irr(cash_flows)\n          ^^^^^^\n  File \"/usr/local/lib/python3.11/site-packages/numpy/__ini",
+        "errored": false,
+        "code": "cash_flows = [-10000, 3000, 4000, 5000, 3000]\n\ndef npv(rate):\n    return sum(cf / ((1 + rate) ** i) for i, cf in enumerate(cash_flows))\n\n# Bisection method to find IRR\nlow, high = -0.99, 1.0\nfor _ in range(100):\n    mid = (low + high) / 2\n    if npv(mid) > 0:\n        low = mid\n    else:\n        high = mid\n\nirr = mid\nprint(f\"{irr * 100:.1f}\")",
+        "stdout_head": "18.0\n",
         "error": "",
-        "wall_s": 4.17
+        "wall_s": 6.57
       },
       {
         "trial": 1,
         "prompt": "In 10 independent trials, each with probability 0.25 of su",
         "expected": 0.2503,
         "tol": 0.0005,
-        "matched": null,
+        "matched": 0.2503,
         "numbers_seen": [
-          13.0,
-          1.0
+          0.2503
         ],
-        "correct": false,
+        "correct": true,
         "empty_stdout": false,
-        "errored": true,
-        "code": "from scipy.stats import binom\n\nn = 10\np = 0.25\nk = 3\n\nprobability = binom.pmf(k, n, p)\nprint(f\"{probability:.4f}\")",
-        "stdout_head": "\nSTDERR: Traceback (most recent call last):\n  File \"/tmp/tmpsumloszs.py\", line 13, in <module>\n    from scipy.stats import binom\nModuleNotFoundError: No module named 'scipy'\n\nExit code: 1",
+        "errored": false,
+        "code": "import math\n\nn = 10\nk = 3\np = 0.25\n\n# Probability of exactly k successes in n trials: P(X=k) = C(n, k) * p^k * (1-p)^(n-k)\nprobability = math.comb(n, k) * (p ** k) * ((1 - p) ** (n - k))\n\nprint(f\"{probability:.4f}\")",
+        "stdout_head": "0.2503\n",
         "error": "",
-        "wall_s": 3.63
+        "wall_s": 4.77
       },
       {
         "trial": 1,
@@ -361,10 +343,10 @@
         "correct": true,
         "empty_stdout": false,
         "errored": false,
-        "code": "import numpy as np\n\n# Coefficients matrix A\nA = np.array([[2, 3], [1, -1]])\n\n# Constants vector B\nB = np.array([12, 1])\n\n# Solve the linear system\nX = np.linalg.solve(A, B)\n\nx_value = X[0]\nprint(f\"The value of x is: {x_value}\")",
-        "stdout_head": "The value of x is: 3.0\n",
+        "code": "import numpy as np\n\n# Coefficients matrix\nA = np.array([[2, 3], [1, -1]])\n# Constants vector\nB = np.array([12, 1])\n\n# Solve the system\nX = np.linalg.solve(A, B)\nx_value = X[0]\nprint(x_value)",
+        "stdout_head": "3.0\n",
         "error": "",
-        "wall_s": 4.55
+        "wall_s": 4.07
       },
       {
         "trial": 2,
@@ -381,7 +363,7 @@
         "code": "import numpy as np\n\nmatrix = np.array([[2, -1, 3], [0, 4, 5], [1, 2, -2]])\ndeterminant = np.linalg.det(matrix)\nprint(determinant)",
         "stdout_head": "-52.999999999999986\n",
         "error": "",
-        "wall_s": 3.73
+        "wall_s": 3.63
       },
       {
         "trial": 2,
@@ -390,79 +372,66 @@
         "tol": 0.01,
         "matched": 3.0,
         "numbers_seen": [
-          3.0,
-          2.0,
           3.0
         ],
         "correct": true,
         "empty_stdout": false,
         "errored": false,
-        "code": "import numpy as np\n\n# Coefficients of the quadratic equation ax^2 + bx + c = 0\na = 1\nb = -5\nc = 6\n\n# Calculate the roots using the quadratic formula\nroots = np.roots([a, b, c])\n\n# Identify the larger root\nlarger_root = max(roots)\n\nprint(f\"The roots are: {roots}\")\nprint(f\"The larger root is: {larger_root}\")",
-        "stdout_head": "The roots are: [3. 2.]\nThe larger root is: 3.0\n",
+        "code": "import math\n\na = 1\nb = -5\nc = 6\n\n# Calculate discriminant\ndiscriminant = b**2 - 4*a*c\n\n# Calculate roots\nroot1 = (-b + math.sqrt(discriminant)) / (2*a)\nroot2 = (-b - math.sqrt(discriminant)) / (2*a)\n\nlarger_root = max(root1, root2)\nprint(larger_root)",
+        "stdout_head": "3.0\n",
         "error": "",
-        "wall_s": 4.88
+        "wall_s": 4.59
       },
       {
         "trial": 2,
         "prompt": "Evaluate the definite integral of x^2 * sin(x) with respec",
         "expected": 5.8696,
         "tol": 0.001,
-        "matched": null,
+        "matched": 5.8696,
         "numbers_seen": [
-          6.0,
-          7.0,
-          13.0,
-          1.0
+          5.8696
         ],
-        "correct": false,
+        "correct": true,
         "empty_stdout": false,
-        "errored": true,
-        "code": "import sympy as sp\n\nx = sp.symbols('x')\nintegrand = x**2 * sp.sin(x)\nintegral_result = sp.integrate(integrand, (x, 0, sp.pi))\nnumeric_value = float(integral_result.evalf())\nprint(numeric_value)",
-        "stdout_head": "\nSTDERR: Traceback (most recent call last):\n  File \"/tmp/tmpvhxk6_7z.py\", line 13, in <module>\n    import sympy as sp\nModuleNotFoundError: No module named 'sympy'\n\nExit code: 1",
+        "errored": false,
+        "code": "import math\n\n# Define the function f(x) = x^2 * sin(x)\ndef f(x):\n    return x**2 * math.sin(x)\n\n# We need to evaluate the definite integral from 0 to pi.\n# Since we cannot use scipy.integrate, we will use numerical integration (Simpson's rule or similar).\n# Let's use a simple Riemann sum with a large number of intervals for high precision.\n\na = 0\nb = math.pi\nn = 1000000  # Number of intervals\nh = ",
+        "stdout_head": "5.8696\n",
         "error": "",
-        "wall_s": 3.9
+        "wall_s": 7.23
       },
       {
         "trial": 2,
         "prompt": "A project has cash flows of -10000, 3000, 4000, 5000, and ",
         "expected": 18.0282,
         "tol": 0.05,
-        "matched": null,
+        "matched": 18.0,
         "numbers_seen": [
-          4.0,
-          5.0,
-          16.0,
-          3.11,
-          792.0,
-          1.0
+          18.0
         ],
-        "correct": false,
+        "correct": true,
         "empty_stdout": false,
-        "errored": true,
-        "code": "import numpy as np\n\ncash_flows = [-10000, 3000, 4000, 5000, 3000]\nirr = np.irr(cash_flows)\nprint(f\"{irr * 100:.1f}\")",
-        "stdout_head": "\nSTDERR: Traceback (most recent call last):\n  File \"/tmp/tmpbqey4q5e.py\", line 16, in <module>\n    irr = np.irr(cash_flows)\n          ^^^^^^\n  File \"/usr/local/lib/python3.11/site-packages/numpy/__ini",
+        "errored": false,
+        "code": "cash_flows = [-10000, 3000, 4000, 5000, 3000]\n\ndef npv(rate):\n    return sum(cf / ((1 + rate) ** i) for i, cf in enumerate(cash_flows))\n\n# Bisection method to find IRR\nlow, high = -0.99, 1.0\nfor _ in range(100):\n    mid = (low + high) / 2\n    if npv(mid) > 0:\n        low = mid\n    else:\n        high = mid\n\nirr = mid\nprint(f\"{irr * 100:.1f}\")",
+        "stdout_head": "18.0\n",
         "error": "",
-        "wall_s": 4.03
+        "wall_s": 6.49
       },
       {
         "trial": 2,
         "prompt": "In 10 independent trials, each with probability 0.25 of su",
         "expected": 0.2503,
         "tol": 0.0005,
-        "matched": null,
+        "matched": 0.2503,
         "numbers_seen": [
-          71.0,
-          7.0,
-          13.0,
-          1.0
+          0.2503
         ],
-        "correct": false,
+        "correct": true,
         "empty_stdout": false,
-        "errored": true,
-        "code": "from scipy.stats import binom\n\nn = 10\np = 0.25\nk = 3\n\nprobability = binom.pmf(k, n, p)\nprint(f\"{probability:.4f}\")",
-        "stdout_head": "\nSTDERR: Traceback (most recent call last):\n  File \"/tmp/tmpsape71z7.py\", line 13, in <module>\n    from scipy.stats import binom\nModuleNotFoundError: No module named 'scipy'\n\nExit code: 1",
+        "errored": false,
+        "code": "import math\n\nn = 10\nk = 3\np = 0.25\n\n# Probability of exactly k successes in n trials: P(X=k) = C(n, k) * p^k * (1-p)^(n-k)\nprobability = math.comb(n, k) * (p ** k) * ((1 - p) ** (n - k))\n\nprint(f\"{probability:.4f}\")",
+        "stdout_head": "0.2503\n",
         "error": "",
-        "wall_s": 3.41
+        "wall_s": 4.79
       },
       {
         "trial": 2,
@@ -476,22 +445,22 @@
         "correct": true,
         "empty_stdout": false,
         "errored": false,
-        "code": "import numpy as np\n\n# Coefficients matrix A\nA = np.array([[2, 3], [1, -1]])\n\n# Constants vector B\nB = np.array([12, 1])\n\n# Solve the linear system\nX = np.linalg.solve(A, B)\n\nx_value = X[0]\nprint(f\"The value of x is: {x_value}\")",
-        "stdout_head": "The value of x is: 3.0\n",
+        "code": "import numpy as np\n\n# Coefficients matrix\nA = np.array([[2, 3], [1, -1]])\n# Constants vector\nB = np.array([12, 1])\n\n# Solve the system\nX = np.linalg.solve(A, B)\nx_value = X[0]\nprint(x_value)",
+        "stdout_head": "3.0\n",
         "error": "",
-        "wall_s": 4.35
+        "wall_s": 4.2
       }
     ]
   },
   "warm utility (qwen3.5:4b)": {
     "label": "warm utility (qwen3.5:4b)",
     "model": "qwen3.5:4b",
-    "correct": 8,
+    "correct": 10,
     "n": 12,
-    "reliability": 0.667,
+    "reliability": 0.833,
     "empty_stdout": 0,
     "empty_rate": 0.0,
-    "median_s": 3.25,
+    "median_s": 3.97,
     "rows": [
       {
         "trial": 1,
@@ -508,7 +477,7 @@
         "code": "import numpy as np\n\nmatrix = np.array([[2, -1, 3], [0, 4, 5], [1, 2, -2]])\ndeterminant = np.linalg.det(matrix)\nprint(determinant)",
         "stdout_head": "-52.999999999999986\n",
         "error": "",
-        "wall_s": 4.41
+        "wall_s": 4.24
       },
       {
         "trial": 1,
@@ -527,7 +496,7 @@
         "code": "import numpy as np\n\n# Coefficients for the quadratic equation ax^2 + bx + c = 0\na = 1\nb = -5\nc = 6\n\n# Calculate the discriminant\ndiscriminant = b**2 - 4*a*c\n\n# Calculate the two roots using the quadratic formula\nroot1 = (-b + np.sqrt(discriminant)) / (2*a)\nroot2 = (-b - np.sqrt(discriminant)) / (2*a)\n\n# Find the larger root\nlarger_root = max(root1, root2)\n\nprint(f\"Roots: {root1}, {root2}\")\nprint(f",
         "stdout_head": "Roots: 3.0, 2.0\nLarger root: 3.0\n",
         "error": "",
-        "wall_s": 3.52
+        "wall_s": 3.6
       },
       {
         "trial": 1,
@@ -536,28 +505,8 @@
         "tol": 0.001,
         "matched": null,
         "numbers_seen": [
-          650.0,
-          5.0,
-          14.0,
-          1.0
-        ],
-        "correct": false,
-        "empty_stdout": false,
-        "errored": true,
-        "code": "import numpy as np\nfrom scipy.integrate import quad\n\n# Define the integrand function f(x) = x^2 * sin(x)\ndef integrand(x):\n    return x**2 * np.sin(x)\n\n# Compute the definite integral from 0 to pi\nresult, error = quad(integrand, 0, np.pi)\n\n# Round to 4 decimal places\nrounded_result = round(result, 4)\n\nprint(f\"Exact numeric value: {result}\")\nprint(f\"Rounded to 4 decimal places: {rounded_result}\")",
-        "stdout_head": "\nSTDERR: Traceback (most recent call last):\n  File \"/tmp/tmp650i5fxi.py\", line 14, in <module>\n    from scipy.integrate import quad\nModuleNotFoundError: No module named 'scipy'\n\nExit code: 1",
-        "error": "",
-        "wall_s": 3.32
-      },
-      {
-        "trial": 1,
-        "prompt": "A project has cash flows of -10000, 3000, 4000, 5000, and ",
-        "expected": 18.0282,
-        "tol": 0.05,
-        "matched": null,
-        "numbers_seen": [
-          9.0,
-          19.0,
+          8.0,
+          26.0,
           3.11,
           792.0,
           1.0
@@ -565,27 +514,51 @@
         "correct": false,
         "empty_stdout": false,
         "errored": true,
-        "code": "import numpy as np\n\n# Cash flows: -10000 at year 0, then 3000, 4000, 5000, 3000 in years 1-4\ncash_flows = [-10000, 3000, 4000, 5000, 3000]\n\n# Calculate IRR using numpy's irr function\nirr = np.irr(cash_flows)\nirr_percentage = irr * 100\n\nprint(f\"IRR: {irr_percentage:.1f}%\")",
-        "stdout_head": "\nSTDERR: Traceback (most recent call last):\n  File \"/tmp/tmploe9kbur.py\", line 19, in <module>\n    irr = np.irr(cash_flows)\n          ^^^^^^\n  File \"/usr/local/lib/python3.11/site-packages/numpy/__ini",
+        "code": "import numpy as np\n\n# Define the function f(x) = x^2 * sin(x)\ndef f(x):\n    return x**2 * np.sin(x)\n\n# Use numerical integration (trapezoidal rule or similar) to compute the definite integral from 0 to pi\na = 0.0\nb = np.pi\nn = 100000  # Number of intervals for accuracy\n\nx = np.linspace(a, b, n+1)\ny = f(x[:-1]) + f(x[1:])\nintegral = np.trapz(y, x)\n\n# Round to 4 decimal places\nresult = round(integra",
+        "stdout_head": "\nSTDERR: Traceback (most recent call last):\n  File \"/tmp/tmpydbx8gyq.py\", line 26, in <module>\n    integral = np.trapz(y, x)\n               ^^^^^^^^\n  File \"/usr/local/lib/python3.11/site-packages/num",
         "error": "",
-        "wall_s": 3.49
+        "wall_s": 4.03
+      },
+      {
+        "trial": 1,
+        "prompt": "A project has cash flows of -10000, 3000, 4000, 5000, and ",
+        "expected": 18.0282,
+        "tol": 0.05,
+        "matched": 18.0,
+        "numbers_seen": [
+          7.0,
+          3.0,
+          18.0,
+          3.11,
+          792.0,
+          1.0
+        ],
+        "correct": true,
+        "empty_stdout": false,
+        "errored": true,
+        "code": "import numpy as np\n\ncash_flows = [-10000, 3000, 4000, 5000, 3000]\n\n# Calculate IRR using numpy's irr function\nirr = np.irr(cash_flows)\nprint(f\"IRR: {irr}\")\nprint(f\"IRR as percentage: {irr * 100}\")",
+        "stdout_head": "\nSTDERR: Traceback (most recent call last):\n  File \"/tmp/tmppdl7x3nf.py\", line 18, in <module>\n    irr = np.irr(cash_flows)\n          ^^^^^^\n  File \"/usr/local/lib/python3.11/site-packages/numpy/__ini",
+        "error": "",
+        "wall_s": 2.93
       },
       {
         "trial": 1,
         "prompt": "In 10 independent trials, each with probability 0.25 of su",
         "expected": 0.2503,
         "tol": 0.0005,
-        "matched": 0.2503,
+        "matched": 0.25028228759765625,
         "numbers_seen": [
+          0.2503,
+          4.0,
           0.2503
         ],
         "correct": true,
         "empty_stdout": false,
         "errored": false,
-        "code": "import math\n\n# Parameters\nn = 10  # number of trials\nk = 3   # number of successes\np = 0.25  # probability of success\n\n# Binomial probability formula: P(X=k) = C(n, k) * p^k * (1-p)^(n-k)\nfrom math import comb\n\nprobability = comb(n, k) * (p ** k) * ((1 - p) ** (n - k))\n\nprint(f\"{probability:.4f}\")",
-        "stdout_head": "0.2503\n",
+        "code": "import math\n\n# Parameters\nn = 10  # number of trials\nk = 3   # number of successes\np = 0.25  # probability of success\n\n# Binomial probability formula: P(X=k) = C(n, k) * p^k * (1-p)^(n-k)\n# C(n, k) = n! / (k! * (n-k)!)\n\nfrom math import comb, factorial\n\n# Calculate the binomial probability\nprobability = comb(n, k) * (p ** k) * ((1 - p) ** (n - k))\n\nprint(f\"Probability: {probability}\")\nprint(f\"Roun",
+        "stdout_head": "Probability: 0.25028228759765625\nRounded to 4 decimal places: 0.2503\n",
         "error": "",
-        "wall_s": 3.08
+        "wall_s": 4.06
       },
       {
         "trial": 1,
@@ -595,15 +568,21 @@
         "matched": 3.0,
         "numbers_seen": [
           3.0,
+          2.0,
+          1.0,
+          2.0,
+          3.0,
+          12.0,
+          12.0,
           2.0
         ],
         "correct": true,
         "empty_stdout": false,
         "errored": false,
-        "code": "import numpy as np\n\n# Coefficients matrix for the system:\n# 2x + 3y = 12\n# 1x - 1y = 1\nA = np.array([[2, 3], [1, -1]])\nB = np.array([12, 1])\n\n# Solve the linear system\nsolution = np.linalg.solve(A, B)\nx, y = solution\n\nprint(f\"x = {x}\")\nprint(f\"y = {y}\")",
-        "stdout_head": "x = 3.0\ny = 2.0\n",
+        "code": "# Solve the linear system:\n# 2x + 3y = 12\n# x - y = 1\n\n# From the second equation: x = 1 + y\n# Substitute into the first equation: 2(1 + y) + 3y = 12\n# 2 + 2y + 3y = 12\n# 2 + 5y = 12\n# 5y = 10\n# y = 2\n\n# Now find x: x = 1 + y = 1 + 2 = 3\n\nx = 3\ny = 2\n\n# Verify the solution\neq1 = 2*x + 3*y\neq2 = x - y\n\nprint(f\"x = {x}, y = {y}\")\nprint(f\"Equation 1: 2x + 3y = {eq1} (should be 12)\")\nprint(f\"Equation ",
+        "stdout_head": "x = 3, y = 2\nEquation 1: 2x + 3y = 12 (should be 12)\nEquation 2: x - y = 1 (should be 1)\n",
         "error": "",
-        "wall_s": 2.99
+        "wall_s": 5.09
       },
       {
         "trial": 2,
@@ -620,7 +599,7 @@
         "code": "import numpy as np\n\nmatrix = np.array([[2, -1, 3], [0, 4, 5], [1, 2, -2]])\ndeterminant = np.linalg.det(matrix)\nprint(determinant)",
         "stdout_head": "-52.999999999999986\n",
         "error": "",
-        "wall_s": 2.06
+        "wall_s": 2.27
       },
       {
         "trial": 2,
@@ -639,7 +618,7 @@
         "code": "import numpy as np\n\n# Coefficients for the quadratic equation ax^2 + bx + c = 0\na = 1\nb = -5\nc = 6\n\n# Calculate the discriminant\ndiscriminant = b**2 - 4*a*c\n\n# Calculate the two roots using the quadratic formula\nroot1 = (-b + np.sqrt(discriminant)) / (2*a)\nroot2 = (-b - np.sqrt(discriminant)) / (2*a)\n\n# Find the larger root\nlarger_root = max(root1, root2)\n\nprint(f\"Roots: {root1}, {root2}\")\nprint(f",
         "stdout_head": "Roots: 3.0, 2.0\nLarger root: 3.0\n",
         "error": "",
-        "wall_s": 3.66
+        "wall_s": 3.68
       },
       {
         "trial": 2,
@@ -648,28 +627,9 @@
         "tol": 0.001,
         "matched": null,
         "numbers_seen": [
-          2.0,
-          14.0,
-          1.0
-        ],
-        "correct": false,
-        "empty_stdout": false,
-        "errored": true,
-        "code": "import numpy as np\nfrom scipy.integrate import quad\n\n# Define the integrand function f(x) = x^2 * sin(x)\ndef integrand(x):\n    return x**2 * np.sin(x)\n\n# Compute the definite integral from 0 to pi\nresult, error = quad(integrand, 0, np.pi)\n\n# Round to 4 decimal places\nrounded_result = round(result, 4)\n\nprint(f\"Exact numeric value: {result}\")\nprint(f\"Rounded to 4 decimal places: {rounded_result}\")",
-        "stdout_head": "\nSTDERR: Traceback (most recent call last):\n  File \"/tmp/tmpmsz2rory.py\", line 14, in <module>\n    from scipy.integrate import quad\nModuleNotFoundError: No module named 'scipy'\n\nExit code: 1",
-        "error": "",
-        "wall_s": 3.19
-      },
-      {
-        "trial": 2,
-        "prompt": "A project has cash flows of -10000, 3000, 4000, 5000, and ",
-        "expected": 18.0282,
-        "tol": 0.05,
-        "matched": null,
-        "numbers_seen": [
-          3.0,
-          5.0,
-          19.0,
+          0.0,
+          9.0,
+          26.0,
           3.11,
           792.0,
           1.0
@@ -677,27 +637,50 @@
         "correct": false,
         "empty_stdout": false,
         "errored": true,
-        "code": "import numpy as np\n\n# Cash flows: -10000 at year 0, then 3000, 4000, 5000, 3000 in years 1-4\ncash_flows = [-10000, 3000, 4000, 5000, 3000]\n\n# Calculate IRR using numpy's irr function\nirr = np.irr(cash_flows)\nirr_percentage = irr * 100\n\nprint(f\"IRR: {irr_percentage:.1f}%\")",
-        "stdout_head": "\nSTDERR: Traceback (most recent call last):\n  File \"/tmp/tmpnkmxx3s5.py\", line 19, in <module>\n    irr = np.irr(cash_flows)\n          ^^^^^^\n  File \"/usr/local/lib/python3.11/site-packages/numpy/__ini",
+        "code": "import numpy as np\n\n# Define the function f(x) = x^2 * sin(x)\ndef f(x):\n    return x**2 * np.sin(x)\n\n# Use numerical integration (trapezoidal rule or similar) to compute the definite integral from 0 to pi\na = 0.0\nb = np.pi\nn = 100000  # Number of intervals for accuracy\n\nx = np.linspace(a, b, n+1)\ny = f(x[:-1]) + f(x[1:])\nintegral = np.trapz(y, x)\n\n# Round to 4 decimal places\nresult = round(integra",
+        "stdout_head": "\nSTDERR: Traceback (most recent call last):\n  File \"/tmp/tmpf0la9ecz.py\", line 26, in <module>\n    integral = np.trapz(y, x)\n               ^^^^^^^^\n  File \"/usr/local/lib/python3.11/site-packages/num",
         "error": "",
-        "wall_s": 3.43
+        "wall_s": 3.92
+      },
+      {
+        "trial": 2,
+        "prompt": "A project has cash flows of -10000, 3000, 4000, 5000, and ",
+        "expected": 18.0282,
+        "tol": 0.05,
+        "matched": 18.0,
+        "numbers_seen": [
+          14.0,
+          18.0,
+          3.11,
+          792.0,
+          1.0
+        ],
+        "correct": true,
+        "empty_stdout": false,
+        "errored": true,
+        "code": "import numpy as np\n\ncash_flows = [-10000, 3000, 4000, 5000, 3000]\n\n# Calculate IRR using numpy's irr function\nirr = np.irr(cash_flows)\nprint(f\"IRR: {irr}\")\nprint(f\"IRR as percentage: {irr * 100}\")",
+        "stdout_head": "\nSTDERR: Traceback (most recent call last):\n  File \"/tmp/tmpzi14y_jh.py\", line 18, in <module>\n    irr = np.irr(cash_flows)\n          ^^^^^^\n  File \"/usr/local/lib/python3.11/site-packages/numpy/__ini",
+        "error": "",
+        "wall_s": 2.83
       },
       {
         "trial": 2,
         "prompt": "In 10 independent trials, each with probability 0.25 of su",
         "expected": 0.2503,
         "tol": 0.0005,
-        "matched": 0.2503,
+        "matched": 0.25028228759765625,
         "numbers_seen": [
+          0.2503,
+          4.0,
           0.2503
         ],
         "correct": true,
         "empty_stdout": false,
         "errored": false,
-        "code": "import math\n\n# Parameters\nn = 10  # number of trials\nk = 3   # number of successes\np = 0.25  # probability of success\n\n# Binomial probability formula: P(X=k) = C(n, k) * p^k * (1-p)^(n-k)\nfrom math import comb\n\nprobability = comb(n, k) * (p ** k) * ((1 - p) ** (n - k))\n\nprint(f\"{probability:.4f}\")",
-        "stdout_head": "0.2503\n",
+        "code": "import math\n\n# Parameters\nn = 10  # number of trials\nk = 3   # number of successes\np = 0.25  # probability of success\n\n# Binomial probability formula: P(X=k) = C(n, k) * p^k * (1-p)^(n-k)\n# C(n, k) = n! / (k! * (n-k)!)\n\nfrom math import comb, factorial\n\n# Calculate the binomial probability\nprobability = comb(n, k) * (p ** k) * ((1 - p) ** (n - k))\n\nprint(f\"Probability: {probability}\")\nprint(f\"Roun",
+        "stdout_head": "Probability: 0.25028228759765625\nRounded to 4 decimal places: 0.2503\n",
         "error": "",
-        "wall_s": 3.0
+        "wall_s": 4.02
       },
       {
         "trial": 2,
@@ -707,15 +690,21 @@
         "matched": 3.0,
         "numbers_seen": [
           3.0,
+          2.0,
+          1.0,
+          2.0,
+          3.0,
+          12.0,
+          12.0,
           2.0
         ],
         "correct": true,
         "empty_stdout": false,
         "errored": false,
-        "code": "import numpy as np\n\n# Coefficients matrix for the system:\n# 2x + 3y = 12\n# 1x - 1y = 1\nA = np.array([[2, 3], [1, -1]])\nB = np.array([12, 1])\n\n# Solve the linear system\nsolution = np.linalg.solve(A, B)\nx, y = solution\n\nprint(f\"x = {x}\")\nprint(f\"y = {y}\")",
-        "stdout_head": "x = 3.0\ny = 2.0\n",
+        "code": "# Solve the linear system:\n# 2x + 3y = 12\n# x - y = 1\n\n# From the second equation: x = 1 + y\n# Substitute into the first equation: 2(1 + y) + 3y = 12\n# 2 + 2y + 3y = 12\n# 2 + 5y = 12\n# 5y = 10\n# y = 2\n\n# Now find x: x = 1 + y = 1 + 2 = 3\n\nx = 3\ny = 2\n\n# Verify the solution\neq1 = 2*x + 3*y\neq2 = x - y\n\nprint(f\"x = {x}, y = {y}\")\nprint(f\"Equation 1: 2x + 3y = {eq1} (should be 12)\")\nprint(f\"Equation ",
+        "stdout_head": "x = 3, y = 2\nEquation 1: 2x + 3y = 12 (should be 12)\nEquation 2: x - y = 1 (should be 1)\n",
         "error": "",
-        "wall_s": 2.93
+        "wall_s": 5.1
       }
     ]
   }

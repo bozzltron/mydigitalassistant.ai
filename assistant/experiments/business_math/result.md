@@ -115,3 +115,45 @@ are not installed**. The prompt promises tools the sandbox does not have, so the
 punished for following instructions. Fixing that (install them, or stop promising them) is a
 prompt/image fix, not a fleet change, and it must come **before** any model comparison is
 worth running again.
+
+## The prompt fixed — and the comparison is now valid
+
+The prompt now names what actually exists (`math`, `statistics`, `decimal`, `fractions`,
+`numpy`), states that `scipy`/`sympy`/`pandas` are **not installed**, and warns that numpy 2
+removed names like `np.irr`. Re-run:
+
+| model | false promise | honest prompt |
+|---|---|---|
+| dedicated math (`sorc/…-q4:9b`) | 4/12 | **8/12** |
+| warm chat (`qwen3.5:9b`) | 6/12 | **12/12** |
+| warm utility (`qwen3.5:4b`) | 8/12 | **10/12** |
+
+**The prompt was most of the failure.** Half the misses were the false promise; the models
+had been punished for reaching for the right tool.
+
+**And this time the ranking is valid.** The dedicated "math model" is the **worst of the
+three** on hard math — it misses the IRR and the linear system on both trials. The chat
+model is perfect (12/12), the utility second (10/12).
+
+## So the answer to "did we prove opus wasn't the best?" — now, yes
+
+- **Business arithmetic:** opus **ties** the utility (30/30 each); the chat model fails
+  (27/30, a deterministic empty-stdout miss — it answers in prose instead of calling the
+  tool).
+- **Hard math, valid metric:** opus is **8/12**, behind the chat's 12/12 and the utility's
+  10/12.
+
+Its retirement was right, but it was right on a **tie plus a cost that we then removed** —
+the hard-math evidence was an artifact. **Now it is evidence-based**: opus has no measured
+advantage on either axis, and the chat model's hard-math edge does not make it the better
+*math* model because it **fails to invoke the tool** on business problems at all.
+
+**`MATH_MODEL=qwen3.5:4b` stands, now proven rather than assumed** — a tie on business
+arithmetic, second on hard math, and resident.
+
+## The durable finding
+
+**The compute path was promising libraries it did not have.** That is a *user-visible* bug —
+every hard computation failed — and it was invisible in the numbers until the generated code
+was captured. `execute_python`'s prefix had always guarded its own imports with
+`try/except pass`; the *prompt* never did.

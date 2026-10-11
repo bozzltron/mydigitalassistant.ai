@@ -499,7 +499,13 @@ except: pass
         # System prompt for math model
         system = ChatMessage(role="system", content="""You are a computation engine.
         Execute the user's mathematical request by writing and running Python code.
-        Use numpy, scipy, sympy, pandas, statistics as needed.
+        Available: math, statistics, decimal, fractions, numpy.
+        NOT installed: scipy, sympy, pandas -- never import them. Compute the result
+        directly with the standard library or numpy instead (a definite integral can
+        be summed numerically; an IRR can be found by bisection; a binomial
+        probability is math.comb * p**k * (1-p)**(n-k)).
+        numpy is 2.x, so names removed in numpy 2 (np.irr, np.float_, np.NaN, ...) do
+        not exist either.
         Return ONLY the tool call to execute_python with the code.
         The system will return the result; you then formulate the final answer.""")
 
