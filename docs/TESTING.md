@@ -125,7 +125,22 @@ The automated suite mocks Ollama. To exercise the **real** fleet end to end
 
 1. **Start it.** `docker compose up -d --build` (dev, https://localhost:8443) and
    `docker compose -f docker-compose.prod.yml up -d --build` (prod, :8444). Hard-refresh
-   the browser (⌘⇧R) after a rebuild — the SPA holds its JS in memory.
+   the browser (⌘⇧R) after a rebuild — the SPA holds its JS in memory, and a source change
+   reaches **neither** environment until its own image is rebuilt.
+
+   **They are not the same environment, and prod is not a sandbox.** Separate Compose
+   projects → separate images, brains and shared folders:
+
+   | | dev :8443 | prod :8444 |
+   |---|---|---|
+   | frontend | Vite dev server (HMR) | the **built bundle** |
+   | brain | `assistant.dev.db` | **`assistant.db` — the real one** |
+   | shared folder | `.data/shared-dev` | `.data/shared` |
+
+   Use **dev** to iterate, and **prod** to verify the production shape — not as a
+   scratchpad. A smoke test in prod writes real episodes and can overwrite real files
+   (one once overwrote `ReadingList.txt`). Use a throwaway session and files you don't
+   mind touching, or point prod at a copy for anything destructive.
 
 2. **Check the fleet.** `curl -sk https://localhost:8443/health` must list all nine roles
    and show `decision_completion: "(disabled)"` when the completion nudge is off.
