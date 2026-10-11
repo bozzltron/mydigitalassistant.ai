@@ -1,0 +1,678 @@
+{
+  "nimble": {
+    "label": "nimble",
+    "accuracy_pct": 90.0,
+    "correct": 18,
+    "n": 20,
+    "median_ms": 605.0,
+    "rows": [
+      {
+        "choice": "action",
+        "confidence": 0.9611964972430591,
+        "wall_s": 2.186,
+        "expected": "action",
+        "request": "Write a file called notes.txt with today's plan",
+        "correct": true
+      },
+      {
+        "choice": "action",
+        "confidence": 0.7916597756963875,
+        "wall_s": 0.601,
+        "expected": "action",
+        "request": "Create Friend Music Records Release Template.md as a generic template",
+        "correct": true
+      },
+      {
+        "choice": "action",
+        "confidence": 0.8226414762566959,
+        "wall_s": 0.605,
+        "expected": "action",
+        "request": "We want to create Friend Music Records Release Template.md",
+        "correct": true
+      },
+      {
+        "choice": "action",
+        "confidence": 0.720251804987279,
+        "wall_s": 0.6,
+        "expected": "action",
+        "request": "No edits to Why Not Release. We want to create a release template",
+        "correct": true
+      },
+      {
+        "choice": "action",
+        "confidence": 0.15032720598902483,
+        "wall_s": 0.605,
+        "expected": "action",
+        "request": "Read Why Not Release.md",
+        "correct": true
+      },
+      {
+        "choice": "action",
+        "confidence": 0.9810588608340636,
+        "wall_s": 0.601,
+        "expected": "action",
+        "request": "Rename notes.txt to todo.txt",
+        "correct": true
+      },
+      {
+        "choice": "action",
+        "confidence": 0.9569078946766196,
+        "wall_s": 0.601,
+        "expected": "action",
+        "request": "Delete the old draft file",
+        "correct": true
+      },
+      {
+        "choice": "action",
+        "confidence": 0.9166477113392122,
+        "wall_s": 0.602,
+        "expected": "action",
+        "request": "Append this row to contacts.csv",
+        "correct": true
+      },
+      {
+        "choice": "action",
+        "confidence": 0.8315027850743144,
+        "wall_s": 0.609,
+        "expected": "action",
+        "request": "Add a point to my survey map at -122.68, 45.523",
+        "correct": true
+      },
+      {
+        "choice": "action",
+        "confidence": 0.3625487260524438,
+        "wall_s": 0.612,
+        "expected": "action",
+        "request": "Run my morning briefing now",
+        "correct": true
+      },
+      {
+        "choice": "answer",
+        "confidence": 0.6173417106907495,
+        "wall_s": 0.605,
+        "expected": "answer",
+        "request": "What is my name?",
+        "correct": true
+      },
+      {
+        "choice": "answer",
+        "confidence": 0.9560927021177541,
+        "wall_s": 0.607,
+        "expected": "answer",
+        "request": "Explain how photosynthesis works",
+        "correct": true
+      },
+      {
+        "choice": "answer",
+        "confidence": 0.7112918981927016,
+        "wall_s": 0.637,
+        "expected": "answer",
+        "request": "What did we decide about the launch?",
+        "correct": true
+      },
+      {
+        "choice": "answer",
+        "confidence": 0.971950890315168,
+        "wall_s": 0.599,
+        "expected": "answer",
+        "request": "Thanks, that's helpful",
+        "correct": true
+      },
+      {
+        "choice": "answer",
+        "confidence": 0.9695587325174109,
+        "wall_s": 0.597,
+        "expected": "answer",
+        "request": "What's the capital of France?",
+        "correct": true
+      },
+      {
+        "choice": "answer",
+        "confidence": 0.5173197300438732,
+        "wall_s": 0.603,
+        "expected": "answer",
+        "request": "Summarize what you know about the Mozworth project",
+        "correct": true
+      },
+      {
+        "choice": "answer",
+        "confidence": 0.9256593346130276,
+        "wall_s": 0.608,
+        "expected": "answer",
+        "request": "Why is the sky blue?",
+        "correct": true
+      },
+      {
+        "choice": "action",
+        "confidence": 0.35238038581749,
+        "wall_s": 0.605,
+        "expected": "answer",
+        "request": "How many books are on my reading list?",
+        "correct": false
+      },
+      {
+        "choice": "action",
+        "confidence": 0.12486958452900254,
+        "wall_s": 0.608,
+        "expected": "answer",
+        "request": "What did my morning briefing find yesterday?",
+        "correct": false
+      },
+      {
+        "choice": "answer",
+        "confidence": 0.609954046365883,
+        "wall_s": 0.597,
+        "expected": "answer",
+        "request": "Is it a good idea to release on a Friday?",
+        "correct": true
+      }
+    ]
+  },
+  "tev1": {
+    "label": "tev1",
+    "accuracy_pct": 95.0,
+    "correct": 19,
+    "n": 20,
+    "median_ms": 303.5,
+    "rows": [
+      {
+        "choice": "action",
+        "confidence": 0.44915733958172155,
+        "wall_s": 3.193,
+        "expected": "action",
+        "request": "Write a file called notes.txt with today's plan",
+        "correct": true
+      },
+      {
+        "choice": "action",
+        "confidence": 0.12619414634928516,
+        "wall_s": 0.299,
+        "expected": "action",
+        "request": "Create Friend Music Records Release Template.md as a generic template",
+        "correct": true
+      },
+      {
+        "choice": "action",
+        "confidence": 0.36035603103904845,
+        "wall_s": 0.301,
+        "expected": "action",
+        "request": "We want to create Friend Music Records Release Template.md",
+        "correct": true
+      },
+      {
+        "choice": "action",
+        "confidence": 0.07707958864598963,
+        "wall_s": 0.313,
+        "expected": "action",
+        "request": "No edits to Why Not Release. We want to create a release template",
+        "correct": true
+      },
+      {
+        "choice": "action",
+        "confidence": 0.11352767048140466,
+        "wall_s": 0.3,
+        "expected": "action",
+        "request": "Read Why Not Release.md",
+        "correct": true
+      },
+      {
+        "choice": "action",
+        "confidence": 0.5281882379099435,
+        "wall_s": 0.301,
+        "expected": "action",
+        "request": "Rename notes.txt to todo.txt",
+        "correct": true
+      },
+      {
+        "choice": "action",
+        "confidence": 0.41107228522524863,
+        "wall_s": 0.3,
+        "expected": "action",
+        "request": "Delete the old draft file",
+        "correct": true
+      },
+      {
+        "choice": "action",
+        "confidence": 0.5063301067200392,
+        "wall_s": 0.3,
+        "expected": "action",
+        "request": "Append this row to contacts.csv",
+        "correct": true
+      },
+      {
+        "choice": "action",
+        "confidence": 0.18179915580810568,
+        "wall_s": 0.307,
+        "expected": "action",
+        "request": "Add a point to my survey map at -122.68, 45.523",
+        "correct": true
+      },
+      {
+        "choice": "action",
+        "confidence": 0.22684978030247205,
+        "wall_s": 0.317,
+        "expected": "action",
+        "request": "Run my morning briefing now",
+        "correct": true
+      },
+      {
+        "choice": "answer",
+        "confidence": 0.16232043322566114,
+        "wall_s": 0.307,
+        "expected": "answer",
+        "request": "What is my name?",
+        "correct": true
+      },
+      {
+        "choice": "answer",
+        "confidence": 0.5866609738836515,
+        "wall_s": 0.31,
+        "expected": "answer",
+        "request": "Explain how photosynthesis works",
+        "correct": true
+      },
+      {
+        "choice": "answer",
+        "confidence": 0.4982538175061805,
+        "wall_s": 0.31,
+        "expected": "answer",
+        "request": "What did we decide about the launch?",
+        "correct": true
+      },
+      {
+        "choice": "answer",
+        "confidence": 0.9132454363782112,
+        "wall_s": 0.303,
+        "expected": "answer",
+        "request": "Thanks, that's helpful",
+        "correct": true
+      },
+      {
+        "choice": "answer",
+        "confidence": 0.675945575947259,
+        "wall_s": 0.301,
+        "expected": "answer",
+        "request": "What's the capital of France?",
+        "correct": true
+      },
+      {
+        "choice": "answer",
+        "confidence": 0.2162390491086551,
+        "wall_s": 0.296,
+        "expected": "answer",
+        "request": "Summarize what you know about the Mozworth project",
+        "correct": true
+      },
+      {
+        "choice": "answer",
+        "confidence": 0.5831741142939642,
+        "wall_s": 0.304,
+        "expected": "answer",
+        "request": "Why is the sky blue?",
+        "correct": true
+      },
+      {
+        "choice": "action",
+        "confidence": 0.10522941485231041,
+        "wall_s": 0.307,
+        "expected": "answer",
+        "request": "How many books are on my reading list?",
+        "correct": false
+      },
+      {
+        "choice": "answer",
+        "confidence": 0.07951868358248149,
+        "wall_s": 0.307,
+        "expected": "answer",
+        "request": "What did my morning briefing find yesterday?",
+        "correct": true
+      },
+      {
+        "choice": "answer",
+        "confidence": 0.4916344265057344,
+        "wall_s": 0.298,
+        "expected": "answer",
+        "request": "Is it a good idea to release on a Friday?",
+        "correct": true
+      }
+    ]
+  },
+  "tev1:0.8b": {
+    "label": "tev1:0.8b",
+    "accuracy_pct": 95.0,
+    "correct": 19,
+    "n": 20,
+    "median_ms": 70.0,
+    "rows": [
+      {
+        "choice": "action",
+        "confidence": 0.2161360097307884,
+        "wall_s": 1.109,
+        "expected": "action",
+        "request": "Write a file called notes.txt with today's plan",
+        "correct": true
+      },
+      {
+        "choice": "action",
+        "confidence": 0.06055975742846331,
+        "wall_s": 0.071,
+        "expected": "action",
+        "request": "Create Friend Music Records Release Template.md as a generic template",
+        "correct": true
+      },
+      {
+        "choice": "action",
+        "confidence": 0.22052521963535687,
+        "wall_s": 0.07,
+        "expected": "action",
+        "request": "We want to create Friend Music Records Release Template.md",
+        "correct": true
+      },
+      {
+        "choice": "action",
+        "confidence": 0.02389779505447376,
+        "wall_s": 0.368,
+        "expected": "action",
+        "request": "No edits to Why Not Release. We want to create a release template",
+        "correct": true
+      },
+      {
+        "choice": "answer",
+        "confidence": 0.009972630310572494,
+        "wall_s": 0.07,
+        "expected": "action",
+        "request": "Read Why Not Release.md",
+        "correct": false
+      },
+      {
+        "choice": "action",
+        "confidence": 0.3182510581735968,
+        "wall_s": 0.07,
+        "expected": "action",
+        "request": "Rename notes.txt to todo.txt",
+        "correct": true
+      },
+      {
+        "choice": "action",
+        "confidence": 0.39740186636386876,
+        "wall_s": 0.069,
+        "expected": "action",
+        "request": "Delete the old draft file",
+        "correct": true
+      },
+      {
+        "choice": "action",
+        "confidence": 0.16571251703338963,
+        "wall_s": 0.071,
+        "expected": "action",
+        "request": "Append this row to contacts.csv",
+        "correct": true
+      },
+      {
+        "choice": "action",
+        "confidence": 0.1062408606622206,
+        "wall_s": 0.072,
+        "expected": "action",
+        "request": "Add a point to my survey map at -122.68, 45.523",
+        "correct": true
+      },
+      {
+        "choice": "action",
+        "confidence": 0.000650682360792243,
+        "wall_s": 0.07,
+        "expected": "action",
+        "request": "Run my morning briefing now",
+        "correct": true
+      },
+      {
+        "choice": "answer",
+        "confidence": 0.24237024668183527,
+        "wall_s": 0.069,
+        "expected": "answer",
+        "request": "What is my name?",
+        "correct": true
+      },
+      {
+        "choice": "answer",
+        "confidence": 0.13866563303652113,
+        "wall_s": 0.074,
+        "expected": "answer",
+        "request": "Explain how photosynthesis works",
+        "correct": true
+      },
+      {
+        "choice": "answer",
+        "confidence": 0.17024379671919776,
+        "wall_s": 0.073,
+        "expected": "answer",
+        "request": "What did we decide about the launch?",
+        "correct": true
+      },
+      {
+        "choice": "answer",
+        "confidence": 0.44212519227218716,
+        "wall_s": 0.07,
+        "expected": "answer",
+        "request": "Thanks, that's helpful",
+        "correct": true
+      },
+      {
+        "choice": "answer",
+        "confidence": 0.27818574889004166,
+        "wall_s": 0.069,
+        "expected": "answer",
+        "request": "What's the capital of France?",
+        "correct": true
+      },
+      {
+        "choice": "answer",
+        "confidence": 0.06022243107680525,
+        "wall_s": 0.071,
+        "expected": "answer",
+        "request": "Summarize what you know about the Mozworth project",
+        "correct": true
+      },
+      {
+        "choice": "answer",
+        "confidence": 0.3233753599264415,
+        "wall_s": 0.069,
+        "expected": "answer",
+        "request": "Why is the sky blue?",
+        "correct": true
+      },
+      {
+        "choice": "answer",
+        "confidence": 0.18777180562097995,
+        "wall_s": 0.072,
+        "expected": "answer",
+        "request": "How many books are on my reading list?",
+        "correct": true
+      },
+      {
+        "choice": "answer",
+        "confidence": 0.11653262075466664,
+        "wall_s": 0.07,
+        "expected": "answer",
+        "request": "What did my morning briefing find yesterday?",
+        "correct": true
+      },
+      {
+        "choice": "answer",
+        "confidence": 0.054158868101144675,
+        "wall_s": 0.069,
+        "expected": "answer",
+        "request": "Is it a good idea to release on a Friday?",
+        "correct": true
+      }
+    ]
+  },
+  "qwen3.5:4b": {
+    "label": "qwen3.5:4b",
+    "accuracy_pct": 90.0,
+    "correct": 18,
+    "n": 20,
+    "median_ms": 7161.5,
+    "rows": [
+      {
+        "choice": "action",
+        "wall_s": 10.163,
+        "raw": "{\"needs_action\": true}",
+        "expected": "action",
+        "request": "Write a file called notes.txt with today's plan",
+        "correct": true
+      },
+      {
+        "choice": "action",
+        "wall_s": 8.523,
+        "raw": "{\"needs_action\": true}",
+        "expected": "action",
+        "request": "Create Friend Music Records Release Template.md as a generic template",
+        "correct": true
+      },
+      {
+        "choice": "action",
+        "wall_s": 5.675,
+        "raw": "{\"needs_action\": true}",
+        "expected": "action",
+        "request": "We want to create Friend Music Records Release Template.md",
+        "correct": true
+      },
+      {
+        "choice": "action",
+        "wall_s": 63.496,
+        "raw": "{\"needs_action\": true}",
+        "expected": "action",
+        "request": "No edits to Why Not Release. We want to create a release template",
+        "correct": true
+      },
+      {
+        "choice": "action",
+        "wall_s": 6.282,
+        "raw": "{\"needs_action\": true}",
+        "expected": "action",
+        "request": "Read Why Not Release.md",
+        "correct": true
+      },
+      {
+        "choice": "action",
+        "wall_s": 5.037,
+        "raw": "{\"needs_action\": true}",
+        "expected": "action",
+        "request": "Rename notes.txt to todo.txt",
+        "correct": true
+      },
+      {
+        "choice": "action",
+        "wall_s": 6.039,
+        "raw": "{\"needs_action\": true}",
+        "expected": "action",
+        "request": "Delete the old draft file",
+        "correct": true
+      },
+      {
+        "choice": "action",
+        "wall_s": 4.778,
+        "raw": "{\"needs_action\": true}",
+        "expected": "action",
+        "request": "Append this row to contacts.csv",
+        "correct": true
+      },
+      {
+        "choice": "action",
+        "wall_s": 9.353,
+        "raw": "{\"needs_action\": true}",
+        "expected": "action",
+        "request": "Add a point to my survey map at -122.68, 45.523",
+        "correct": true
+      },
+      {
+        "choice": "action",
+        "wall_s": 7.181,
+        "raw": "{\"needs_action\": true}",
+        "expected": "action",
+        "request": "Run my morning briefing now",
+        "correct": true
+      },
+      {
+        "choice": "answer",
+        "wall_s": 7.142,
+        "raw": "{\"needs_action\": false}",
+        "expected": "answer",
+        "request": "What is my name?",
+        "correct": true
+      },
+      {
+        "choice": "answer",
+        "wall_s": 3.358,
+        "raw": "{\"needs_action\": false}",
+        "expected": "answer",
+        "request": "Explain how photosynthesis works",
+        "correct": true
+      },
+      {
+        "choice": "answer",
+        "wall_s": 14.814,
+        "raw": "{\"needs_action\": false}",
+        "expected": "answer",
+        "request": "What did we decide about the launch?",
+        "correct": true
+      },
+      {
+        "choice": "answer",
+        "wall_s": 5.785,
+        "raw": "{\"needs_action\": false}",
+        "expected": "answer",
+        "request": "Thanks, that's helpful",
+        "correct": true
+      },
+      {
+        "choice": "answer",
+        "wall_s": 3.445,
+        "raw": "{\"needs_action\": false}",
+        "expected": "answer",
+        "request": "What's the capital of France?",
+        "correct": true
+      },
+      {
+        "choice": "answer",
+        "wall_s": 12.964,
+        "raw": "{\"needs_action\": false}",
+        "expected": "answer",
+        "request": "Summarize what you know about the Mozworth project",
+        "correct": true
+      },
+      {
+        "choice": "answer",
+        "wall_s": 3.344,
+        "raw": "{\"needs_action\": false}",
+        "expected": "answer",
+        "request": "Why is the sky blue?",
+        "correct": true
+      },
+      {
+        "choice": "action",
+        "wall_s": 51.403,
+        "raw": "{\"needs_action\": true}",
+        "expected": "answer",
+        "request": "How many books are on my reading list?",
+        "correct": false
+      },
+      {
+        "choice": "action",
+        "wall_s": 14.963,
+        "raw": "{\"needs_action\": true}",
+        "expected": "answer",
+        "request": "What did my morning briefing find yesterday?",
+        "correct": false
+      },
+      {
+        "choice": "answer",
+        "wall_s": 11.927,
+        "raw": "{\"needs_action\": false}",
+        "expected": "answer",
+        "request": "Is it a good idea to release on a Friday?",
+        "correct": true
+      }
+    ]
+  }
+}
