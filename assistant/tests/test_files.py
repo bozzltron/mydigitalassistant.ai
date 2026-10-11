@@ -1292,3 +1292,37 @@ class TestFileContentSaveEndpoint:
             == 404
         )
 
+
+
+@pytest.mark.asyncio
+async def test_rewriting_a_file_moves_its_updated_at(store):
+    """A file frame's ``updated_at`` must move when its bytes change.
+
+    Regression: ``apply_file_to_memory`` refreshed the file's slots (so the size was
+    right) but never the frame row, so ``frames.updated_at`` stayed at creation — and
+    the Files list shows and sorts on exactly that, so an edited file never moved up.
+    """
+    import asyncio
+
+    from assistant.backend.pipeline.files import apply_file_to_memory
+
+    await store.create_user("tester")  # frames need an owner (FK to users.id)
+    common = dict(
+        frame_name="file_moved.txt",
+        safe_filename="moved.txt",
+        ext="txt",
+        user_id=1,
+        source_type="file_create",
+        source_reliability=0.9,
+    )
+
+    await apply_file_to_memory(store, content_bytes=b"first", **common)
+    created = await store.get_frame_by_name("file_moved.txt")
+
+    await asyncio.sleep(1.1)  # datetime('now') has one-second resolution
+    await apply_file_to_memory(store, content_bytes=b"second, and longer", **common)
+    edited = await store.get_frame_by_name("file_moved.txt")
+
+    assert edited.updated_at > created.updated_at, (
+        "an edit must move the frame's updated_at, or the Files list never re-sorts"
+    )

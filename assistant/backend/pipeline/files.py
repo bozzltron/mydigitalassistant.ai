@@ -976,6 +976,12 @@ async def apply_file_to_memory(
                 )
             await store.create_association(frame.id, row_frame.id, "part_of")
 
+    # The file's identity slots are written; now stamp the frame, because
+    # ``updated_at`` is what the Files list shows and sorts on and a slot write does
+    # not touch the frame row. Without this an edit refreshed the content and the
+    # size but left the date frozen at creation, so the file never moved.
+    await store.touch_frame(frame.id)
+
     content_text = extraction_result.text
     return {
         "status": "ok",

@@ -423,6 +423,17 @@ async def stream_tool_loop(
                     logger.error(f"Tool execution error: {e}")
                     result = ToolResult(success=False, data={}, error=str(e))
 
+                # One INFO line per tool call. Without it a file edit leaves no trace
+                # in the log, so a turn that changed a file is invisible — which is
+                # how this bug was found by mtime rather than from the logs.
+                logger.info(
+                    "tool call: %s -> %s",
+                    _summarize_call(tool_name, raw_args),
+                    "ok"
+                    if getattr(result, "success", True)
+                    else f"failed: {getattr(result, 'error', '')}",
+                )
+
                 # Yield tool result event
                 yield serialize_event(
                     ToolResultEvent(

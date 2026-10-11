@@ -590,6 +590,21 @@ class MemoryStore:
             await db.commit()
             return await self._get_frame_row(db, frame_id)
 
+    async def touch_frame(self, frame_id: int) -> None:
+        """Bump a frame's ``updated_at`` without changing any field.
+
+        ``updated_at`` is what the Files list shows and sorts on, so a frame whose
+        *content* changed while its *row* did not would keep a stale date and never
+        move. A slot write does not touch the frame row, so a caller that changed a
+        frame's meaning through its slots must say so explicitly.
+        """
+        async with self._connect() as db:
+            await db.execute(
+                "UPDATE frames SET updated_at = datetime('now') WHERE id = ?",
+                (frame_id,),
+            )
+            await db.commit()
+
     async def merge_frames(self, primary_id: int, secondary_id: int) -> Frame:
         async with self._connect() as db:
             # Move slots from secondary to primary, logging merges to history.
