@@ -97,8 +97,12 @@ The fix is model-first, in two halves:
 
 1. **A decision model judges the request** (`pipeline/decision.py`, `needs_action`,
    `tev1:0.8b`). It runs alongside routing/retrieval, so it adds no serial latency.
-   Its threshold is biased toward `action`: a missed action is the bug, a spurious
-   nudge is one round.
+   Its threshold is biased toward firing: a missed action is the bug, a spurious nudge
+   is one round. The **scope is narrow** — a *change* (create/edit/rename/delete/
+   append/move) or an *external lookup* (search): the deeds whose result words can
+   counterfeit. A read of the user's own stored content is **not** an action, so a
+   request the assistant can answer from memory never fires the nudge
+   (`experiments/decision_nudge_scope/`).
 2. **The loop nudges once** (`stream_tool_loop`, `expects_action`). If the turn ends
    with no tool call — or a tool ran but the *action* is still outstanding
    (`decision.outstanding`, `nimble`, which judges the calls and not the answer's

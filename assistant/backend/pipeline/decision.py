@@ -8,8 +8,10 @@ scripted heuristic can become a model judgement.
 Two judgements guard the tool loop (see ``streaming.stream_tool_loop``), the
 model-first fix for a turn that *announces* an action and never performs it:
 
-- :func:`needs_action` — does the request require the assistant to *do* something
-  with a tool, rather than just reply? Gates the first nudge.
+- :func:`needs_action` — does the request require the assistant to *do* something words
+  cannot counterfeit: change something, or fetch current external information? Gates
+  the first nudge. A read of the user's own stored content is **not** an action — an
+  answer can satisfy it.
 - :func:`outstanding` — given the tool calls that actually ran, is there an action
   the user asked for that they did **not** perform? Gates the second nudge, because
   a turn can call a *different* tool (a read) and still claim the write.
@@ -18,6 +20,7 @@ Measured in ``assistant/experiments/decision_model_routing/`` and
 ``.../decision_model_completion/``: ``tev1:0.8b`` is the best ``needs_action`` judge
 (95% / 70 ms) and useless at ``outstanding`` (no separation), while ``nimble`` is
 the reverse (93.8% with a 0.63 margin). Hence two models — a deliberate fleet cost.
+The *scope* of ``needs_action`` is measured in ``.../decision_nudge_scope/``.
 """
 
 from __future__ import annotations
@@ -31,9 +34,11 @@ from assistant.backend.config import settings
 logger = logging.getLogger(__name__)
 
 _NEEDS_ACTION_QUESTION = (
-    "Does this user request require the assistant to PERFORM an action with a tool "
-    "(create, read, edit, rename, or delete a file; run a task; search the web) — as "
-    "opposed to just answering with words?"
+    "Does this user request ask the assistant to perform an action with a tool that "
+    "changes something (create, edit, rename, delete, append, or move a file or record; "
+    "run a task that changes state) or that fetches current external information (search "
+    "the web) — as opposed to satisfying the request by answering from what it already "
+    "knows (including reading its own stored memory)?"
 )
 
 _OUTSTANDING_QUESTION = (
@@ -75,11 +80,19 @@ async def _ask(model: str, state: dict, name: str, question: str, criteria: dict
 
 
 async def needs_action(text: str) -> bool | None:
-    """Whether ``text`` asks for a tool action. ``None`` when undecidable.
+    """Whether ``text`` asks for a state-changing action or an external lookup.
 
-    The threshold is **biased toward ``action``**
-    (``settings.decision_action_threshold``, default 0.4): a wrong ``answer`` skips
-    the fix entirely, while a wrong ``action`` costs one nudge round.
+    "Action" here is deliberately narrow — a **change** (create/edit/rename/delete/
+    append/move) or an **external lookup** (search): the deeds whose result words can
+    counterfeit. A read of the user's own stored content is *not* an action — if the
+    model has the content, answering from it is the design; if it does not, it has
+    nothing to answer with and reads anyway. So a question the assistant can answer
+    from memory never fires the nudge. Measured in
+    ``assistant/experiments/decision_nudge_scope/``.
+
+    The threshold is **biased toward firing** (``settings.decision_action_threshold``,
+    default 0.4): a wrong ``answer`` skips the fix entirely, while a wrong ``do`` costs
+    one nudge round.
     """
     if not text.strip():
         return None
@@ -90,14 +103,16 @@ async def needs_action(text: str) -> bool | None:
         "needs_action",
         _NEEDS_ACTION_QUESTION,
         {
-            "action": "the assistant must perform an action with a tool",
-            "answer": "the assistant can just reply with words",
+            "do": "the assistant must change something or fetch current external information",
+            "answer": (
+                "the assistant can satisfy the request by answering from what it already knows"
+            ),
         },
     )
     if answer is None:
         return None
-    decided = _yes(answer, model, settings.decision_action_threshold, positive_key="action")
-    _log_decision("needs_action", model, answer, decided)
+    decided = _yes(answer, model, settings.decision_action_threshold, positive_key="do")
+    _log_decision("needs_action", model, answer, decided, positive_key="do")
     return decided
 
 
@@ -128,15 +143,17 @@ async def outstanding(request: str, tools_called: list[str]) -> bool | None:
     return decided
 
 
-def _log_decision(name: str, model: str, answer: dict, decided: bool | None) -> None:
+def _log_decision(
+    name: str, model: str, answer: dict, decided: bool | None, positive_key: str = "noul"
+) -> None:
     """One INFO line per judgement, so a nudge is never a mystery.
 
-    The probability is included because the decision is a threshold on it: a
-    ``noul`` at 0.44 vs a 0.40 threshold flips the behaviour, and without the
-    number a user seeing an unexplained retry has no way to tell why.
+    The probability is included because the decision is a threshold on it: a score at
+    0.44 vs a 0.40 threshold flips the behaviour, and without the number a user seeing
+    an unexplained retry has no way to tell why.
     """
     probabilities = answer.get("probabilities") or {}
-    p = probabilities.get("action") if "action" in probabilities else answer.get("noul")
+    p = probabilities.get(positive_key) if positive_key in probabilities else answer.get("noul")
     logger.info(
         "decision %s=%s (p=%s, model=%s)",
         name,

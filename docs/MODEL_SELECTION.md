@@ -180,12 +180,18 @@ different models**, because no single one does both jobs
 
 | Judgement | Model | Accuracy | Latency |
 |---|---|---|---|
-| `needs_action` — does the request need a tool action? | `tev1:0.8b` | 95% | 70 ms |
+| `needs_action` — does the request need a change or an external lookup? | `tev1:0.8b` | 95% | 70 ms |
 | `outstanding` — did the calls leave it undone? | `nimble` | 93.8% | 604 ms |
 
 `tev1:0.8b` cannot separate the completion classes at all (0.44 vs 0.42), and
 `nimble` cannot match it on routing (90%). Both beat the mechanism they replaced —
 a `qwen3.5:4b` chat call emitting JSON — which scored 90% at 7,162 ms.
+
+**The `needs_action` scope is narrow, and measured.** It fires on a *change* or an
+*external lookup* — the deeds whose result words can counterfeit — and not on a read
+of the user's own stored content, which an answer can satisfy
+(`experiments/decision_nudge_scope/`: 10/10 change recall, 0/15 read/answer fires,
+3/3 lookup fires).
 
 **Cost:** `nimble` is a 9.5 GB on-demand load, but it runs only on turns that
 already need an action; `tev1:0.8b` is 0.8 GB and runs every turn, in parallel with
