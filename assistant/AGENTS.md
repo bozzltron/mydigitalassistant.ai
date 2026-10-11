@@ -86,6 +86,31 @@ not the smaller `tools_num_ctx`. `tools_num_ctx` applies only to a *distinct*
 tools model. `_num_ctx_for()` in `llm_client.py` is the single place this is
 decided; do not reintroduce per-call-site `num_ctx` branches.
 
+### Acting in-turn: a claimed action is not an action
+
+A message with **no tool call ends the turn** and is the final answer. A model that
+narrates an action ("I'll now create X") therefore performs nothing — a live session
+asked for a release template three times and no file appeared, because the model
+announced the write and asked a clarifying question instead of calling `write_file`.
+
+The fix is model-first, in two halves:
+
+1. **A decision model judges the request** (`pipeline/decision.py`, `needs_action`,
+   `tev1:0.8b`). It runs alongside routing/retrieval, so it adds no serial latency.
+   Its threshold is biased toward `action`: a missed action is the bug, a spurious
+   nudge is one round.
+2. **The loop nudges once** (`stream_tool_loop`, `expects_action`). If the turn ends
+   with no tool call — or a tool ran but the *action* is still outstanding
+   (`decision.outstanding`, `nimble`, which judges the calls and not the answer's
+   claim) — the model is handed its own message back once and asked to act. Bounded
+   to one nudge per turn, and it emits an `acting` stage so the user sees the
+   self-correction rather than only the latency.
+
+**Do not add a phrasing detector** ("the answer says *I'll…*"). That is a guess about
+wording, which this project rejects; the trigger is structural (no tool call) and the
+judgement is the model's. Both judgements are best-effort: a missing decision model
+returns "unknown" and nothing nudges.
+
 ### Known characteristic: the answer arrives whole, not token by token
 
 `/chat/stream` streams *events* — `stage` progress, then `finalize` with the

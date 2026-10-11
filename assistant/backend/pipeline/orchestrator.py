@@ -1345,6 +1345,12 @@ class Orchestrator:
         routing_start = time.monotonic()
         recall_start = time.monotonic()
 
+        # Does the request need an action? A local decision model judges it
+        # (decision.needs_action) — the model-first half of the fix for a turn that
+        # announces an action and never calls the tool. It runs alongside routing
+        # and retrieval, so it adds no serial latency to the turn.
+        from assistant.backend.pipeline.decision import needs_action
+
         if skip_route:
             task_type = TaskType.FUNCTIONAL
             classification = None
@@ -1354,8 +1360,9 @@ class Orchestrator:
                 user_id=request.user_id,
                 session_id=session_id,
             )
+            expects_action = bool(await needs_action(request.message))
         else:
-            # Run routing and retrieval concurrently
+            # Run routing, retrieval and the action judgement concurrently
             route_task = asyncio.create_task(route(request.message, self.llm_client))
             retrieve_task = asyncio.create_task(
                 self.retriever.retrieve(
@@ -1364,7 +1371,11 @@ class Orchestrator:
                     session_id=session_id,
                 )
             )
-            classification, memory_context = await asyncio.gather(route_task, retrieve_task)
+            action_task = asyncio.create_task(needs_action(request.message))
+            classification, memory_context, action_judgement = await asyncio.gather(
+                route_task, retrieve_task, action_task
+            )
+            expects_action = bool(action_judgement)
             task_type = classification.task_type
 
         routing_time = time.monotonic() - routing_start
@@ -1891,14 +1902,6 @@ class Orchestrator:
                 if (think or plan.max_intelligence)
                 else settings.max_tool_rounds
             )
-
-            # Does the request need an action? A local decision model judges it
-            # (decision.needs_action) — the model-first half of the fix for a turn
-            # that announces an action and never calls the tool. The loop's
-            # structural check (no tool call) is the other half.
-            from assistant.backend.pipeline.decision import needs_action
-
-            expects_action = bool(await needs_action(request.message))
 
             # Stream using the tool loop (Phase 4: stream full tool loop including tools)
             # We need to capture the final answer to persist it as an episode

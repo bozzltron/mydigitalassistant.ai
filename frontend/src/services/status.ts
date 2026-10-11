@@ -15,6 +15,7 @@ export const STAGE_LABELS: Record<string, string> = {
   learning: 'learning from our conversation',
   searching: 'searching the web',
   reasoning: 'thinking it through',
+  acting: 'making sure it was done',
   responding: 'writing a reply',
   scheduled: 'managing your daily list',
 }

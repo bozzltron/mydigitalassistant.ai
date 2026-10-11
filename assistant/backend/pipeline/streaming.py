@@ -5,9 +5,12 @@ Provides event serialization and the streaming response generator.
 
 import asyncio
 import json
+import logging
 from collections.abc import AsyncGenerator
 from dataclasses import asdict, is_dataclass
 from enum import Enum
+
+logger = logging.getLogger(__name__)
 
 # When the loop's content allowance is spent, an older tool result is replaced by
 # this marker rather than dropped from the message list -- the tool_call it answers
@@ -221,11 +224,54 @@ _COMPLETION_NUDGE = (
 
 
 def _summarize_call(name: str, args: dict) -> str:
-    """A short ``name(key=value, …)`` line for the completion judgement."""
+    """A short ``name(key=value, …)`` line for the completion judgement.
+
+    Values are truncated, and a ``content`` argument is omitted entirely: it is a
+    whole file body, and the judgement is about *which* tool ran, not what it
+    contained.
+    """
     if not isinstance(args, dict):
         return name
-    parts = [f"{k}={v!r}" for k, v in list(args.items())[:3]]
+    parts: list[str] = []
+    for key, value in list(args.items())[:3]:
+        if key == "content":
+            parts.append("content=<omitted>")
+            continue
+        parts.append(f"{key}={repr(value)[:60]}")
     return f"{name}({', '.join(parts)})"
+
+
+async def _maybe_nudge(
+    *,
+    expects_action: bool,
+    made_tool_call: bool,
+    already_nudged: bool,
+    request_text: str,
+    tool_calls_made: list[str],
+) -> str | None:
+    """The nudge note for this turn, or ``None``.
+
+    The model-first fix for a turn that announces an action and never performs it:
+    a decision model judged the request needs an action (``expects_action``); if
+    the turn ends without doing it, the model is handed its own message back once
+    and asked to act. Fires at most once per turn.
+    """
+    if not expects_action or already_nudged:
+        return None
+
+    if not made_tool_call:
+        logger.info("Action nudge: no tool was called for a request that needs an action")
+        return _ACTION_NUDGE
+
+    # A tool ran — but did it do the job? A turn can call a *different* tool (a
+    # read) and still claim the write, measured live. Judge the calls, not the
+    # assistant's claim.
+    from assistant.backend.pipeline.decision import outstanding
+
+    if await outstanding(request_text, tool_calls_made):
+        logger.info("Action nudge: the tool calls did not perform the action")
+        return _COMPLETION_NUDGE
+    return None
 
 
 async def stream_tool_loop(
@@ -249,8 +295,6 @@ async def stream_tool_loop(
     tool call, it is handed its own message back once and asked to act — the
     model-first fix for a turn that announces an action and never performs it.
     """
-    import logging
-
     from assistant.backend.config import settings
     from assistant.backend.pipeline.context_budget import content_char_limit
     from assistant.backend.pipeline.llm_client import (
@@ -263,8 +307,6 @@ async def stream_tool_loop(
         execute_tool,
         format_tool_result,
     )
-
-    logger = logging.getLogger(__name__)
 
     chat_messages = [ChatMessage(**m) for m in messages]
     loop_model = model or llm_client.tools_model
@@ -435,38 +477,26 @@ async def stream_tool_loop(
                 chat_messages.append(result_message)
                 peak_tool_result_chars = max(peak_tool_result_chars, tool_result_chars)
         else:
-            # No tool calls. If the request needs an action and none was taken,
-            # hand the model its own message back once and let it act — the
-            # model-first fix for a turn that announces an action ("I'll now
-            # create X") and never calls the tool. A decision model judged that
-            # the request needs an action (decision.needs_action); this is the
-            # structural half, and it fires at most once.
-            if expects_action and not action_nudged:
-                nudge: str | None = None
-                if not made_tool_call:
-                    nudge = _ACTION_NUDGE
-                    logger.info(
-                        "Action nudge: the request needs an action but no tool was called"
-                    )
-                else:
-                    # A tool ran — but did it do the job? A turn can call a
-                    # *different* tool (a read) and still claim the write, measured
-                    # live. Judge the calls, not the claim.
-                    from assistant.backend.pipeline.decision import outstanding
-
-                    still_outstanding = await outstanding(request_text, tool_calls_made)
-                    if still_outstanding:
-                        nudge = _COMPLETION_NUDGE
-                        logger.info(
-                            "Action nudge: the tool calls did not perform the action"
-                        )
-                if nudge:
-                    action_nudged = True
-                    chat_messages.append(
-                        ChatMessage(role="assistant", content=response.content or "")
-                    )
-                    chat_messages.append(ChatMessage(role="user", content=nudge))
-                    continue
+            # No tool calls. A nudge is handed back once when the request needed
+            # an action the turn did not perform (see _maybe_nudge).
+            nudge = await _maybe_nudge(
+                expects_action=expects_action,
+                made_tool_call=made_tool_call,
+                already_nudged=action_nudged,
+                request_text=request_text,
+                tool_calls_made=tool_calls_made,
+            )
+            if nudge:
+                action_nudged = True
+                # Surface it: a self-correction the user cannot see is just latency.
+                yield serialize_event(
+                    StageEvent(stage="acting", detail="making sure that was done")
+                )
+                chat_messages.append(
+                    ChatMessage(role="assistant", content=response.content or "")
+                )
+                chat_messages.append(ChatMessage(role="user", content=nudge))
+                continue
             # No tool calls = direct answer
             answer = (response.content or "").strip() or EMPTY_GENERATION_FALLBACK
             event = FinalizeEvent(

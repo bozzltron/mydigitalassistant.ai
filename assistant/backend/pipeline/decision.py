@@ -83,8 +83,9 @@ async def needs_action(text: str) -> bool | None:
     """
     if not text.strip():
         return None
+    model = settings.decision_model
     answer = await _ask(
-        settings.decision_model,
+        model,
         {"request": text},
         "needs_action",
         _NEEDS_ACTION_QUESTION,
@@ -95,12 +96,9 @@ async def needs_action(text: str) -> bool | None:
     )
     if answer is None:
         return None
-    return _yes(
-        answer,
-        settings.decision_model,
-        settings.decision_action_threshold,
-        positive_key="action",
-    )
+    decided = _yes(answer, model, settings.decision_action_threshold, positive_key="action")
+    _log_decision("needs_action", model, answer, decided)
+    return decided
 
 
 async def outstanding(request: str, tools_called: list[str]) -> bool | None:
@@ -112,8 +110,9 @@ async def outstanding(request: str, tools_called: list[str]) -> bool | None:
     """
     if not request.strip():
         return None
+    model = settings.decision_completion_model
     answer = await _ask(
-        settings.decision_completion_model,
+        model,
         {
             "request": request,
             "tools_called": ", ".join(tools_called) if tools_called else "(none)",
@@ -124,10 +123,26 @@ async def outstanding(request: str, tools_called: list[str]) -> bool | None:
     )
     if answer is None:
         return None
-    return _yes(
-        answer,
-        settings.decision_completion_model,
-        settings.decision_outstanding_threshold,
+    decided = _yes(answer, model, settings.decision_outstanding_threshold)
+    _log_decision("outstanding", model, answer, decided)
+    return decided
+
+
+def _log_decision(name: str, model: str, answer: dict, decided: bool | None) -> None:
+    """One INFO line per judgement, so a nudge is never a mystery.
+
+    The probability is included because the decision is a threshold on it: a
+    ``noul`` at 0.44 vs a 0.40 threshold flips the behaviour, and without the
+    number a user seeing an unexplained retry has no way to tell why.
+    """
+    probabilities = answer.get("probabilities") or {}
+    p = probabilities.get("action") if "action" in probabilities else answer.get("noul")
+    logger.info(
+        "decision %s=%s (p=%s, model=%s)",
+        name,
+        decided,
+        round(p, 3) if isinstance(p, (int, float)) else p,
+        model,
     )
 
 

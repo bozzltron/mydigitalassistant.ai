@@ -33,6 +33,7 @@ decision.
 | Max | `MAX_MODEL` | Escalation tier (auto reasoner / "Max" toggle) | **on-demand** (short `keep_alive`) | thinking + tools, high quality |
 | Math | `MATH_MODEL` | `compute` tool: writes Python for sandboxed exec | on-demand | tools + codegen quality |
 | Coder | `CODER_MODEL` | Reserved for tool codegen | — | empty = chat model handles it |
+| Decision | `DECISION_MODEL`, `DECISION_COMPLETION_MODEL` | Typed judgements for the tool loop (`needs_action`, `outstanding`) | on-demand (short `keep_alive`) | decision model — ollama's `/v1/systemone` |
 
 ## Memory budget math (per role)
 
@@ -102,6 +103,7 @@ new model. Scheduler is off in this deployment, so the CLI is the only top-up.
 | Max | `qwen3.8:27b` | 17GB | `10m` | 16384 |
 | Math | `sorc/qwen3.5-claude-4.6-opus-q4:9b` | 6.6GB | `10m` | 16384 |
 | Coder | (empty → chat) | — | — | — |
+| Decision | `tev1:0.8b` + `nimble` | 0.8 GB + 9.5 GB | `10m` | — |
 
 Rationale highlights:
 
@@ -168,6 +170,27 @@ and not meaningfully faster. The reason the 27B felt unusable was that
 *mechanical* turns were being escalated to it (see
 `assistant/experiments/escalation_trigger/`), not that the role needs a smaller
 model.
+
+### Decision models (Oct 2026)
+
+Ollama 0.35 added `/v1/systemone` — a typed decision API (`choice` / `noul` /
+`score`) for fast local judgements. Two are in use, and they are **deliberately
+different models**, because no single one does both jobs
+(`assistant/experiments/decision_model_routing/` and `.../decision_model_completion/`):
+
+| Judgement | Model | Accuracy | Latency |
+|---|---|---|---|
+| `needs_action` — does the request need a tool action? | `tev1:0.8b` | 95% | 70 ms |
+| `outstanding` — did the calls leave it undone? | `nimble` | 93.8% | 604 ms |
+
+`tev1:0.8b` cannot separate the completion classes at all (0.44 vs 0.42), and
+`nimble` cannot match it on routing (90%). Both beat the mechanism they replaced —
+a `qwen3.5:4b` chat call emitting JSON — which scored 90% at 7,162 ms.
+
+**Cost:** `nimble` is a 9.5 GB on-demand load, but it runs only on turns that
+already need an action; `tev1:0.8b` is 0.8 GB and runs every turn, in parallel with
+routing and retrieval. **Both are best-effort** — if a model is missing the
+judgement returns "unknown" and nothing nudges, never a guess.
 
 ## Re-assessment cadence
 

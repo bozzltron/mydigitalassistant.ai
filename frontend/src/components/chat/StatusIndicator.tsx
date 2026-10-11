@@ -27,7 +27,7 @@ export default function StatusIndicator(props: StatusIndicatorProps) {
   const dotClass = createMemo(() => {
     const status = props.turnStatus()
     if (!status) return 'voice-dot'
-    if (status.stage === 'searching' || status.stage === 'reasoning') return 'voice-dot processing'
+    if (status.stage === 'searching' || status.stage === 'reasoning' || status.stage === 'acting') return 'voice-dot processing'
     return 'voice-dot listening'
   })
 
