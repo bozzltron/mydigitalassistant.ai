@@ -48,12 +48,18 @@ _OUTSTANDING_QUESTION = (
 )
 
 
-async def _ask(model: str, state: dict, name: str, question: str, criteria: dict | None):
+async def _ask(
+    model: str, state: dict, name: str, question: str, criteria: dict | None
+) -> dict | None:
     """One typed question about ``state``; the answer dict, or None on any failure.
 
     Best-effort by contract: a missing model, a transport error, or an unusable
     answer returns ``None``, and the caller must treat that as "unknown" rather
     than guessing.
+
+    The client is per-call on purpose. A shared module-level client would be bound to
+    the event loop that created it, which breaks any second loop (tests create one per
+    test) — and on localhost the connect it saves is negligible.
     """
     if not model:
         return None
@@ -111,7 +117,7 @@ async def needs_action(text: str) -> bool | None:
     )
     if answer is None:
         return None
-    decided = _yes(answer, model, settings.decision_action_threshold, positive_key="do")
+    decided = _yes(answer, settings.decision_action_threshold, positive_key="do")
     _log_decision("needs_action", model, answer, decided, positive_key="do")
     return decided
 
@@ -138,9 +144,20 @@ async def outstanding(request: str, tools_called: list[str]) -> bool | None:
     )
     if answer is None:
         return None
-    decided = _yes(answer, model, settings.decision_outstanding_threshold)
+    decided = _yes(answer, settings.decision_outstanding_threshold)
     _log_decision("outstanding", model, answer, decided)
     return decided
+
+
+def _probability(answer: dict, positive_key: str) -> float | None:
+    """The score the threshold acts on.
+
+    For a ``choice`` it is the probability of ``positive_key``; for a ``noul`` it is
+    the ``noul`` field itself. ``None`` when the answer carries neither.
+    """
+    probabilities = answer.get("probabilities") or {}
+    value = probabilities[positive_key] if positive_key in probabilities else answer.get("noul")
+    return float(value) if isinstance(value, (int, float)) else None
 
 
 def _log_decision(
@@ -152,26 +169,24 @@ def _log_decision(
     0.44 vs a 0.40 threshold flips the behaviour, and without the number a user seeing
     an unexplained retry has no way to tell why.
     """
-    probabilities = answer.get("probabilities") or {}
-    p = probabilities.get(positive_key) if positive_key in probabilities else answer.get("noul")
+    p = _probability(answer, positive_key)
     logger.info(
         "decision %s=%s (p=%s, model=%s)",
         name,
         decided,
-        round(p, 3) if isinstance(p, (int, float)) else p,
+        round(p, 3) if p is not None else None,
         model,
     )
 
 
-def _yes(answer: dict, model: str, threshold: float, positive_key: str = "noul") -> bool | None:
+def _yes(answer: dict, threshold: float, positive_key: str = "noul") -> bool | None:
     """Turn a decision answer into a boolean, or None when unusable.
 
-    For a ``choice`` the probability of ``positive_key`` is the score; for a
-    ``noul`` the score is the ``noul`` field itself.
+    A numeric score for ``positive_key`` wins; otherwise the raw ``choice`` is
+    compared, so an answer that carries no probabilities still decides.
     """
-    probabilities = answer.get("probabilities") or {}
-    p = probabilities.get(positive_key) if positive_key in probabilities else answer.get("noul")
-    if isinstance(p, (int, float)):
+    p = _probability(answer, positive_key)
+    if p is not None:
         return p >= threshold
 
     choice = answer.get("choice")

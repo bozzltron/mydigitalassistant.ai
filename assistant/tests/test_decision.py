@@ -64,9 +64,9 @@ async def test_needs_action_is_unknown_when_the_model_is_silent(monkeypatch):
 def test_the_action_threshold_is_biased_toward_firing():
     """A wrong ``answer`` skips the fix; a wrong ``do`` costs one round."""
     answer = {"choice": "do", "probabilities": {"do": 0.45, "answer": 0.55}}
-    assert decision._yes(answer, "tev1:0.8b", 0.4, positive_key="do") is True
+    assert decision._yes(answer, 0.4, positive_key="do") is True
     below = {"choice": "answer", "probabilities": {"do": 0.35, "answer": 0.65}}
-    assert decision._yes(below, "tev1:0.8b", 0.4, positive_key="do") is False
+    assert decision._yes(below, 0.4, positive_key="do") is False
 
 
 def test_completion_nudge_is_off_by_default():

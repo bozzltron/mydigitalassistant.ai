@@ -243,7 +243,6 @@ def _summarize_call(name: str, args: dict) -> str:
 async def _maybe_nudge(
     *,
     expects_action: bool,
-    made_tool_call: bool,
     already_nudged: bool,
     request_text: str,
     tool_calls_made: list[str],
@@ -258,7 +257,7 @@ async def _maybe_nudge(
     if not expects_action or already_nudged:
         return None
 
-    if not made_tool_call:
+    if not tool_calls_made:
         logger.info("Action nudge: no tool was called for a request that needs an action")
         return _ACTION_NUDGE
 
@@ -342,7 +341,6 @@ async def stream_tool_loop(
     reasoning_trace: list[str] = []
     empty_retried = False
     # The action nudge: fired at most once, and only when the action is missing.
-    made_tool_call = False
     action_nudged = False
     tool_calls_made: list[str] = []
 
@@ -401,7 +399,6 @@ async def stream_tool_loop(
             max_prompt_tokens = max(max_prompt_tokens, response.prompt_eval_count)
 
         if response.tool_calls:
-            made_tool_call = True
             # Yield tool call events
             tool_calls_data = [
                 {"name": tc.name, "arguments": tc.arguments}
@@ -480,7 +477,6 @@ async def stream_tool_loop(
             # perform it, hand the model its own message back once (see _maybe_nudge).
             nudge = await _maybe_nudge(
                 expects_action=expects_action,
-                made_tool_call=made_tool_call,
                 already_nudged=action_nudged,
                 request_text=request_text,
                 tool_calls_made=tool_calls_made,
