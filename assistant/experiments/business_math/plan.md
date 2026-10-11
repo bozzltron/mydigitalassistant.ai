@@ -108,3 +108,24 @@ utility, 2 trials each.
 **Falsification:** if the utility model is correct on as many hard problems as the
 dedicated one, the dedicated model has **no measured job** and can be dropped from the
 fleet.
+
+## Addendum (2026-10-11): the hard-math arm re-run, with the metric fixed
+
+**Added after H5 was declared VOID, before this run's data.** The first hard-math arm
+scored stdout by parsing numbers, and on hard problems it scraped unexplained values — a
+4B "beating" a 9B was the tell that the metric was not measuring the answer. The harness
+now **records the generated code** (`code`, `stdout_head`, `errored`), so a failure can be
+told apart from a mis-parse.
+
+This re-runs H5 unchanged — *does the dedicated model earn its keep on hard math?* —
+against a metric that can answer it. It matters because the earlier retirement of the
+dedicated model rested on a **tie** plus a **cost** (a load that evicted a warm model), and
+that cost was then removed by raising `OLLAMA_MAX_LOADED_MODELS` to 4.
+
+**Falsification (unchanged):** the utility model correct on as many hard problems as the
+dedicated one → the dedicated model has no measured job.
+
+**New, and the point of the re-run:** the failures are **classified** — a traceback or an
+empty stdout is a **codegen** failure (the code ran but did not answer); a printed wrong
+value is a **reasoning** failure. The distinction decides whether the fix is a prompt or a
+model, and it is only visible now that the code is captured.
