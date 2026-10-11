@@ -1243,8 +1243,15 @@ async def extract_and_apply(
     store: "MemoryStore",
     llm_client: "OllamaClient",
     source_episode_id: int | None = None,
+    source_type: str | None = None,
 ) -> dict:
-    """Full extraction pipeline: extract facts + apply to memory store + embed frames."""
+    """Full extraction pipeline: extract facts + apply to memory store + embed frames.
+
+    ``source_type`` is the provenance written on every frame and slot this stores.
+    The conversational path passes ``"user"``; omitting it left ~22% of the brain
+    with a NULL source_type, so the user's own share was the bucket marked
+    "unknown" (experiments/memory_source_split/).
+    """
     try:
         extraction = await extract_facts(user_message, assistant_response, llm_client)
         extraction.slots = normalize_self_frames(extraction.slots)
@@ -1267,6 +1274,7 @@ async def extract_and_apply(
             extraction,
             store,
             source_episode_id,
+            source_type=source_type,
             embed_fn=get_embedding,
             embedding_model=llm_client.embedding_model,
             user_authoritative_identity=True,

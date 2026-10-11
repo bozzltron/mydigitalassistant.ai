@@ -2170,6 +2170,11 @@ async def store_turn_memory(
         store,
         llm_client,
         source_episode_id=source_episode_id,
+        # Provenance: this is the conversational path, so what it stores is the
+        # USER's own statement. It used to pass nothing, which left ~22% of the
+        # brain with a NULL source_type -- the user's share was the bucket marked
+        # "unknown" (experiments/memory_source_split/).
+        source_type="user",
     )
 
     supplied = None
