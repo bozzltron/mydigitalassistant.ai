@@ -94,6 +94,8 @@ new model. Scheduler is off in this deployment, so the CLI is the only top-up.
 
 ## Current fleet (Oct 2026)
 
+One turn's stages and the role each uses: **`docs/PIPELINE.md`**.
+
 | Role | Model | Size | keep_alive | num_ctx |
 |------|-------|------|------------|---------|
 | Chat | `qwen3.5:9b` | 6.6GB | `-1` (warm) | 16384 |

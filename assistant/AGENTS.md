@@ -241,6 +241,9 @@ is an adapter that drains the same stream and rebuilds a `ChatResponse`, and
 `run_scheduled_task()` is a thin wrapper that runs a task's script through the
 same loop (see below). There is no second copy.
 
+**The end-to-end map of one turn — stages, the model each uses, and which roles are
+required vs opt-in — is `docs/PIPELINE.md`.**
+
 This replaced three ~600-line copies that drifted repeatedly (see
 `test_stream_parity.py` and the scheduled-task history), each a user-visible bug:
 a stalled relevance gate that hung the stream, a swallowed generation failure, a

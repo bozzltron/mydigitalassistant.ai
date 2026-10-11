@@ -118,6 +118,39 @@ pytest tests/test_confidence.py::test_resolve_conflict_new_wins -v
 
 No coverage flags. No parallel runner by default — if a test is slow enough to need parallelism, it's probably wrong (hitting the network or doing real I/O when it shouldn't be).
 
+## Manual smoke test (the running stack)
+
+The automated suite mocks Ollama. To exercise the **real** fleet end to end
+(`docs/PIPELINE.md` maps the stages):
+
+1. **Start it.** `docker compose up -d --build` (dev, https://localhost:8443) and
+   `docker compose -f docker-compose.prod.yml up -d --build` (prod, :8444). Hard-refresh
+   the browser (⌘⇧R) after a rebuild — the SPA holds its JS in memory.
+
+2. **Check the fleet.** `curl -sk https://localhost:8443/health` must list all nine roles
+   and show `decision_completion: "(disabled)"` when the completion nudge is off.
+
+3. **Learn, then recall.** "My name is Boz." then, in a *new* session, "What's my name?"
+   — the answer must come from memory, and the trace panel should show the memory context.
+
+4. **A file action (the nudge).** "Create a file called smoke-test.md with three bullet
+   points." Watch for an `acting` stage — that is the nudge recovering an announced-but-
+   not-done turn — and confirm the file exists on the Files page.
+
+5. **Business math (`compute`).** "An invoice has 4 units at $12.50, 7 at $3.25 and 2 at
+   $19.99 — what is the subtotal?" Expect **112.73** with a `computing` stage: the number
+   comes from executed Python, not from the model (`docs/COMPUTE.md`).
+
+6. **Watch the decisions.** `docker logs assistant-backend-dev 2>&1 | grep -E "decision |
+   Action nudge"` — one line per judgement, with its probability and model.
+
+7. **Watch the timings.** The same log carries `turn_pregen` and `turn_timings` per turn
+   (`ttft_ms` on the streaming path). Read those before touching the hot path.
+
+For the raw events:
+`curl -skN https://localhost:8443/chat/stream -H 'Content-Type: application/json' -d '{"user_id":1,"message":"hi","session_id":"smoke"}'`
+— every `stage`, `tool_call` and `finalize` arrives as a `data:` line.
+
 ## 7. Adding new tests — checklist
 Before adding a test, ask:
 1. Does this test verify behavior the user can observe? If not, why does it exist?
