@@ -96,15 +96,22 @@ def _matched(numbers: list[float], expected: float, tol: float) -> float | None:
     return None
 
 
-async def run_arm(label: str, model: str) -> dict:
+async def run_arm(
+    label: str,
+    model: str,
+    problems: list[tuple[str, float, float]] | None = None,
+    trials: int | None = None,
+) -> dict:
+    problems = problems if problems is not None else PROBLEMS
+    trials = trials if trials is not None else TRIALS
     llm = OllamaClient(
         base_url=OLLAMA,
         math_model=model,
         math_num_ctx=settings.math_num_ctx,
     )
     rows: list[dict] = []
-    for trial in range(1, TRIALS + 1):
-        for prompt, expected, tol in PROBLEMS:
+    for trial in range(1, trials + 1):
+        for prompt, expected, tol in problems:
             started = time.time()
             try:
                 stdout = await llm.execute_python(prompt)
@@ -144,7 +151,122 @@ async def run_arm(label: str, model: str) -> dict:
     }
 
 
+def _hard() -> list[tuple[str, float, float]]:
+    """Hard problems — symbolic / multi-step / finance. Expected values computed here."""
+    import math
+
+    m = [[2, -1, 3], [0, 4, 5], [1, 2, -2]]
+    det = (
+        m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
+        - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
+        + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0])
+    )
+
+    a, b, c = 1.0, -5.0, 6.0
+    disc = math.sqrt(b * b - 4 * a * c)
+    root = max((-b + disc) / (2 * a), (-b - disc) / (2 * a))
+
+    integral = math.pi**2 - 4  # integral of x^2 sin x over [0, pi]
+
+    flows = [-10000, 3000, 4000, 5000, 3000]
+
+    def npv(r: float) -> float:
+        return sum(cf / (1 + r) ** t for t, cf in enumerate(flows))
+
+    lo, hi = -0.9, 5.0
+    for _ in range(200):
+        mid = (lo + hi) / 2
+        if npv(mid) > 0:
+            lo = mid
+        else:
+            hi = mid
+    irr = (lo + hi) / 2 * 100
+
+    p3 = math.comb(10, 3) * 0.25**3 * 0.75**7
+    x = (12 + 3) / 5  # 2x + 3y = 12, x - y = 1
+
+    return [
+        ("Compute the determinant of the 3x3 matrix [[2, -1, 3], [0, 4, 5], "
+         "[1, 2, -2]].", det, 0.01),
+        ("What is the larger root of the equation x^2 - 5x + 6 = 0?", root, 0.01),
+        ("Evaluate the definite integral of x^2 * sin(x) with respect to x, from 0 to "
+         "pi. Give the numeric value to 4 decimal places.", integral, 0.001),
+        ("A project has cash flows of -10000, 3000, 4000, 5000, and 3000 in years 0 to 4. "
+         "What is the internal rate of return (IRR) as a percentage, to one decimal "
+         "place?", irr, 0.05),
+        ("In 10 independent trials, each with probability 0.25 of success, what is the "
+         "probability of exactly 3 successes? Give the value to 4 decimal places.",
+         p3, 0.0005),
+        ("Solve the linear system 2x + 3y = 12 and x - y = 1. What is the value of x?",
+         x, 0.01),
+    ]
+
+
+async def arm_hard() -> None:
+    problems = _hard()
+    results: dict[str, dict] = {}
+    for label, model in MODELS[:2]:  # dedicated vs utility (H5)
+        print(f"\n[{label}] {model}")
+        res = await run_arm(label, model, problems=problems, trials=2)
+        results[label] = res
+        print(
+            f"  {res['correct']}/{res['n']} = {res['reliability']:.2f}  "
+            f"empty {res['empty_stdout']}  median {res['median_s']}s"
+        )
+    print("\n=== hard-math summary ===")
+    for label, r in results.items():
+        misses = [
+            f"t{row['trial']}: {row['prompt'][:34]}" for row in r["rows"] if not row["correct"]
+        ]
+        print(f"  {label:32} {r['correct']:>2}/{r['n']:<2}  misses={misses}")
+    (HERE / "result_hard.json").write_text(json.dumps(results, indent=2))
+    print(f"\nwrote {HERE / 'result_hard.json'}")
+
+
+async def arm_num_ctx() -> None:
+    """Does changing the requested context reload the model? (H4)"""
+    import httpx
+
+    async def loaded() -> list[dict]:
+        async with httpx.AsyncClient() as c:
+            r = await c.get(f"{OLLAMA}/api/ps", timeout=10)
+            return [
+                {k: v for k, v in m.items() if k in ("name", "context_length", "size_vram")}
+                for m in r.json().get("models", [])
+            ]
+
+    model = "qwen3.5:4b"
+    plan = [4096, 4096, 16384, 16384, 4096]
+    rows: list[dict] = []
+    for ctx in plan:
+        llm = OllamaClient(base_url=OLLAMA, math_model=model, math_num_ctx=ctx)
+        started = time.time()
+        try:
+            await llm.execute_python("What is 12 * 34?")
+            err = ""
+        except Exception as exc:
+            err = f"{type(exc).__name__}: {exc}"
+        row = {
+            "num_ctx": ctx,
+            "wall_s": round(time.time() - started, 2),
+            "loaded": await loaded(),
+            "error": err,
+        }
+        rows.append(row)
+        print(f"  num_ctx={ctx:6}  wall={row['wall_s']:6.2f}s  loaded={row['loaded']}")
+    (HERE / "result_num_ctx.json").write_text(json.dumps({"model": model, "rows": rows}, indent=2))
+    print(f"\nwrote {HERE / 'result_num_ctx.json'}")
+
+
 async def main() -> None:
+    arm = os.environ.get("EXP_ARM", "business")
+    if arm == "num_ctx":
+        await arm_num_ctx()
+        return
+    if arm == "hard":
+        await arm_hard()
+        return
+
     results: dict[str, dict] = {}
     for label, model in MODELS:
         print(f"\n[{label}] {model}")

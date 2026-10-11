@@ -69,19 +69,33 @@ docker compose exec assistant python -m assistant.scripts.verify_security
   ollama pull qwen3.5:9b            # chat + tools
   ollama pull qwen3.5:4b            # extraction + routing
   ollama pull qwen3-embedding:0.6b  # embeddings
-  ollama pull qwen3.8:27b           # on-demand escalation + math (recommended)
+  ollama pull tev1:0.8b             # decision model: "does this need an action?"
+  ollama pull nimble                # decision model: "did the calls do it?"
+  ollama pull qwen3.8:27b           # on-demand MAX tier (escalation)
+  ollama pull sorc/qwen3.5-claude-4.6-opus-q4:9b   # on-demand math (`compute` tool)
   ```
 
-  The 27B tier is optional: the `compute` tool is disabled and escalation falls
-  back to thinking-mode on the chat model without it.
+  The two on-demand tiers are optional: without `MATH_MODEL` the `compute` tool is
+  disabled (see `docs/COMPUTE.md`), and without `MAX_MODEL` escalation falls back to
+  thinking-mode on the chat model.
 
 - Recommended host environment so large models stay resident between turns —
-  reloading a 27B model costs tens of seconds:
+  reloading a 27B model costs tens of seconds. **The host daemon also caps how many
+  models stay loaded at once (default 3), and the warm set already fills that** — a
+  fourth model evicts a warm one, so the next normal turn pays a reload:
 
   ```bash
-  export OLLAMA_KEEP_ALIVE=-1
-  export OLLAMA_MAX_LOADED_MODELS=4
+  # macOS — the Ollama.app daemon reads these at launch:
+  launchctl setenv OLLAMA_KEEP_ALIVE -1
+  launchctl setenv OLLAMA_MAX_LOADED_MODELS 4
+  # ...then quit and reopen Ollama.app for them to take effect.
+
+  # Linux / a manually-run `ollama serve`: put them in the service environment
+  # (or `export` them before starting it).
   ```
+
+  `4` = the warm set (chat/tools, utility, embedding) plus one on-demand tier.
+  See `docs/MODEL_SELECTION.md` for the measured eviction.
 
 ## First run
 

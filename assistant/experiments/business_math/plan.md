@@ -76,3 +76,35 @@ python assistant/experiments/business_math/experiment.py
 - **Hard math is still unmeasured.** These are business-arithmetic problems, not
   reasoning problems; a win here does not claim the 27B's reasoning edge, and says
   nothing about the MAX tier.
+
+## Addendum (2026-10-11): the two final checks
+
+**Added after the first run, before this arm's data is collected.**
+
+### H4 — a `num_ctx` change reloads the model
+
+Pointing `MATH_MODEL` at the warm utility model only saves a load if compute's requested
+context **matches** what utility uses. Ollama reloads a model when the requested context
+changes, so `MATH_NUM_CTX=16384` against `UTILITY_NUM_CTX=4096` would trade an eviction
+for a reload.
+
+**Measure:** call `execute_python` on the utility model at 4096, again at 4096, then at
+16384, again at 16384, then back to 4096 — recording each call's wall-clock and the
+loaded context from `/api/ps`.
+
+**Falsification:** if the loaded context does not change and the first call at each size
+is **not** slower, there is no reload, and matching `MATH_NUM_CTX` does not matter.
+
+### H5 — the dedicated model earns its keep on hard math
+
+Business arithmetic ties. The open question is whether the dedicated 9B beats the utility
+4B on **hard** problems (symbolic, multi-step, finance) — the case that would justify
+keeping it.
+
+**Measure:** the same harness on 6 hard problems (matrix determinant, a polynomial root,
+a definite integral, an IRR, a binomial probability, a linear system), dedicated vs
+utility, 2 trials each.
+
+**Falsification:** if the utility model is correct on as many hard problems as the
+dedicated one, the dedicated model has **no measured job** and can be dropped from the
+fleet.
