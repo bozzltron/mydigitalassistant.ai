@@ -693,6 +693,65 @@ async def test_stream_tool_loop_nudges_once_when_an_action_was_expected(tmp_path
     assert events and '"type": "finalize"' in events[-1]
 
 
+async def test_stream_tool_loop_nudges_when_the_calls_did_not_do_it(tmp_path, monkeypatch):
+    """The live failure: a tool ran (read_file) but the action was not performed.
+
+    "No tool call" is too coarse — the model called a *different* tool and then
+    claimed the write. The completion judgement (decision.outstanding) catches it.
+    """
+    from assistant.backend.pipeline import decision
+    from assistant.backend.pipeline.llm_client import ChatResponse, ToolCall
+    from assistant.backend.pipeline.streaming import stream_tool_loop
+    from assistant.backend.pipeline.tool_executor import init_store
+
+    init_store(str(tmp_path / "completion.db"))
+
+    async def fake_outstanding(request, tools_called):
+        return True  # the calls left the action undone
+
+    monkeypatch.setattr(decision, "outstanding", fake_outstanding)
+
+    class StubLLM:
+        def __init__(self):
+            self.tools_model = "test-model"
+            self.calls: list = []
+
+        async def chat(self, messages, **kwargs):
+            self.calls.append(messages)
+            if len(self.calls) == 1:
+                return ChatResponse(
+                    content="",
+                    model="m",
+                    done=True,
+                    tool_calls=[ToolCall(name="read_file", arguments={"path": "x.md"})],
+                )
+            if len(self.calls) == 2:
+                return ChatResponse(content="I've created the file.", model="m", done=True)
+            return ChatResponse(content="Created it for real now.", model="m", done=True)
+
+        def context_window(self, model=None):
+            return 16384
+
+    llm = StubLLM()
+    _ = [
+        ev
+        async for ev in stream_tool_loop(
+            llm,
+            [{"role": "user", "content": "Create x.md"}],
+            tools=[],
+            expects_action=True,
+        )
+    ]
+
+    assert len(llm.calls) >= 3, "the completion nudge must give the model another round"
+    third = llm.calls[2]
+    assert any(
+        getattr(m, "role", "") == "user"
+        and "did not perform it" in (getattr(m, "content", "") or "")
+        for m in third
+    ), "the completion nudge must reach the model"
+
+
 async def test_stream_tool_loop_does_not_nudge_when_no_action_expected(tmp_path):
     """The other half: a plain reply finalizes with no extra round."""
     from assistant.backend.pipeline.llm_client import ChatResponse

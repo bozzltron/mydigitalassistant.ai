@@ -149,6 +149,12 @@ class Settings(BaseSettings):
     # Biased toward `action`: a wrong `answer` skips the fix entirely, a wrong
     # `action` costs one nudge round.
     decision_action_threshold: float = 0.4
+    # The completion judgement — "did the tool calls leave the action undone?" —
+    # needs a *different* model: tev1:0.8b cannot separate the classes (0.44 vs
+    # 0.42), while nimble can (0.79 vs 0.16). It runs only on turns that already
+    # need an action, so its ~600 ms is rare. Empty disables the second nudge.
+    decision_completion_model: str = "nimble"
+    decision_outstanding_threshold: float = 0.4
     decision_timeout: float = 10.0
 
     # Streaming responses (SSE) - enabled by default

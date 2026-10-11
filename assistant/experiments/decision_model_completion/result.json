@@ -1,0 +1,470 @@
+{
+  "nimble": {
+    "model": "nimble",
+    "accuracy_pct": 93.8,
+    "correct": 15,
+    "n": 16,
+    "mean_p_outstanding": 0.79,
+    "mean_p_satisfied": 0.163,
+    "margin": 0.626,
+    "median_ms": 603.5,
+    "rows": [
+      {
+        "p_outstanding": 0.6534172310110035,
+        "wall_s": 1.943,
+        "expected": "outstanding",
+        "request": "No edits to Why Not Release. We want to create Friend Music Records Release Template.md",
+        "tools_called": "read_file(path='Why Not Release.md')",
+        "decided": "outstanding",
+        "correct": true
+      },
+      {
+        "p_outstanding": 0.749077180672993,
+        "wall_s": 0.604,
+        "expected": "outstanding",
+        "request": "Create notes.txt with today's plan",
+        "tools_called": "read_file(path='notes.txt')",
+        "decided": "outstanding",
+        "correct": true
+      },
+      {
+        "p_outstanding": 0.9691937128681811,
+        "wall_s": 0.606,
+        "expected": "outstanding",
+        "request": "Delete the old draft file",
+        "tools_called": "read_file(path='old draft.md')",
+        "decided": "outstanding",
+        "correct": true
+      },
+      {
+        "p_outstanding": 0.9792448755861302,
+        "wall_s": 0.606,
+        "expected": "outstanding",
+        "request": "Rename notes.txt to todo.txt",
+        "tools_called": "read_file(path='notes.txt')",
+        "decided": "outstanding",
+        "correct": true
+      },
+      {
+        "p_outstanding": 0.5540934765788255,
+        "wall_s": 0.609,
+        "expected": "outstanding",
+        "request": "Append this row to contacts.csv",
+        "tools_called": "search_file(path='contacts.csv', query='ada')",
+        "decided": "outstanding",
+        "correct": true
+      },
+      {
+        "p_outstanding": 0.9245653900042294,
+        "wall_s": 0.604,
+        "expected": "outstanding",
+        "request": "Add a point to my map at -122.68, 45.523",
+        "tools_called": "read_file(path='map.geojson')",
+        "decided": "outstanding",
+        "correct": true
+      },
+      {
+        "p_outstanding": 0.5187594857950324,
+        "wall_s": 0.605,
+        "expected": "outstanding",
+        "request": "We want to create a release template",
+        "tools_called": "glob(pattern='**/*.md')",
+        "decided": "outstanding",
+        "correct": true
+      },
+      {
+        "p_outstanding": 0.9680780172185511,
+        "wall_s": 0.539,
+        "expected": "outstanding",
+        "request": "Run my morning briefing now",
+        "tools_called": "list_files()",
+        "decided": "outstanding",
+        "correct": true
+      },
+      {
+        "p_outstanding": 0.021194563507858512,
+        "wall_s": 0.608,
+        "expected": "satisfied",
+        "request": "Create notes.txt with today's plan",
+        "tools_called": "write_file(path='notes.txt', content='...')",
+        "decided": "satisfied",
+        "correct": true
+      },
+      {
+        "p_outstanding": 0.035303779071455925,
+        "wall_s": 0.603,
+        "expected": "satisfied",
+        "request": "No edits to Why Not Release. We want to create Friend Music Records Release Template.md",
+        "tools_called": "write_file(path='Friend Music Records Release Template.md', content='...')",
+        "decided": "satisfied",
+        "correct": true
+      },
+      {
+        "p_outstanding": 0.007051909620744557,
+        "wall_s": 0.6,
+        "expected": "satisfied",
+        "request": "Delete the old draft file",
+        "tools_called": "delete_file(path='old draft.md')",
+        "decided": "satisfied",
+        "correct": true
+      },
+      {
+        "p_outstanding": 0.004884002473336539,
+        "wall_s": 0.6,
+        "expected": "satisfied",
+        "request": "Rename notes.txt to todo.txt",
+        "tools_called": "rename_file(path='notes.txt', new_name='todo.txt')",
+        "decided": "satisfied",
+        "correct": true
+      },
+      {
+        "p_outstanding": 0.04481032889295866,
+        "wall_s": 0.597,
+        "expected": "satisfied",
+        "request": "Read Why Not Release.md",
+        "tools_called": "read_file(path='Why Not Release.md')",
+        "decided": "satisfied",
+        "correct": true
+      },
+      {
+        "p_outstanding": 0.7805514410565026,
+        "wall_s": 0.528,
+        "expected": "satisfied",
+        "request": "What is my name?",
+        "tools_called": "",
+        "decided": "outstanding",
+        "correct": false
+      },
+      {
+        "p_outstanding": 0.3849121374280911,
+        "wall_s": 0.599,
+        "expected": "satisfied",
+        "request": "Explain how photosynthesis works",
+        "tools_called": "",
+        "decided": "satisfied",
+        "correct": true
+      },
+      {
+        "p_outstanding": 0.02799734987103687,
+        "wall_s": 0.538,
+        "expected": "satisfied",
+        "request": "Thanks, that's helpful",
+        "tools_called": "",
+        "decided": "satisfied",
+        "correct": true
+      }
+    ]
+  },
+  "tev1": {
+    "model": "tev1",
+    "accuracy_pct": 81.2,
+    "correct": 13,
+    "n": 16,
+    "mean_p_outstanding": 0.643,
+    "mean_p_satisfied": 0.426,
+    "margin": 0.217,
+    "median_ms": 286.0,
+    "rows": [
+      {
+        "p_outstanding": 0.5461122625149916,
+        "wall_s": 3.107,
+        "expected": "outstanding",
+        "request": "No edits to Why Not Release. We want to create Friend Music Records Release Template.md",
+        "tools_called": "read_file(path='Why Not Release.md')",
+        "decided": "outstanding",
+        "correct": true
+      },
+      {
+        "p_outstanding": 0.6491652048153915,
+        "wall_s": 0.273,
+        "expected": "outstanding",
+        "request": "Create notes.txt with today's plan",
+        "tools_called": "read_file(path='notes.txt')",
+        "decided": "outstanding",
+        "correct": true
+      },
+      {
+        "p_outstanding": 0.6562625434019593,
+        "wall_s": 0.279,
+        "expected": "outstanding",
+        "request": "Delete the old draft file",
+        "tools_called": "read_file(path='old draft.md')",
+        "decided": "outstanding",
+        "correct": true
+      },
+      {
+        "p_outstanding": 0.8418419068254991,
+        "wall_s": 0.28,
+        "expected": "outstanding",
+        "request": "Rename notes.txt to todo.txt",
+        "tools_called": "read_file(path='notes.txt')",
+        "decided": "outstanding",
+        "correct": true
+      },
+      {
+        "p_outstanding": 0.5209856653267498,
+        "wall_s": 0.312,
+        "expected": "outstanding",
+        "request": "Append this row to contacts.csv",
+        "tools_called": "search_file(path='contacts.csv', query='ada')",
+        "decided": "outstanding",
+        "correct": true
+      },
+      {
+        "p_outstanding": 0.672738322403888,
+        "wall_s": 0.333,
+        "expected": "outstanding",
+        "request": "Add a point to my map at -122.68, 45.523",
+        "tools_called": "read_file(path='map.geojson')",
+        "decided": "outstanding",
+        "correct": true
+      },
+      {
+        "p_outstanding": 0.5702378687475314,
+        "wall_s": 0.289,
+        "expected": "outstanding",
+        "request": "We want to create a release template",
+        "tools_called": "glob(pattern='**/*.md')",
+        "decided": "outstanding",
+        "correct": true
+      },
+      {
+        "p_outstanding": 0.6878757562692277,
+        "wall_s": 0.283,
+        "expected": "outstanding",
+        "request": "Run my morning briefing now",
+        "tools_called": "list_files()",
+        "decided": "outstanding",
+        "correct": true
+      },
+      {
+        "p_outstanding": 0.6135495538567679,
+        "wall_s": 0.314,
+        "expected": "satisfied",
+        "request": "Create notes.txt with today's plan",
+        "tools_called": "write_file(path='notes.txt', content='...')",
+        "decided": "outstanding",
+        "correct": false
+      },
+      {
+        "p_outstanding": 0.44734711734616955,
+        "wall_s": 0.31,
+        "expected": "satisfied",
+        "request": "No edits to Why Not Release. We want to create Friend Music Records Release Template.md",
+        "tools_called": "write_file(path='Friend Music Records Release Template.md', content='...')",
+        "decided": "satisfied",
+        "correct": true
+      },
+      {
+        "p_outstanding": 0.2698258676179366,
+        "wall_s": 0.281,
+        "expected": "satisfied",
+        "request": "Delete the old draft file",
+        "tools_called": "delete_file(path='old draft.md')",
+        "decided": "satisfied",
+        "correct": true
+      },
+      {
+        "p_outstanding": 0.1669107974105405,
+        "wall_s": 0.297,
+        "expected": "satisfied",
+        "request": "Rename notes.txt to todo.txt",
+        "tools_called": "rename_file(path='notes.txt', new_name='todo.txt')",
+        "decided": "satisfied",
+        "correct": true
+      },
+      {
+        "p_outstanding": 0.40922818746541323,
+        "wall_s": 0.268,
+        "expected": "satisfied",
+        "request": "Read Why Not Release.md",
+        "tools_called": "read_file(path='Why Not Release.md')",
+        "decided": "satisfied",
+        "correct": true
+      },
+      {
+        "p_outstanding": 0.5878895023653282,
+        "wall_s": 0.266,
+        "expected": "satisfied",
+        "request": "What is my name?",
+        "tools_called": "",
+        "decided": "outstanding",
+        "correct": false
+      },
+      {
+        "p_outstanding": 0.6085558953159592,
+        "wall_s": 0.282,
+        "expected": "satisfied",
+        "request": "Explain how photosynthesis works",
+        "tools_called": "",
+        "decided": "outstanding",
+        "correct": false
+      },
+      {
+        "p_outstanding": 0.303786650204067,
+        "wall_s": 0.297,
+        "expected": "satisfied",
+        "request": "Thanks, that's helpful",
+        "tools_called": "",
+        "decided": "satisfied",
+        "correct": true
+      }
+    ]
+  },
+  "tev1:0.8b": {
+    "model": "tev1:0.8b",
+    "accuracy_pct": 62.5,
+    "correct": 10,
+    "n": 16,
+    "mean_p_outstanding": 0.438,
+    "mean_p_satisfied": 0.42,
+    "margin": 0.017,
+    "median_ms": 70.5,
+    "rows": [
+      {
+        "p_outstanding": 0.4399597726382235,
+        "wall_s": 1.406,
+        "expected": "outstanding",
+        "request": "No edits to Why Not Release. We want to create Friend Music Records Release Template.md",
+        "tools_called": "read_file(path='Why Not Release.md')",
+        "decided": "satisfied",
+        "correct": false
+      },
+      {
+        "p_outstanding": 0.3862641520676784,
+        "wall_s": 0.235,
+        "expected": "outstanding",
+        "request": "Create notes.txt with today's plan",
+        "tools_called": "read_file(path='notes.txt')",
+        "decided": "satisfied",
+        "correct": false
+      },
+      {
+        "p_outstanding": 0.4768860840833378,
+        "wall_s": 0.071,
+        "expected": "outstanding",
+        "request": "Delete the old draft file",
+        "tools_called": "read_file(path='old draft.md')",
+        "decided": "satisfied",
+        "correct": false
+      },
+      {
+        "p_outstanding": 0.4265100478321285,
+        "wall_s": 0.066,
+        "expected": "outstanding",
+        "request": "Rename notes.txt to todo.txt",
+        "tools_called": "read_file(path='notes.txt')",
+        "decided": "satisfied",
+        "correct": false
+      },
+      {
+        "p_outstanding": 0.3258757597087412,
+        "wall_s": 0.072,
+        "expected": "outstanding",
+        "request": "Append this row to contacts.csv",
+        "tools_called": "search_file(path='contacts.csv', query='ada')",
+        "decided": "satisfied",
+        "correct": false
+      },
+      {
+        "p_outstanding": 0.5281512730511553,
+        "wall_s": 0.076,
+        "expected": "outstanding",
+        "request": "Add a point to my map at -122.68, 45.523",
+        "tools_called": "read_file(path='map.geojson')",
+        "decided": "outstanding",
+        "correct": true
+      },
+      {
+        "p_outstanding": 0.5068793723738357,
+        "wall_s": 0.064,
+        "expected": "outstanding",
+        "request": "We want to create a release template",
+        "tools_called": "glob(pattern='**/*.md')",
+        "decided": "outstanding",
+        "correct": true
+      },
+      {
+        "p_outstanding": 0.41206242524551645,
+        "wall_s": 0.067,
+        "expected": "outstanding",
+        "request": "Run my morning briefing now",
+        "tools_called": "list_files()",
+        "decided": "satisfied",
+        "correct": false
+      },
+      {
+        "p_outstanding": 0.4837398516782353,
+        "wall_s": 0.076,
+        "expected": "satisfied",
+        "request": "Create notes.txt with today's plan",
+        "tools_called": "write_file(path='notes.txt', content='...')",
+        "decided": "satisfied",
+        "correct": true
+      },
+      {
+        "p_outstanding": 0.49692159310574907,
+        "wall_s": 0.073,
+        "expected": "satisfied",
+        "request": "No edits to Why Not Release. We want to create Friend Music Records Release Template.md",
+        "tools_called": "write_file(path='Friend Music Records Release Template.md', content='...')",
+        "decided": "satisfied",
+        "correct": true
+      },
+      {
+        "p_outstanding": 0.4307384063326743,
+        "wall_s": 0.065,
+        "expected": "satisfied",
+        "request": "Delete the old draft file",
+        "tools_called": "delete_file(path='old draft.md')",
+        "decided": "satisfied",
+        "correct": true
+      },
+      {
+        "p_outstanding": 0.44727729960680235,
+        "wall_s": 0.069,
+        "expected": "satisfied",
+        "request": "Rename notes.txt to todo.txt",
+        "tools_called": "rename_file(path='notes.txt', new_name='todo.txt')",
+        "decided": "satisfied",
+        "correct": true
+      },
+      {
+        "p_outstanding": 0.49758337829779037,
+        "wall_s": 0.062,
+        "expected": "satisfied",
+        "request": "Read Why Not Release.md",
+        "tools_called": "read_file(path='Why Not Release.md')",
+        "decided": "satisfied",
+        "correct": true
+      },
+      {
+        "p_outstanding": 0.31400288413237915,
+        "wall_s": 0.061,
+        "expected": "satisfied",
+        "request": "What is my name?",
+        "tools_called": "",
+        "decided": "satisfied",
+        "correct": true
+      },
+      {
+        "p_outstanding": 0.4008739548329385,
+        "wall_s": 0.076,
+        "expected": "satisfied",
+        "request": "Explain how photosynthesis works",
+        "tools_called": "",
+        "decided": "satisfied",
+        "correct": true
+      },
+      {
+        "p_outstanding": 0.2925700331365572,
+        "wall_s": 0.07,
+        "expected": "satisfied",
+        "request": "Thanks, that's helpful",
+        "tools_called": "",
+        "decided": "satisfied",
+        "correct": true
+      }
+    ]
+  }
+}

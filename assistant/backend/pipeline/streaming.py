@@ -214,6 +214,19 @@ _ACTION_NUDGE = (
     "Do it now — call the tool in this message."
 )
 
+_COMPLETION_NUDGE = (
+    "You replied that you had done the action, but the tools you called did not "
+    "perform it. Call the tool that performs it now."
+)
+
+
+def _summarize_call(name: str, args: dict) -> str:
+    """A short ``name(key=value, …)`` line for the completion judgement."""
+    if not isinstance(args, dict):
+        return name
+    parts = [f"{k}={v!r}" for k, v in list(args.items())[:3]]
+    return f"{name}({', '.join(parts)})"
+
 
 async def stream_tool_loop(
     llm_client,
@@ -255,6 +268,12 @@ async def stream_tool_loop(
 
     chat_messages = [ChatMessage(**m) for m in messages]
     loop_model = model or llm_client.tools_model
+    # The user's request, for the completion judgement — read once, before any
+    # nudge adds a user-role message of its own.
+    request_text = next(
+        (m.content for m in reversed(chat_messages) if getattr(m, "role", "") == "user"),
+        "",
+    )
 
     # The cap is a runaway guard; the model ends the loop itself. A caller that
     # knows the task's complexity (the orchestrator, from the reasoner's plan)
@@ -281,9 +300,10 @@ async def stream_tool_loop(
     turn = 0
     reasoning_trace: list[str] = []
     empty_retried = False
-    # The action nudge: fired at most once, and only when no tool was ever called.
+    # The action nudge: fired at most once, and only when the action is missing.
     made_tool_call = False
     action_nudged = False
+    tool_calls_made: list[str] = []
 
     while turn < max_turns:
         turn += 1
@@ -351,6 +371,7 @@ async def stream_tool_loop(
             for call in response.tool_calls:
                 tool_name = call.name
                 raw_args = call.arguments or {}
+                tool_calls_made.append(_summarize_call(tool_name, raw_args))
 
                 # Execute tool
                 try:
@@ -420,16 +441,32 @@ async def stream_tool_loop(
             # create X") and never calls the tool. A decision model judged that
             # the request needs an action (decision.needs_action); this is the
             # structural half, and it fires at most once.
-            if expects_action and not made_tool_call and not action_nudged:
-                action_nudged = True
-                logger.info(
-                    "Action nudge: the request needs an action but no tool was called"
-                )
-                chat_messages.append(
-                    ChatMessage(role="assistant", content=response.content or "")
-                )
-                chat_messages.append(ChatMessage(role="user", content=_ACTION_NUDGE))
-                continue
+            if expects_action and not action_nudged:
+                nudge: str | None = None
+                if not made_tool_call:
+                    nudge = _ACTION_NUDGE
+                    logger.info(
+                        "Action nudge: the request needs an action but no tool was called"
+                    )
+                else:
+                    # A tool ran — but did it do the job? A turn can call a
+                    # *different* tool (a read) and still claim the write, measured
+                    # live. Judge the calls, not the claim.
+                    from assistant.backend.pipeline.decision import outstanding
+
+                    still_outstanding = await outstanding(request_text, tool_calls_made)
+                    if still_outstanding:
+                        nudge = _COMPLETION_NUDGE
+                        logger.info(
+                            "Action nudge: the tool calls did not perform the action"
+                        )
+                if nudge:
+                    action_nudged = True
+                    chat_messages.append(
+                        ChatMessage(role="assistant", content=response.content or "")
+                    )
+                    chat_messages.append(ChatMessage(role="user", content=nudge))
+                    continue
             # No tool calls = direct answer
             answer = (response.content or "").strip() or EMPTY_GENERATION_FALLBACK
             event = FinalizeEvent(
