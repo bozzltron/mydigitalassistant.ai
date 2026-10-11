@@ -142,7 +142,7 @@ async def run_turn(policy: str, request: str, name: str, tools: list[dict]) -> d
     if not require_terminal:
         expects_action = bool(await decision.needs_action(request))
 
-    client = CountingClient(OllamaClient())
+    client = CountingClient(OllamaClient(base_url=OLLAMA))
     started = time.time()
     raw = [
         ev
@@ -232,7 +232,7 @@ async def main() -> None:
     tool_executor._store = store
     await store.create_user("exp_user")
 
-    tools = builtin_tools(None, store=store, llm_client=OllamaClient(), embed_fn=None)
+    tools = builtin_tools(None, store=store, llm_client=OllamaClient(base_url=OLLAMA), embed_fn=None)
 
     print("[D] deterministic -- the structural catch, no judgement")
     deterministic = await arm_deterministic()
