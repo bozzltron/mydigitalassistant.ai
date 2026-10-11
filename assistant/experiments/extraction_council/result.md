@@ -57,3 +57,34 @@ already resident (`qwen3.5:4b` + `qwen3.5:9b`, union 0.94, no extra residency) o
 already-downloaded fine-tune (union 1.00, one extra load). The open question is not *which
 models* but *whether one fact in nine is worth a second model on the learning path* — and
 the residency cost is now measured rather than assumed.
+
+## Addendum: performance — parallel is fine, residency is the constraint
+
+| | latency | extra residency |
+|---|---|---|
+| incumbent alone (`qwen3.5:4b`) | 5.1 s | — |
+| best pair, **serial** | 11.3 s (sum) | +1 model (evicts a warm one) |
+| best pair, **parallel** | **7.2 s** | +1 model (evicts a warm one) |
+| warm pair, parallel (`4b`+`9b`) | 12.3 s | **none** |
+
+**Parallelism works and is worth ~36%.** The pair costs 7.2 s concurrently against 11.3 s
+serially — the slower member plus 18%, not the sum. Ollama does run two different models at
+once, so a council should always be run in parallel; a serial council is the expensive
+version of the same thing.
+
+**The binding constraint is `OLLAMA_MAX_LOADED_MODELS`, not RAM.** The host has **48 GB**
+and would happily hold a fourth model, but the default cap is **3** and the warm set
+already fills it. Measured: running `sorc/q4:4b` alone **evicted `qwen3.5:4b`** — a warm
+model. So a council member outside the warm set does not merely add load, it **displaces
+the chat/utility models** and pays their reload on the next turn. That is the real cost,
+and it is invisible in the accuracy numbers.
+
+**Two coherent options, both cheap in different currencies:**
+- **Warm pair** (`qwen3.5:4b` + `qwen3.5:9b`) — union **0.94**, **zero** extra residency,
+  but **12.3 s** (the 9b dominates).
+- **Best pair** (`qwen3.5:4b` + `sorc/q4:4b`) — union **1.00**, **7.2 s**, but it evicts a
+  warm model unless the cap is raised (48 GB affords it).
+
+**So: yes, a local Ollama handles a council — in parallel, within the loaded-model budget.**
+The decision is now about *eviction policy* (draw from the warm set, or raise the cap) and
+*whether one fact in nine justifies either* — not about raw capacity.

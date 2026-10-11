@@ -1,0 +1,72 @@
+{
+  "qwen3.5:4b_alone": {
+    "models": [
+      "qwen3.5:4b"
+    ],
+    "median_ms": 5134,
+    "mean_ms": 11344,
+    "loaded_before": [
+      "qwen3.5:9b",
+      "qwen3.5:4b",
+      "qwen3-embedding:0.6b"
+    ],
+    "loaded_after": [
+      "qwen3-embedding:0.6b",
+      "qwen3.5:9b",
+      "qwen3.5:4b"
+    ]
+  },
+  "sorc_q4_4b_alone": {
+    "models": [
+      "sorc/qwen3.5-claude-4.6-opus-q4:4b"
+    ],
+    "median_ms": 6148,
+    "mean_ms": 10304,
+    "loaded_before": [
+      "qwen3-embedding:0.6b",
+      "qwen3.5:9b",
+      "qwen3.5:4b"
+    ],
+    "loaded_after": [
+      "qwen3.5:9b",
+      "qwen3-embedding:0.6b",
+      "sorc/qwen3.5-claude-4.6-opus-q4:4b"
+    ]
+  },
+  "best_pair_parallel": {
+    "models": [
+      "qwen3.5:4b",
+      "sorc/qwen3.5-claude-4.6-opus-q4:4b"
+    ],
+    "median_ms": 7228,
+    "mean_ms": 11845,
+    "loaded_before": [
+      "qwen3.5:9b",
+      "qwen3-embedding:0.6b",
+      "sorc/qwen3.5-claude-4.6-opus-q4:4b"
+    ],
+    "loaded_after": [
+      "qwen3.5:9b",
+      "qwen3.5:4b",
+      "sorc/qwen3.5-claude-4.6-opus-q4:4b"
+    ]
+  },
+  "warm_pair_parallel": {
+    "models": [
+      "qwen3.5:4b",
+      "qwen3.5:9b"
+    ],
+    "median_ms": 12349,
+    "mean_ms": 22773,
+    "loaded_before": [
+      "qwen3.5:9b",
+      "qwen3.5:4b",
+      "sorc/qwen3.5-claude-4.6-opus-q4:4b"
+    ],
+    "loaded_after": [
+      "qwen3.5:9b",
+      "qwen3-embedding:0.6b",
+      "qwen3.5:4b"
+    ]
+  }
+}

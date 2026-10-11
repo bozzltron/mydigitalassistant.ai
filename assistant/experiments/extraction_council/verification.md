@@ -85,3 +85,32 @@ disagreement rate vs the incumbent (raw value-sets differ)
   supported for these two models, not for the hypothesis in general.
 - **One run per model.** No temperature variance was sampled (extraction runs at
   temperature 0, so this is minor).
+
+## Addendum: the parallel arm
+
+```
+[qwen3.5:4b_alone    ] median   5134ms  loaded_after=3 [qwen3-embedding, qwen3.5:9b, qwen3.5:4b]
+[sorc_q4_4b_alone    ] median   6148ms  loaded_after=3 [qwen3.5:9b, qwen3-embedding, sorc/q4:4b]
+[best_pair_parallel  ] median   7228ms  loaded_after=3 [qwen3.5:9b, qwen3.5:4b, sorc/q4:4b]
+[warm_pair_parallel  ] median  12349ms  loaded_after=3 [qwen3.5:9b, qwen3-embedding, qwen3.5:4b]
+
+incumbent alone      5134ms
+slower member alone  6148ms
+pair in parallel     7228ms   (serial sum would be 11282ms)
+warm pair in parallel 12349ms
+```
+
+**H5 holds.** The pair costs **7,228 ms** against a serial sum of 11,282 ms — the slower
+member (6,148 ms) plus 18%. Ollama does run two different models concurrently, and the
+council is therefore near-latency-neutral versus doing the two calls in sequence.
+
+**H6 holds for residency, but not for latency.** The warm pair leaves the loaded set
+untouched (`{qwen3.5:4b, qwen3.5:9b, qwen3-embedding}` — the warm set), so its residency
+cost is zero — but it is **slower** (12,349 ms), because `qwen3.5:9b` is the bigger model.
+
+**The eviction is visible.** `sorc/q4:4b` run alone loaded `{qwen3.5:9b, embedding,
+sorc/q4:4b}` — it **evicted `qwen3.5:4b`**. Every arm reports `loaded_after=3`, i.e. the
+cap is saturated and a fourth model is not possible without evicting a warm one.
+
+The parallel run's timings are also the better latency estimate: the sequential run's
+15,540 ms median for `qwen3.5:4b` was cold/contended; alone it is 5,134 ms.
