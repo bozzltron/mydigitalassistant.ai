@@ -88,3 +88,35 @@ path), against local Ollama. No brain, no tools.
   rather than healthy diversity; recall is reported next to overlap for exactly this.
 - **Disagreement ≠ error.** Two models disagreeing is not evidence either is wrong. H4
   measures the rate, not the value, of disagreement.
+
+## Addendum (2026-10-11): the council in parallel — latency and residency
+
+**Added after the first run, before this arm's data is collected.** The first run measured
+accuracy with models run **sequentially**, which is not how a council would run. Two
+questions the accuracy numbers cannot answer:
+
+1. **Latency.** Run concurrently, a council should cost its *slowest* member, not the sum.
+   Is that true on this Ollama, or does it serialise requests to different models?
+2. **Residency.** `OLLAMA_MAX_LOADED_MODELS` defaults to 3, and the host already has 3
+   loaded (`qwen3.5:4b`, `qwen3.5:9b`, `gemma3:4b`). A council member that is not already
+   resident forces an eviction — the classic latency killer.
+
+### Hypotheses
+
+- **H5 (parallel is nearly free).** Per-turn wall-clock for a two-member council run
+  concurrently is **≤ the slower member alone + 20%** — not the sum of the two.
+- **H6 (the warm pair is the cheap council).** A council drawn from the two already-
+  resident models (`qwen3.5:4b`, `qwen3.5:9b`) needs **no new load**, so its residency
+  cost is zero.
+
+### Falsification conditions
+
+1. H5 fails (parallel ≈ sum) → Ollama serialises the members → the council costs double →
+   do not build it.
+2. H6 fails (a member is not resident, or the cap evicts) → the council needs a raised load
+   budget → weigh that against a one-fact-in-nine gain.
+
+### Method
+
+`EXP_ARM=parallel python …/experiment.py` — times each member alone, then the best pair
+and the warm pair **concurrently**, per turn; records `/api/ps` before and after each arm.

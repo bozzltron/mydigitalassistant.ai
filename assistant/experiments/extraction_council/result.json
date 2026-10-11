@@ -1,0 +1,1673 @@
+{
+  "models": {
+    "qwen3.5:4b": {
+      "model": "qwen3.5:4b",
+      "lineage": "qwen",
+      "recall": 0.889,
+      "recall_schema": 0.333,
+      "found_turns": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        15,
+        16,
+        17
+      ],
+      "missed_turns": [
+        7,
+        14
+      ],
+      "median_ms": 15540,
+      "raw": [
+        {
+          "label": "user_name",
+          "expected": [
+            "Boz"
+          ],
+          "got": [
+            "Boz"
+          ],
+          "found": true,
+          "found_schema": true,
+          "error": ""
+        },
+        {
+          "label": "assistant_name",
+          "expected": [
+            "Hermes"
+          ],
+          "got": [
+            "Hermes"
+          ],
+          "found": true,
+          "found_schema": true,
+          "error": ""
+        },
+        {
+          "label": "guitar_strings",
+          "expected": [
+            "6"
+          ],
+          "got": [
+            "6"
+          ],
+          "found": true,
+          "found_schema": true,
+          "error": ""
+        },
+        {
+          "label": "car",
+          "expected": [
+            "Mazda MX-5",
+            "red"
+          ],
+          "got": [
+            "Mazda MX-5",
+            "red"
+          ],
+          "found": true,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "dog",
+          "expected": [
+            "Rufus"
+          ],
+          "got": [
+            "Rufus"
+          ],
+          "found": true,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "allergy",
+          "expected": [
+            "peanuts"
+          ],
+          "got": [
+            "peanuts"
+          ],
+          "found": true,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "favourite_colour",
+          "expected": [
+            "teal"
+          ],
+          "got": [
+            "teal"
+          ],
+          "found": true,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "trip",
+          "expected": [
+            "Lisbon",
+            "March"
+          ],
+          "got": [],
+          "found": false,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "sister",
+          "expected": [
+            "Dana"
+          ],
+          "got": [
+            "Dana"
+          ],
+          "found": true,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "occupation",
+          "expected": [
+            "marine biologist"
+          ],
+          "got": [
+            "marine biologist"
+          ],
+          "found": true,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "children",
+          "expected": [
+            "2"
+          ],
+          "got": [
+            "2"
+          ],
+          "found": true,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "router",
+          "expected": [
+            "Netgear Nighthawk"
+          ],
+          "got": [
+            "Netgear Nighthawk"
+          ],
+          "found": true,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "coffee",
+          "expected": [
+            "black"
+          ],
+          "got": [
+            "black"
+          ],
+          "found": true,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "birthday",
+          "expected": [
+            "12 June"
+          ],
+          "got": [
+            "12 June"
+          ],
+          "found": true,
+          "found_schema": true,
+          "error": ""
+        },
+        {
+          "label": "language",
+          "expected": [
+            "Spanish"
+          ],
+          "got": [],
+          "found": false,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "bedrooms",
+          "expected": [
+            "4"
+          ],
+          "got": [
+            "4"
+          ],
+          "found": true,
+          "found_schema": true,
+          "error": ""
+        },
+        {
+          "label": "spare_key",
+          "expected": [
+            "under the blue pot"
+          ],
+          "got": [
+            "blue pot"
+          ],
+          "found": true,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "agreement",
+          "expected": [
+            "keep answers short"
+          ],
+          "got": [
+            "keep answers short"
+          ],
+          "found": true,
+          "found_schema": true,
+          "error": ""
+        }
+      ]
+    },
+    "qwen3.5:9b": {
+      "model": "qwen3.5:9b",
+      "lineage": "qwen",
+      "recall": 0.889,
+      "recall_schema": 0.389,
+      "found_turns": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        13,
+        15,
+        16,
+        17
+      ],
+      "missed_turns": [
+        12,
+        14
+      ],
+      "median_ms": 5195,
+      "raw": [
+        {
+          "label": "user_name",
+          "expected": [
+            "Boz"
+          ],
+          "got": [
+            "Boz"
+          ],
+          "found": true,
+          "found_schema": true,
+          "error": ""
+        },
+        {
+          "label": "assistant_name",
+          "expected": [
+            "Hermes"
+          ],
+          "got": [
+            "Hermes"
+          ],
+          "found": true,
+          "found_schema": true,
+          "error": ""
+        },
+        {
+          "label": "guitar_strings",
+          "expected": [
+            "6"
+          ],
+          "got": [
+            "6"
+          ],
+          "found": true,
+          "found_schema": true,
+          "error": ""
+        },
+        {
+          "label": "car",
+          "expected": [
+            "Mazda MX-5",
+            "red"
+          ],
+          "got": [
+            "red",
+            "Mazda MX-5"
+          ],
+          "found": true,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "dog",
+          "expected": [
+            "Rufus"
+          ],
+          "got": [
+            "Rufus"
+          ],
+          "found": true,
+          "found_schema": true,
+          "error": ""
+        },
+        {
+          "label": "allergy",
+          "expected": [
+            "peanuts"
+          ],
+          "got": [
+            "peanuts"
+          ],
+          "found": true,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "favourite_colour",
+          "expected": [
+            "teal"
+          ],
+          "got": [
+            "teal"
+          ],
+          "found": true,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "trip",
+          "expected": [
+            "Lisbon",
+            "March"
+          ],
+          "got": [
+            "Lisbon",
+            "March"
+          ],
+          "found": true,
+          "found_schema": true,
+          "error": ""
+        },
+        {
+          "label": "sister",
+          "expected": [
+            "Dana"
+          ],
+          "got": [
+            "Dana"
+          ],
+          "found": true,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "occupation",
+          "expected": [
+            "marine biologist"
+          ],
+          "got": [
+            "marine biologist"
+          ],
+          "found": true,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "children",
+          "expected": [
+            "2"
+          ],
+          "got": [
+            "2"
+          ],
+          "found": true,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "router",
+          "expected": [
+            "Netgear Nighthawk"
+          ],
+          "got": [
+            "Netgear Nighthawk"
+          ],
+          "found": true,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "coffee",
+          "expected": [
+            "black"
+          ],
+          "got": [
+            "false"
+          ],
+          "found": false,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "birthday",
+          "expected": [
+            "12 June"
+          ],
+          "got": [
+            "12 June"
+          ],
+          "found": true,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "language",
+          "expected": [
+            "Spanish"
+          ],
+          "got": [],
+          "found": false,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "bedrooms",
+          "expected": [
+            "4"
+          ],
+          "got": [
+            "4"
+          ],
+          "found": true,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "spare_key",
+          "expected": [
+            "under the blue pot"
+          ],
+          "got": [
+            "under the blue pot"
+          ],
+          "found": true,
+          "found_schema": true,
+          "error": ""
+        },
+        {
+          "label": "agreement",
+          "expected": [
+            "keep answers short"
+          ],
+          "got": [
+            "keep answers short"
+          ],
+          "found": true,
+          "found_schema": true,
+          "error": ""
+        }
+      ]
+    },
+    "qwen2.5:7b": {
+      "model": "qwen2.5:7b",
+      "lineage": "qwen",
+      "recall": 0.5,
+      "recall_schema": 0.278,
+      "found_turns": [
+        0,
+        1,
+        2,
+        4,
+        5,
+        6,
+        13,
+        15,
+        17
+      ],
+      "missed_turns": [
+        3,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        14,
+        16
+      ],
+      "median_ms": 2267,
+      "raw": [
+        {
+          "label": "user_name",
+          "expected": [
+            "Boz"
+          ],
+          "got": [
+            "Boz"
+          ],
+          "found": true,
+          "found_schema": true,
+          "error": ""
+        },
+        {
+          "label": "assistant_name",
+          "expected": [
+            "Hermes"
+          ],
+          "got": [
+            "Hermes"
+          ],
+          "found": true,
+          "found_schema": true,
+          "error": ""
+        },
+        {
+          "label": "guitar_strings",
+          "expected": [
+            "6"
+          ],
+          "got": [
+            "6"
+          ],
+          "found": true,
+          "found_schema": true,
+          "error": ""
+        },
+        {
+          "label": "car",
+          "expected": [
+            "Mazda MX-5",
+            "red"
+          ],
+          "got": [
+            "red"
+          ],
+          "found": false,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "dog",
+          "expected": [
+            "Rufus"
+          ],
+          "got": [
+            "Rufus"
+          ],
+          "found": true,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "allergy",
+          "expected": [
+            "peanuts"
+          ],
+          "got": [
+            "peanuts"
+          ],
+          "found": true,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "favourite_colour",
+          "expected": [
+            "teal"
+          ],
+          "got": [
+            "teal"
+          ],
+          "found": true,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "trip",
+          "expected": [
+            "Lisbon",
+            "March"
+          ],
+          "got": [
+            "March"
+          ],
+          "found": false,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "sister",
+          "expected": [
+            "Dana"
+          ],
+          "got": [],
+          "found": false,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "occupation",
+          "expected": [
+            "marine biologist"
+          ],
+          "got": [],
+          "found": false,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "children",
+          "expected": [
+            "2"
+          ],
+          "got": [],
+          "found": false,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "router",
+          "expected": [
+            "Netgear Nighthawk"
+          ],
+          "got": [
+            "wifi_router"
+          ],
+          "found": false,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "coffee",
+          "expected": [
+            "black"
+          ],
+          "got": [
+            "none"
+          ],
+          "found": false,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "birthday",
+          "expected": [
+            "12 June"
+          ],
+          "got": [
+            "12 June"
+          ],
+          "found": true,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "language",
+          "expected": [
+            "Spanish"
+          ],
+          "got": [],
+          "found": false,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "bedrooms",
+          "expected": [
+            "4"
+          ],
+          "got": [
+            "4"
+          ],
+          "found": true,
+          "found_schema": true,
+          "error": ""
+        },
+        {
+          "label": "spare_key",
+          "expected": [
+            "under the blue pot"
+          ],
+          "got": [],
+          "found": false,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "agreement",
+          "expected": [
+            "keep answers short"
+          ],
+          "got": [
+            "keep answers short"
+          ],
+          "found": true,
+          "found_schema": true,
+          "error": ""
+        }
+      ]
+    },
+    "sorc/qwen3.5-claude-4.6-opus-q4:4b": {
+      "model": "sorc/qwen3.5-claude-4.6-opus-q4:4b",
+      "lineage": "qwen",
+      "recall": 0.889,
+      "recall_schema": 0.333,
+      "found_turns": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        6,
+        7,
+        8,
+        9,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17
+      ],
+      "missed_turns": [
+        5,
+        10
+      ],
+      "median_ms": 4129,
+      "raw": [
+        {
+          "label": "user_name",
+          "expected": [
+            "Boz"
+          ],
+          "got": [
+            "Boz"
+          ],
+          "found": true,
+          "found_schema": true,
+          "error": ""
+        },
+        {
+          "label": "assistant_name",
+          "expected": [
+            "Hermes"
+          ],
+          "got": [
+            "Hermes"
+          ],
+          "found": true,
+          "found_schema": true,
+          "error": ""
+        },
+        {
+          "label": "guitar_strings",
+          "expected": [
+            "6"
+          ],
+          "got": [
+            "6"
+          ],
+          "found": true,
+          "found_schema": true,
+          "error": ""
+        },
+        {
+          "label": "car",
+          "expected": [
+            "Mazda MX-5",
+            "red"
+          ],
+          "got": [
+            "Mazda MX-5",
+            "red"
+          ],
+          "found": true,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "dog",
+          "expected": [
+            "Rufus"
+          ],
+          "got": [
+            "Rufus"
+          ],
+          "found": true,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "allergy",
+          "expected": [
+            "peanuts"
+          ],
+          "got": [
+            "allergic"
+          ],
+          "found": false,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "favourite_colour",
+          "expected": [
+            "teal"
+          ],
+          "got": [
+            "teal"
+          ],
+          "found": true,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "trip",
+          "expected": [
+            "Lisbon",
+            "March"
+          ],
+          "got": [
+            "Lisbon",
+            "March"
+          ],
+          "found": true,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "sister",
+          "expected": [
+            "Dana"
+          ],
+          "got": [
+            "Dana"
+          ],
+          "found": true,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "occupation",
+          "expected": [
+            "marine biologist"
+          ],
+          "got": [
+            "marine biologist"
+          ],
+          "found": true,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "children",
+          "expected": [
+            "2"
+          ],
+          "got": [],
+          "found": false,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "router",
+          "expected": [
+            "Netgear Nighthawk"
+          ],
+          "got": [
+            "Netgear Nighthawk"
+          ],
+          "found": true,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "coffee",
+          "expected": [
+            "black"
+          ],
+          "got": [
+            "black"
+          ],
+          "found": true,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "birthday",
+          "expected": [
+            "12 June"
+          ],
+          "got": [
+            "12 June"
+          ],
+          "found": true,
+          "found_schema": true,
+          "error": ""
+        },
+        {
+          "label": "language",
+          "expected": [
+            "Spanish"
+          ],
+          "got": [
+            "Spanish"
+          ],
+          "found": true,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "bedrooms",
+          "expected": [
+            "4"
+          ],
+          "got": [
+            "4"
+          ],
+          "found": true,
+          "found_schema": true,
+          "error": ""
+        },
+        {
+          "label": "spare_key",
+          "expected": [
+            "under the blue pot"
+          ],
+          "got": [
+            "spare key",
+            "blue"
+          ],
+          "found": true,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "agreement",
+          "expected": [
+            "keep answers short"
+          ],
+          "got": [
+            "keep answers short"
+          ],
+          "found": true,
+          "found_schema": true,
+          "error": ""
+        }
+      ]
+    },
+    "llama3.2:3b": {
+      "model": "llama3.2:3b",
+      "lineage": "llama",
+      "recall": 0.889,
+      "recall_schema": 0.278,
+      "found_turns": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        17
+      ],
+      "missed_turns": [
+        5,
+        16
+      ],
+      "median_ms": 7793,
+      "raw": [
+        {
+          "label": "user_name",
+          "expected": [
+            "Boz"
+          ],
+          "got": [
+            "Boz"
+          ],
+          "found": true,
+          "found_schema": true,
+          "error": ""
+        },
+        {
+          "label": "assistant_name",
+          "expected": [
+            "Hermes"
+          ],
+          "got": [
+            "Hermes"
+          ],
+          "found": true,
+          "found_schema": true,
+          "error": ""
+        },
+        {
+          "label": "guitar_strings",
+          "expected": [
+            "6"
+          ],
+          "got": [
+            "6"
+          ],
+          "found": true,
+          "found_schema": true,
+          "error": ""
+        },
+        {
+          "label": "car",
+          "expected": [
+            "Mazda MX-5",
+            "red"
+          ],
+          "got": [
+            "Mazda",
+            "MX-5",
+            "red"
+          ],
+          "found": true,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "dog",
+          "expected": [
+            "Rufus"
+          ],
+          "got": [
+            "Rufus"
+          ],
+          "found": true,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "allergy",
+          "expected": [
+            "peanuts"
+          ],
+          "got": [
+            "allergic to"
+          ],
+          "found": false,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "favourite_colour",
+          "expected": [
+            "teal"
+          ],
+          "got": [
+            "teal"
+          ],
+          "found": true,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "trip",
+          "expected": [
+            "Lisbon",
+            "March"
+          ],
+          "got": [
+            "Lisbon",
+            "March"
+          ],
+          "found": true,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "sister",
+          "expected": [
+            "Dana"
+          ],
+          "got": [
+            "Dana"
+          ],
+          "found": true,
+          "found_schema": true,
+          "error": ""
+        },
+        {
+          "label": "occupation",
+          "expected": [
+            "marine biologist"
+          ],
+          "got": [
+            "marine biologist"
+          ],
+          "found": true,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "children",
+          "expected": [
+            "2"
+          ],
+          "got": [
+            "2"
+          ],
+          "found": true,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "router",
+          "expected": [
+            "Netgear Nighthawk"
+          ],
+          "got": [
+            "Nighthawk"
+          ],
+          "found": true,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "coffee",
+          "expected": [
+            "black"
+          ],
+          "got": [
+            "black"
+          ],
+          "found": true,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "birthday",
+          "expected": [
+            "12 June"
+          ],
+          "got": [
+            "12 June"
+          ],
+          "found": true,
+          "found_schema": true,
+          "error": ""
+        },
+        {
+          "label": "language",
+          "expected": [
+            "Spanish"
+          ],
+          "got": [
+            "Spanish"
+          ],
+          "found": true,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "bedrooms",
+          "expected": [
+            "4"
+          ],
+          "got": [
+            "4"
+          ],
+          "found": true,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "spare_key",
+          "expected": [
+            "under the blue pot"
+          ],
+          "got": [
+            "under the spare key"
+          ],
+          "found": false,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "agreement",
+          "expected": [
+            "keep answers short"
+          ],
+          "got": [
+            "short"
+          ],
+          "found": true,
+          "found_schema": false,
+          "error": ""
+        }
+      ]
+    },
+    "gemma3:4b": {
+      "model": "gemma3:4b",
+      "lineage": "gemma",
+      "recall": 0.556,
+      "recall_schema": 0.278,
+      "found_turns": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        6,
+        11,
+        12,
+        13,
+        15
+      ],
+      "missed_turns": [
+        5,
+        7,
+        8,
+        9,
+        10,
+        14,
+        16,
+        17
+      ],
+      "median_ms": 3120,
+      "raw": [
+        {
+          "label": "user_name",
+          "expected": [
+            "Boz"
+          ],
+          "got": [
+            "Boz"
+          ],
+          "found": true,
+          "found_schema": true,
+          "error": ""
+        },
+        {
+          "label": "assistant_name",
+          "expected": [
+            "Hermes"
+          ],
+          "got": [
+            "Hermes"
+          ],
+          "found": true,
+          "found_schema": true,
+          "error": ""
+        },
+        {
+          "label": "guitar_strings",
+          "expected": [
+            "6"
+          ],
+          "got": [
+            "6"
+          ],
+          "found": true,
+          "found_schema": true,
+          "error": ""
+        },
+        {
+          "label": "car",
+          "expected": [
+            "Mazda MX-5",
+            "red"
+          ],
+          "got": [
+            "red",
+            "mazda",
+            "mx-5"
+          ],
+          "found": true,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "dog",
+          "expected": [
+            "Rufus"
+          ],
+          "got": [
+            "Rufus"
+          ],
+          "found": true,
+          "found_schema": true,
+          "error": ""
+        },
+        {
+          "label": "allergy",
+          "expected": [
+            "peanuts"
+          ],
+          "got": [],
+          "found": false,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "favourite_colour",
+          "expected": [
+            "teal"
+          ],
+          "got": [
+            "teal"
+          ],
+          "found": true,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "trip",
+          "expected": [
+            "Lisbon",
+            "March"
+          ],
+          "got": [],
+          "found": false,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "sister",
+          "expected": [
+            "Dana"
+          ],
+          "got": [],
+          "found": false,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "occupation",
+          "expected": [
+            "marine biologist"
+          ],
+          "got": [],
+          "found": false,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "children",
+          "expected": [
+            "2"
+          ],
+          "got": [],
+          "found": false,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "router",
+          "expected": [
+            "Netgear Nighthawk"
+          ],
+          "got": [
+            "Netgear Nighthawk"
+          ],
+          "found": true,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "coffee",
+          "expected": [
+            "black"
+          ],
+          "got": [
+            "black"
+          ],
+          "found": true,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "birthday",
+          "expected": [
+            "12 June"
+          ],
+          "got": [
+            "12",
+            "June"
+          ],
+          "found": true,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "language",
+          "expected": [
+            "Spanish"
+          ],
+          "got": [],
+          "found": false,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "bedrooms",
+          "expected": [
+            "4"
+          ],
+          "got": [
+            "4"
+          ],
+          "found": true,
+          "found_schema": true,
+          "error": ""
+        },
+        {
+          "label": "spare_key",
+          "expected": [
+            "under the blue pot"
+          ],
+          "got": [],
+          "found": false,
+          "found_schema": false,
+          "error": ""
+        },
+        {
+          "label": "agreement",
+          "expected": [
+            "keep answers short"
+          ],
+          "got": [],
+          "found": false,
+          "found_schema": false,
+          "error": ""
+        }
+      ]
+    }
+  },
+  "pairs": [
+    {
+      "pair": [
+        "qwen3.5:4b",
+        "qwen3.5:9b"
+      ],
+      "lineages": [
+        "qwen",
+        "qwen"
+      ],
+      "cross_lineage": false,
+      "miss_overlap": 0.333,
+      "union_recall": 0.944
+    },
+    {
+      "pair": [
+        "qwen3.5:4b",
+        "qwen2.5:7b"
+      ],
+      "lineages": [
+        "qwen",
+        "qwen"
+      ],
+      "cross_lineage": false,
+      "miss_overlap": 0.222,
+      "union_recall": 0.889
+    },
+    {
+      "pair": [
+        "qwen3.5:4b",
+        "sorc/qwen3.5-claude-4.6-opus-q4:4b"
+      ],
+      "lineages": [
+        "qwen",
+        "qwen"
+      ],
+      "cross_lineage": false,
+      "miss_overlap": 0.0,
+      "union_recall": 1.0
+    },
+    {
+      "pair": [
+        "qwen3.5:4b",
+        "llama3.2:3b"
+      ],
+      "lineages": [
+        "qwen",
+        "llama"
+      ],
+      "cross_lineage": true,
+      "miss_overlap": 0.0,
+      "union_recall": 1.0
+    },
+    {
+      "pair": [
+        "qwen3.5:4b",
+        "gemma3:4b"
+      ],
+      "lineages": [
+        "qwen",
+        "gemma"
+      ],
+      "cross_lineage": true,
+      "miss_overlap": 0.25,
+      "union_recall": 0.889
+    },
+    {
+      "pair": [
+        "qwen3.5:9b",
+        "qwen2.5:7b"
+      ],
+      "lineages": [
+        "qwen",
+        "qwen"
+      ],
+      "cross_lineage": false,
+      "miss_overlap": 0.222,
+      "union_recall": 0.889
+    },
+    {
+      "pair": [
+        "qwen3.5:9b",
+        "sorc/qwen3.5-claude-4.6-opus-q4:4b"
+      ],
+      "lineages": [
+        "qwen",
+        "qwen"
+      ],
+      "cross_lineage": false,
+      "miss_overlap": 0.0,
+      "union_recall": 1.0
+    },
+    {
+      "pair": [
+        "qwen3.5:9b",
+        "llama3.2:3b"
+      ],
+      "lineages": [
+        "qwen",
+        "llama"
+      ],
+      "cross_lineage": true,
+      "miss_overlap": 0.0,
+      "union_recall": 1.0
+    },
+    {
+      "pair": [
+        "qwen3.5:9b",
+        "gemma3:4b"
+      ],
+      "lineages": [
+        "qwen",
+        "gemma"
+      ],
+      "cross_lineage": true,
+      "miss_overlap": 0.111,
+      "union_recall": 0.944
+    },
+    {
+      "pair": [
+        "qwen2.5:7b",
+        "sorc/qwen3.5-claude-4.6-opus-q4:4b"
+      ],
+      "lineages": [
+        "qwen",
+        "qwen"
+      ],
+      "cross_lineage": false,
+      "miss_overlap": 0.1,
+      "union_recall": 0.944
+    },
+    {
+      "pair": [
+        "qwen2.5:7b",
+        "llama3.2:3b"
+      ],
+      "lineages": [
+        "qwen",
+        "llama"
+      ],
+      "cross_lineage": true,
+      "miss_overlap": 0.1,
+      "union_recall": 0.944
+    },
+    {
+      "pair": [
+        "qwen2.5:7b",
+        "gemma3:4b"
+      ],
+      "lineages": [
+        "qwen",
+        "gemma"
+      ],
+      "cross_lineage": true,
+      "miss_overlap": 0.545,
+      "union_recall": 0.667
+    },
+    {
+      "pair": [
+        "sorc/qwen3.5-claude-4.6-opus-q4:4b",
+        "llama3.2:3b"
+      ],
+      "lineages": [
+        "qwen",
+        "llama"
+      ],
+      "cross_lineage": true,
+      "miss_overlap": 0.333,
+      "union_recall": 0.944
+    },
+    {
+      "pair": [
+        "sorc/qwen3.5-claude-4.6-opus-q4:4b",
+        "gemma3:4b"
+      ],
+      "lineages": [
+        "qwen",
+        "gemma"
+      ],
+      "cross_lineage": true,
+      "miss_overlap": 0.25,
+      "union_recall": 0.889
+    },
+    {
+      "pair": [
+        "llama3.2:3b",
+        "gemma3:4b"
+      ],
+      "lineages": [
+        "llama",
+        "gemma"
+      ],
+      "cross_lineage": true,
+      "miss_overlap": 0.25,
+      "union_recall": 0.889
+    }
+  ]
+}

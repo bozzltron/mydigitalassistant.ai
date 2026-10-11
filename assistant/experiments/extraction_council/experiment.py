@@ -185,7 +185,65 @@ def _pairwise(results: dict[str, dict]) -> list[dict]:
     return rows
 
 
+async def arm_parallel() -> dict:
+    """Time each member alone, then the pairs concurrently; watch residency."""
+    import httpx
+
+    async def extract(model: str, user: str, reply: str) -> None:
+        client = OllamaClient(base_url=OLLAMA)
+        client.utility_model = model
+        await extract_facts(user, reply, client)
+
+    async def loaded() -> list[str]:
+        async with httpx.AsyncClient() as c:
+            r = await c.get(f"{OLLAMA}/api/ps", timeout=10)
+            return [m["name"] for m in r.json().get("models", [])]
+
+    arms: dict[str, list[str]] = {
+        "qwen3.5:4b_alone": ["qwen3.5:4b"],
+        "sorc_q4_4b_alone": ["sorc/qwen3.5-claude-4.6-opus-q4:4b"],
+        "best_pair_parallel": ["qwen3.5:4b", "sorc/qwen3.5-claude-4.6-opus-q4:4b"],
+        "warm_pair_parallel": ["qwen3.5:4b", "qwen3.5:9b"],
+    }
+    out: dict[str, dict] = {}
+    for name, models in arms.items():
+        before = await loaded()
+        times: list[float] = []
+        for _, user, reply, _ in TURNS:
+            t0 = time.time()
+            await asyncio.gather(*(extract(m, user, reply) for m in models))
+            times.append(time.time() - t0)
+        after = await loaded()
+        out[name] = {
+            "models": models,
+            "median_ms": round(statistics.median(times) * 1000),
+            "mean_ms": round(statistics.mean(times) * 1000),
+            "loaded_before": before,
+            "loaded_after": after,
+        }
+        print(
+            f"  [{name:20}] median {out[name]['median_ms']:6}ms  "
+            f"loaded_after={len(after)} {after}"
+        )
+    return out
+
+
 async def main() -> None:
+    if os.environ.get("EXP_ARM") == "parallel":
+        print("[parallel] council members run concurrently")
+        par = await arm_parallel()
+        single = par["qwen3.5:4b_alone"]["median_ms"]
+        pair = par["best_pair_parallel"]["median_ms"]
+        sum_alone = single + par["sorc_q4_4b_alone"]["median_ms"]
+        print("\n=== summary ===")
+        print(f"  incumbent alone        {single}ms")
+        print(f"  slower member alone    {max(single, par['sorc_q4_4b_alone']['median_ms'])}ms")
+        print(f"  pair in parallel       {pair}ms   (serial sum would be {sum_alone}ms)")
+        print(f"  warm pair in parallel  {par['warm_pair_parallel']['median_ms']}ms")
+        (HERE / "result_parallel.json").write_text(json.dumps(par, indent=2))
+        print(f"\nwrote {HERE / 'result_parallel.json'}")
+        return
+
     results: dict[str, dict] = {}
     for model in CANDIDATES:
         print(f"\n[{model}]")
