@@ -1,69 +1,65 @@
 # Result — does an explicit terminal declaration beat the `needs_action` judgement?
 
-**Not on the pre-registered bar — but it is correct, and the bar may have measured the
-wrong axis.** Requiring the turn to end with `finalize` makes announced-but-not-act
-incomplete by construction (proven deterministically), the model **complies** (4/4
-answer turns declared completion), and completion is **unchanged** (change 4/4,
-announce 2/2). It costs **~1–2 extra rounds on action turns** (median 2 → 4), which
-fails H3. So per falsification condition 3, the judgement stays — but the reason is
-cost, not correctness.
+**No. Retire it.** The structural declaration is *correct* — the model complies, and
+completion is unchanged — but it is **not cheaper**, and a contract that forbids the
+re-check made it *worse*, not better. The cost is inherent to naming an explicit end
+state, so the judgement stays.
 
 ## By hypothesis
 
 | | Verdict | Evidence |
 |---|---|---|
-| **H1 — compliance ≥ 90%** | **holds** | 4/4 answer turns called `finalize` under F (0/5 under C) |
-| **H2 — completion ≥ judged** | **holds** | change 4/4 vs 4/4; announce 2/2 vs 2/2 |
-| **H3 — rounds ≤ judged + 0.5** | **fails** | 2.70 vs 1.82 (median 2.5 vs 2); action turns 4 vs 2 |
+| **H1 — compliance ≥ 90%** | **holds** | F 4/4, F2 5/5 answer turns called `finalize` (C: 0/5) |
+| **H2 — completion ≥ judged** | **holds** | change 4/4 = 4/4; announce 2/2 = 2/2, all three policies |
+| **H3 — rounds ≤ judged + 0.5** | **fails** | F 2.60 vs C 2.00; action turns median 4 vs 2.5 |
 | **H4 — structural catch, no judgement** | **holds** | deterministic: 2 rounds, finalized, judgement consulted 0 times |
+| **H5 — the tightening closes the gap** | **fails** | F2 3.18 vs F 2.60; action turns median 4 → 5 |
 
 ## Falsification conditions, resolved
 
-1. H1 fails → not triggered (100%).
+1. H1 fails → not triggered.
 2. H1 holds but H2 fails → not triggered (completion equal).
-3. H1, H2 **and** H3 hold → **not met**: H3 fails → **keep the judgement**.
+3. H1, H2 **and** H3 hold → **not met**: H3 fails.
+4. F2 compliance < 90% or completion < C → not triggered (5/5, 4/4, 2/2).
+5. F2 rounds still > C + 0.5 → **triggered** → **retire the structural idea.**
 
 ## The finding
 
-- **The architectural idea is sound.** The ambiguity the judgement exists to resolve —
-  "no tool call" could be an answer or an unfinished action — genuinely disappears when
-  a turn must declare its end. The model complies without complaint (it is told to), and
-  it does not skip actions to reach the declaration.
-- **But it is not free.** The cost is not the `finalize` call; it is that naming an
-  explicit end state makes the model **verify before declaring** — `write_file,
-  read_file, finalize`, and once `write_file ×4`. On answer turns this is nothing
-  (median 1 round); on action turns it is ~1–2 rounds.
-- **The judgement and the declaration are not substitutes on the same axis.** The
-  judgement costs ~70 ms *and a model, a scope, a threshold, and a shared bound*; the
-  declaration costs ~1–2 rounds *and nothing else*. My pre-registered bar priced the
-  first in the second's currency and so could only ever have returned "keep the
-  judgement". That is a flaw in the bar, named here rather than buried.
+- **The idea is sound and the model cooperates.** Removing the ambiguity — "no tool call"
+  could be an answer or an unfinished action — genuinely works: told to end by declaring,
+  the model declares, and it does not skip actions to get there.
+- **But an explicit end state costs work.** The first run suggested the model verifies
+  before declaring (`write_file, read_file, finalize`). The addendum tested that directly
+  by forbidding the re-check — and the rounds went **up**, not down. So the cost is not
+  the verification pass; it is that **making the turn's end explicit makes the model do
+  more tool work to justify the declaration.** The mechanism is behavioural, not
+  accounting, and it did not respond to instruction.
+- **Twice now, machinery around the model has failed to pay.** The shared-nudge-bound
+  probe was negative (the case never occurred); this one is negative on cost. The
+  architecture is telling us that **guards are not free and the model does not become
+  cheaper by being watched** — which is the frame any further redundancy should be
+  judged in.
 
 ## What this proves, and what it does not
 
-- **Proved:** a structural terminal declaration catches the announce-and-stop shape
-  with no judgement, and the model complies at 100% on answer turns and 100% on
-  completion. The alternative is *valid*.
-- **Not proved:** that it is *worth* it. The simplification (retire `needs_action`, its
-  model, its scope, its threshold) is real and unmeasured by this probe; the latency
-  cost is real and measured. Which matters more is a product call the probe cannot make.
-- **Not proved:** whether a **tighter contract** removes the verification pass —
-  "call `finalize` as soon as the work is done; do not re-check" — which is the obvious
-  next lever if the round cost is the objection.
-- **Not proved:** that the structural check's hole (a `finalize` that skipped the
-  action) is never hit; it was not hit here, at n = 4–5.
+- **Proved:** the structural declaration is a valid alternative to the judgement —
+  correct, compliant, and judgement-free — but it costs ~1–2 rounds per action turn and
+  that cost is not removable by contract wording.
+- **Not proved:** that the *fleet* saving (retiring a model, a scope, a threshold, a
+  shared bound) is smaller than the latency cost. The probe priced latency only. On the
+  measured axis, though, the judgement wins, and a second attempt to flip it failed.
 
 ## Recommendation
 
-**Keep the judgement**, as pre-registered. But record the trade honestly:
+**Keep the judgement; retire the structural idea.** Per falsification condition 5, the
+extra rounds are inherent, so there is nothing to gain by re-contracting.
 
-- The terminal declaration is a **correct, simpler alternative** at ~1–2 rounds per
-  action turn. If action turns are rare (measure the logs), the round cost is small and
-  the fleet simplification is worth re-taking.
-- The cheapest way to decide is a **contract tightening** — does "do not re-check before
-  finalizing" remove the extra rounds? — which is a small variant of this same probe and
-  the only thing standing between the two designs.
-- The `require_terminal` path in `stream_tool_loop` and `build_system_prompt` is
-  **retained** (additive, default-off, tested) so this probe is reproducible. If the
-  idea is retired outright, remove them; they exist for this experiment and this
-  documented alternative.
+- Remove the `require_terminal` path from `stream_tool_loop`, the contract variants from
+  `llm_client`, and the terminal regression test — they exist only for this experiment,
+  and the experiment is closed. (They are retained in this commit history; the removal
+  is the clean-ship follow-up.)
+- The durable lesson is the one to carry forward: **redundancy and guarding have a
+  measured cost, and two independent attempts to buy reliability cheaper than the
+  current judgement both failed.** Any "council of models" should be pre-registered
+  against a ground truth and judged on accuracy-per-cost, not adopted for its
+  resemblance to fault-tolerant hardware.

@@ -19,13 +19,38 @@
       "expects_action": false,
       "rounds": 1,
       "acted": false,
-      "wall_s": 13.4,
+      "wall_s": 3.9,
       "class": "answer"
     },
     {
+      "tool_names": [
+        "finalize"
+      ],
+      "finalized": true,
+      "acting": 0,
       "policy": "F",
       "request": "What is my name?",
-      "error": "HTTPStatusError: Server error '500 Internal Server Error' for url 'http://host.docker.internal:11434/api/chat'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500",
+      "name": "term_f_0.md",
+      "expects_action": false,
+      "rounds": 1,
+      "acted": false,
+      "wall_s": 4.6,
+      "class": "answer"
+    },
+    {
+      "tool_names": [
+        "recall",
+        "finalize"
+      ],
+      "finalized": true,
+      "acting": 0,
+      "policy": "F2",
+      "request": "What is my name?",
+      "name": "term_f2_0.md",
+      "expects_action": false,
+      "rounds": 2,
+      "acted": false,
+      "wall_s": 12.5,
       "class": "answer"
     },
     {
@@ -40,7 +65,22 @@
       "expects_action": false,
       "rounds": 1,
       "acted": false,
-      "wall_s": 11.7,
+      "wall_s": 13.9,
+      "class": "answer"
+    },
+    {
+      "tool_names": [
+        "finalize"
+      ],
+      "finalized": true,
+      "acting": 1,
+      "policy": "F2",
+      "request": "Explain how photosynthesis works",
+      "name": "term_f2_1.md",
+      "expects_action": false,
+      "rounds": 2,
+      "acted": false,
+      "wall_s": 62.3,
       "class": "answer"
     },
     {
@@ -53,7 +93,22 @@
       "expects_action": false,
       "rounds": 1,
       "acted": false,
-      "wall_s": 8.9,
+      "wall_s": 11.6,
+      "class": "answer"
+    },
+    {
+      "tool_names": [
+        "finalize"
+      ],
+      "finalized": true,
+      "acting": 0,
+      "policy": "F2",
+      "request": "What's the capital of France?",
+      "name": "term_f2_2.md",
+      "expects_action": false,
+      "rounds": 1,
+      "acted": false,
+      "wall_s": 3.8,
       "class": "answer"
     },
     {
@@ -66,37 +121,13 @@
       "expects_action": false,
       "rounds": 1,
       "acted": false,
-      "wall_s": 2.8,
+      "wall_s": 2.9,
       "class": "answer"
     },
     {
-      "tool_names": [
-        "finalize"
-      ],
-      "finalized": true,
-      "acting": 0,
       "policy": "F",
       "request": "What's the capital of France?",
-      "name": "term_f_2.md",
-      "expects_action": false,
-      "rounds": 1,
-      "acted": false,
-      "wall_s": 3.8,
-      "class": "answer"
-    },
-    {
-      "tool_names": [
-        "finalize"
-      ],
-      "finalized": true,
-      "acting": 1,
-      "policy": "F",
-      "request": "Thanks, that's helpful",
-      "name": "term_f_3.md",
-      "expects_action": false,
-      "rounds": 2,
-      "acted": false,
-      "wall_s": 4.6,
+      "error": "HTTPStatusError: Server error '500 Internal Server Error' for url 'http://host.docker.internal:11434/api/chat'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500",
       "class": "answer"
     },
     {
@@ -109,20 +140,37 @@
       "expects_action": false,
       "rounds": 1,
       "acted": false,
-      "wall_s": 3.0,
+      "wall_s": 3.1,
       "class": "answer"
     },
     {
-      "tool_names": [],
-      "finalized": false,
+      "tool_names": [
+        "finalize"
+      ],
+      "finalized": true,
       "acting": 0,
-      "policy": "C",
-      "request": "Why is the sky blue?",
-      "name": "term_c_4.md",
+      "policy": "F",
+      "request": "Thanks, that's helpful",
+      "name": "term_f_3.md",
       "expects_action": false,
       "rounds": 1,
       "acted": false,
-      "wall_s": 4.8,
+      "wall_s": 4.4,
+      "class": "answer"
+    },
+    {
+      "tool_names": [
+        "finalize"
+      ],
+      "finalized": true,
+      "acting": 1,
+      "policy": "F2",
+      "request": "Thanks, that's helpful",
+      "name": "term_f2_3.md",
+      "expects_action": false,
+      "rounds": 2,
+      "acted": false,
+      "wall_s": 5.1,
       "class": "answer"
     },
     {
@@ -137,7 +185,35 @@
       "expects_action": false,
       "rounds": 1,
       "acted": false,
-      "wall_s": 6.3,
+      "wall_s": 6.5,
+      "class": "answer"
+    },
+    {
+      "tool_names": [
+        "finalize"
+      ],
+      "finalized": true,
+      "acting": 0,
+      "policy": "F2",
+      "request": "Why is the sky blue?",
+      "name": "term_f2_4.md",
+      "expects_action": false,
+      "rounds": 1,
+      "acted": false,
+      "wall_s": 9.0,
+      "class": "answer"
+    },
+    {
+      "tool_names": [],
+      "finalized": false,
+      "acting": 0,
+      "policy": "C",
+      "request": "Why is the sky blue?",
+      "name": "term_c_4.md",
+      "expects_action": false,
+      "rounds": 1,
+      "acted": false,
+      "wall_s": 41.2,
       "class": "answer"
     },
     {
@@ -145,17 +221,18 @@
         "write_file",
         "write_file",
         "write_file",
+        "write_file",
         "write_file"
       ],
       "finalized": false,
       "acting": 1,
-      "policy": "F",
-      "request": "Create a file called term_f_5.md with a short release checklist",
-      "name": "term_f_5.md",
+      "policy": "F2",
+      "request": "Create a file called term_f2_5.md with a short release checklist",
+      "name": "term_f2_5.md",
       "expects_action": false,
-      "rounds": 6,
+      "rounds": 7,
       "acted": true,
-      "wall_s": 29.8,
+      "wall_s": 42.5,
       "class": "change"
     },
     {
@@ -170,7 +247,25 @@
       "expects_action": true,
       "rounds": 2,
       "acted": true,
-      "wall_s": 13.6,
+      "wall_s": 14.2,
+      "class": "change"
+    },
+    {
+      "tool_names": [
+        "write_file",
+        "write_file",
+        "write_file",
+        "finalize"
+      ],
+      "finalized": true,
+      "acting": 0,
+      "policy": "F",
+      "request": "Create a file called term_f_5.md with a short release checklist",
+      "name": "term_f_5.md",
+      "expects_action": false,
+      "rounds": 4,
+      "acted": true,
+      "wall_s": 81.7,
       "class": "change"
     },
     {
@@ -186,7 +281,7 @@
       "expects_action": true,
       "rounds": 3,
       "acted": true,
-      "wall_s": 29.5,
+      "wall_s": 56.1,
       "class": "change"
     },
     {
@@ -203,23 +298,58 @@
       "expects_action": false,
       "rounds": 4,
       "acted": true,
-      "wall_s": 16.5,
+      "wall_s": 31.6,
       "class": "change"
     },
     {
       "tool_names": [
         "write_file",
+        "read_file",
         "finalize"
       ],
       "finalized": true,
-      "acting": 0,
+      "acting": 1,
+      "policy": "F2",
+      "request": "We want to create term_f2_6.md listing three tour cities",
+      "name": "term_f2_6.md",
+      "expects_action": false,
+      "rounds": 4,
+      "acted": true,
+      "wall_s": 25.1,
+      "class": "change"
+    },
+    {
+      "tool_names": [
+        "write_file",
+        "read_file"
+      ],
+      "finalized": false,
+      "acting": 1,
       "policy": "F",
       "request": "Please create term_f_7.md with a one-paragraph band bio",
       "name": "term_f_7.md",
       "expects_action": false,
-      "rounds": 2,
+      "rounds": 4,
       "acted": true,
-      "wall_s": 13.4,
+      "wall_s": 25.1,
+      "class": "change"
+    },
+    {
+      "tool_names": [
+        "write_file",
+        "write_file",
+        "read_file",
+        "finalize"
+      ],
+      "finalized": true,
+      "acting": 1,
+      "policy": "F2",
+      "request": "Please create term_f2_7.md with a one-paragraph band bio",
+      "name": "term_f2_7.md",
+      "expects_action": false,
+      "rounds": 5,
+      "acted": true,
+      "wall_s": 143.3,
       "class": "change"
     },
     {
@@ -241,6 +371,27 @@
       "tool_names": [
         "write_file",
         "write_file",
+        "write_file",
+        "write_file",
+        "finalize"
+      ],
+      "finalized": true,
+      "acting": 0,
+      "policy": "F2",
+      "request": "Write term_f2_8.md with today's plan",
+      "name": "term_f2_8.md",
+      "expects_action": false,
+      "rounds": 5,
+      "acted": true,
+      "wall_s": 50.4,
+      "class": "change"
+    },
+    {
+      "tool_names": [
+        "write_file",
+        "write_file",
+        "write_file",
+        "write_file",
         "write_file"
       ],
       "finalized": false,
@@ -249,44 +400,28 @@
       "request": "Write term_c_8.md with today's plan",
       "name": "term_c_8.md",
       "expects_action": true,
-      "rounds": 4,
+      "rounds": 6,
       "acted": true,
-      "wall_s": 26.6,
+      "wall_s": 42.6,
       "class": "change"
     },
     {
       "tool_names": [
         "write_file",
         "read_file",
+        "write_file",
         "finalize"
       ],
       "finalized": true,
-      "acting": 0,
+      "acting": 1,
       "policy": "F",
       "request": "Write term_f_8.md with today's plan",
       "name": "term_f_8.md",
       "expects_action": false,
-      "rounds": 3,
+      "rounds": 5,
       "acted": true,
-      "wall_s": 15.3,
+      "wall_s": 22.5,
       "class": "change"
-    },
-    {
-      "tool_names": [
-        "write_file",
-        "read_file",
-        "finalize"
-      ],
-      "finalized": true,
-      "acting": 0,
-      "policy": "F",
-      "request": "No edits to the notes. We want to create term_f_9.md",
-      "name": "term_f_9.md",
-      "expects_action": false,
-      "rounds": 3,
-      "acted": true,
-      "wall_s": 14.4,
-      "class": "announce"
     },
     {
       "tool_names": [
@@ -300,7 +435,74 @@
       "expects_action": true,
       "rounds": 2,
       "acted": true,
-      "wall_s": 9.2,
+      "wall_s": 7.9,
+      "class": "announce"
+    },
+    {
+      "tool_names": [
+        "write_file",
+        "finalize"
+      ],
+      "finalized": true,
+      "acting": 0,
+      "policy": "F",
+      "request": "No edits to the notes. We want to create term_f_9.md",
+      "name": "term_f_9.md",
+      "expects_action": false,
+      "rounds": 2,
+      "acted": true,
+      "wall_s": 9.3,
+      "class": "announce"
+    },
+    {
+      "tool_names": [
+        "write_file",
+        "finalize"
+      ],
+      "finalized": true,
+      "acting": 0,
+      "policy": "F2",
+      "request": "No edits to the notes. We want to create term_f2_9.md",
+      "name": "term_f2_9.md",
+      "expects_action": false,
+      "rounds": 2,
+      "acted": true,
+      "wall_s": 12.9,
+      "class": "announce"
+    },
+    {
+      "tool_names": [
+        "write_file",
+        "write_file",
+        "finalize"
+      ],
+      "finalized": true,
+      "acting": 0,
+      "policy": "F",
+      "request": "Can you create term_f_10.md with a generic press release template?",
+      "name": "term_f_10.md",
+      "expects_action": false,
+      "rounds": 3,
+      "acted": true,
+      "wall_s": 28.6,
+      "class": "announce"
+    },
+    {
+      "tool_names": [
+        "write_file",
+        "write_file",
+        "write_file",
+        "finalize"
+      ],
+      "finalized": true,
+      "acting": 0,
+      "policy": "F2",
+      "request": "Can you create term_f2_10.md with a generic press release template?",
+      "name": "term_f2_10.md",
+      "expects_action": false,
+      "rounds": 4,
+      "acted": true,
+      "wall_s": 39.6,
       "class": "announce"
     },
     {
@@ -315,25 +517,7 @@
       "expects_action": true,
       "rounds": 2,
       "acted": true,
-      "wall_s": 15.8,
-      "class": "announce"
-    },
-    {
-      "tool_names": [
-        "write_file",
-        "write_file",
-        "write_file",
-        "finalize"
-      ],
-      "finalized": true,
-      "acting": 0,
-      "policy": "F",
-      "request": "Can you create term_f_10.md with a generic press release template?",
-      "name": "term_f_10.md",
-      "expects_action": false,
-      "rounds": 4,
-      "acted": true,
-      "wall_s": 43.8,
+      "wall_s": 14.7,
       "class": "announce"
     }
   ]

@@ -68,3 +68,27 @@ difference, not an accounting artifact.
   action — was not hit: `change acted` and `announce acted` were 4/4 and 2/2. But n is
   small, so the hole is unmeasured rather than proven absent.
 - The deterministic arm proves the loop's policy, not the world.
+
+## Second run (addendum): the tightened contract
+
+`experiment.py` re-run on 2026-10-11 with three policies interleaved (C, F, F2) on the
+same 11 requests. C and F reproduced the first run (mean rounds 2.00 / 2.60 vs 1.82 /
+2.70), so the comparison is stable.
+
+| class | metric | C | F | F2 (tight) |
+|---|---|---|---|---|
+| answer | finalized | 0/5 | 4/4 | **5/5** |
+| answer | rounds (median) | 1 | 1 | **2** |
+| change | acted | 4/4 | 4/4 | **4/4** |
+| change | rounds (median) | 2.5 | 4.0 | **5.0** |
+| announce | acted | 2/2 | 2/2 | **2/2** |
+| announce | rounds (median) | 2.0 | 2.5 | **3.0** |
+| all | rounds (mean / median) | 2.00 / 2 | 2.60 / 2.5 | **3.18 / 2** |
+
+One F answer turn errored (`500`) and is excluded.
+
+**The tightening made it worse, not better.** Compliance and completion held (5/5,
+4/4, 2/2), but action-turn rounds *rose* (change median 4.0 → 5.0; `write_file ×4/×5`
+still appears), and answer turns stopped being free (median 1 → 2). Forbidding the
+re-check did not remove the work; the model did more of it. So the extra cost is
+**inherent to the explicit end state**, not to the verification pass.
