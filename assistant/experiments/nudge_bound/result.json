@@ -1,0 +1,244 @@
+{
+  "arm_a": {
+    "S_announce_read_final": {
+      "tool_names": [
+        "read_file"
+      ],
+      "stages": [
+        "acting"
+      ],
+      "acting_count": 1,
+      "action_nudge": true,
+      "wrote": false,
+      "outstanding_consulted": 0,
+      "rounds": 3
+    },
+    "C_read_final": {
+      "tool_names": [
+        "read_file"
+      ],
+      "stages": [
+        "acting"
+      ],
+      "acting_count": 1,
+      "action_nudge": false,
+      "wrote": false,
+      "outstanding_consulted": 1,
+      "rounds": 3
+    }
+  },
+  "arm_b": {
+    "rows": [
+      {
+        "tool_names": [
+          "write_file"
+        ],
+        "stages": [
+          "routing",
+          "recall",
+          "learning",
+          "responding"
+        ],
+        "acting_count": 0,
+        "action_nudge": false,
+        "wrote": true,
+        "key": "checklist",
+        "run": 1,
+        "name": "nudge_bound_checklist_1.md",
+        "message": "Create a file called nudge_bound_checklist_1.md with a short three-item release checklist",
+        "wall_s": 40.4,
+        "suppressed": false,
+        "outstanding_verdict": null
+      },
+      {
+        "tool_names": [
+          "write_file"
+        ],
+        "stages": [
+          "routing",
+          "recall",
+          "learning",
+          "responding"
+        ],
+        "acting_count": 0,
+        "action_nudge": false,
+        "wrote": true,
+        "key": "cities",
+        "run": 1,
+        "name": "nudge_bound_cities_1.md",
+        "message": "We want to create a file called nudge_bound_cities_1.md listing three tour cities",
+        "wall_s": 43.5,
+        "suppressed": false,
+        "outstanding_verdict": null
+      },
+      {
+        "tool_names": [
+          "write_file"
+        ],
+        "stages": [
+          "routing",
+          "recall",
+          "learning",
+          "responding"
+        ],
+        "acting_count": 0,
+        "action_nudge": false,
+        "wrote": true,
+        "key": "bio",
+        "run": 1,
+        "name": "nudge_bound_bio_1.md",
+        "message": "Please create nudge_bound_bio_1.md with a one-paragraph band bio",
+        "wall_s": 49.7,
+        "suppressed": false,
+        "outstanding_verdict": null
+      },
+      {
+        "tool_names": [],
+        "stages": [
+          "routing",
+          "recall",
+          "learning",
+          "responding"
+        ],
+        "acting_count": 0,
+        "action_nudge": false,
+        "wrote": false,
+        "key": "template",
+        "run": 1,
+        "name": "nudge_bound_template_1.md",
+        "message": "Can you create nudge_bound_template_1.md with a generic press release template?",
+        "wall_s": 40.2,
+        "suppressed": false,
+        "outstanding_verdict": null
+      },
+      {
+        "tool_names": [
+          "read_file",
+          "write_file",
+          "read_file"
+        ],
+        "stages": [
+          "routing",
+          "recall",
+          "learning",
+          "responding"
+        ],
+        "acting_count": 0,
+        "action_nudge": false,
+        "wrote": true,
+        "key": "plan",
+        "run": 1,
+        "name": "nudge_bound_plan_1.md",
+        "message": "Write nudge_bound_plan_1.md with today's plan",
+        "wall_s": 53.4,
+        "suppressed": false,
+        "outstanding_verdict": null
+      },
+      {
+        "tool_names": [
+          "write_file"
+        ],
+        "stages": [
+          "routing",
+          "recall",
+          "learning",
+          "responding"
+        ],
+        "acting_count": 0,
+        "action_nudge": false,
+        "wrote": true,
+        "key": "checklist",
+        "run": 2,
+        "name": "nudge_bound_checklist_2.md",
+        "message": "Create a file called nudge_bound_checklist_2.md with a short three-item release checklist",
+        "wall_s": 38.2,
+        "suppressed": false,
+        "outstanding_verdict": null
+      },
+      {
+        "tool_names": [
+          "write_file"
+        ],
+        "stages": [
+          "routing",
+          "recall",
+          "learning",
+          "responding"
+        ],
+        "acting_count": 0,
+        "action_nudge": false,
+        "wrote": true,
+        "key": "cities",
+        "run": 2,
+        "name": "nudge_bound_cities_2.md",
+        "message": "We want to create a file called nudge_bound_cities_2.md listing three tour cities",
+        "wall_s": 43.3,
+        "suppressed": false,
+        "outstanding_verdict": null
+      },
+      {
+        "tool_names": [
+          "write_file"
+        ],
+        "stages": [
+          "routing",
+          "recall",
+          "learning",
+          "responding"
+        ],
+        "acting_count": 0,
+        "action_nudge": false,
+        "wrote": true,
+        "key": "bio",
+        "run": 2,
+        "name": "nudge_bound_bio_2.md",
+        "message": "Please create nudge_bound_bio_2.md with a one-paragraph band bio",
+        "wall_s": 38.5,
+        "suppressed": false,
+        "outstanding_verdict": null
+      },
+      {
+        "tool_names": [
+          "write_file"
+        ],
+        "stages": [
+          "routing",
+          "recall",
+          "learning",
+          "responding"
+        ],
+        "acting_count": 0,
+        "action_nudge": false,
+        "wrote": true,
+        "key": "template",
+        "run": 2,
+        "name": "nudge_bound_template_2.md",
+        "message": "Can you create nudge_bound_template_2.md with a generic press release template?",
+        "wall_s": 46.0,
+        "suppressed": false,
+        "outstanding_verdict": null
+      },
+      {
+        "tool_names": [
+          "write_file"
+        ],
+        "stages": [
+          "routing",
+          "recall",
+          "learning",
+          "responding"
+        ],
+        "acting_count": 0,
+        "action_nudge": false,
+        "wrote": true,
+        "key": "plan",
+        "run": 2,
+        "name": "nudge_bound_plan_2.md",
+        "message": "Write nudge_bound_plan_2.md with today's plan",
+        "wall_s": 43.2,
+        "suppressed": false,
+        "outstanding_verdict": null
+      }
+    ]
+  }
+}

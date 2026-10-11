@@ -113,6 +113,8 @@ async def arm_a() -> dict:
     class Scripted:
         """Replays one shape; ``rounds`` is a list of ChatResponse factories."""
 
+        tools_model = "test-model"
+
         def __init__(self, rounds):
             self.rounds = rounds
             self.calls = 0
