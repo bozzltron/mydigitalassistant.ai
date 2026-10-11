@@ -1,5 +1,49 @@
 # MyDigitalAssistant.ai — release notes
 
+## v0.11.16-alpha
+
+**The file list stops lying, the compute path stops promising libraries it does not
+have, and the fleet settles to what has been measured.**
+
+- **A file edit now moves the file's `updated_at`.** Confirmed on the prod brain:
+  `Why Not Release.md` was written at `13:39:45` while its frame still said three days
+  earlier — its `file_size` *slot* was current, so the content was saved and only the
+  frame **row** was not. `apply_file_to_memory` (the one shared path for upload, write,
+  append and edit) upserts slots, and **a slot write does not touch its frame**, so the
+  Files list — which sorts on `frames.updated_at` — never moved an edited file.
+  `store.touch_frame()` fixes all four callers at once. The same property holds
+  brain-wide: 99% of frames carry `updated_at == created_at`.
+- **The compute path promised libraries the sandbox does not have.** Its system prompt
+  said *"Use numpy, scipy, sympy, pandas, statistics as needed"*; only numpy is
+  installed, and numpy 2 removed `np.irr`. **Every** hard-math failure in the probe was
+  a `ModuleNotFoundError` — the model was punished for following instructions. With the
+  prompt telling the truth the same arm went from 4–8/12 to 8–12/12 **without touching
+  the fleet**, and the model comparison became valid for the first time.
+- **The dedicated math model is retired — now on evidence.** It *tied* the warm utility
+  model on business arithmetic (30/30 each) and is the **worst of three** on hard math
+  (8/12, against the chat's 12/12 and the utility's 10/12). `MATH_MODEL` now defaults to
+  the utility runner with `MATH_NUM_CTX=4096`, so compute costs no extra load and no
+  reload. Its earlier retirement had rested on a tie plus a load cost that raising
+  `OLLAMA_MAX_LOADED_MODELS` to 4 then removed; that is now measured rather than assumed.
+- **The completion nudge is off by default.** It fires only on a turn that already
+  needed an action, ran a tool, and *still* left it undone — and `nudge_bound` found the
+  **first** nudge fired on 0 of 10 live write-class turns. It needed a ~9.5 GB model that
+  `tev1:0.8b` cannot replace. `DECISION_COMPLETION_MODEL=nimble` re-enables it.
+- **`.env` is the source of truth.** 38 of the 68 documented vars were forwarded by
+  *neither* Compose file and silently fell back to `config.py`; both now forward the whole
+  `.env`. And `TOOLS_ENABLED` defaulted to **`false`** in Compose while the code and the
+  docs said `true` — a fresh install had **no tools at all**.
+- **The user's own facts get provenance.** The chat path passed no `source_type`, so the
+  user's share of memory was the bucket marked "unknown" (22% of frames). Measured
+  read-only on both brains (`memory_source_split`): the **internet supplies 53–55%** of
+  facts, the **user 22–23%**, and the **system's own bookkeeping 23–24%** — and 70% of all
+  searches happen in *scheduled task runs*, not in live conversation.
+- **New docs:** `docs/PIPELINE.md` (one turn end to end — stages, models, guards),
+  `docs/COMPUTE.md` (the write-and-execute path, and that it is **not** a sandbox),
+  `docs/UPGRADING.md` (rollout: nothing to migrate, the volume is never touched).
+
+**Fleet:** 4 required models + 2 opt-in tiers. See `docs/MODEL_SELECTION.md`.
+
 ## v0.11.15-alpha
 
 **Escalation stops sending mechanical work to the 27B, the MAX model is measured,
