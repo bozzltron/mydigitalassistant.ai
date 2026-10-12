@@ -114,13 +114,21 @@ sell query data). A **sensitive query is gated by consent** *before* it is sent
 (`classify_query_sensitivity` → `consent_required`); the search does not execute
 until the user consents. This is a hard privacy rule — see the root `AGENTS.md`.
 
-**Brave's LLM Context endpoint is the candidate for richer content.** Brave's docs
-mark `/web/search` as "intended for human consumption" and point agents at
-`/res/v1/llm/context`, which returns pre-extracted, relevance-ranked chunks per URL
-(text, tables, code) instead of one `description`. Phase 1 — requesting
-`extra_snippets=true` and folding the extras into extraction input — ships now.
-Swapping the content channel (and dropping our own page fetches) is pre-registered
-in `assistant/experiments/brave_llm_context/plan.md`.
+**Brave's LLM Context endpoint** (`/res/v1/llm/context`) returns pre-extracted,
+relevance-ranked content chunks per URL (text, tables, code) instead of the single
+`description` of `/web/search` — the channel Brave's docs recommend for agents.
+
+- **Phase 1 (shipped):** `/web/search` requests `extra_snippets=true` and the
+  extras feed extraction input (§5).
+- **Phase 2 (dev only):** `BRAVE_LLM_CONTEXT=true` makes `BraveBackend.search()`
+  use `/llm/context` *instead of* `/web/search`, and the orchestrator skips its own
+  page-fetch (the content is already in the snippets). `snippet` = first chunk,
+  the rest ride in `extra_snippets`. Two consequences: **videos are lost** (the
+  endpoint has no `videos` section) and result images come from
+  `sources[].thumbnail` (OG-class) rather than the image index. Dev pins it on
+  (`docker-compose.yml`) to compare against prod; prod stays on `/web/search`.
+  The measured swap is pre-registered in
+  `assistant/experiments/brave_llm_context/plan.md`.
 
 ## 4. The relevance gate
 

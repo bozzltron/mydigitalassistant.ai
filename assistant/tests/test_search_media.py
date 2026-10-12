@@ -140,6 +140,62 @@ async def test_brave_requests_and_parses_extra_snippets():
     assert results[1].extra_snippets == []
 
 
+async def test_brave_llm_context_parses_grounding_and_sources(monkeypatch):
+    """`BRAVE_LLM_CONTEXT` uses /llm/context: chunks become snippet + extras.
+
+    Phase 2 (dev). Videos are empty (the endpoint has none) and images come from
+    ``sources[].thumbnail`` rather than the image index. See docs/SEARCH.md.
+    """
+    from assistant.backend.config import settings
+
+    monkeypatch.setattr(settings, "brave_llm_context", True)
+    payload = {
+        "grounding": {
+            "generic": [
+                {
+                    "url": "https://a.example/1",
+                    "title": "A",
+                    "snippets": ["first chunk", "second chunk"],
+                },
+                {"url": "https://b.example/2", "title": "B", "snippets": ["b chunk"]},
+                {"url": "https://c.example/3", "title": "C", "snippets": []},
+            ]
+        },
+        "sources": {
+            "https://a.example/1": {
+                "title": "A",
+                "thumbnail": {
+                    "src": "https://img/s.png",
+                    "original": "https://img/o.png",
+                },
+            }
+        },
+    }
+    seen: dict = {}
+
+    async def handler(request):
+        seen["path"] = request.url.path
+        seen["params"] = dict(request.url.params)
+        return httpx.Response(200, json=payload)
+
+    backend = _brave_backend(handler)
+    try:
+        results, videos = await backend.search("q", num_results=5)
+    finally:
+        await backend.close()
+
+    assert videos == []
+    # The URL with no chunks is dropped.
+    assert [r.url for r in results] == ["https://a.example/1", "https://b.example/2"]
+    assert results[0].snippet == "first chunk"
+    assert results[0].extra_snippets == ["second chunk"]
+    assert results[0].thumbnail == "https://img/s.png"
+    assert results[0].image == "https://img/o.png"
+    assert results[1].snippet == "b chunk"
+    assert seen["path"].endswith("/llm/context")
+    assert seen["params"].get("enable_source_metadata") == "true"
+
+
 async def test_searxng_image_result_resolves_relative_img_src():
     payload = {
         "results": [

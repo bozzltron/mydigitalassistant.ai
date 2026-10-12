@@ -1661,8 +1661,15 @@ class Orchestrator:
                     from assistant.backend.pipeline.extractor import ExtractionResult
                     snippet_extraction = ExtractionResult()
 
-                # Brave: fetch top result bodies in parallel
-                if backend_name == "brave" and search_results:
+                # Brave: fetch top result bodies in parallel. Skipped when the
+                # content already came from Brave's LLM Context endpoint -- the
+                # chunks are in the snippets, so fetching the pages again would
+                # duplicate work and requests.
+                if (
+                    backend_name == "brave"
+                    and search_results
+                    and not settings.brave_llm_context
+                ):
                     try:
                         bodies = await asyncio.gather(
                             *[

@@ -27,6 +27,11 @@ from assistant.backend.retry import retry_transient
 
 logger = logging.getLogger(__name__)
 
+# Content budget for one Brave LLM Context request. Bounded so the request stays
+# cheap: extraction caps each result's contribution anyway
+# (`_SEARCH_RESULT_TEXT_CHARS`), so a larger budget buys little.
+_LLM_CONTEXT_MAX_TOKENS = 4096
+
 
 async def _get_json(
     client: httpx.AsyncClient,
@@ -630,6 +635,7 @@ class BraveBackend(SearchBackend):
 
     BRAVE_URL = "https://api.search.brave.com/res/v1/web/search"
     BRAVE_IMAGES_URL = "https://api.search.brave.com/res/v1/images/search"
+    BRAVE_LLM_CONTEXT_URL = "https://api.search.brave.com/res/v1/llm/context"
     BRAVE_HEADERS = {
         "Accept": "application/json",
         "Accept-Encoding": "gzip",
@@ -672,6 +678,15 @@ class BraveBackend(SearchBackend):
             return False
 
     async def search(
+        self, query: str, num_results: int = 5
+    ) -> tuple[list[SearchResult], list[YouTubeVideo]]:
+        """Brave search. Uses the agent-oriented LLM Context endpoint when
+        ``BRAVE_LLM_CONTEXT`` is on, else ``/web/search`` (see docs/SEARCH.md)."""
+        if settings.brave_llm_context:
+            return await self._search_llm_context(query, num_results)
+        return await self._search_web(query, num_results)
+
+    async def _search_web(
         self, query: str, num_results: int = 5
     ) -> tuple[list[SearchResult], list[YouTubeVideo]]:
         try:
@@ -784,6 +799,80 @@ class BraveBackend(SearchBackend):
             # still records the error for the trace panel.
             logger.error("Brave search failed: %s", e)
             return [], []
+
+    async def _search_llm_context(
+        self, query: str, num_results: int = 5
+    ) -> tuple[list[SearchResult], list[YouTubeVideo]]:
+        """Brave's LLM Context endpoint (`/res/v1/llm/context`).
+
+        Pre-extracted, relevance-ranked content chunks per URL — the channel
+        Brave's docs recommend for agents — used in place of ``/web/search`` when
+        ``BRAVE_LLM_CONTEXT`` is on. Same ``(results, videos)`` contract: videos
+        are always empty (the endpoint has no `videos` section) and result images
+        come from ``sources[].thumbnail`` (OG-class, not the image index).
+        ``snippet`` is the first chunk (prompt + relevance gate); the rest ride in
+        ``extra_snippets`` for extraction. The token budget is bounded because
+        extraction caps per result anyway (``_SEARCH_RESULT_TEXT_CHARS``).
+        """
+        try:
+            client = await self._get_client()
+            headers = {**self.BRAVE_HEADERS, "X-Subscription-Token": self.api_key}
+            params = {
+                "q": sanitize_query(query),
+                "count": min(max(num_results, 5), 20),
+                "safesearch": "moderate",
+                "search_lang": settings.search_language or "en",
+                "enable_source_metadata": "true",
+                "maximum_number_of_urls": min(max(num_results, 5), 20),
+                "maximum_number_of_tokens": _LLM_CONTEXT_MAX_TOKENS,
+            }
+            data = await retry_transient(
+                lambda: _get_json(
+                    client, self.BRAVE_LLM_CONTEXT_URL, params=params, headers=headers
+                ),
+                label="brave llm context",
+            )
+        except Exception as e:
+            # Same contract as _search_web: an empty 2-tuple, never a bare list.
+            logger.error("Brave LLM Context failed: %s", e)
+            return [], []
+
+        sources = data.get("sources") or {}
+        results: list[SearchResult] = []
+        seen: set[str] = set()
+        for item in (data.get("grounding") or {}).get("generic") or []:
+            url = item.get("url", "")
+            if not url:
+                continue
+            norm = normalize_url(url)
+            if norm in seen:
+                continue
+            snippets = [
+                s for s in (item.get("snippets") or []) if isinstance(s, str) and s.strip()
+            ]
+            if not snippets:
+                continue  # a URL with no extracted content is not a result
+            seen.add(norm)
+            meta = sources.get(url) or {}
+            thumbnail, image = _thumb_urls(meta)
+            results.append(
+                SearchResult(
+                    title=item.get("title") or meta.get("title") or url,
+                    url=url,
+                    snippet=snippets[0],
+                    engine="brave",
+                    thumbnail=thumbnail,
+                    image=image,
+                    extra_snippets=snippets[1:],
+                )
+            )
+            if len(results) >= num_results:
+                break
+        logger.debug(
+            "Brave LLM Context returned %d results (query_len=%d)",
+            len(results), len(params["q"]),
+        )
+        return results, []
 
     async def search_images(
         self, query: str, num_results: int = 8

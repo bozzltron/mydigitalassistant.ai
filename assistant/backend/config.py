@@ -101,6 +101,14 @@ class Settings(BaseSettings):
     brave_enabled: bool = False
     brave_api_key: str = ""  # required when brave_enabled is true
     brave_search_min_relevance: float = 0.20
+    # Brave's LLM Context endpoint (/res/v1/llm/context): pre-extracted,
+    # relevance-ranked content chunks per URL — the channel Brave's docs
+    # recommend for agents — in place of /web/search. When true,
+    # ``BraveBackend.search()`` uses it and the orchestrator skips its own
+    # page-fetch (the content is already in the snippets). Off by default; dev
+    # turns it on to compare against prod. See docs/SEARCH.md and
+    # assistant/experiments/brave_llm_context/plan.md.
+    brave_llm_context: bool = False
 
     # Ollama request timeout in seconds. Local 27B-class models with large
     # context prefills (tool loops) can legitimately take minutes; the default

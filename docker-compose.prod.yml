@@ -52,6 +52,8 @@ services:
       - SEARCH_BASE_URL=http://searxng:8080
       - BRAVE_ENABLED=${BRAVE_ENABLED:-false}
       - BRAVE_API_KEY=${BRAVE_API_KEY:-}
+      # Off by default. Dev pins it on (docker-compose.yml) for the A/B.
+      - BRAVE_LLM_CONTEXT=${BRAVE_LLM_CONTEXT:-false}
       - WHISPER_MODEL=base
       - WHISPER_DEVICE=cpu
       - SCHEDULER_ENABLED=${SCHEDULER_ENABLED:-true}
