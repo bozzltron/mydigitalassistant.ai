@@ -1905,7 +1905,11 @@ class Orchestrator:
 
             # Stream using the tool loop (Phase 4: stream full tool loop including tools)
             # We need to capture the final answer to persist it as an episode
-            
+
+            # The search the model runs itself with the `web_search` tool, filled in
+            # by the loop (see `search_sink`). Empty when it did not search.
+            tool_search: dict = {}
+
             async def _stream_and_capture():
                 nonlocal final_answer, final_reasoning, ttft_s
                 nonlocal final_prompt_tokens, final_context_window
@@ -1921,6 +1925,7 @@ class Orchestrator:
                     session_id=session_id,
                     max_turns=loop_max_turns,
                     expects_action=expects_action,
+                    search_sink=tool_search,
                 ):
                     # Parse event to capture final answer
                     try:
@@ -1963,6 +1968,19 @@ class Orchestrator:
                 yield _finalize_event(final_answer)
             finally:
                 reset_turn_budget(budget_token)
+
+            # The turn's search record. A search the model performs itself is the
+            # search the turn actually rests on — and it was the one missing:
+            # `search_info` was built only by the pre-generation search, so a
+            # tool-loop search produced no sources, no trace entry and no "Searched
+            # via Brave", leaving the user no way to tell it from the model's prose.
+            # Adopting it here also feeds the corroboration bonus in
+            # `compute_answer_confidence` and the persisted episode, both read below.
+            if search_info is None and tool_search.get("info") is not None:
+                search_info = tool_search["info"]
+                for result in search_info.results or []:
+                    if result.url and result.url not in citations:
+                        citations.append(result.url)
 
         else:
             # No tools - just stream the chat response

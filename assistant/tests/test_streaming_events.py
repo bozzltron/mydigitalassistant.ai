@@ -784,3 +784,78 @@ async def test_stream_tool_loop_does_not_nudge_when_no_action_expected(tmp_path)
     ]
     assert len(llm.calls) == 1, "no nudge round when no action is expected"
 
+
+async def test_stream_tool_loop_keeps_the_search_it_ran_and_announces_it(monkeypatch):
+    """A `web_search` the model runs itself must reach the UI.
+
+    Regression: `execute_web_search` returns `{"results": …, "search_info": …}`, and
+    the loop kept only the formatted text and dropped the record. So a search the
+    model performed left no trace anywhere — no "Searched via Brave", no sources, no
+    trace entry — even though Brave had answered. The user had no way to tell a real
+    search from the model's prose claiming one, which is exactly how it was reported:
+    "it's saying that it's searching the web, but it's not."
+    """
+    from assistant.backend.pipeline import tool_executor
+    from assistant.backend.pipeline.llm_client import ChatResponse, ToolCall
+    from assistant.backend.pipeline.search import SearchInfo, SearchResult
+    from assistant.backend.pipeline.streaming import stream_tool_loop
+    from assistant.backend.pipeline.tool_executor import ToolResult
+
+    info = SearchInfo(
+        backend="brave",
+        query="latest news",
+        results=[
+            SearchResult(
+                title="A real headline", url="https://example.com/a", snippet="s", engine="brave"
+            )
+        ],
+    )
+
+    async def fake_execute(name, args, **kwargs):
+        return ToolResult(success=True, data={"results": info.results, "search_info": info})
+
+    monkeypatch.setattr(tool_executor, "execute_tool", fake_execute)
+
+    class StubLLM:
+        def __init__(self, responses):
+            self.responses = list(responses)
+            self.tools_model = "test-model"
+
+        async def chat(self, messages, **kwargs):
+            return self.responses.pop(0)
+
+        def context_window(self, model=None):
+            return 16384
+
+    llm = StubLLM(
+        [
+            ChatResponse(
+                content="",
+                model="m",
+                done=True,
+                tool_calls=[ToolCall(name="web_search", arguments={"query": "latest news"})],
+            ),
+            ChatResponse(content="Here you go.", model="m", done=True),
+        ]
+    )
+
+    sink: dict = {}
+    events = [
+        ev
+        async for ev in stream_tool_loop(
+            llm,
+            messages=[{"role": "user", "content": "search the news"}],
+            tools=[],
+            model="test-model",
+            user_id="1",
+            session_id="s-1",
+            search_sink=sink,
+        )
+    ]
+
+    parsed = [json.loads(ev.replace("data: ", "").strip()) for ev in events]
+    assert any(
+        e.get("type") == "stage" and e.get("stage") == "searching" for e in parsed
+    ), "the search was never announced while it ran"
+    assert sink.get("info") is info, "the search record the model used was discarded"
+

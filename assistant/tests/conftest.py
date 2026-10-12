@@ -7,13 +7,35 @@ import pytest
 import pytest_asyncio
 
 from assistant.backend.db.schema import init_db
-from assistant.backend.memory.store import MemoryStore
+from assistant.backend.memory.store import MemoryStore, close_all_connections
 from assistant.backend.pipeline.llm_client import ChatResponse, EmbeddingResponse, OllamaClient
 from assistant.backend.pipeline.search import WebSearchTool
 
 
+@pytest.fixture(autouse=True)
+def _release_db_connections():
+    """End every open DB connection's worker thread after each test.
+
+    aiosqlite runs a connection on its own non-daemon worker thread, and that
+    thread calls back into the event loop that opened it. A connection left open
+    when its test ends outlives the loop pytest-asyncio closes, so the worker
+    later raises "Event loop is closed" from inside the thread -- the
+    ``PytestUnhandledThreadExceptionWarning``, with ~100 threads still alive at
+    the end of the suite. The app has no equivalent problem: it builds one store
+    and keeps it for the process lifetime.
+
+    Synchronous on purpose. A sync autouse fixture covers sync and async tests
+    alike, and ``close_all_connections`` needs no loop to await on -- it ends each
+    worker thread outright, the same way the store's interpreter-exit hook does.
+    """
+    yield
+    close_all_connections()
+
+
 @pytest_asyncio.fixture
 async def store(tmp_path: Path) -> MemoryStore:
+    # Not closed here: `_release_db_connections` above ends the connections after
+    # every test, whether the store came from this fixture or was built directly.
     db_path = str(tmp_path / "test.db")
     await init_db(db_path)
     return MemoryStore(db_path)

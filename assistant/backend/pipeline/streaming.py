@@ -283,6 +283,7 @@ async def stream_tool_loop(
     session_id: str = "",
     max_turns: int | None = None,
     expects_action: bool = False,
+    search_sink: dict | None = None,
 ) -> AsyncGenerator[str, None]:
     """Stream the full tool loop including tool calls and final answer (SSE format).
 
@@ -292,6 +293,14 @@ async def stream_tool_loop(
     action (``decision.needs_action``). If the model then ends its turn with no
     tool call, it is handed its own message back once and asked to act — the
     model-first fix for a turn that announces an action and never performs it.
+
+    ``search_sink``: an out-parameter. When the model calls ``web_search`` itself,
+    the tool already returns a full ``SearchInfo`` next to the text it hands the
+    model — and this loop dropped it. So a search the model performed left no
+    trace in the UI: no "Searched via Brave", no sources, no trace entry, even
+    though the search really ran. The caller passes a dict; the loop puts the most
+    recent ``SearchInfo`` under ``"info"``, so the turn's transparency record can
+    be the search the model actually used rather than only the pre-generation one.
     """
     from assistant.backend.config import settings
     from assistant.backend.pipeline.context_budget import content_char_limit
@@ -411,6 +420,16 @@ async def stream_tool_loop(
                 raw_args = call.arguments or {}
                 tool_calls_made.append(_summarize_call(tool_name, raw_args))
 
+                # A search the model runs as a tool is a real search, and until
+                # this stage existed it was invisible while it ran: the user saw
+                # the model's prose claim a search with nothing behind it in the
+                # UI. The frontend already renders `searching` (StatusIndicator).
+                if tool_name == "web_search":
+                    query = raw_args.get("query", "") if isinstance(raw_args, dict) else ""
+                    yield serialize_event(
+                        StageEvent(stage="searching", detail=f"searching the web for {query!r}")
+                    )
+
                 # Execute tool
                 try:
                     result = await execute_tool(
@@ -443,6 +462,15 @@ async def stream_tool_loop(
                         error=getattr(result, "error", ""),
                     )
                 )
+
+                # Keep the search record the model actually used. `web_search`
+                # returns `{"results": …, "search_info": SearchInfo}`; only the
+                # formatted text reached the model, and the record was discarded,
+                # which is why a tool-loop search showed up nowhere in the UI.
+                if search_sink is not None and getattr(result, "success", False):
+                    info = (getattr(result, "data", None) or {}).get("search_info")
+                    if info is not None:
+                        search_sink["info"] = info
 
                 # Check for finalize
                 if tool_name == "finalize":

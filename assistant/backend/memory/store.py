@@ -145,13 +145,27 @@ def _abandon(conns: list[aiosqlite.Connection]) -> None:
         _force_close(conns.pop())
 
 
-def _close_pools_at_exit() -> None:
+def close_all_connections() -> None:
+    """End every open connection's worker thread, without awaiting any of them.
+
+    Two callers, for the same reason: aiosqlite runs each connection on a
+    non-daemon worker thread that calls back into the event loop that opened it.
+    A connection that outlives its loop therefore raises "Event loop is closed"
+    from inside that thread, and the thread itself stays standing.
+
+    - At interpreter exit (registered below), so a live connection cannot hang
+      the join that ``threading._shutdown`` performs on non-daemon threads.
+    - Per test, from ``conftest``. A store dropped by a finished test would
+      otherwise hold its pooled connections past the loop pytest-asyncio closes
+      -- which is what produced the ``PytestUnhandledThreadExceptionWarning`` and
+      ~100 threads still alive at the end of the suite.
+    """
     while _live_conns:
         _force_close(_live_conns.pop())
 
 
 if hasattr(threading, "_register_atexit"):
-    threading._register_atexit(_close_pools_at_exit)
+    threading._register_atexit(close_all_connections)
 
 
 def _parse_iso_ts(value: str | None) -> datetime | None:

@@ -501,3 +501,52 @@ async def test_chat_and_stream_agree_on_one_turn(store, stub_llm):
     # Citations reach both surfaces.
     assert "https://example.com/a" in resp.citations
     assert "https://example.com/a" in meta["citations"]
+
+
+@pytest.mark.asyncio
+async def test_a_search_the_model_runs_itself_reaches_the_meta(store, stub_llm, monkeypatch):
+    """The turn's search record must be the search the model actually used.
+
+    Regression: `search_info` was built only by the pre-generation search, so when
+    the model called `web_search` as a *tool* — the normal path — the turn produced
+    no `meta.search_info` and no citations. The UI's trace panel and "Searched via
+    Brave" indicator read exactly those fields, so a real search showed up nowhere
+    and the user concluded it had not happened ("it's saying that it's searching the
+    web, but it's not").
+    """
+    info = SearchInfo(
+        backend="brave",
+        query="latest news",
+        results=[
+            SearchResult(
+                title="A real headline", url="https://example.com/a", snippet="s", engine="brave"
+            )
+        ],
+    )
+
+    async def fake_loop(llm_client, messages, tools, **kwargs):
+        # The real loop fills this when `web_search` returns; the sink is the seam.
+        kwargs["search_sink"]["info"] = info
+        yield streaming.serialize_event(streaming.FinalizeEvent("Here you go.", None))
+
+    monkeypatch.setattr(streaming, "stream_tool_loop", fake_loop)
+
+    orchestrator = _build_orchestrator(store, stub_llm, _search_tool([]))
+    user = await store.create_user("alice")
+    # wants_search=False => no pre-generation search, so the tool-loop search is the
+    # only one there is. This is the case that used to produce nothing at all.
+    original = _install_llm(stub_llm, task_type="functional", wants_search=False)
+    try:
+        events = await _collect(
+            orchestrator.chat_stream(
+                ChatRequest(user_id=user.id, message="search the news", session_id="s-tool-src")
+            )
+        )
+    finally:
+        stub_llm.chat = original
+
+    meta = [e for e in events if e["type"] == "meta"][-1]
+    assert meta["search_info"], "a search the model ran itself left no record in the meta"
+    assert meta["search_info"]["backend"] == "brave"
+    assert meta["search_info"]["query"] == "latest news"
+    assert "https://example.com/a" in (meta["citations"] or [])
