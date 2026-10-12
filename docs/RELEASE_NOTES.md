@@ -1,5 +1,33 @@
 # MyDigitalAssistant.ai — release notes
 
+## v0.11.17-alpha
+
+**The file sandbox becomes the host folder — and the brain moves out of its way —
+and Brave search asks for the excerpts it was already entitled to.**
+
+- **The file sandbox *is* the host folder now.** `/app/data` is bind-mounted to a
+  directory on the host (`~/Documents/Agent/Development` in dev,
+  `~/Documents/Agent/Production` in prod), so every file the agent reads or writes
+  is openable and editable with
+  host tools, and files you drop in are read at sandbox-relative paths
+  (`read_file("notes.md")`). This replaces v0.11.16's nested `shared/` subfolder,
+  which never exposed the files the agent *already had*. **The brain is deliberately
+  kept out of it**: the SQLite DB and its backups live in a volume mounted at
+  `/app/brain` (`DATABASE_PATH`), so exposing the sandbox never exposes or
+  duplicates the brain — and the DB file itself never moves, only the path it is
+  opened through. `SANDBOX_DIR_DEV` / `SANDBOX_DIR_PROD` override one environment;
+  `SANDBOX_DIR` overrides both. **Upgrading an existing install:** nothing is lost
+  (the DB stays in its volume, now at `/app/brain`), but the user files that used to
+  sit beside it do not appear in the sandbox until you copy them out once — see
+  `docs/FILES.md`.
+- **Brave search asks for `extra_snippets`.** The web request now sets
+  `extra_snippets=true` (up to 5 further excerpts per page, **no extra request**),
+  and the extras are folded into the *extraction* input, bounded per result
+  (`_SEARCH_RESULT_TEXT_CHARS`). `snippet` stays lean, so the prompt and the
+  relevance gate are unchanged. Brave's dedicated **LLM Context** endpoint — the
+  content channel its docs actually recommend for agents — is pre-registered for a
+  measured swap in `assistant/experiments/brave_llm_context/plan.md`.
+
 ## v0.11.16-alpha
 
 **The file list stops lying, the compute path stops promising libraries it does not
