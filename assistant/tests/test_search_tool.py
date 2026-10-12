@@ -438,6 +438,60 @@ class TestBraveImageSearch:
         assert len(results) == 1
         assert info.image_results and info.image_results[0].thumbnail == "https://cdn/500.jpg"
 
+    @pytest.mark.asyncio
+    async def test_llm_context_drives_the_turn_without_the_image_index(self, monkeypatch):
+        """On the LLM Context path the image index is NOT called — one request.
+
+        The endpoint's `sources[].thumbnail` already carries the imagery, so a
+        second request for the image index would be redundant (docs/SEARCH.md §3/§6).
+        """
+        from assistant.backend.config import settings
+        from assistant.backend.pipeline.search import (
+            SearchBackend,
+            SearchResult,
+            WebSearchTool,
+        )
+
+        monkeypatch.setattr(settings, "brave_llm_context", True)
+
+        class BraveFake(SearchBackend):
+            def __init__(self) -> None:
+                self.calls: list[str] = []
+
+            @property
+            def backend_name(self) -> str:
+                return "brave"
+
+            async def search(self, query, num_results=5):
+                self.calls.append("search")
+                return [
+                    SearchResult(
+                        title="w",
+                        url="https://w",
+                        snippet="chunk",
+                        engine="brave",
+                        thumbnail="https://cdn/og.jpg",
+                    )
+                ], []
+
+            async def search_images(self, query, num_results=8):
+                self.calls.append("search_images")
+                return []
+
+            async def health_check(self) -> bool:
+                return True
+
+        tool = WebSearchTool(enabled=True)
+        backend = BraveFake()
+        tool._backend = backend
+
+        results, info = await tool.search_with_info("q", num_results=5)
+
+        assert backend.calls == ["search"]  # no image request
+        assert info.image_results == []
+        # Imagery rides on the result thumbnail instead.
+        assert results[0].thumbnail == "https://cdn/og.jpg"
+
     def test_payload_includes_image_results(self):
         import json
 

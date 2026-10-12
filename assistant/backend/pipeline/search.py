@@ -1028,14 +1028,22 @@ class WebSearchTool(SearchBackend):
                     consent_required=True,
                 )
         
-        # Web and image results are independent requests: run them together so
-        # the turn waits for the slower one, not for the sum. Both are graceful
-        # (empty on error), and the sensitivity/consent gate above has already
-        # run, so a sensitive query never reaches either call.
-        (results, video_results), image_results = await asyncio.gather(
-            self._backend.search(raw_query, num_results),
-            self._backend.search_images(raw_query, num_results),
-        )
+        # Brave's LLM Context endpoint drives the whole turn when it is on: its
+        # `sources[].thumbnail` already carries the imagery, so the image index
+        # would be a second request for the same job. On the /web/search path the
+        # image index is still the hero source (see docs/SEARCH.md).
+        if self.backend_name == "brave" and settings.brave_llm_context:
+            results, video_results = await self._backend.search(raw_query, num_results)
+            image_results = []
+        else:
+            # Web and image results are independent requests: run them together
+            # so the turn waits for the slower one, not for the sum. Both are
+            # graceful (empty on error), and the sensitivity/consent gate above
+            # has already run, so a sensitive query never reaches either call.
+            (results, video_results), image_results = await asyncio.gather(
+                self._backend.search(raw_query, num_results),
+                self._backend.search_images(raw_query, num_results),
+            )
         info = SearchInfo(
             backend=self.backend_name,
             query=raw_query,

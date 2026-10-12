@@ -99,8 +99,9 @@ both directions; a stored answer is never overridden (the force requires
 backend implements `search()`; `search_images()` defaults to `[]` so a backend
 without an image index needs no change.
 
-**A Brave turn spends two requests** (web + images; image API limits are in §6), so
-quota is the binding constraint for opt-in Brave. Measured
+**A Brave turn spends one request when LLM Context drives it, two on the
+`/web/search` fallback** (web + images; image API limits are in §6), so quota is
+the binding constraint for opt-in Brave. Measured
 (`assistant/experiments/search_query_reuse/`), a **query-keyed response cache is
 not worth building**: 39% of queries repeat, but the repeats are **scheduled
 tasks** (interactive repeat rate 1%, scheduled 76%) — and those run with
@@ -118,17 +119,19 @@ until the user consents. This is a hard privacy rule — see the root `AGENTS.md
 relevance-ranked content chunks per URL (text, tables, code) instead of the single
 `description` of `/web/search` — the channel Brave's docs recommend for agents.
 
-- **LLM Context is the default.** `BRAVE_LLM_CONTEXT=true` (on by default) makes
-  `BraveBackend.search()` use `/llm/context` *instead of* `/web/search`, and the
-  orchestrator skips its own page-fetch (the content is already in the snippets).
-  `snippet` = first chunk, the rest ride in `extra_snippets`, so the extraction
-  path (§5) needs no change. Two consequences, accepted on the live dev→prod
-  swap: **videos are lost** (the endpoint has no `videos` section) and result
-  images come from `sources[].thumbnail` (OG-class) rather than the image index.
-  The trade and the alternative shapes are in
-  `assistant/experiments/brave_llm_context/plan.md`.
-- **Fallback:** `BRAVE_LLM_CONTEXT=false` restores `/web/search`, which requests
-  `extra_snippets=true` and folds the extras into extraction input (§5).
+- **LLM Context is the default, and it drives the whole turn.**
+  `BRAVE_LLM_CONTEXT=true` (on by default) makes `BraveBackend.search()` use
+  `/llm/context` *instead of* `/web/search`; the orchestrator skips its own
+  page-fetch, **and the image index is not called** — `sources[].thumbnail`
+  carries the imagery. So a Brave turn is **one request**. `snippet` = first
+  chunk, the rest ride in `extra_snippets`, so the extraction path (§5) needs no
+  change. Two consequences, accepted on the live dev→prod swap: **videos are
+  lost** (the endpoint has no `videos` section) and result images are OG-class
+  (`sources[].thumbnail`) rather than the 500px image index. The trade and the
+  alternative shapes are in `assistant/experiments/brave_llm_context/plan.md`.
+- **Fallback:** `BRAVE_LLM_CONTEXT=false` restores `/web/search` **plus** the image
+  index (two requests); `/web/search` requests `extra_snippets=true` and folds the
+  extras into extraction input (§5).
 
 ## 4. The relevance gate
 
@@ -142,12 +145,13 @@ lower threshold, optional full-page fetch) because its index is cleaner.
 
 Search-derived facts enter memory only when they are accurate and useful:
 
-1. **Extract from snippets first** (`extract_facts_from_search`). For Brave the
-   request asks for `extra_snippets=true` (up to 5 further excerpts per page, no
-   extra call); the extras are folded into the extraction input only, bounded per
-   result (`_SEARCH_RESULT_TEXT_CHARS`) — `snippet` stays lean for the prompt and
-   the relevance gate. Then **fetch the top Brave pages** and extract from full
-   content (`extract_facts_from_document`).
+1. **Extract from snippets first** (`extract_facts_from_search`). Brave's content
+   is already in the snippets — the LLM Context chunks (default) or the
+   `/web/search` `extra_snippets` — folded into the extraction input, bounded per
+   result (`_SEARCH_RESULT_TEXT_CHARS`); `snippet` stays lean for the prompt and
+   the relevance gate. On the `/web/search` fallback the top pages are then
+   **fetched** and extracted from full content (`extract_facts_from_document`);
+   the LLM Context path skips that fetch — the chunks *are* the content.
 2. **Corroborate** — a fact from multiple independent domains gets a
    source-reliability bonus; high-stakes facts require ≥2 domains or are flagged.
 3. **Dedup** against conversational slots by `(frame_name, value)`.
@@ -157,14 +161,16 @@ Search-derived facts enter memory only when they are accurate and useful:
 
 ## 6. Imagery
 
-Search is the **only** source of imagery; nothing is rendered from memory. Two
-sources feed the hero, in order:
+Search is the **only** source of imagery; nothing is rendered from memory.
+Sources feed the hero, in order:
 
 1. **Brave image index** (`image_results`) — images that match the *query*, with a
    reliable ~500px Brave-CDN copy (`thumbnail.src`) and the source image
-   (`properties.url`). Preferred.
-2. **Web results' og:image** — the page author's social-share image, ~200px
-   preview and often site chrome; logo/junk-filtered.
+   (`properties.url`). Preferred — but **only on the `/web/search` fallback**: the
+   LLM Context default does not call it, so there is no `image_results`.
+2. **Result thumbnails** — on the LLM Context default, `sources[].thumbnail`
+   (OG-class, ~200px, often site chrome); on the fallback, web results' og:image.
+   Logo/junk-filtered.
 
 `media.ts`: `searchMedia` builds the list (image index first), `getHeroMedia`
 **prefers a distinct full-resolution image** (a ~200px preview upscaled to the
