@@ -24,7 +24,8 @@ services:
     # the host daemon needs: OLLAMA_KEEP_ALIVE=-1 and
     # OLLAMA_MAX_LOADED_MODELS>=2 (chat + utility stay warm side-by-side).
     environment:
-      - DATABASE_PATH=/app/data/assistant.db
+      # The brain lives in its own volume mounted at /app/brain (see volumes).
+      - DATABASE_PATH=/app/brain/assistant.db
       - DB_KEY=${DB_KEY}
       - OLLAMA_URL=http://host.docker.internal:11434
       - OLLAMA_TIMEOUT=${OLLAMA_TIMEOUT:-600}
@@ -60,12 +61,19 @@ services:
       # Tool calling: enables list_files, read_file, web_search, etc.
       - TOOLS_ENABLED=${TOOLS_ENABLED:-true}
     volumes:
-      - assistant-data:/app/data
-      # Host-visible shared folder, nested inside the sandbox so the agent's
-      # tools reach it unchanged (`shared/…`). Additive: the volume above is
-      # untouched, so an existing install keeps its brain and files and only
-      # gains this folder. Set SHARED_DIR to point it anywhere on the host.
-      - ${SHARED_DIR:-./.data/shared}:/app/data/shared
+      # The brain (SQLite DB + its backups) lives in a named volume mounted at
+      # /app/brain. The DB file itself never moves — only the path the app opens
+      # it through (DATABASE_PATH). It is deliberately NOT under the sandbox
+      # below, so the sandbox can be the host folder without exposing the brain.
+      - assistant-data:/app/brain
+      # The file sandbox IS this host folder: every file the agent reads or writes
+      # is visible here, and files you drop in are read by the tools at paths
+      # relative to the sandbox root (e.g. read_file("notes.md")). On an existing
+      # install, copy the files out of the volume once — see docs/FILES.md.
+      # Prod defaults to ~/Documents/Agent/Production. Override just this
+      # environment with SANDBOX_DIR_PROD, or both at once with SANDBOX_DIR (dev
+      # defaults to ~/Documents/Agent/Development, so the two never share files).
+      - ${SANDBOX_DIR_PROD:-${SANDBOX_DIR:-$HOME/Documents/Agent/Production}}:/app/data
     extra_hosts:
       - "host.docker.internal:host-gateway"
     # $${...} = expanded at RUNTIME inside the container (container env wins);
@@ -125,10 +133,11 @@ services:
     container_name: assistant-cli
     environment:
       - ASSISTANT_BACKEND=http://assistant-backend:8000
+      - DATABASE_PATH=/app/brain/assistant.db
     depends_on:
       - assistant
     volumes:
-      - assistant-data:/app/data:ro
+      - assistant-data:/app/brain:ro
     entrypoint: ["python", "-m", "assistant.cli.app"]
     command: ["status"]
     restart: "no"

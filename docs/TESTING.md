@@ -129,13 +129,13 @@ The automated suite mocks Ollama. To exercise the **real** fleet end to end
    reaches **neither** environment until its own image is rebuilt.
 
    **They are not the same environment, and prod is not a sandbox.** Separate Compose
-   projects → separate images, brains and shared folders:
+   projects → separate images, brains and sandbox folders:
 
    | | dev :8443 | prod :8444 |
    |---|---|---|
    | frontend | Vite dev server (HMR) | the **built bundle** |
-   | brain | `assistant.dev.db` | **`assistant.db` — the real one** |
-   | shared folder | `.data/shared-dev` | `.data/shared` |
+   | brain (`/app/brain`) | `assistant.dev.db` | **`assistant.db` — the real one** |
+   | sandbox (`/app/data`) | `~/Documents/Agent/Development` | `~/Documents/Agent/Production` |
 
    Use **dev** to iterate, and **prod** to verify the production shape — not as a
    scratchpad. A smoke test in prod writes real episodes and can overwrite real files

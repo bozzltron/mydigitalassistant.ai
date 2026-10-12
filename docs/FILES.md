@@ -149,13 +149,13 @@ never as CSV awareness.
 ## Mailbox dumps (a tree of `.eml` files)
 
 A mailbox dump is thousands of `.eml` messages in a tree. Drop it into the
-host-visible `shared/` folder (`/app/data/shared`) — nobody uploads a thousand
-files, and `.eml` is deliberately not in the upload allowlist.
+host-visible sandbox folder (`~/Documents/Agent/Development` in dev) — nobody
+uploads a thousand files, and `.eml` is deliberately not in the upload allowlist.
 
-- **Read one:** `read_file("shared/mail/2026-03/msg-001.eml")` extracts the
+- **Read one:** `read_file("mail/2026-03/msg-001.eml")` extracts the
   `From`/`To`/`Cc`/`Subject`/`Date` headers and the plain-text body
   (`extract_text_from_eml`) — never the MIME boundaries.
-- **Find across the tree:** `search_file(glob="shared/mail/**/*.eml",
+- **Find across the tree:** `search_file(glob="mail/**/*.eml",
   query="invoice")` searches **every** matching file in one call and names the
   file for each match. Each file is read through `_read_file_text`, so an `.eml` is
   searched as its *extracted* text — the same text `read_file` returns.
@@ -346,31 +346,43 @@ only place a value appears, and it is a count, not the file.
   on — so the model knows it saw a fragment and how to get the rest.
   `read_file(path, offset=, limit=)` pages by line. The file on disk is never
   truncated.
-- Jobs, backups (`.db`, `.assistant-brain`) and the search index also live in
-  `/app/data`; `list_sandbox_files("**/*")` sees everything, which is why
-  `list_files` enriches from frames (only `file_upload` / `file_create` frames
-  with metadata are reported).
+- The brain — the SQLite DB, its `backups/`, and `.assistant-brain` bundles — lives
+  in a **separate volume mounted at `/app/brain`**, not in the sandbox. So
+  `list_sandbox_files("**/*")` sees only user files, and `list_files` still
+  enriches from frames (only `file_upload` / `file_create` frames with metadata
+  are reported).
 
-## Host-visible shared folder
+## Host-visible sandbox
 
-`/app/data/shared` is bind-mounted to a folder on the host, so the user can open,
-edit, and drop files with their own tools while the agent reads them. It is
-**nested inside the sandbox**, so every file tool reaches it unchanged
-(`read_file("shared/notes.md")`, `glob("shared/**/*.eml")`) — no code special-cases
-it.
+The file sandbox root (`/app/data`) **is** a folder on the host, bind-mounted in,
+so you can open, edit, and drop files with your own tools while the agent reads
+them. Every file the agent already had is there, and every file it creates appears
+there. No code special-cases it — the tools reach host-dropped files at paths
+relative to the sandbox root (`read_file("notes.md")`, `glob("mail/**/*.eml")`).
 
-- **Additive, not a move.** The sandbox and the brain stay in the named volume
-  (`/app/data`, `assistant.db`); the bind mount only shadows the `shared/`
-  subdirectory. An existing install keeps its data and gains the folder, and
-  removing the mount line restores the previous state exactly. There is **no
-  migration** — which is the point: a volume→bind move would start an existing
-  install with an empty `/app/data` and look like data loss.
-- **Configured per environment.** `SHARED_DIR` (env) overrides the host path; dev
-  defaults to `./.data/shared-dev` and prod to `./.data/shared`, so two assistants
-  do not index the same folder unless deliberately pointed at it.
-- **Dropped files have no frame.** `list_files` lists them with `frame_id: null`,
-  `glob` finds them, and `read_file` resolves them by path. They carry no memory
-  until something writes them through `apply_file_to_memory`.
+- **The brain is not in the sandbox.** The DB and its backups live in a separate
+  named volume mounted at `/app/brain` (`DATABASE_PATH`); the bind covers only
+  `/app/data`. So exposing the sandbox never exposes or duplicates the brain, and
+  the DB file itself never moves between hosts — only its mount point changes.
+- **Configured per environment.** Dev defaults to `~/Documents/Agent/Development`
+  and prod to `~/Documents/Agent/Production`, so two assistants never share files.
+  `SANDBOX_DIR_DEV` / `SANDBOX_DIR_PROD` override one environment; `SANDBOX_DIR`
+  overrides both at once.
+- **Upgrading an existing install.** The DB and its backups are in the
+  `assistant-data` volume as before — now mounted at `/app/brain` — and the DB file
+  itself never moves. But the **user files** that used to sit beside it do not
+  appear in the sandbox until you copy them out once. The originals stay in the
+  volume, so nothing is lost:
+
+  ```bash
+  docker exec assistant-backend sh -c \
+    "cd /app/brain && tar cf - --exclude='*.db' --exclude='*.db-*' \
+     --exclude='*.assistant-brain' --exclude='backups' ." \
+    | tar xf - -C ~/Documents/Agent/Production
+  ```
+- **Host-dropped files have no frame.** `list_files` lists them with
+  `frame_id: null`, `glob` finds them, and `read_file` resolves them by path. They
+  carry no memory until something writes them through `apply_file_to_memory`.
 - **A host edit does not refresh memory.** `read_file` reads the current bytes, so
   an answer is current, but the cached `file_profile` / `file_size` (built at
   upload/write time) can lag until the file is written through the app again.

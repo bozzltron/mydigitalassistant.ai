@@ -587,7 +587,7 @@ class SearchFileArgs(BaseModel):
         None,
         description=(
             "Search EVERY sandbox file matching this glob (e.g. "
-            "'shared/mail/**/*.eml') in one call instead of one file — for a "
+            "'mail/**/*.eml') in one call instead of one file — for a "
             "mailbox dump or any tree of files. Mutually exclusive with "
             "path/frame_id/frame_name."
         ),
@@ -791,7 +791,7 @@ def builtin_tools(
             "email already in the list?') and targeted lookup without holding the "
             "whole file. Generic across formats. Case-insensitive substring by "
             "default; set regex=true for a pattern. Returns matching lines with "
-            "their line numbers, capped. Give `glob` (e.g. 'shared/mail/**/*.eml') "
+            "their line numbers, capped. Give `glob` (e.g. 'mail/**/*.eml') "
             "to search EVERY file matching it in one call — for a mailbox dump or "
             "any tree of files — and each match names its file.",
             SearchFileArgs,

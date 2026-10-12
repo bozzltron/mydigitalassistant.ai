@@ -72,3 +72,45 @@ def test_dev_and_prod_ship_the_same_model_fleet():
     assert models == {k: v for k, v in prod.items() if k.endswith("_MODEL")}, (
         "dev and prod must default to the same model fleet"
     )
+
+
+def _sandbox_host_path(filename: str) -> str:
+    src = (ROOT / filename).read_text()
+    match = re.search(
+        r"-\s+\$\{SANDBOX_DIR[A-Z_]*:-.*?(\$HOME/[^}]+)\}\}:/app/data\s*$", src, re.M
+    )
+    assert match, f"{filename}: no sandbox bind with a $HOME default found"
+    return match.group(1)
+
+
+def test_dev_and_prod_sandbox_folders_differ():
+    """Two assistants must not expose the same host folder by default.
+
+    The bind is configured per Compose file because both read the same `.env`, so
+    a single `SANDBOX_DIR` value cannot express two directories. If the defaults
+    ever collapse to one path, dev and prod silently share files.
+    """
+    dev = _sandbox_host_path(COMPOSE_FILES[0])
+    prod = _sandbox_host_path(COMPOSE_FILES[1])
+    assert dev != prod, f"dev and prod both default to {dev} — they would share one folder"
+
+
+def test_brain_is_outside_the_host_exposed_sandbox():
+    """The DB must not live under `/app/data`, which is bind-mounted to the host.
+
+    Exposing the sandbox is only safe because the brain sits in its own volume at
+    `/app/brain`. If DATABASE_PATH ever moves back under `/app/data`, the brain
+    (and its backups) would be exposed and duplicated on the host.
+    """
+    for filename in COMPOSE_FILES:
+        src = (ROOT / filename).read_text()
+        match = re.search(r"- DATABASE_PATH=(\S+)", src)
+        assert match, f"{filename}: no DATABASE_PATH found"
+        db = match.group(1)
+        assert not db.startswith("/app/data/"), (
+            f"{filename}: DATABASE_PATH={db} is inside the sandbox — the brain would "
+            "be exposed on the host"
+        )
+        assert db.startswith("/app/brain/"), (
+            f"{filename}: DATABASE_PATH={db} should be under /app/brain"
+        )

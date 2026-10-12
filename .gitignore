@@ -64,7 +64,9 @@ docker-compose.override.yml
 # Caddy auto-generated certs (keep local)
 .data/caddy/
 
-# Host-visible shared folder (bind-mounted into the sandbox at /app/data/shared)
+# Host-visible file sandbox (bind-mounted at /app/data when SANDBOX_DIR points
+# here). Defaults now live in ~/Documents/Agent/{Dev,Production}; these entries
+# keep a repo-relative SANDBOX_DIR (or a pre-existing install) untracked.
 .data/shared/
 .data/shared-dev/
 
