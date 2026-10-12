@@ -16,7 +16,7 @@ import json
 import logging
 import re
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from urllib.parse import urlsplit, urlunsplit
 
@@ -251,6 +251,11 @@ class SearchResult:
     engine: str
     thumbnail: str | None = None
     image: str | None = None
+    # Brave's `extra_snippets` (up to 5 further excerpts per page, requested with
+    # `extra_snippets=true`). Richer than the single `description`; kept separate
+    # from `snippet` so the prompt and relevance gate stay lean and only the
+    # extraction input is enriched (see `extract_facts_from_search`).
+    extra_snippets: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -677,6 +682,9 @@ class BraveBackend(SearchBackend):
                 "count": min(num_results, 20),
                 "safesearch": "moderate",
                 "search_lang": settings.search_language or "en",
+                # Free (same request): up to 5 further excerpts per result, which
+                # enrich the extraction input. See docs/SEARCH.md §5.
+                "extra_snippets": "true",
             }
             data = await retry_transient(
                 lambda: _get_json(
@@ -720,6 +728,12 @@ class BraveBackend(SearchBackend):
                         )
                     )
 
+                extra_snippets = [
+                    s
+                    for s in (item.get("extra_snippets") or [])
+                    if isinstance(s, str) and s.strip()
+                ]
+
                 results.append(
                     SearchResult(
                         title=item.get("title", ""),
@@ -728,6 +742,7 @@ class BraveBackend(SearchBackend):
                         engine="brave",
                         thumbnail=thumbnail,
                         image=image,
+                        extra_snippets=extra_snippets,
                     )
                 )
                 if len(results) >= num_results:

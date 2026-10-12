@@ -512,6 +512,27 @@ async def extract_facts(
     return ExtractionResult()
 
 
+# Per-result text budget for search extraction. Brave's `extra_snippets` can add
+# up to five further excerpts per page, so without a cap the utility model's input
+# grows unbounded. Applied only when extras are present, so a plain result keeps
+# the exact input it had before.
+_SEARCH_RESULT_TEXT_CHARS = 1000
+
+
+def _result_text(result: "SearchResult") -> str:
+    """The snippet plus any extra excerpts, bounded, for the extraction prompt.
+
+    ``extra_snippets`` is Brave-only; a result without it (SearXNG, or a stub in a
+    test) is returned unchanged.
+    """
+    snippet = result.snippet
+    extras = getattr(result, "extra_snippets", None)
+    if not isinstance(extras, list) or not extras:
+        return snippet
+    joined = " ".join(s for s in extras if isinstance(s, str) and s.strip())
+    return f"{snippet} {joined}".strip()[:_SEARCH_RESULT_TEXT_CHARS]
+
+
 async def extract_facts_from_search(
     query: str,
     search_results: list["SearchResult"],
@@ -524,7 +545,7 @@ async def extract_facts_from_search(
         return ExtractionResult()
 
     results_text = "\n\n".join(
-        f"Result {i + 1}:\nTitle: {r.title}\nURL: {r.url}\nSnippet: {r.snippet}"
+        f"Result {i + 1}:\nTitle: {r.title}\nURL: {r.url}\nSnippet: {_result_text(r)}"
         for i, r in enumerate(search_results)
     )
     user_content = f"User query: {query}\n\n{results_text}"

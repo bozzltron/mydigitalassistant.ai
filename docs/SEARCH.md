@@ -114,6 +114,14 @@ sell query data). A **sensitive query is gated by consent** *before* it is sent
 (`classify_query_sensitivity` → `consent_required`); the search does not execute
 until the user consents. This is a hard privacy rule — see the root `AGENTS.md`.
 
+**Brave's LLM Context endpoint is the candidate for richer content.** Brave's docs
+mark `/web/search` as "intended for human consumption" and point agents at
+`/res/v1/llm/context`, which returns pre-extracted, relevance-ranked chunks per URL
+(text, tables, code) instead of one `description`. Phase 1 — requesting
+`extra_snippets=true` and folding the extras into extraction input — ships now.
+Swapping the content channel (and dropping our own page fetches) is pre-registered
+in `assistant/experiments/brave_llm_context/plan.md`.
+
 ## 4. The relevance gate
 
 `filter_relevant` drops results whose embedding sits below the threshold
@@ -126,8 +134,12 @@ lower threshold, optional full-page fetch) because its index is cleaner.
 
 Search-derived facts enter memory only when they are accurate and useful:
 
-1. **Extract from snippets first** (`extract_facts_from_search`), then **fetch the
-   top Brave pages** and extract from full content (`extract_facts_from_document`).
+1. **Extract from snippets first** (`extract_facts_from_search`). For Brave the
+   request asks for `extra_snippets=true` (up to 5 further excerpts per page, no
+   extra call); the extras are folded into the extraction input only, bounded per
+   result (`_SEARCH_RESULT_TEXT_CHARS`) — `snippet` stays lean for the prompt and
+   the relevance gate. Then **fetch the top Brave pages** and extract from full
+   content (`extract_facts_from_document`).
 2. **Corroborate** — a fact from multiple independent domains gets a
    source-reliability bonus; high-stakes facts require ≥2 domains or are flagged.
 3. **Dedup** against conversational slots by `(frame_name, value)`.

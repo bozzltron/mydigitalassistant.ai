@@ -102,6 +102,44 @@ async def test_brave_parses_object_thumbnail_and_videos_section():
     assert videos[0].channel_title == "Chan"
 
 
+async def test_brave_requests_and_parses_extra_snippets():
+    """`extra_snippets=true` is sent and the extra excerpts are captured.
+
+    Phase 1 of the Brave LLM-context work: the extra excerpts enrich the
+    extraction input (docs/SEARCH.md §5). They are kept off `snippet` so the
+    prompt and the relevance gate stay lean.
+    """
+    payload = {
+        "web": {
+            "results": [
+                {
+                    "title": "A",
+                    "url": "https://a.example/1",
+                    "description": "main snippet",
+                    "extra_snippets": ["extra one", "extra two"],
+                },
+                {"title": "B", "url": "https://b.example/2", "description": "d"},
+            ]
+        }
+    }
+    seen: dict = {}
+
+    async def handler(request):
+        seen["params"] = dict(request.url.params)
+        return httpx.Response(200, json=payload)
+
+    backend = _brave_backend(handler)
+    try:
+        results, _ = await backend.search("q", num_results=5)
+    finally:
+        await backend.close()
+
+    assert seen["params"].get("extra_snippets") == "true"
+    assert results[0].snippet == "main snippet"
+    assert results[0].extra_snippets == ["extra one", "extra two"]
+    assert results[1].extra_snippets == []
+
+
 async def test_searxng_image_result_resolves_relative_img_src():
     payload = {
         "results": [

@@ -301,6 +301,39 @@ async def test_extract_facts_from_search_parses_results():
     assert result.slots[0].value == "Hydrochoerus hydrochaeris"
 
 
+async def test_extract_facts_from_search_includes_extra_snippets():
+    """Brave's extra excerpts reach the extraction input (docs/SEARCH.md §5)."""
+    mock_llm = AsyncMock()
+    mock_llm.utility_model = "qwen2.5:3b"
+    mock_llm.chat.return_value.content = json.dumps({"slots": [], "associations": []})
+
+    result = MagicMock(url="https://example.com/a", snippet="main snippet", title="A")
+    result.extra_snippets = ["a rare extra fact"]
+
+    await extract_facts_from_search("q", [result], mock_llm)
+
+    messages = mock_llm.chat.call_args[0][0]
+    sent = "\n".join(m.content for m in messages)
+    assert "main snippet" in sent
+    assert "a rare extra fact" in sent
+
+
+def test_result_text_bounds_extra_snippets_and_passes_plain_results():
+    """The extraction-input bound holds, and a result without extras is unchanged."""
+    from assistant.backend.pipeline.extractor import (
+        _SEARCH_RESULT_TEXT_CHARS,
+        _result_text,
+    )
+
+    long = MagicMock(snippet="s")
+    long.extra_snippets = ["x" * 5000]
+    assert len(_result_text(long)) == _SEARCH_RESULT_TEXT_CHARS
+
+    plain = MagicMock(snippet="plain")
+    plain.extra_snippets = []
+    assert _result_text(plain) == "plain"
+
+
 async def test_extract_facts_from_search_empty_results():
     mock_llm = AsyncMock()
     result = await extract_facts_from_search("query", [], mock_llm)
