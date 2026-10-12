@@ -50,6 +50,10 @@ dependencies = [
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
+    # Turns a hung test into a named failure instead of a stalled suite. A
+    # connection-teardown deadlock (aiosqlite worker thread in sqlcipher) once
+    # hung the full run indefinitely; see test_phase9_scheduler_consolidation.
+    "pytest-timeout>=2.3",
     "ruff>=0.3",
 ]
 
@@ -72,6 +76,11 @@ package-dir = { assistant = "assistant" }
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+# Per-test timeout. A hung test must FAIL with its name, not stall the suite
+# forever: an aiosqlite worker thread deadlocking in sqlcipher during connection
+# teardown did exactly that (see test_phase9_scheduler_consolidation). Generous —
+# the whole suite runs in ~210s and no single test approaches this.
+timeout = 120
 testpaths = ["tests"]
 pythonpath = ["."]
 markers = [
