@@ -56,7 +56,13 @@ def _brave_backend(handler) -> BraveBackend:
     return backend
 
 
-async def test_brave_parses_object_thumbnail_and_videos_section():
+async def test_brave_parses_object_thumbnail_and_videos_section(monkeypatch):
+    from assistant.backend.config import settings
+
+    # /web/search is the fallback now (LLM Context is the default); pin the flag
+    # off so this exercises the web path.
+    monkeypatch.setattr(settings, "brave_llm_context", False)
+
     payload = {
         "web": {
             "results": [
@@ -102,13 +108,17 @@ async def test_brave_parses_object_thumbnail_and_videos_section():
     assert videos[0].channel_title == "Chan"
 
 
-async def test_brave_requests_and_parses_extra_snippets():
+async def test_brave_requests_and_parses_extra_snippets(monkeypatch):
     """`extra_snippets=true` is sent and the extra excerpts are captured.
 
-    Phase 1 of the Brave LLM-context work: the extra excerpts enrich the
-    extraction input (docs/SEARCH.md §5). They are kept off `snippet` so the
-    prompt and the relevance gate stay lean.
+    This is the `/web/search` fallback path (LLM Context is the default); the
+    extras enrich the extraction input (docs/SEARCH.md §5) and are kept off
+    `snippet` so the prompt and the relevance gate stay lean.
     """
+    from assistant.backend.config import settings
+
+    monkeypatch.setattr(settings, "brave_llm_context", False)
+
     payload = {
         "web": {
             "results": [

@@ -69,9 +69,9 @@ services:
       - SEARCH_BASE_URL=http://searxng:8080
       - BRAVE_ENABLED=${BRAVE_ENABLED:-false}
       - BRAVE_API_KEY=${BRAVE_API_KEY:-}
-      # Dev uses Brave's agent-oriented LLM Context endpoint (see docs/SEARCH.md)
-      # so it can be compared against prod, which stays on /web/search.
-      - BRAVE_LLM_CONTEXT=true
+      # Brave's agent-oriented LLM Context endpoint (see docs/SEARCH.md). On by
+      # default; set BRAVE_LLM_CONTEXT=false to fall back to /web/search.
+      - BRAVE_LLM_CONTEXT=${BRAVE_LLM_CONTEXT:-true}
       - WHISPER_MODEL=base
       - WHISPER_DEVICE=cpu
       - SCHEDULER_ENABLED=${SCHEDULER_ENABLED:-true}

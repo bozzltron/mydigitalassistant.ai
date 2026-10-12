@@ -118,17 +118,17 @@ until the user consents. This is a hard privacy rule — see the root `AGENTS.md
 relevance-ranked content chunks per URL (text, tables, code) instead of the single
 `description` of `/web/search` — the channel Brave's docs recommend for agents.
 
-- **Phase 1 (shipped):** `/web/search` requests `extra_snippets=true` and the
-  extras feed extraction input (§5).
-- **Phase 2 (dev only):** `BRAVE_LLM_CONTEXT=true` makes `BraveBackend.search()`
-  use `/llm/context` *instead of* `/web/search`, and the orchestrator skips its own
-  page-fetch (the content is already in the snippets). `snippet` = first chunk,
-  the rest ride in `extra_snippets`. Two consequences: **videos are lost** (the
-  endpoint has no `videos` section) and result images come from
-  `sources[].thumbnail` (OG-class) rather than the image index. Dev pins it on
-  (`docker-compose.yml`) to compare against prod; prod stays on `/web/search`.
-  The measured swap is pre-registered in
+- **LLM Context is the default.** `BRAVE_LLM_CONTEXT=true` (on by default) makes
+  `BraveBackend.search()` use `/llm/context` *instead of* `/web/search`, and the
+  orchestrator skips its own page-fetch (the content is already in the snippets).
+  `snippet` = first chunk, the rest ride in `extra_snippets`, so the extraction
+  path (§5) needs no change. Two consequences, accepted on the live dev→prod
+  swap: **videos are lost** (the endpoint has no `videos` section) and result
+  images come from `sources[].thumbnail` (OG-class) rather than the image index.
+  The trade and the alternative shapes are in
   `assistant/experiments/brave_llm_context/plan.md`.
+- **Fallback:** `BRAVE_LLM_CONTEXT=false` restores `/web/search`, which requests
+  `extra_snippets=true` and folds the extras into extraction input (§5).
 
 ## 4. The relevance gate
 

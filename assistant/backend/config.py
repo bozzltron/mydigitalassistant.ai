@@ -105,10 +105,12 @@ class Settings(BaseSettings):
     # relevance-ranked content chunks per URL — the channel Brave's docs
     # recommend for agents — in place of /web/search. When true,
     # ``BraveBackend.search()`` uses it and the orchestrator skips its own
-    # page-fetch (the content is already in the snippets). Off by default; dev
-    # turns it on to compare against prod. See docs/SEARCH.md and
-    # assistant/experiments/brave_llm_context/plan.md.
-    brave_llm_context: bool = False
+    # page-fetch (the content is already in the snippets). On by default,
+    # validated live on dev before the prod swap; the trade is documented in
+    # docs/SEARCH.md (no `videos` section; result images are OG-class
+    # ``sources[].thumbnail``, not the image index). Set BRAVE_LLM_CONTEXT=false
+    # to fall back to /web/search.
+    brave_llm_context: bool = True
 
     # Ollama request timeout in seconds. Local 27B-class models with large
     # context prefills (tool loops) can legitimately take minutes; the default
