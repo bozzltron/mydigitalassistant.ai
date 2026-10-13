@@ -9,8 +9,8 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 import httpx
+from fastapi import Body, FastAPI, File, HTTPException, Query, Response, UploadFile
 from fastapi import Depends as _Depends
-from fastapi import FastAPI, File, HTTPException, Query, Response, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -18,6 +18,12 @@ from pydantic import BaseModel
 from assistant.backend.config import settings
 from assistant.backend.db.schema import init_db
 from assistant.backend.db.sqlcipher import connect
+from assistant.backend.maps.geojson import (
+    GeoJSONError,
+    dumps,
+    empty_fc,
+    validate_fc,
+)
 from assistant.backend.memory.metadata import (
     METADATA_KEY_EMBEDDING_MODEL,
     get_metadata,
@@ -415,11 +421,69 @@ async def healthz():
 
 @app.get("/settings")
 async def get_settings() -> dict:
-    """Return frontend-facing settings so the UI can show/hide the Brave toggle."""
+    """Frontend-facing settings: the Brave toggle and the map page."""
+    from assistant.backend.maps.config import MAP_STYLES
+
     return {
         "brave_enabled": settings.brave_enabled,
         "brave_configured": bool(settings.brave_api_key),
+        # Maps gate the TopBar button, the route and tile rendering together; the
+        # styles ride here so the client never sniffs a style's layers.
+        "maps_enabled": settings.maps_enabled,
+        "map_tiles_base_url": settings.map_tiles_base_url,
+        "map_styles": MAP_STYLES,
     }
+
+
+# --- Map: a GeoJSON file in the sandbox (docs/MAPS.md) ---
+
+# An ordinary sandbox file at the sandbox root, so the agent reaches it with the
+# existing file tools — `read_file("map.geojson")`, `glob("*.geojson")`.
+_MAP_FILE = "map.geojson"
+
+
+@app.get("/map")
+async def get_map() -> dict:
+    """The map as a FeatureCollection, or an empty one when the file is absent.
+
+    The page is the only writer; the agent only reads. A file that will not parse
+    is reported honestly rather than repaired.
+    """
+    from assistant.backend.pipeline.filesystem import read_sandbox_file
+
+    try:
+        text = read_sandbox_file(_MAP_FILE)
+    except FileNotFoundError:
+        return empty_fc()
+    try:
+        data = json.loads(text)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=422, detail=f"map.geojson is not valid JSON: {e}"
+        ) from e
+    if not isinstance(data, dict) or data.get("type") != "FeatureCollection":
+        raise HTTPException(
+            status_code=422, detail="map.geojson is not a FeatureCollection"
+        )
+    return data
+
+
+@app.put("/map")
+async def put_map(payload: dict = Body(...)) -> dict:
+    """Replace the map with the posted FeatureCollection.
+
+    The page holds the whole map, so it PUTs the whole file on every change (add,
+    edit, remove) — no per-point endpoints, no read-modify-write race, because the
+    page is the only writer. Validated and canonicalised, then written atomically.
+    """
+    from assistant.backend.pipeline.filesystem import write_sandbox_bytes
+
+    try:
+        canonical = validate_fc(payload)
+    except GeoJSONError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    write_sandbox_bytes(_MAP_FILE, dumps(canonical).encode("utf-8"), overwrite=True)
+    return canonical
 
 
 # Search

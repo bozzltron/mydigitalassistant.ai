@@ -19,6 +19,7 @@ import type {
   SessionMessage,
   DeletedSession,
   OgPreviewResponse,
+  MapFeatureCollection,
 } from '../types'
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
@@ -136,9 +137,22 @@ export const AssistantNameSchema = z.object({
   name: z.string(),
 })
 
+export const MapStyleSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  supports3d: z.boolean(),
+  point_color: z.string(),
+  label_color: z.string(),
+})
+
 export const SettingsSchema = z.object({
   brave_enabled: z.boolean(),
   brave_configured: z.boolean(),
+  // Defaulted so a backend (or a test mock) without the map keys does not break
+  // the settings read — maps simply read as disabled.
+  maps_enabled: z.boolean().default(false),
+  map_tiles_base_url: z.string().default(''),
+  map_styles: z.array(MapStyleSchema).default([]),
 })
 
 // Re-export types from shared types
@@ -527,9 +541,28 @@ export async function getAssistantName(): Promise<{ name: string }> {
   return validate(AssistantNameSchema, data)
 }
 
-export async function getSettings(): Promise<{ brave_enabled: boolean; brave_configured: boolean }> {
+export async function getSettings(): Promise<z.infer<typeof SettingsSchema>> {
   const data = await api<unknown>('/settings')
   return validate(SettingsSchema, data)
+}
+
+/**
+ * The map file as a FeatureCollection (`map.geojson`). An absent file comes back
+ * as an empty FeatureCollection, so the page has one shape to handle.
+ */
+export async function getMap(): Promise<MapFeatureCollection> {
+  return api<MapFeatureCollection>('/map')
+}
+
+/**
+ * Replace the map with the whole FeatureCollection.
+ *
+ * The page is the only writer (the agent only reads), so it sends the whole file
+ * on every change — no per-point endpoints, no read-modify-write race. The server
+ * validates and canonicalises; a 422 means the map was refused and not written.
+ */
+export async function putMap(fc: MapFeatureCollection): Promise<MapFeatureCollection> {
+  return api<MapFeatureCollection>('/map', { method: 'PUT', body: JSON.stringify(fc) })
 }
 
 /**

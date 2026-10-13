@@ -365,7 +365,7 @@ describe('api service', () => {
   })
 
   describe('getSettings', () => {
-    it('fetches settings', async () => {
+    it('fetches settings and defaults the map keys when a backend omits them', async () => {
       mockFetch.mockResolvedValue({
         ok: true,
         text: () => Promise.resolve(JSON.stringify({ brave_enabled: true, brave_configured: true })),
@@ -374,7 +374,41 @@ describe('api service', () => {
       const result = await getSettings()
 
       expect(mockFetch).toHaveBeenCalledWith('/settings', expect.any(Object))
-      expect(result).toEqual({ brave_enabled: true, brave_configured: true })
+      expect(result).toEqual({
+        brave_enabled: true,
+        brave_configured: true,
+        maps_enabled: false,
+        map_tiles_base_url: '',
+        map_styles: [],
+      })
+    })
+
+    it('reads the map keys when the backend sends them', async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        text: () =>
+          Promise.resolve(
+            JSON.stringify({
+              brave_enabled: false,
+              brave_configured: false,
+              maps_enabled: true,
+              map_tiles_base_url: 'https://tiles.openfreemap.org/styles',
+              map_styles: [
+                {
+                  id: 'liberty',
+                  label: 'Liberty',
+                  supports3d: true,
+                  point_color: '#c2410c',
+                  label_color: '#1c1917',
+                },
+              ],
+            })
+          ),
+      })
+
+      const result = await getSettings()
+      expect(result.maps_enabled).toBe(true)
+      expect(result.map_styles[0]?.id).toBe('liberty')
     })
   })
 

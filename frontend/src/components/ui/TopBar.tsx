@@ -10,7 +10,7 @@ import { AlertsPanel } from './AlertsPanel'
 import { EditModal } from './EditModal'
 import { Modal } from './Modal'
 import styles from './TopBar.module.css'
-import { PlusIcon, MicIcon, FolderIcon, BrainIcon, GearIcon, TraceIcon } from './TopBarIcons'
+import { PlusIcon, MicIcon, FolderIcon, BrainIcon, MapIcon, GearIcon, TraceIcon } from './TopBarIcons'
 
 interface TopBarProps {
   conversations: Session[]
@@ -38,6 +38,9 @@ export default function TopBar(props: TopBarProps) {
   const [editSessionId, setEditSessionId] = createSignal<string | null>(null)
   const [editTitle, setEditTitle] = createSignal('')
   const [braveConfigured, setBraveConfigured] = createSignal(false)
+  // Maps gate the button, the route and tile rendering together; the button only
+  // appears when the backend has maps enabled.
+  const [mapsEnabled, setMapsEnabled] = createSignal(false)
   const [archiveConfirmSessionId, setArchiveConfirmSessionId] = createSignal<string | null>(null)
 
   // Local voices, rendered declaratively. Previously the <select> was built
@@ -128,6 +131,7 @@ export default function TopBar(props: TopBarProps) {
     try {
       const backendSettings = await getSettings()
       setBraveConfigured(backendSettings.brave_configured)
+      setMapsEnabled(backendSettings.maps_enabled)
       if (backendSettings.brave_configured) {
         updateSetting('braveEnabled', backendSettings.brave_enabled)
       }
@@ -358,6 +362,12 @@ export default function TopBar(props: TopBarProps) {
             <FolderIcon />
             Files
           </a>
+          <Show when={mapsEnabled()}>
+            <a href="/maps" class="topbar-btn" title="Maps">
+              <MapIcon />
+              Maps
+            </a>
+          </Show>
           <a href="/brain" class="topbar-btn" title="Brain Observatory">
             <BrainIcon />
             Brain

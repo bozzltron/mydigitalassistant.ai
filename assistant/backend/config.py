@@ -112,6 +112,15 @@ class Settings(BaseSettings):
     # to fall back to /web/search.
     brave_llm_context: bool = True
 
+    # Maps: a GeoJSON file (`map.geojson`) in the sandbox, rendered by the map
+    # page. Off by default — enabling maps is the consent to fetch a basemap from
+    # OpenFreeMap (the browser contacts tiles.openfreemap.org directly). It gates
+    # the TopBar button, the route, and tile rendering together. See docs/MAPS.md.
+    maps_enabled: bool = False
+    # OpenFreeMap style base; the client appends `/{style_id}`. Our own `.env`,
+    # never user input, so handing it to the browser is not an SSRF vector.
+    map_tiles_base_url: str = "https://tiles.openfreemap.org/styles"
+
     # Ollama request timeout in seconds. Local 27B-class models with large
     # context prefills (tool loops) can legitimately take minutes; the default
     # is generous on purpose.

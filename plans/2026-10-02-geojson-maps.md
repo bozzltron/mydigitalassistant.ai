@@ -14,9 +14,16 @@ estimated_hours: 15
 ## Scope
 
 1. A map page.
-2. The user clicks the map and adds a point with a description.
+2. The user clicks the map and adds a point with a description — and can edit or
+   remove one.
 3. It saves as a GeoJSON file in the user's sandbox.
 4. The agent can reference the map by **reading that file** in conversation.
+
+**No experiment.** The project's rule is to measure a non-trivial belief before
+building on it. The earlier draft's one such belief was *"does the model author
+coordinates correctly?"* — out of scope now that the agent only reads. Everything
+that remains is plumbing over features that already exist (a sandbox file, MapLibre
+rendering GeoJSON, `read_file`), so there is nothing to pre-register.
 
 ## Not in scope
 
@@ -43,9 +50,10 @@ estimated_hours: 15
 - **The write is atomic** through `write_sandbox_bytes` (`filesystem.py:165`) — the
   existing tmp+rename writer with the traversal/symlink guard.
 - **No frame required.** The page reads and writes the file by its fixed path; the
-  agent reads it by path. (Registering a frame via `apply_file_to_memory` would make
-  it appear on the Files page and in retrieval — a small follow-up, not needed for
-  the four requirements.)
+  agent finds it with `list_files` / `glob("*.geojson")` and reads it with
+  `read_file("map.geojson")`. Registering a frame via `apply_file_to_memory` would
+  put it on the Files page and in retrieval, but that step runs extraction — an LLM
+  call on every point added. Not worth it for the four requirements.
 
 ## The file
 
@@ -106,10 +114,11 @@ one GeoJSON source and one `circle` layer) and Mapbox GL (not OSS).
 **No maintained Solid wrapper.** `solid-maplibre` is 0.5.0 (2025-03-09), MIT,
 `peerDependencies: { "maplibre-gl": "*", "solid-js": "*" }`, no release in the 19
 months since — a peer range of `"*"` is the absence of a compatibility claim, and two
-MapLibre majors have shipped underneath it. `maplibre-gl` is **6.12.0** and **removed
-the default export** (`import { Map, setWorkerUrl } from 'maplibre-gl'`);
-`setWorkerUrl` is mandatory under Vite (`maplibre-gl-worker.mjs?worker&url`). So:
-**~150 lines of thin Solid layer.**
+MapLibre majors have shipped underneath it. `maplibre-gl` is **6.14.0** and **removed
+the default export** (verified: `export default` is gone; `Map` and `setWorkerUrl` are
+named exports). So `import { Map, setWorkerUrl } from 'maplibre-gl'`, and
+`setWorkerUrl` is mandatory under Vite (`maplibre-gl-worker.mjs?worker&url`). **~150
+lines of thin Solid layer.**
 
 `maplibre-gl/dist/maplibre-gl.css` must be imported from **inside** the lazily
 imported module so Vite code-splits it — a global import ships ~100 KB of map CSS to
@@ -171,6 +180,13 @@ class defined in two stylesheets).
   (0–60°, `maxPitch: 60`). Untoggling resets `pitch` to `0`.
 - **Download GeoJSON** — a blob from the in-memory FeatureCollection; no endpoint.
 - Style choice and camera live in `localStorage` (user preferences, not data).
+- **Feedback on every action** (AGENTS.md: show feedback on user actions). Confirming
+  a point shows a saving state, then a brief confirmation; a failed `PUT` shows the
+  error and keeps the point in the panel so the work is not lost. The add-mode toggle,
+  the panel and the picker use CSS transitions (~0.2s), never abrupt.
+- **One writer, last-write-wins.** Two tabs editing the same map do not merge — the
+  page owns the file and the agent only reads, so there is no concurrent-writer race
+  to solve for a single-user household map.
 
 **Four existing assertions change, in two tests** — the part that gets half-done:
 `TopBar.test.tsx` gains `Maps` in the order label and `7 → 8` in the two length

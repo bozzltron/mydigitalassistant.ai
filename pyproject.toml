@@ -67,6 +67,7 @@ packages = [
     "assistant.backend",
     "assistant.backend.api",
     "assistant.backend.db",
+    "assistant.backend.maps",
     "assistant.backend.memory",
     "assistant.backend.pipeline",
     "assistant.cli",

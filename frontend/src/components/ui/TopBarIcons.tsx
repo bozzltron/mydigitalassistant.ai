@@ -36,6 +36,13 @@ export const BrainIcon = (props: { class?: string }) => (
   </Icon>
 )
 
+export const MapIcon = (props: { class?: string }) => (
+  <Icon class={props.class}>
+    <path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2Z" />
+    <path d="M9 4v14M15 6v14" />
+  </Icon>
+)
+
 export const GearIcon = (props: { class?: string }) => (
   <Icon class={props.class}>
     <circle cx="12" cy="12" r="3" />

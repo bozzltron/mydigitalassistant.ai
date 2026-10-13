@@ -29,3 +29,6 @@
 
 /* 10. Files page styles */
 @import './files.css';
+
+/* 11. Map page styles */
+@import './map.css';
