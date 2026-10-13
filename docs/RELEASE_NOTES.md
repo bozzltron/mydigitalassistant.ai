@@ -1,5 +1,38 @@
 # MyDigitalAssistant.ai — release notes
 
+## v0.11.18-alpha
+
+**Brave search runs on the LLM Context endpoint now — one request per turn, with
+page dates, and sources that match the answer — and the test suite can no longer
+hang.**
+
+- **Brave's LLM Context is the default.** `BRAVE_LLM_CONTEXT=true` makes
+  `BraveBackend.search()` use `/res/v1/llm/context` (pre-extracted,
+  relevance-ranked content chunks per URL — the channel Brave's docs recommend for
+  agents) instead of `/web/search`, and the orchestrator skips its own page-fetch.
+  `snippet` = the first chunk, the rest ride in `extra_snippets`, so extraction
+  needed no change. Two accepted trades (`docs/SEARCH.md`): **videos are gone** (no
+  `videos` section) and result images are OG-class `sources[].thumbnail`, not the
+  500px image index. `BRAVE_LLM_CONTEXT=false` restores `/web/search`.
+- **One Brave request per search turn.** The LLM Context response already carries
+  the imagery, so the image index is not called on that path — roughly **1,000
+  turns/month** on the free allowance, up from ~500. The `/web/search` fallback
+  still runs web + images.
+- **Page dates.** `sources[].age` rides on the result and into both the prompt
+  (`(2025-11-10)`) and the extraction input (`Published: 2025-11-10`), with a
+  prompt rule to prefer recent results on time-sensitive queries — no extra
+  request.
+- **Sources reflect the turn.** The `**Sources:**` footer cites the pages the
+  extraction drew facts from, not every result, and near-duplicate URLs collapse
+  (`normalize_url`). No frontend change was needed.
+- **The suite can no longer hang.** A test driving one `MemoryStore` through four
+  `asyncio.run()` loops deadlocked an aiosqlite worker thread in sqlcipher and
+  stalled the whole run; the file now runs on one loop per test, and a
+  `pytest-timeout` (120s) guard turns any future hang into a named failure.
+- **Pre-registered, not built.** The two remaining levers — rebalancing the
+  per-result text budget and the `freshness` request parameter — are
+  pre-registered in `assistant/experiments/brave_context_budget/plan.md`.
+
 ## v0.11.17-alpha
 
 **The file sandbox becomes the host folder — and the brain moves out of its way —
