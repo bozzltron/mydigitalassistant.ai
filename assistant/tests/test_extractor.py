@@ -334,6 +334,21 @@ def test_result_text_bounds_extra_snippets_and_passes_plain_results():
     assert _result_text(plain) == "plain"
 
 
+def test_result_block_includes_published_date():
+    """The extraction input carries the page date so stale facts are not current."""
+    from assistant.backend.pipeline.extractor import _result_block
+
+    dated = MagicMock(title="T", url="https://x", snippet="s")
+    dated.extra_snippets = []
+    dated.published = "2025-11-10"
+    assert "Published: 2025-11-10" in _result_block(0, dated)
+
+    undated = MagicMock(title="T", url="https://x", snippet="s")
+    undated.extra_snippets = []
+    undated.published = None
+    assert "Published:" not in _result_block(0, undated)
+
+
 async def test_extract_facts_from_search_empty_results():
     mock_llm = AsyncMock()
     result = await extract_facts_from_search("query", [], mock_llm)

@@ -61,6 +61,18 @@ _GENERATION_FAILURE_MESSAGE = (
 )
 
 
+def _format_search_result(result) -> str:
+    """One prompt line for a search result, with its page date when known.
+
+    Brave's LLM Context supplies ``sources[].age`` (``SearchResult.published``);
+    showing it lets the model weigh freshness — a 2025 page should not answer a
+    "today" question (docs/SEARCH.md §5).
+    """
+    published = getattr(result, "published", None)
+    stamp = f" ({published})" if isinstance(published, str) and published else ""
+    return f"- [{result.title}]({result.url}){stamp} - {result.snippet}"
+
+
 def _finalize_event(answer: str, reasoning_trace: str | None = None) -> str:
     """A `finalize` SSE frame. Kept in one place so the wire shape cannot drift."""
     return (
@@ -1632,7 +1644,7 @@ class Orchestrator:
             if search_results:
                 display_results = search_results[: settings.max_search_results_in_prompt]
                 search_text = "\n".join(
-                    f"- [{r.title}]({r.url}) - {r.snippet}" for r in display_results
+                    _format_search_result(r) for r in display_results
                 )
                 system_prompt += f"\n\n**Search Results:**\n{search_text}"
 

@@ -178,6 +178,12 @@ async def test_brave_llm_context_parses_grounding_and_sources(monkeypatch):
                     "src": "https://img/s.png",
                     "original": "https://img/o.png",
                 },
+                "age": [
+                    "Monday, November 10, 2025",
+                    "2025-11-10",
+                    "336 days ago",
+                    "2025-11-10T19:16:26Z",
+                ],
             }
         },
     }
@@ -201,7 +207,10 @@ async def test_brave_llm_context_parses_grounding_and_sources(monkeypatch):
     assert results[0].extra_snippets == ["second chunk"]
     assert results[0].thumbnail == "https://img/s.png"
     assert results[0].image == "https://img/o.png"
+    # The page date rides on the result (freshness signal for prompt + extraction).
+    assert results[0].published == "2025-11-10"
     assert results[1].snippet == "b chunk"
+    assert results[1].published is None  # no age in sources → unknown
     assert seen["path"].endswith("/llm/context")
     assert seen["params"].get("enable_source_metadata") == "true"
 

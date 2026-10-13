@@ -639,3 +639,21 @@ async def test_orchestrator_correction_contradicted_flagged_not_applied(store):
 
     updated_slot = await store.get_slot(guitar.id, "strings")
     assert updated_slot.value == "6", "Slot must NOT be updated when correction is contradicted"
+
+
+def test_format_search_result_includes_published_date():
+    """A result's page date is shown in the prompt so freshness is visible.
+
+    Brave's LLM Context supplies `sources[].age` (SearchResult.published); a stale
+    page must not read as current (docs/SEARCH.md §5).
+    """
+    from assistant.backend.pipeline.orchestrator import _format_search_result
+    from assistant.backend.pipeline.search import SearchResult
+
+    dated = SearchResult(
+        title="T", url="https://x", snippet="s", engine="brave", published="2025-11-10"
+    )
+    assert _format_search_result(dated) == "- [T](https://x) (2025-11-10) - s"
+
+    undated = SearchResult(title="T", url="https://x", snippet="s", engine="brave")
+    assert _format_search_result(undated) == "- [T](https://x) - s"

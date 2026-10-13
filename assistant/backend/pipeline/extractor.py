@@ -195,7 +195,7 @@ Respond with ONLY the JSON object, no commentary."""
 
 SEARCH_EXTRACTION_PROMPT = """You extract structured facts from web search results.
 
-Given a user query and a list of search results (title, URL, snippet), identify:
+Given a user query and a list of search results (title, URL, date, snippet), identify:
 - Concrete facts about entities, concepts, events, or household items.
 - Relationships between them.
 
@@ -227,6 +227,9 @@ Rules:
 - When results are from a high-confidence source and include full page content:
   extract up to 8 slots, focusing on all concrete facts explicitly stated.
 - For snippet-only results: stay conservative, aim for up to 4-5 slots.
+- A result may carry a `Published:` date. When the query is time-sensitive
+  ("latest", "current", "this week", prices, deals, news), prefer the recent
+  results and do not state a stale fact as if it were current.
 
 Respond with ONLY the JSON object, no commentary."""
 
@@ -533,6 +536,25 @@ def _result_text(result: "SearchResult") -> str:
     return f"{snippet} {joined}".strip()[:_SEARCH_RESULT_TEXT_CHARS]
 
 
+def _result_block(index: int, result: "SearchResult") -> str:
+    """One result for the extraction prompt, with its page date when known.
+
+    Brave's LLM Context supplies ``sources[].age`` (``SearchResult.published``);
+    the extractor needs it to avoid treating a stale page as current
+    (docs/SEARCH.md §5).
+    """
+    published = getattr(result, "published", None)
+    date_line = (
+        f"\nPublished: {published}"
+        if isinstance(published, str) and published
+        else ""
+    )
+    return (
+        f"Result {index + 1}:\nTitle: {result.title}\nURL: {result.url}"
+        f"{date_line}\nSnippet: {_result_text(result)}"
+    )
+
+
 async def extract_facts_from_search(
     query: str,
     search_results: list["SearchResult"],
@@ -545,8 +567,7 @@ async def extract_facts_from_search(
         return ExtractionResult()
 
     results_text = "\n\n".join(
-        f"Result {i + 1}:\nTitle: {r.title}\nURL: {r.url}\nSnippet: {_result_text(r)}"
-        for i, r in enumerate(search_results)
+        _result_block(i, r) for i, r in enumerate(search_results)
     )
     user_content = f"User query: {query}\n\n{results_text}"
 

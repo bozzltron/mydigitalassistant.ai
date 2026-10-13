@@ -152,6 +152,11 @@ Search-derived facts enter memory only when they are accurate and useful:
    the relevance gate. On the `/web/search` fallback the top pages are then
    **fetched** and extracted from full content (`extract_facts_from_document`);
    the LLM Context path skips that fetch — the chunks *are* the content.
+   The page date (`sources[].age` → `SearchResult.published`) rides into both the
+   prompt and the extraction input, so freshness is visible rather than assumed.
+   Two *unused* levers are pre-registered in
+   `assistant/experiments/brave_context_budget/plan.md`: rebalancing the per-result
+   text budget, and the `freshness` request parameter.
 2. **Corroborate** — a fact from multiple independent domains gets a
    source-reliability bonus; high-stakes facts require ≥2 domains or are flagged.
 3. **Dedup** against conversational slots by `(frame_name, value)`.

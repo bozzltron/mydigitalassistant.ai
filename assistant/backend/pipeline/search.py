@@ -238,6 +238,19 @@ def _thumb_urls(item: dict) -> tuple[str | None, str | None]:
     return None, None
 
 
+def _source_date(meta: dict) -> str | None:
+    """A page's date (`YYYY-MM-DD`) from Brave's ``sources[url].age``.
+
+    Brave returns ``age`` as four fixed positions: full date, ``YYYY-MM-DD``,
+    relative age, ISO 8601. The ``YYYY-MM-DD`` form is the one to show; empty when
+    the page has no known date.
+    """
+    age = meta.get("age")
+    if isinstance(age, list) and len(age) >= 2 and age[1]:
+        return str(age[1])
+    return None
+
+
 def _absolute(url: str, base: str) -> str:
     """Resolve a possibly-relative URL (SearXNG image_proxy) against its host."""
     if url.startswith("http://") or url.startswith("https://"):
@@ -261,6 +274,10 @@ class SearchResult:
     # from `snippet` so the prompt and relevance gate stay lean and only the
     # extraction input is enriched (see `extract_facts_from_search`).
     extra_snippets: list[str] = field(default_factory=list)
+    # The page's date (`YYYY-MM-DD`) when the backend knows it — Brave's LLM
+    # Context supplies `sources[].age`. Surfaced so the prompt and the extractor
+    # can weigh freshness (docs/SEARCH.md §5).
+    published: str | None = None
 
 
 @dataclass
@@ -864,6 +881,7 @@ class BraveBackend(SearchBackend):
                     thumbnail=thumbnail,
                     image=image,
                     extra_snippets=snippets[1:],
+                    published=_source_date(meta),
                 )
             )
             if len(results) >= num_results:
