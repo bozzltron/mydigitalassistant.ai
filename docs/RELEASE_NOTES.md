@@ -29,9 +29,9 @@ hang.**
   `asyncio.run()` loops deadlocked an aiosqlite worker thread in sqlcipher and
   stalled the whole run; the file now runs on one loop per test, and a
   `pytest-timeout` (120s) guard turns any future hang into a named failure.
-- **Pre-registered, not built.** The two remaining levers — rebalancing the
-  per-result text budget and the `freshness` request parameter — are
-  pre-registered in `assistant/experiments/brave_context_budget/plan.md`.
+- **Considered, not built.** The two remaining levers — rebalancing the per-result
+  text budget and the `freshness` request parameter — are recorded as declined,
+  with the reasoning, in `docs/SEARCH.md` §5.
 
 ## v0.11.17-alpha
 

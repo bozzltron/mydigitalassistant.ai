@@ -187,9 +187,13 @@ Search-derived facts enter memory only when they are accurate and useful:
    the LLM Context path skips that fetch — the chunks *are* the content.
    The page date (`sources[].age` → `SearchResult.published`) rides into both the
    prompt and the extraction input, so freshness is visible rather than assumed.
-   Two *unused* levers are pre-registered in
-   `assistant/experiments/brave_context_budget/plan.md`: rebalancing the per-result
-   text budget, and the `freshness` request parameter.
+   Two further levers are deliberately **not** pursued — recorded here so they are
+   not rediscovered as ideas without the reason: rebalancing the per-result text
+   budget (`_SEARCH_RESULT_TEXT_CHARS` discards a rich URL's lower-ranked chunks,
+   but the first 1000 chars are the best of them, so the gain is marginal against
+   the hand-audited ground truth it would take to measure), and the `freshness`
+   request parameter (the page date already lets the model weigh freshness, and
+   pre-filtering by age risks cutting the pages that answer a *stable* query).
 2. **Corroborate** — a fact from multiple independent domains gets a
    source-reliability bonus; high-stakes facts require ≥2 domains or are flagged.
 3. **Dedup** against conversational slots by `(frame_name, value)`.
