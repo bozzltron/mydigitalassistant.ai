@@ -8,6 +8,7 @@ import uuid
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 from pydantic import BaseModel
@@ -50,6 +51,9 @@ from assistant.backend.pipeline.task_router import TaskType, route
 from assistant.backend.pipeline.tools import builtin_tools
 from assistant.backend.pipeline.user_content import CONTENT_SLOT_KEY
 
+if TYPE_CHECKING:  # avoids the circular import the lazy imports below also dodge
+    from assistant.backend.pipeline.extractor import ExtractionResult
+
 logger = logging.getLogger(__name__)
 
 # One wording, shared by chat() and chat_stream(). Local inference can be slow
@@ -62,7 +66,7 @@ _GENERATION_FAILURE_MESSAGE = (
 )
 
 
-def _format_search_result(result) -> str:
+def _format_search_result(result: SearchResult) -> str:
     """One prompt line for a search result, with its page date when known.
 
     Brave's LLM Context supplies ``sources[].age`` (``SearchResult.published``);
@@ -74,7 +78,9 @@ def _format_search_result(result) -> str:
     return f"- [{result.title}]({result.url}){stamp} - {result.snippet}"
 
 
-def _citations_from_search(search_results, extraction) -> list[str]:
+def _citations_from_search(
+    search_results: list[SearchResult], extraction: "ExtractionResult | None"
+) -> list[str]:
     """The pages a search turn actually used, for the sources footer.
 
     Prefers the URLs the extraction drew facts from (`source_urls` on the
