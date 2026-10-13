@@ -110,6 +110,11 @@ them would serve stale results. The quota driver is scheduled-task *volume* (51%
 of search turns from 18 recurring queries); the lever is task cadence, or routing
 tasks to the free local SearXNG, not a cache.
 
+**The trace names the endpoint.** `SearchInfo.endpoint` (`llm_context` | `web`)
+rides the trace and the persisted episode, and the badge reads *Searched via
+Brave · LLM Context*, so the two — which return different kinds of result — are
+distinguishable after the fact.
+
 **Brave is the only permitted non-local backend** (it does not profile users or
 sell query data). A **sensitive query is gated by consent** *before* it is sent
 (`classify_query_sensitivity` → `consent_required`); the search does not execute

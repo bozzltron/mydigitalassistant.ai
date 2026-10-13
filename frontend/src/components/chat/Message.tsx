@@ -114,7 +114,11 @@ export default function Message(props: MessageProps) {
     const info = message().meta?.search_info
     if (isSearch() && info) {
       const badgeClass = info.backend === 'brave' ? 'badge-brave' : 'badge-searxng'
-      const badgeLabel = info.backend === 'brave' ? 'Searched via Brave' : 'Searched via local SearXNG'
+      let badgeLabel = info.backend === 'brave' ? 'Searched via Brave' : 'Searched via local SearXNG'
+      // Brave has two endpoints and they return different kinds of result, so
+      // name the one that ran (see docs/SEARCH.md).
+      if (info.endpoint === 'llm_context') badgeLabel += ' · LLM Context'
+      else if (info.endpoint === 'web') badgeLabel += ' · Web Search'
       setBackendBadge(<span class={`badge ${badgeClass}`}>{badgeLabel}</span>)
     } else {
       setBackendBadge(null)

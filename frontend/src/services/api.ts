@@ -100,6 +100,8 @@ const YouTubeVideoSchema = z.object({
 
 export const SearchInfoSchema = z.object({
   backend: z.string(),
+  // Which endpoint served it (Brave: `llm_context` | `web`); absent for SearXNG.
+  endpoint: z.string().optional(),
   query: z.string(),
   engines: z.array(z.string()).optional(),
   results: z.array(SearchResultItemSchema).optional(),

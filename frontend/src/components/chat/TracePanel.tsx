@@ -78,6 +78,7 @@ export default function TracePanel(props: {
                       <div class="trace-label">Search</div>
                       <div class="trace-value" id="trace-search-info">
                         {si().backend}
+                        {si().endpoint ? ` · ${si().endpoint}` : ''}
                         {si().query ? ` · ${si().query}` : ''}
                       </div>
                     </div>

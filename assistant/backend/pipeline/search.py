@@ -303,6 +303,10 @@ class SearchInfo:
     backend: str  # "brave" or "searxng"
     query: str  # sanitized query that was sent to the backend
     results: list[SearchResult]
+    # Which endpoint served it, when the backend has more than one (Brave:
+    # "llm_context" | "web"); None otherwise. The two return different kinds of
+    # result, so the trace and the persisted episode record which ran.
+    endpoint: str | None = None
     sensitivity: SensitivityResult | None = None  # sensitivity analysis result
     consent_required: bool = False  # true if sensitive query needs user consent
     video_results: list[YouTubeVideo] | None = None
@@ -322,6 +326,7 @@ def search_info_payload(search_info: "SearchInfo | None", max_results: int = 20)
         return None
     payload = {
         "backend": search_info.backend,
+        "endpoint": search_info.endpoint,
         "query": search_info.query,
         "results": [
             {
@@ -505,6 +510,16 @@ class SearchBackend(ABC):
         """Short name of this backend, e.g. "brave" or "searxng"."""
 
     @property
+    def endpoint_name(self) -> str | None:
+        """Which endpoint served the search, when a backend has more than one.
+
+        Brave has two (`llm_context` vs `web`) and they return different kinds of
+        result; SearXNG has one, so `None`. Recorded on `SearchInfo` so the trace
+        and the persisted episode can tell them apart.
+        """
+        return None
+
+    @property
     def max_results_for_extraction(self) -> int:
         """Backend-specific result budget for extraction prompts.
 
@@ -679,6 +694,10 @@ class BraveBackend(SearchBackend):
     @property
     def backend_name(self) -> str:
         return "brave"
+
+    @property
+    def endpoint_name(self) -> str | None:
+        return "llm_context" if settings.brave_llm_context else "web"
 
     @property
     def max_results_for_extraction(self) -> int:
@@ -990,6 +1009,10 @@ class WebSearchTool(SearchBackend):
     def backend_name(self) -> str:
         return self._backend.backend_name
 
+    @property
+    def endpoint_name(self) -> str | None:
+        return self._backend.endpoint_name
+
     async def search(
         self, query: str, num_results: int = 5
     ) -> tuple[list[SearchResult], list[YouTubeVideo]]:
@@ -1069,6 +1092,7 @@ class WebSearchTool(SearchBackend):
             backend=self.backend_name,
             query=raw_query,
             results=results,
+            endpoint=self._backend.endpoint_name,
             sensitivity=sensitivity,
             consent_required=consent_required,
             video_results=video_results,

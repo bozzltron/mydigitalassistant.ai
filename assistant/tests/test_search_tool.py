@@ -492,6 +492,41 @@ class TestBraveImageSearch:
         # Imagery rides on the result thumbnail instead.
         assert results[0].thumbnail == "https://cdn/og.jpg"
 
+    @pytest.mark.asyncio
+    async def test_search_info_records_which_brave_endpoint_ran(self, monkeypatch):
+        """Transparency: the trace can tell llm_context from web — they differ."""
+        from assistant.backend.config import settings
+        from assistant.backend.pipeline import search as s
+
+        sample = {
+            "grounding": {
+                "generic": [{"url": "https://a/x", "title": "A", "snippets": ["chunk"]}]
+            },
+            "sources": {},
+        }
+
+        async def fake_get_json(client, url, params=None, headers=None):
+            assert "llm/context" in url
+            return sample
+
+        monkeypatch.setattr(s, "_get_json", fake_get_json)
+        monkeypatch.setattr(settings, "brave_llm_context", True)
+
+        tool = s.WebSearchTool(enabled=True)
+        backend = s.BraveBackend(api_key="k")
+        tool._backend = backend
+        try:
+            _, info = await tool.search_with_info("q", num_results=3)
+        finally:
+            await tool.close()
+
+        assert info.backend == "brave"
+        assert info.endpoint == "llm_context"
+
+        # The fallback reports itself too.
+        monkeypatch.setattr(settings, "brave_llm_context", False)
+        assert backend.endpoint_name == "web"
+
     def test_payload_includes_image_results(self):
         import json
 

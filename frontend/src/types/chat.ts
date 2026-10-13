@@ -46,6 +46,9 @@ export interface Slot {
 
 export interface SearchInfo {
   backend: string
+  /** Which endpoint served it when the backend has more than one (Brave:
+   *  `llm_context` | `web`). Recorded so the trace can tell them apart. */
+  endpoint?: string
   query: string
   engines?: string[]
   results?: SearchResultItem[]

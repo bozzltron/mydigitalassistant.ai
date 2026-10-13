@@ -274,6 +274,7 @@ describe('api service', () => {
     it('keeps search_info through validation so media survives a reload', async () => {
       const searchInfo = {
         backend: 'brave',
+        endpoint: 'llm_context',
         query: 'cute cats',
         results: [
           {
