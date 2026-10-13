@@ -1,5 +1,5 @@
 import json
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
@@ -657,3 +657,39 @@ def test_format_search_result_includes_published_date():
 
     undated = SearchResult(title="T", url="https://x", snippet="s", engine="brave")
     assert _format_search_result(undated) == "- [T](https://x) - s"
+
+
+def test_citations_prefer_the_pages_the_extraction_used():
+    """Sources should match the answer, not the whole result set."""
+    from assistant.backend.pipeline.orchestrator import _citations_from_search
+    from assistant.backend.pipeline.search import SearchResult
+
+    results = [
+        SearchResult(title="A", url="https://a.example/x", snippet="", engine="brave"),
+        SearchResult(title="B", url="https://b.example/y", snippet="", engine="brave"),
+        SearchResult(title="C", url="https://c.example/z", snippet="", engine="brave"),
+    ]
+    slot = MagicMock()
+    slot.source_urls = ["https://a.example/x"]
+    extraction = MagicMock()
+    extraction.slots = [slot]
+
+    # Only the page the extraction drew from is cited.
+    assert _citations_from_search(results, extraction) == ["https://a.example/x"]
+    # No extraction facts → every result URL, normalised.
+    assert _citations_from_search(results, None) == [
+        "https://a.example/x",
+        "https://b.example/y",
+        "https://c.example/z",
+    ]
+
+
+def test_citations_dedup_near_duplicate_urls():
+    from assistant.backend.pipeline.orchestrator import _citations_from_search
+    from assistant.backend.pipeline.search import SearchResult
+
+    results = [
+        SearchResult(title="A", url="https://d.example/p//q", snippet="", engine="brave"),
+        SearchResult(title="B", url="https://d.example/p/q", snippet="", engine="brave"),
+    ]
+    assert _citations_from_search(results, None) == ["https://d.example/p/q"]

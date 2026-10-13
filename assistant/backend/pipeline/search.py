@@ -435,7 +435,10 @@ def normalize_url(url: str) -> str:
         clean_query = "&".join(
             f"{k}={v}" if v else k for k, v in query_pairs
         )
-        path = parts.path.rstrip("/") or "/"
+        # Collapse duplicate slashes in the path (Brave's index returns some URLs
+        # as `.../3.11//whatsnew/...`), then strip a trailing slash.
+        path = re.sub(r"/{2,}", "/", parts.path)
+        path = path.rstrip("/") or "/"
         return urlunsplit((parts.scheme.lower(), parts.netloc.lower(), path, clean_query, ""))
     except ValueError:
         return url

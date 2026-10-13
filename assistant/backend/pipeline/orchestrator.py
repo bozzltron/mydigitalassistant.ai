@@ -43,6 +43,7 @@ from assistant.backend.pipeline.search import (
     SearchInfo,
     SearchResult,
     WebSearchTool,
+    normalize_url,
     search_info_payload,
 )
 from assistant.backend.pipeline.task_router import TaskType, route
@@ -71,6 +72,31 @@ def _format_search_result(result) -> str:
     published = getattr(result, "published", None)
     stamp = f" ({published})" if isinstance(published, str) and published else ""
     return f"- [{result.title}]({result.url}){stamp} - {result.snippet}"
+
+
+def _citations_from_search(search_results, extraction) -> list[str]:
+    """The pages a search turn actually used, for the sources footer.
+
+    Prefers the URLs the extraction drew facts from (`source_urls` on the
+    extracted slots) over every result, so the sources match the answer rather
+    than the whole result set. Falls back to the result URLs when the extraction
+    drew no facts — the answer still rested on them. URLs are normalised (so
+    near-duplicates collapse) and order-preserving.
+    """
+    used: list[str] = []
+    for slot in (extraction.slots if extraction else []):
+        used.extend(getattr(slot, "source_urls", None) or [])
+    if not used:
+        used = [r.url for r in search_results if r.url]
+
+    seen: set[str] = set()
+    out: list[str] = []
+    for url in used:
+        norm = normalize_url(url)
+        if norm and norm not in seen:
+            seen.add(norm)
+            out.append(norm)
+    return out
 
 
 def _finalize_event(answer: str, reasoning_trace: str | None = None) -> str:
@@ -1546,6 +1572,7 @@ class Orchestrator:
         # 7b. Execute search if reasoner says it's needed
         search_results: list[SearchResult] = []
         search_extraction_summary: dict = {}
+        search_extraction = None  # set by the extraction step; drives citations
         search_info: SearchInfo | None = None
         if plan.search_needed:
             await self._report(progress, "searching", "searching the web")
@@ -1777,11 +1804,9 @@ class Orchestrator:
                     "and offer to try again later or answer from memory only."
                 )
 
-        # Collect citations from search results only
-        citations: list[str] = []
-        for result in search_results:
-            if result.url:
-                citations.append(result.url)
+        # Sources the turn actually used: the pages the extraction drew facts
+        # from, else every result when it drew none (see `_citations_from_search`).
+        citations = _citations_from_search(search_results, search_extraction)
 
         # Search sits between the plan and generation, so it is dead time in
         # front of the first token. It is also the part that varies most turn to
@@ -1998,8 +2023,11 @@ class Orchestrator:
             if search_info is None and tool_search.get("info") is not None:
                 search_info = tool_search["info"]
                 for result in search_info.results or []:
-                    if result.url and result.url not in citations:
-                        citations.append(result.url)
+                    if not result.url:
+                        continue
+                    norm = normalize_url(result.url)
+                    if norm not in citations:
+                        citations.append(norm)
 
         else:
             # No tools - just stream the chat response

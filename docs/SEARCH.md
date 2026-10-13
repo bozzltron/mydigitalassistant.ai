@@ -163,6 +163,11 @@ Search-derived facts enter memory only when they are accurate and useful:
 4. **Conflict and audit** — the confidence ladder auto-resolves; `slot_history` and
    the `conflicts` table preserve both sides.
 5. **Per-slot provenance** — every slot carries `source_urls` and `source_domains`.
+6. **The sources footer reflects what the turn used.** `_citations_from_search`
+   prefers the URLs the extraction drew facts from (`source_urls`) over every
+   result, falling back to the result URLs when it drew none. URLs are normalised
+   (`normalize_url`), so near-duplicates such as `.../3.11//whatsnew/...` collapse
+   instead of appearing twice.
 
 ## 6. Imagery
 

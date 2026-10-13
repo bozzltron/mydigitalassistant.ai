@@ -215,6 +215,19 @@ async def test_brave_llm_context_parses_grounding_and_sources(monkeypatch):
     assert seen["params"].get("enable_source_metadata") == "true"
 
 
+def test_normalize_url_collapses_duplicate_slashes():
+    """Brave's index returns URLs like `.../3.11//whatsnew/...`; dedup must see them."""
+    from assistant.backend.pipeline.search import normalize_url
+
+    assert normalize_url("https://docs.python.org/3.11//whatsnew/3.11.html") == (
+        "https://docs.python.org/3.11/whatsnew/3.11.html"
+    )
+    # trailing slash, fragment and tracking param still collapse (host lowercased).
+    assert normalize_url("https://Example.com/A//b/?utm_source=x#frag") == (
+        "https://example.com/A/b"
+    )
+
+
 async def test_searxng_image_result_resolves_relative_img_src():
     payload = {
         "results": [
