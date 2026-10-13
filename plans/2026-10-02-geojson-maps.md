@@ -16,11 +16,22 @@ description where present. 11. Render every point. 12. The agent can create, upd
 and delete them. 13. The user says what they want; the agent does the rest. 14. The user
 can add a point by clicking the map.
 
-## Changes since this plan was written (2026-10-02 → 2026-10-10)
+## Changes since this plan was written (2026-10-02 → 2026-10-13)
 
 The plan was written against the codebase of 2026-10-02. Several things it assumed
-have since moved, and one phase is now partly done. Read this before the sections
-below; the line numbers cited throughout are from 2026-10-02 and have drifted.
+have since moved, and its one prerequisite is now **done**. Read this before the
+sections below; the line numbers cited throughout are from 2026-10-02 and have
+drifted.
+
+**The non-streaming tool loop is gone — the prerequisite is done.** The plan made
+"drop the non-streaming tool loop" a separate prerequisite, because the map gate
+needs the current turn's message and there were two loops to reconcile.
+`run_tool_loop` and `async_tools.py` no longer exist: `orchestrator.chat()` is now a
+thin adapter that drains `_run_turn`, and `stream_tool_loop` is the single loop
+(`assistant/AGENTS.md`, "One loop, three consumers"). So the current turn's message
+reaches a map handler through that one loop — the `ContextVar` below is still the
+mechanism, but there is no loop to remove first. `POST /chat` (`main.py:638`) and
+the CLI still exist and now share the loop; nothing needs deleting there.
 
 **The sandbox gained a bytes writer.** Phase 1 proposed widening
 `write_sandbox_file` to `str | bytes`. That work exists: `write_sandbox_bytes`
@@ -29,9 +40,10 @@ below; the line numbers cited throughout are from 2026-10-02 and have drifted.
 `write_sandbox_bytes`", not "add a bytes branch".
 
 **The upload path still bypasses the sandbox helpers.** `upload_file_to_memory`
-(`main.py:2268-2279`) writes with a bare `open(path, "wb")` against a hardcoded
-`Path("/app/data")` — no atomicity, no traversal guard. Unchanged since planning,
-and still the one gap worth closing for every upload, not just `.geojson`.
+(`main.py:2252`) writes with a bare `open(file_path, "wb")` (`main.py:2282`) against
+a hardcoded `Path("/app/data")` (`main.py:2271`) — no atomicity, no traversal guard.
+Unchanged since planning, and still the one gap worth closing for every upload, not
+just `.geojson`.
 
 **The Files page is now an editor.** It gained, after this plan was written:
 rename (`PATCH /files/{frame_id}`), in-place text editing
@@ -39,30 +51,44 @@ rename (`PATCH /files/{frame_id}`), in-place text editing
 (`GET /files/{frame_id}/download?inline=true`), a deep link (`/files?file=<id>` —
 the chat links a filename mention to it), a "Back to chat" button, and a highlight
 on the row of the file shown in the preview. The map page reuses the Files page
-layout, so these are the patterns to copy — and `FilesPage.tsx` is no longer the
-file the plan's line numbers point at.
+layout, so these are the patterns to copy — and `FilesPage.tsx` now lives at
+`components/files/FilesPage.tsx`, not the path the plan's line numbers point at.
 
 **The file tools are richer.** Since planning the agent also has `rename_file`,
 `edit_file` (line-addressed), `append_file`, and `search_file`, alongside
 `write_file` / `read_file` / `delete_file` / `glob`. `docs/FILES.md` is the contract
 for all of them; `docs/FILES.md` also documents the rename/save routes and the
-shared folder below.
+host-visible sandbox.
 
-**A host-visible shared folder exists.** `/app/data/shared` is bind-mounted to the
-host (`docs/FILES.md`), so a user can drop a `.geojson` in from their machine and
-the agent reads it, or edit a map file in a text editor. It is inside the sandbox,
-so it needs no special handling — but a map dropped in has **no memory frame**
-until something writes it through `apply_file_to_memory`.
+**The sandbox *is* the host folder now — the `shared/` subfolder is gone.** This
+plan's "drop a `.geojson` into `shared/`" story is superseded: `/app/data/shared` no
+longer exists. The sandbox root `/app/data` is itself bind-mounted to a host
+directory (dev `~/Documents/Agent/Development`, prod
+`~/Documents/Agent/Production`), and the brain moved to its own volume at
+`/app/brain` (`docs/FILES.md`). So a user drops a `.geojson` straight into the
+sandbox folder and the agent reads it by path — no subfolder, nothing maps-specific.
+A dropped map still has **no memory frame** until something writes it through
+`apply_file_to_memory`.
 
 **The escalation changed.** The reasoner no longer auto-escalates a "multi-step"
 query to `MAX_MODEL`; it keys on an explicit reasoning cue
 (`assistant/experiments/escalation_trigger/`). A map turn with a file recipe
 ("read the map and add a point") stays on the warm model.
 
-**Current anchors for the line numbers below:** `GET /files/list` `main.py:2372`,
-`GET /files/{frame_id}` `main.py:2536`, `DELETE /files/{frame_id}` `main.py:2640`,
-`GET /settings` `main.py:413`, `SUPPORTED_UPLOAD_EXTS` `files.py:35`,
-`extract_file_content` `files.py:459`.
+**Current anchors (2026-10-13).** Backend: `GET /settings` `main.py:416`,
+`GET /files/list` `main.py:2375`, `GET /files/{frame_id}` `main.py:2539`,
+`GET /files/{frame_id}/download` `main.py:2593`, `DELETE /files/{frame_id}`
+`main.py:2643`, `upload_file_to_memory` `main.py:2252` (bare `open` at `:2282`),
+`SessionMessage` `main.py:1273`, `SUPPORTED_UPLOAD_EXTS` `files.py:35`,
+`extract_file_content` `files.py:459`, `write_sandbox_bytes` `filesystem.py:165`,
+`max_tool_rounds` `config.py:145`, `prune_frames` `store.py:756`,
+`prune_frames_by_source_type` `store.py:784`, `prune_file_frame` `store.py:798`,
+`MetaEvent` `streaming.py:106`, `resolve_or_create_frame` `extractor.py:365`,
+`builtin_tools` `tools.py:727`, `_register_builtin_tools` `tool_executor.py:77`,
+`execute_tool` `tool_executor.py:2393`, `_READ_ONLY_TOOLS`
+`tool_executor.py:2387`. Frontend: `TopBar.tsx` / `TopBarIcons.tsx` under
+`components/ui/`, `FilesPage.tsx` under `components/files/`, `routes.tsx`,
+`state/chat.ts` (`tool_result` at `:243`).
 
 ## Architecture
 
@@ -108,7 +134,7 @@ the renderer never has to skip a half-built point.
 | Page layout | `FilesPage.tsx` — `.files-content` → `.files-main` + `<aside>` (line numbers moved; see the changes note above) |
 | Agent deletes a map | existing `delete_file` tool |
 | Atomic write, traversal + symlink guard | `write_sandbox_bytes` (`filesystem.py:165`) |
-| A user drops a map in | `/app/data/shared` (`docs/FILES.md`) — host-visible, read by path |
+| A user drops a map in | the sandbox folder (`~/Documents/Agent/{Development,Production}`, `docs/FILES.md`) — host-visible, read by path |
 | It appears in the Files page | already works |
 
 **Do not add a `/maps` index.** `_file_response` exists only because
@@ -323,21 +349,18 @@ registration in `_register_builtin_tools` (`tool_executor.py:100-117`), timeouts
 `TOOL_TIMEOUTS` (`:144`), and both kept **out of** `_READ_ONLY_TOOLS` (`:1611`)
 because they write.
 
-**The gate needs the user's text, and there is one loop.**
+**The gate needs the user's text, and the loop is already one.**
 
-Prerequisite (a separate change, not this plan): drop the non-streaming tool loop.
-`run_tool_loop` (`tools.py:616`) is reached only from `orchestrator.chat()`
-(`orchestrator.py:1450`), which serves only `POST /chat` (`main.py:634`) and the CLI
-(`cli/app.py:180`); the frontend already uses `/chat/stream` exclusively. Removing
-`POST /chat`, `orchestrator.chat()`, `run_tool_loop`, `execute_tools_parallel`,
-`async_tools.py` and their tests leaves `stream_tool_loop` as the single call site.
+The prerequisite this plan assumed — "drop the non-streaming tool loop" — is
+**done** (see the changes note): `run_tool_loop` and `async_tools.py` are gone and
+`stream_tool_loop` is the single loop.
 
-Then the current turn's message reaches the map handler via a `ContextVar[str]` set
+The current turn's message reaches the map handler via a `ContextVar[str]` set
 immediately before `execute_tool` in `stream_tool_loop` (an explicit `ToolContext`
 object is the alternative if the handler signatures are worth churning). The handler
 reads the `ContextVar` and the store (via `session_id`) for the prior five turns.
 `execute_tool`'s dispatch signature `func(validated, user_id, session_id)`
-(`tool_executor.py:1663`) is unchanged. This is what makes the refusal rule
+(`tool_executor.py:2393`) is unchanged. This is what makes the refusal rule
 enforceable — a prompt instruction is not a security boundary.
 
 Prompt wording: *"Use when the user gives coordinates to put on a map, and name the
@@ -408,7 +431,7 @@ get wrong.
 **This is a deliberate departure from the `/image-proxy` precedent**, so state it rather
 than smuggle it: `image_proxy` exists because *"rendering search thumbnails directly
 would make the browser contact third-party hosts, leaking the user's IP"*
-(`main.py:887`). Map tiles are the same shape of problem. The difference is that
+(`main.py:896`). Map tiles are the same shape of problem. The difference is that
 OpenFreeMap needs no key and a tile request carries a viewport, not what the user said
 — the disclosure is bounded and documented rather than silent. **If the house prefers
 the invariant, that is a legitimate veto: reinstate the proxy as Phase 3 work.** Say so
@@ -504,7 +527,7 @@ nothing can drift between disk and canvas.
 
 `map_ref: {frame_id, name}` rides the existing **`meta` SSE event**
 (`streaming.py:71-96`), mirroring `search_info`. Not a new event type, and not
-`tool_result` — the frontend ignores `tool_result` data today (`state/chat.ts:206`),
+`tool_result` — the frontend ignores `tool_result` data today (`state/chat.ts:243`),
 so that would be a fragile side channel. **Plumbing:** the frame id is born inside a
 tool handler, so `stream_tool_loop` captures the latest map tool's `ToolResult.data`
 into a `map_ref` and the orchestrator passes it to `MetaEvent`. That is new code, not
@@ -625,7 +648,7 @@ belong to one map.
 
 ### TopBar button
 
-`TopBar.tsx:326-333` — a `topbar-btn` anchor beside Files and Brain, rendered only when
+`TopBar.tsx` (`components/ui/`) — a `topbar-btn` anchor beside Files and Brain, rendered only when
 `/settings` reports `maps_enabled`:
 
 ```
@@ -647,7 +670,7 @@ leaves a red suite:
 New order: `Alerts, Let's talk, Files, Maps, Brain, Trace, Settings, Trash`.
 `ExternalLinkGuard` needs nothing — `isExternalHttpUrl('/maps')` is already `false` for
 a same-origin path. `TopBar` already consumes `getSettings()` for `brave_enabled`
-(`TopBar.tsx:118`), so `maps_enabled` follows the same path — and the test's settings
+(`TopBar.tsx`), so `maps_enabled` follows the same path — and the test's settings
 mock must report it `true`, or the button the assertions count is absent.
 
 ### No map in the transcript
@@ -677,8 +700,9 @@ stylesheets** — so reusing `.files-content` means referencing it, not restatin
 | 5 — Map page, switcher, TopBar | 7 |
 | 6 — Ship | 4 |
 
-Prerequisite, a separate change not counted here: drop the non-streaming tool loop (see
-*Tools*). The maps work assumes one loop.
+Prerequisite — **already done** since planning: the non-streaming tool loop is gone
+and `stream_tool_loop` is the single loop (see *Changes since*). The maps work
+assumes one loop, and that is now the state.
 
 ### Phase 0 — Measure before building (4h)
 
@@ -841,17 +865,17 @@ concurrent write), `mapLib.test.ts`, and frontend `MapCanvas.test.tsx` /
 | `/settings` additions | Three keys in an existing dict. |
 | Frontend | Delete `MapCanvas`, `MapPage`, `MapIcon`, the `routes.tsx` lines, the `TopBar.tsx` anchor, `src/styles/map.css` and its `index.css` import; revert the four `TopBar.test.tsx` assertions. |
 | Map files | Ordinary files, still listed at `/files/list` and readable at `/files/{id}`. `assistant db backup` first. |
-| Map frames | **Use `prune_file_frame`** (`store.py:747`) — it already cascades `part_of` children and is what `delete_file` uses. Do **not** hand-roll `SELECT id FROM frames WHERE name LIKE 'file_%.geojson'` → `prune_frames`: it works but duplicates existing logic, and this project's rule is to verify callers before writing a second copy. |
+| Map frames | **Use `prune_file_frame`** (`store.py:798`) — it already cascades `part_of` children and is what `delete_file` uses. Do **not** hand-roll `SELECT id FROM frames WHERE name LIKE 'file_%.geojson'` → `prune_frames`: it works but duplicates existing logic, and this project's rule is to verify callers before writing a second copy. |
 | `maplibre-gl` | One `package.json` line. |
 | `MAPS_ENABLED` / `MAP_TILES_BASE_URL` | Keys in `config.py`. Off leaves the page unreachable, as it was before. |
 
 **Do not roll back frames with `prune_frames_by_source_type`.** It selects
-`WHERE source_type = ?` (`store.py:733`) and `user` / `user_correction` are the source
+`WHERE source_type = ?` (`store.py:784`) and `user` / `user_correction` are the source
 types of **every frame the user has ever stated in conversation** (`confidence.py:13`,
 `extractor.py:1376`). `prune_frames_by_source_type("user")` is not a rollback, it is
 `rm -rf` on memory. Also: no `deleted_at` filter — a soft-deleted frame still holds
 slots — and `prune_frames` returns *the ids you passed* whether or not they existed
-(`store.py:719`), so count the SELECT first.
+(`store.py:756`), so count the SELECT first.
 
 ## Non-goals
 
