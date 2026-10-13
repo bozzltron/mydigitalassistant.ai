@@ -115,6 +115,34 @@ rides the trace and the persisted episode, and the badge reads *Searched via
 Brave · LLM Context*, so the two — which return different kinds of result — are
 distinguishable after the fact.
 
+### Local recall (geo) — deliberately not built
+
+The LLM Context endpoint can return `grounding.poi` and `grounding.map[]` (place
+name, URL, snippets) for location-aware queries — but **only if we send a
+location**. `enable_local` alone does nothing: Brave's docs say local recall is
+used "if a location is provided (`X-Loc-Lat`/`X-Loc-Long`, or `X-Loc-City`)", and
+`grounding.map` comes back empty otherwise (confirmed on live calls). So it is a
+**disclosure decision, not a feature toggle**:
+
+- **The API does not infer location, and has no anonymous mode.** Brave's own
+  consumer "near me" uses the device IP, generalised and never stored — that is
+  **not** available through the API. Via the API, "near me" means handing Brave a
+  location.
+- **Brave retains what we send for up to 90 days.** Per Brave's Search API Privacy
+  Notice, queries — and anything attached to them — are kept up to 90 days for
+  billing and troubleshooting; Zero Data Retention is Enterprise-only. Brave does
+  not profile or sell, but a city attached to a query is still a city on their side
+  for 90 days.
+- **Most queries carry their own place.** "venues in Austin", "coffee downtown" —
+  the location is already in the query, so ordinary search answers them with **no
+  extra disclosure**. The only genuinely new capability is a *placeless* "near
+  me", which is exactly the case that requires giving up a location.
+
+**Decision: not built.** If ever revisited, the bar is a place the *user* stated
+(memory or `.env`), city-level only, opt-in, sent only for a placeless location
+query — **never coordinates, never a default location on every search.** Recorded
+here so it is not rediscovered as an idea without the reason.
+
 **Brave is the only permitted non-local backend** (it does not profile users or
 sell query data). A **sensitive query is gated by consent** *before* it is sent
 (`classify_query_sensitivity` → `consent_required`); the search does not execute
