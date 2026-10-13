@@ -1820,8 +1820,11 @@ class Orchestrator:
         if plan.search_needed:
             stream_search_s = time.monotonic() - stream_search_start
 
-        # Build conversation history
+        # Build conversation history. `history_pool` is how many turns the session
+        # read returned *before* the bounds, logged so a turn that carried no
+        # history can be told from a fresh session (see `context_fixed`).
         history_messages: list[ChatMessage] = []
+        history_pool = 0
         if session_id:
             # Owner-scoped in SQL now; bound to the tail we can use
             # (`verbatim_history_turns` prior turns plus the current one, which
@@ -1831,6 +1834,7 @@ class Orchestrator:
                 user_id=request.user_id,
                 limit=settings.verbatim_history_turns + 1,
             )
+            history_pool = len(session_episodes)
             prior_turns = session_episodes[:-1]
             max_turns = min(len(prior_turns), settings.verbatim_history_turns)
             prior_turns = prior_turns[-max_turns:] if max_turns > 0 else []
@@ -2157,10 +2161,20 @@ class Orchestrator:
         # The composition of the fixed cost, so the budget work is driven by where
         # the characters actually go. `context_usage` gives the peak; this says what
         # it is made of. Chars are ÷4 estimates of tokens; the true count is Ollama's.
+        #
+        # `session`, `history_turns` and `history_pool` attribute a turn to a
+        # conversation and separate "no history because the session is fresh"
+        # (`history_pool` ≤ 1) from "history existed but did not reach the model"
+        # (`history_pool` > 1, `history_turns` = 0) — the two look identical from
+        # `history_chars` alone, and telling them apart is why this line exists.
         logger.info(
-            "context_fixed: system_prompt_chars=%d tool_schema_chars=%d "
+            "context_fixed: session=%s history_turns=%d history_pool=%d "
+            "system_prompt_chars=%d tool_schema_chars=%d "
             "history_chars=%d tool_result_chars=%d tool_results_dropped=%d "
             "peak_prompt_tokens=%d window=%d",
+            session_id,
+            len(history_messages),
+            history_pool,
             system_prompt_chars,
             tool_schema_chars,
             history_chars,

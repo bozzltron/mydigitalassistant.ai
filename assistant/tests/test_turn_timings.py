@@ -141,6 +141,9 @@ class TestStreamingPathIsInstrumented:
         """
         assert "context_fixed:" in streaming_source
         for field in (
+            "session",
+            "history_turns",
+            "history_pool",
             "system_prompt_chars",
             "tool_schema_chars",
             "history_chars",
