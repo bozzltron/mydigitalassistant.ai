@@ -1,4 +1,8 @@
 import { createEffect, createSignal, For, onCleanup, onMount, Show, untrack } from 'solid-js'
+// MapLibre spawns a module worker; under Vite its URL must be given explicitly
+// (`?worker&url` bundles it and hands back the URL) or the map never initialises —
+// a blank canvas, and with no map there is no click handler to add a point.
+import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
 import type { MapFeatureCollection, MapStyle } from '../../types'
 import { boundsFor } from '../../utils/mapLib'
 
@@ -89,7 +93,10 @@ export default function MapCanvas(props: {
 
   onMount(() => {
     let cancelled = false
-    void (async () => {
+    let observer: ResizeObserver | null = null
+    let tries = 0
+
+    const boot = async () => {
       // MapLibre v6 needs WebGL2; the Brain graph's gate checks WebGL1, so copy
       // the shape, not the constant.
       if (typeof WebGL2RenderingContext === 'undefined') {
@@ -99,6 +106,7 @@ export default function MapCanvas(props: {
       try {
         ml = await import('maplibre-gl')
         await import('maplibre-gl/dist/maplibre-gl.css')
+        ml.setWorkerUrl(maplibreWorkerUrl)
       } catch {
         setFailed(true)
         return
@@ -107,6 +115,17 @@ export default function MapCanvas(props: {
         if (!containerEl) setFailed(true)
         return
       }
+      // Init gated on a real layout: a 0×0 container gives MapLibre nothing to
+      // draw and the map stays blank. Retry a frame, bounded.
+      if (containerEl.offsetWidth === 0 || containerEl.offsetHeight === 0) {
+        if (++tries > 120) {
+          setFailed(true)
+          return
+        }
+        requestAnimationFrame(() => void boot())
+        return
+      }
+
       map = new ml.Map({
         container: containerEl,
         style: `${untrack(() => props.tilesBaseUrl)}/${untrack(() => props.style.id)}`,
@@ -126,9 +145,15 @@ export default function MapCanvas(props: {
           untrack(() => props.onAddPoint)(e.lngLat.lng, e.lngLat.lat)
         }
       })
-    })()
+
+      observer = new ResizeObserver(() => map?.resize())
+      observer.observe(containerEl)
+    }
+
+    void boot()
     onCleanup(() => {
       cancelled = true
+      observer?.disconnect()
       map?.remove()
       map = null
     })
