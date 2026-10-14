@@ -7,12 +7,14 @@
  * and `console.warn` stay as-is for genuine failures.
  */
 
-type ViteImportMeta = ImportMeta & { env?: { DEV?: boolean; PROD?: boolean } }
-
 const isDev = (): boolean => {
   try {
-    const meta = import.meta as ViteImportMeta
-    return meta.env?.DEV === true
+    // Read `import.meta.env` *literally*. Vite injects the env object into a module
+    // only where it sees that exact expression; going through a variable
+    // (`const meta = import.meta; meta.env?.DEV`) is invisible to the injection, so
+    // `import.meta.env` was `undefined` here and `isDev()` returned false — which
+    // made every `debug()` call in the app a silent no-op in dev.
+    return import.meta.env?.DEV === true
   } catch {
     return false
   }
