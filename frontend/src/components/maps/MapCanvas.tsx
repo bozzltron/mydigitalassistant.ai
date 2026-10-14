@@ -158,7 +158,14 @@ export default function MapCanvas(props: {
       // place a blank canvas explains itself.
       map.on('error', (e) => console.error(TAG, 'maplibre error', e.error ?? e))
       map.on('load', () => {
-        debug(TAG, 'map load')
+        // Log the canvas against its container. MapLibre silently falls back to
+        // 400×300 when the container measures 0 on an axis (`clientWidth || 400`),
+        // which yields a clipped, invisible map rather than an error — a mismatch
+        // here is the signature of that, not of a bad style or tile.
+        debug(TAG, 'map load', {
+          canvas: `${map!.getCanvas().width}×${map!.getCanvas().height}`,
+          container: `${containerEl!.clientWidth}×${containerEl!.clientHeight}`,
+        })
         addPointLayers()
         frameToData()
         setReady(true)

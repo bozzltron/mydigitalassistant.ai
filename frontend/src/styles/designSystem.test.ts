@@ -247,3 +247,30 @@ describe('modal sizes are real, not a dead prop', () => {
     expect(medium).toBeLessThan(large)
   })
 })
+
+describe('the map canvas out-specifies maplibre-gl', () => {
+  // MapLibre stamps `maplibregl-map` onto the same element as `.map-canvas` and
+  // injects its stylesheet after ours, so a bare `.map-canvas { position: absolute }`
+  // loses the tie to `.maplibregl-map { position: relative; overflow: hidden }`. The
+  // container leaves the flow, its only children are absolutely positioned, and
+  // clientHeight becomes 0 — so MapLibre falls back to `clientHeight || 300` and
+  // `overflow: hidden` clips that 300px canvas to nothing. The page rendered blank
+  // with no error and no clickable surface, and every component test passed because
+  // jsdom computes no layout. Specificity is the only part a test can see, so pin it.
+  const css = stripComments(readFileSync(join(__dirname, 'map.css'), 'utf8'))
+
+  // One point per class, id or attribute selector — enough to compare with
+  // `.maplibregl-map`, which is a single class.
+  const specificity = (selector: string) => (selector.match(/[.#[]/g) ?? []).length
+
+  it('positions .map-canvas with more than one class of specificity', () => {
+    const positioning = [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)]
+      .map(([, sel, body]) => ({ sel: sel.trim(), body }))
+      .filter((r) => r.body.includes('position: absolute') && /\.map-canvas\b/.test(r.sel))
+    expect(positioning.length, 'no rule positions .map-canvas').toBeGreaterThan(0)
+    expect(
+      Math.max(...positioning.map((r) => specificity(r.sel))),
+      'a bare .map-canvas ties with .maplibregl-map and loses on injection order',
+    ).toBeGreaterThan(1)
+  })
+})

@@ -52,7 +52,16 @@
   min-width: 0;
 }
 
-.map-canvas {
+/* Scoped by `.map-stage` on purpose. MapLibre stamps its own `maplibregl-map` class
+   onto this element when it boots and injects its stylesheet *after* ours, so a bare
+   `.map-canvas { position: absolute }` loses the specificity tie to
+   `.maplibregl-map { position: relative; overflow: hidden }`. The container then
+   leaves the flow, its only children are absolutely positioned, and clientHeight
+   becomes 0 — so MapLibre falls back to its `clientHeight || 300` default and
+   `overflow: hidden` clips that 300px canvas to nothing: a blank page with no error
+   and no surface to click. The extra class in the selector wins the tie whatever the
+   injection order. */
+.map-stage > .map-canvas {
   position: absolute;
   inset: 0;
   transition: opacity var(--transition-base);
