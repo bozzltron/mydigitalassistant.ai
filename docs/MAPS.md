@@ -33,10 +33,15 @@ store, no `map` frame type, and no `/maps` index — the file *is* the map.
 
 `/maps` (behind `MAPS_ENABLED`). MapLibre GL JS on an OpenFreeMap basemap.
 
-- **Click to add.** The `＋ Add point` toggle puts the canvas in add mode; the next
-  click opens a form for the description. Confirm → the point is added in memory →
-  the whole FeatureCollection is `PUT /map`. A mode toggle, not a bare click, so
-  panning never drops a stray point.
+- **Click to add, click to edit — there is no mode.** A click on bare basemap opens a
+  form for the description; the pending point is drawn from its own source, so it
+  appears under the cursor immediately, but nothing reaches the file until Confirm.
+  A click on a saved point selects it for editing; a click on a cluster zooms in.
+  Panning cannot drop a stray point because MapLibre does not emit `click` for a
+  drag, which is what the old `＋ Add point` toggle existed to guard.
+- **Confirm** adds the point in memory and `PUT`s the whole FeatureCollection. The
+  page addresses a clicked point by its index, which the source's `generateId`
+  supplies — MapLibre assigns `id` = the feature's position in the data.
 - **Edit and remove** from the point's detail panel.
 - **Style picker** over `map_styles` (from `/settings`); choosing one calls
   `setStyle` and does not re-frame. **Pitch** is enabled when the active style has

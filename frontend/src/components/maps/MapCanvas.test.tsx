@@ -34,7 +34,7 @@ describe('MapCanvas', () => {
         }}
         style={STYLE}
         tilesBaseUrl="https://tiles.openfreemap.org/styles"
-        addMode={false}
+        draft={null}
         pitch={0}
         onAddPoint={() => {}}
         onSelect={() => {}}

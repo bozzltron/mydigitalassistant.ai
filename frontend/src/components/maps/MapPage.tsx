@@ -33,7 +33,6 @@ export default function MapPage() {
   const [data, setData] = createSignal<MapFeatureCollection>(emptyCollection())
   const [selected, setSelected] = createSignal<number | null>(null)
   const [draft, setDraft] = createSignal<{ lon: number; lat: number } | null>(null)
-  const [addMode, setAddMode] = createSignal(false)
   const [pitch, setPitch] = createSignal(0)
   const [saving, setSaving] = createSignal(false)
   const [error, setError] = createSignal('')
@@ -153,15 +152,6 @@ export default function MapPage() {
               <For each={styles()}>{(s) => <option value={s.id}>{s.label}</option>}</For>
             </select>
           </label>
-          <button
-            class="topbar-btn"
-            classList={{ 'is-active': addMode() }}
-            aria-pressed={addMode()}
-            disabled={saving()}
-            onClick={() => setAddMode((v) => !v)}
-          >
-            ＋ Add point
-          </button>
           <Show when={activeStyle()?.supports3d}>
             <label class="map-field">
               Pitch
@@ -183,18 +173,22 @@ export default function MapPage() {
           <div class="map-stage">
             <MapCanvas
               data={data()}
+              draft={draft()}
               style={activeStyle()}
               tilesBaseUrl={tilesBase()}
-              addMode={addMode()}
               pitch={pitch()}
               onAddPoint={(lon, lat) => {
-                setAddMode(false)
                 setDraft({ lon, lat })
               }}
-              onSelect={(i) => setSelected(i)}
+              onSelect={(i) => {
+                // The panel shows one form at a time; asking for a saved point
+                // replaces an unsaved draft rather than leaving two in play.
+                setDraft(null)
+                setSelected(i)
+              }}
             />
             <Show when={data().features.length === 0 && !draft()}>
-              <p class="map-empty">No points yet. Turn on <strong>Add point</strong> and click the map.</p>
+              <p class="map-empty">Click anywhere on the map to add your first point.</p>
             </Show>
           </div>
 
@@ -228,8 +222,9 @@ export default function MapPage() {
 
             <Show when={!draft() && selected() === null}>
               <p class="map-panel-hint">
-                {data().features.length} point{data().features.length === 1 ? '' : 's'}. Click one to
-                edit its description.
+                {data().features.length === 0
+                  ? 'Click the map to add your first point.'
+                  : `${data().features.length} saved. Click the map to add another, or click a point to edit it.`}
               </p>
             </Show>
 

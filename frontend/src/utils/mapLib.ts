@@ -31,6 +31,46 @@ export function describeFeature(f: MapFeature): string {
   return f.properties?.description ?? ''
 }
 
+/** The two fields of a `queryRenderedFeatures` result the click rule reads, so the
+ *  rule can be tested without a browser. */
+export interface MapHit {
+  id?: string | number
+  properties?: Record<string, unknown> | null
+}
+
+export type MapClick =
+  | { kind: 'cluster'; clusterId: number }
+  | { kind: 'select'; index: number }
+  | { kind: 'add'; lon: number; lat: number }
+
+/**
+ * What a click on the map means. There is no add mode, so this rule *is* the
+ * interaction: a cluster zooms in, a saved point is selected, bare basemap starts a
+ * new point.
+ *
+ * The two passes are deliberate — a cluster wins over any point beneath it, because
+ * expanding is the only way to reach what the aggregate stands for. MapLibre does
+ * not document the order of `hits`, so nothing here depends on it.
+ *
+ * The index comes from the source's `generateId`, which MapLibre assigns as the
+ * feature's position in the data — the same order the page holds in `data.features`,
+ * which is what makes a click addressable at all.
+ */
+export function clickAction(hits: MapHit[], lon: number, lat: number): MapClick {
+  for (const hit of hits) {
+    const props = hit.properties ?? {}
+    if (props.cluster === true && typeof props.cluster_id === 'number') {
+      return { kind: 'cluster', clusterId: props.cluster_id }
+    }
+  }
+  for (const hit of hits) {
+    // A non-numeric id is not an index — fall through to `add` rather than
+    // selecting whatever `undefined` happens to index.
+    if (typeof hit.id === 'number') return { kind: 'select', index: hit.id }
+  }
+  return { kind: 'add', lon, lat }
+}
+
 /**
  * Bounds for the feature set, antimeridian-aware, or `null` for fewer than two
  * points (one point gets no bounds and the page keeps its saved camera).

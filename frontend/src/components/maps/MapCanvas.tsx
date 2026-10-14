@@ -6,16 +6,24 @@ import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&ur
 import type { GeoJSONSource, Map as MapLibreMap } from 'maplibre-gl'
 import { debug } from '../../services/logger'
 import type { MapFeatureCollection, MapStyle } from '../../types'
-import { boundsFor } from '../../utils/mapLib'
+import { boundsFor, clickAction, pointFeature } from '../../utils/mapLib'
 
 const SOURCE = 'map-points'
 const CIRCLE = 'map-points-circle'
 const LABEL = 'map-points-label'
+// The pending point, drawn from its own source so it never touches the file until
+// the description is confirmed.
+const DRAFT = 'map-draft'
+const DRAFT_CIRCLE = 'map-draft-circle'
 const TAG = '[maps]'
 
 /**
- * The map canvas. `MapPage` lazy-loads this so MapLibre and its CSS are code-split
- * out of the chat bundle.
+ * The map canvas.
+ *
+ * **MapLibre is imported inside `boot`, not at module scope**, so its bulk and its
+ * CSS stay out of the chat bundle: the module is fetched only when the canvas has a
+ * real size to draw into. (`MapPage` itself is imported statically by `routes.tsx` —
+ * the page is a few kB; MapLibre is not.)
  *
  * **Exactly one `Map` instance for the page's lifetime.** A WebGL context is
  * scarce (~8–16/page) and permanently held, so a style switch calls `setStyle` on
@@ -28,9 +36,9 @@ const TAG = '[maps]'
  */
 export default function MapCanvas(props: {
   data: MapFeatureCollection
+  draft: { lon: number; lat: number } | null
   style: MapStyle
   tilesBaseUrl: string
-  addMode: boolean
   pitch: number
   onAddPoint: (lon: number, lat: number) => void
   onSelect: (index: number) => void
@@ -46,6 +54,11 @@ export default function MapCanvas(props: {
 
   const styleUrl = (id: string) => `${untrack(() => props.tilesBaseUrl)}/${id}`
 
+  const draftCollection = (): MapFeatureCollection => {
+    const d = untrack(() => props.draft)
+    return { type: 'FeatureCollection', features: d ? [pointFeature(d.lon, d.lat)] : [] }
+  }
+
   const addPointLayers = () => {
     if (!map || !ml) return
     const style = untrack(() => props.style)
@@ -55,6 +68,11 @@ export default function MapCanvas(props: {
         data: untrack(() => props.data),
         cluster: true,
         clusterMaxZoom: 10,
+        // MapLibre assigns `id` = the feature's index in the data (its worker:
+        // `if (options.generateId) return index || 0`). That index is how a click
+        // finds the feature it landed on — without it a click on a saved point is
+        // indistinguishable from a click on bare basemap.
+        generateId: true,
       })
     }
     if (!map.getLayer(CIRCLE)) {
@@ -91,10 +109,29 @@ export default function MapCanvas(props: {
         },
       })
     }
+    if (!map.getSource(DRAFT)) {
+      map.addSource(DRAFT, { type: 'geojson', data: draftCollection() })
+    }
+    if (!map.getLayer(DRAFT_CIRCLE)) {
+      map.addLayer({
+        id: DRAFT_CIRCLE,
+        type: 'circle',
+        source: DRAFT,
+        // Bigger and ringed, so a pending point reads as pending next to a saved one.
+        paint: {
+          'circle-color': style.point_color,
+          'circle-radius': 9,
+          'circle-stroke-width': 3,
+          'circle-stroke-color': '#ffffff',
+          'circle-opacity': 0.9,
+        },
+      })
+    }
     debug(TAG, 'layers ready', {
       source: !!map.getSource(SOURCE),
       circle: !!map.getLayer(CIRCLE),
       label: !!map.getLayer(LABEL),
+      draft: !!map.getLayer(DRAFT_CIRCLE),
     })
   }
 
@@ -102,6 +139,21 @@ export default function MapCanvas(props: {
     if (!map) return
     const bounds = boundsFor(untrack(() => props.data).features)
     if (bounds) map.fitBounds(bounds, { padding: 60, duration: 0 })
+  }
+
+  const zoomToCluster = async (clusterId: number, lon: number, lat: number) => {
+    const src = map?.getSource(SOURCE) as GeoJSONSource | undefined
+    if (!src) return
+    try {
+      // `easeTo`, not `jumpTo`: the zoom is the feedback that the cluster was the
+      // thing clicked, so it should read as movement, not a cut.
+      const zoom = await src.getClusterExpansionZoom(clusterId)
+      map?.easeTo({ center: [lon, lat], zoom })
+    } catch (e) {
+      // `setStyle` replaces the source, so an expansion asked of the old one can
+      // outlive it. Nothing the user can act on.
+      debug(TAG, 'cluster expansion abandoned', e)
+    }
   }
 
   onMount(() => {
@@ -175,10 +227,26 @@ export default function MapCanvas(props: {
         addPointLayers()
       })
       map.on('click', (e) => {
-        // Only in add mode: a bare click would drop a stray point while panning.
-        const adding = untrack(() => props.addMode)
-        debug(TAG, 'click', e.lngLat.lng, e.lngLat.lat, { addMode: adding })
-        if (adding) untrack(() => props.onAddPoint)(e.lngLat.lng, e.lngLat.lat)
+        // MapLibre does not emit `click` for a drag, so panning cannot drop a point
+        // — which is what the old `Add point` toggle existed to prevent.
+        // The layers arrive with `load`; a click before then has nothing to
+        // hit-test against, and MapLibre warns when a queried layer is absent.
+        const hits = map!.getLayer(CIRCLE)
+          ? map!.queryRenderedFeatures(e.point, { layers: [CIRCLE, LABEL] })
+          : []
+        const action = clickAction(
+          hits.map((h) => ({ id: h.id, properties: h.properties })),
+          e.lngLat.lng,
+          e.lngLat.lat
+        )
+        debug(TAG, 'click', action)
+        if (action.kind === 'cluster') {
+          void zoomToCluster(action.clusterId, e.lngLat.lng, e.lngLat.lat)
+        } else if (action.kind === 'select') {
+          untrack(() => props.onSelect)(action.index)
+        } else {
+          untrack(() => props.onAddPoint)(action.lon, action.lat)
+        }
       })
 
       observer = new ResizeObserver(() => map?.resize())
@@ -231,6 +299,19 @@ export default function MapCanvas(props: {
     )
   )
 
+  // The pending point: drawn from its own source so it is visible the moment the
+  // user clicks, without writing anything to the file until they confirm.
+  createEffect(
+    on(
+      () => props.draft,
+      () => {
+        if (!map || !ready()) return
+        const src = map.getSource(DRAFT) as GeoJSONSource | undefined
+        src?.setData(draftCollection())
+      }
+    )
+  )
+
   return (
     <>
       <Show when={failed()}>
@@ -253,7 +334,7 @@ export default function MapCanvas(props: {
       <div
         ref={setContainerRef}
         class="map-canvas"
-        classList={{ 'is-add-mode': props.addMode, 'is-hidden': failed() }}
+        classList={{ 'is-hidden': failed() }}
       />
     </>
   )
