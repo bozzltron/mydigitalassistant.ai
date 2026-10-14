@@ -10,8 +10,13 @@ https://localhost {
     @static path /assets/* /static/* /favicon.ico
     reverse_proxy @static assistant:8000
     
-    # Route API requests to backend
-    @api path /api/* /health /chat* /users* /memory* /brain* /files* /settings* /tasks* /db* /feedback* /correction* /conversations* /assistant* /search* /og-preview /image-proxy* /transcribe* /uploads* /embeddings* /show* /tags* /chat-ui /brain-ui /summarize /alerts*
+    # Route API requests to backend.
+    #
+    # `/map` is listed exactly (not `/map*`): the API path is `/map` but the page
+    # is `/maps`, and a `/map*` wildcard would send the SPA route to the backend
+    # too. `/map/*` covers a future sub-path. Prod needs none of this — it routes
+    # everything to the backend.
+    @api path /api/* /health /chat* /users* /memory* /brain* /files* /settings* /map /map/* /tasks* /db* /feedback* /correction* /conversations* /assistant* /search* /og-preview /image-proxy* /transcribe* /uploads* /embeddings* /show* /tags* /chat-ui /brain-ui /summarize /alerts*
     reverse_proxy @api assistant:8000 {
         transport http {
             response_header_timeout 300s
