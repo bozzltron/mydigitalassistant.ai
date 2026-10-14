@@ -54,13 +54,21 @@ def iter_scannable_files() -> list[Path]:
     return found
 
 
+# A name that looks like a plan but deliberately is not one. The scan below reads
+# *this* file too, so the fixture must not itself be a citation: it is built from
+# parts, and the literal `plans/<name>.md` never appears in the source text. Before
+# this, the fixture tripped the very check it guards the moment the maps plan it was
+# named after was deleted (aefef43) — the suite was red for ten days.
+FAKE_PLAN = "2026-10-02-geojson-maps.md"
+
+
 def test_detector_finds_a_citation() -> None:
     """Guard the guard: a vacuous regex would make this whole file a no-op."""
-    cited = find_citations("See plans/2026-10-02-geojson-maps.md for the reasoning.")
-    assert cited == ["2026-10-02-geojson-maps.md"]
+    cited = find_citations(f"See plans/{FAKE_PLAN} for the reasoning.")
+    assert cited == [FAKE_PLAN]
     # Near-misses that must not trip it.
     assert find_citations("see plans/README.md") == []
-    assert find_citations("plans/2026-10-02-geojson-maps") == []
+    assert find_citations(f"plans/{FAKE_PLAN.removesuffix('.md')}") == []
     assert find_citations("the plans/ directory holds active work") == []
 
 
