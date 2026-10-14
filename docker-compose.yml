@@ -80,6 +80,9 @@ services:
       - TZ=${TZ:-}
       # Tool calling (Phase 6 M5): enables list_files, read_file, web_search, etc.
       - TOOLS_ENABLED=${TOOLS_ENABLED:-true}
+      # Maps (docs/MAPS.md). Dev defaults on so the map page is reachable;
+      # MAPS_ENABLED_DEV overrides just this environment, MAPS_ENABLED both.
+      - MAPS_ENABLED=${MAPS_ENABLED_DEV:-${MAPS_ENABLED:-true}}
     volumes:
       # The brain (SQLite DB + its backups) lives in a named volume mounted at
       # /app/brain. The DB file itself never moves — only the path the app opens

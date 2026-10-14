@@ -63,6 +63,9 @@ services:
       - TZ=${TZ:-}
       # Tool calling: enables list_files, read_file, web_search, etc.
       - TOOLS_ENABLED=${TOOLS_ENABLED:-true}
+      # Maps (docs/MAPS.md). Prod defaults off; MAPS_ENABLED_PROD overrides just
+      # this environment, MAPS_ENABLED both.
+      - MAPS_ENABLED=${MAPS_ENABLED_PROD:-${MAPS_ENABLED:-false}}
     volumes:
       # The brain (SQLite DB + its backups) lives in a named volume mounted at
       # /app/brain. The DB file itself never moves — only the path the app opens
