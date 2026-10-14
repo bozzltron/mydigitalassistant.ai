@@ -1,5 +1,6 @@
 import { createMemo, createSignal, For, onMount, Show } from 'solid-js'
 import { getMap, getSettings, putMap } from '../../services/api'
+import { debug } from '../../services/logger'
 import type { MapFeatureCollection, MapStyle } from '../../types'
 import { describeFeature, emptyCollection, pointFeature } from '../../utils/mapLib'
 import MapCanvas from './MapCanvas'
@@ -47,9 +48,13 @@ export default function MapPage() {
       if (firstStyle && !s.map_styles.some((x) => x.id === styleId())) {
         setStyleId(firstStyle.id)
       }
+      debug('[maps] settings', { maps_enabled: s.maps_enabled, styles: s.map_styles.length })
       if (!s.maps_enabled) return
-      setData(await getMap())
-    } catch {
+      const fc = await getMap()
+      debug('[maps] map loaded', { features: fc?.features?.length ?? 'null' })
+      setData(fc)
+    } catch (e) {
+      console.error('[maps] failed to load the map page', e)
       setError('Could not reach the assistant.')
       setEnabled(false)
     }
@@ -66,9 +71,13 @@ export default function MapPage() {
   const save = async (next: MapFeatureCollection) => {
     setSaving(true)
     setError('')
+    debug('[maps] saving', next.features.length, 'feature(s)')
     try {
-      setData(await putMap(next))
-    } catch {
+      const saved = await putMap(next)
+      debug('[maps] saved', saved?.features?.length ?? 'null')
+      setData(saved)
+    } catch (e) {
+      console.error('[maps] save failed', e)
       setError('Could not save the map. Your change is still here — try again.')
     } finally {
       setSaving(false)
