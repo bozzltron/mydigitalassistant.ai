@@ -301,8 +301,9 @@ grows a second destructive action, both should move to `Modal` together.
 plus `GET /tasks/{id}/runs` (moved here from Phase 1 — it *is* the learning read) and the
 public `get_episode` it needs.
 
-**Phase 4 — the menu (2h).** The dropdown, Tasks added, Trace/Settings left in place,
-`TopBar.test.tsx` updated. Verify on dev (8443) **and** prod (8444) at a narrow width.
+**Phase 4 — the menu (2h). DONE.** The dropdown, Tasks added, Trace/Settings left in
+place, `TopBar.test.tsx` updated (two order tests and the link test moved into the
+menu). Verified served on dev; still to check on prod (8444) at a narrow width.
 
 ## Test strategy
 
