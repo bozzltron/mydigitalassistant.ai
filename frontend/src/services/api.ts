@@ -143,6 +143,13 @@ export const MapStyleSchema = z.object({
   supports3d: z.boolean(),
   point_color: z.string(),
   label_color: z.string(),
+  // Defaulted like the rest of this schema, so a backend without the key still
+  // renders. The default is the font the tile server actually serves: MapLibre's
+  // own default (`Open Sans Regular`) is a 404 on OpenFreeMap, and a glyph that
+  // failed to load has zero advance width — the label comes out as unreadable
+  // overlapping text rather than as an error. That `/settings` always sends it is
+  // pinned by the backend's own test.
+  label_font: z.array(z.string()).default(['Noto Sans Regular']),
 })
 
 export const SettingsSchema = z.object({

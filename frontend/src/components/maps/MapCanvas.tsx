@@ -98,14 +98,21 @@ export default function MapCanvas(props: {
         filter: ['has', 'description'],
         layout: {
           'text-field': ['get', 'description'],
-          'text-size': 12,
+          // Naming the font is load-bearing: MapLibre's default (`Open Sans
+          // Regular`) is not on OpenFreeMap's glyph endpoint, and glyphs that
+          // failed to load have zero advance width — the text draws with every
+          // character stacked on the last, which reads as unreadable overlap.
+          'text-font': style.label_font,
+          'text-size': 14,
+          // Wrap a long description rather than drawing one line across the map.
+          'text-max-width': 12,
           'text-offset': [0, 1.2],
           'text-anchor': 'top',
         },
         paint: {
           'text-color': style.label_color,
           'text-halo-color': '#ffffff',
-          'text-halo-width': 1.5,
+          'text-halo-width': 2,
         },
       })
     }
@@ -135,10 +142,19 @@ export default function MapCanvas(props: {
     })
   }
 
+  // The point *set*, not the whole FeatureCollection: an edit rewrites every
+  // feature, so keying on the object itself would re-frame the camera on a
+  // description change and yank it back from wherever the user had panned to.
+  const geometryKey = (d: MapFeatureCollection) =>
+    d.features.map((f) => f.geometry.coordinates.join(',')).join('|')
+  let framedKey: string | null = null
+
   const frameToData = () => {
     if (!map) return
-    const bounds = boundsFor(untrack(() => props.data).features)
+    const data = untrack(() => props.data)
+    const bounds = boundsFor(data.features)
     if (bounds) map.fitBounds(bounds, { padding: 60, duration: 0 })
+    framedKey = geometryKey(data)
   }
 
   const zoomToCluster = async (clusterId: number, lon: number, lat: number) => {
@@ -276,7 +292,7 @@ export default function MapCanvas(props: {
     )
   )
 
-  // Data changes update the source; adding a point re-frames the map.
+  // Data changes update the source; a change to the point *set* re-frames the map.
   createEffect(
     on(
       () => props.data,
@@ -285,7 +301,7 @@ export default function MapCanvas(props: {
         const src = map.getSource(SOURCE) as GeoJSONSource | undefined
         debug(TAG, 'setData', data.features.length, 'feature(s)')
         src?.setData(data)
-        frameToData()
+        if (geometryKey(data) !== framedKey) frameToData()
       }
     )
   )

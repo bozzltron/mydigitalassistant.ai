@@ -43,9 +43,20 @@ store, no `map` frame type, and no `/maps` index — the file *is* the map.
   page addresses a clicked point by its index, which the source's `generateId`
   supplies — MapLibre assigns `id` = the feature's position in the data.
 - **Edit and remove** from the point's detail panel.
+- **The camera follows the point *set*.** Adding or removing a point re-frames to
+  fit them all; editing a description does not. An edit rewrites the whole
+  FeatureCollection, so re-framing on it would yank the camera back from wherever
+  the user had panned to while they were only changing words.
 - **Style picker** over `map_styles` (from `/settings`); choosing one calls
   `setStyle` and does not re-frame. **Pitch** is enabled when the active style has
   `supports3d` (Liberty only, today).
+- **The label font is named, not inherited.** MapLibre's default `text-font` is
+  `Open Sans Regular`, which OpenFreeMap answers **404** — and a glyph that failed
+  to load has zero advance width, so the label still "rendered", with every
+  character drawn on top of the last. That is unreadable overlap, not a
+  missing-font error, which is why it is worth stating. `map_styles[].label_font`
+  carries the font the tile server actually serves; the client never sniffs the
+  style's layers for it (the rule `maps/config.py` already follows for colours).
 - **One Map instance for the page's lifetime.** A WebGL context is scarce
   (~8–16/page) and permanently held, so a map is never mounted in the transcript —
   a `map_ref` would be a text chip.
@@ -54,9 +65,16 @@ store, no `map` frame type, and no `/maps` index — the file *is* the map.
 
 The file is at the sandbox root, so **no maps-specific code** is involved: the
 agent reads it with `read_file("map.geojson")`, and `list_files` /
-`glob("*.geojson")` find it. It carries **no memory frame** until something writes
-it through `apply_file_to_memory`, so the agent reads it by path. The agent never
-*writes* a map — there is no coordinate-authoring tool.
+`glob("*.geojson")` find it. The agent never *writes* a map — there is no
+coordinate-authoring tool.
+
+Saving writes a `file_map.geojson` frame through `apply_file_to_memory` — the same
+step the upload endpoint, `write_file` and `edit_file` funnel through — so the map
+appears in the Files view like any other file the user owns. `GET /files/list` is a
+view over file *frames*, so writing the bytes alone left the map on disk and
+readable by the agent but **invisible to the user who made it**. The frame records
+what the file *is* (name, size, extension, profile), never what it contains: the
+point descriptions are read from the file, not from memory.
 
 ## Privacy: enabling maps is the consent
 

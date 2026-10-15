@@ -469,20 +469,49 @@ async def get_map() -> dict:
 
 
 @app.put("/map")
-async def put_map(payload: dict = Body(...)) -> dict:
+async def put_map(
+    payload: dict = Body(...),
+    user_id: int = 1,
+    store: MemoryStore = _Depends(get_store),
+) -> dict:
     """Replace the map with the posted FeatureCollection.
 
     The page holds the whole map, so it PUTs the whole file on every change (add,
     edit, remove) — no per-point endpoints, no read-modify-write race, because the
     page is the only writer. Validated and canonicalised, then written atomically.
     """
+    from assistant.backend.pipeline.files import apply_file_to_memory
     from assistant.backend.pipeline.filesystem import write_sandbox_bytes
 
     try:
         canonical = validate_fc(payload)
     except GeoJSONError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
-    write_sandbox_bytes(_MAP_FILE, dumps(canonical).encode("utf-8"), overwrite=True)
+    content = dumps(canonical).encode("utf-8")
+    write_sandbox_bytes(_MAP_FILE, content, overwrite=True)
+    # The bytes alone are not enough: `GET /files/list` is a view over *file
+    # frames*, and every other writer of a sandbox file — the upload endpoint,
+    # `write_file`, `edit_file` — funnels through `apply_file_to_memory`. Skipping
+    # it left map.geojson on disk and readable by the agent but absent from the
+    # Files view: the user's own content, invisible to the user. Idempotent by
+    # frame name, so a save that only edits a description just refreshes it.
+    #
+    # Wrapped like `edit_file`'s refresh: the file is written and is the source of
+    # truth, so a memory problem must not turn a save that happened into a 500 the
+    # UI reports as "could not save".
+    try:
+        await apply_file_to_memory(
+            store,
+            frame_name=f"file_{_MAP_FILE}",
+            safe_filename=_MAP_FILE,
+            ext="geojson",
+            content_bytes=content,
+            user_id=user_id,
+            source_type="file_create",
+            source_reliability=0.8,
+        )
+    except Exception as e:
+        logger.warning("map memory refresh failed for %s: %s", _MAP_FILE, e)
     return canonical
 
 

@@ -14,6 +14,7 @@ const FALLBACK_STYLE: MapStyle = {
   supports3d: true,
   point_color: '#c2410c',
   label_color: '#1c1917',
+  label_font: ['Noto Sans Regular'],
 }
 
 /**

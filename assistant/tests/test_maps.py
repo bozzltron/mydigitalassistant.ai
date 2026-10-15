@@ -164,8 +164,60 @@ class TestMapApi:
         assert client.put("/map", json=_fc(_point(200, 10))).status_code == 422
         assert not MAP_PATH.exists(), "a refused map must not be written"
 
+    async def test_put_makes_the_map_visible_in_the_files_list(self, client):
+        """A saved map is the user's file and must be findable as one.
+
+        Regression: `PUT /map` wrote the bytes but skipped `apply_file_to_memory`
+        — the step the upload endpoint, `write_file` and `edit_file` all funnel
+        through. `GET /files/list` is a view over file *frames*, so map.geojson was
+        on disk and readable by the agent but absent from the Files view: the
+        user's own content, invisible to the user.
+        """
+        user_id = client.post("/users", params={"name": "mapper"}).json()["id"]
+        client.put("/map", params={"user_id": user_id}, json=_fc(_point(-122.68, 45.523, "shed")))
+
+        listed = client.get("/files/list", params={"user_id": user_id}).json()
+        entry = next((e for e in listed if e["file_name"] == "map.geojson"), None)
+        assert entry is not None, [e["file_name"] for e in listed]
+        assert entry["source_type"] == "file_create"
+        assert entry["file_ext"] == "geojson"
+        assert entry["file_size"] > 0
+
+    async def test_repeated_saves_refresh_one_frame(self, client):
+        """Saving again updates the map's frame rather than adding a second.
+
+        The page PUTs the whole file on every change, so this runs on each edit.
+        """
+        user_id = client.post("/users", params={"name": "mapper2"}).json()["id"]
+        for description in ("shed", "shed, gate code 4412"):
+            client.put(
+                "/map",
+                params={"user_id": user_id},
+                json=_fc(_point(-122.68, 45.523, description)),
+            )
+
+        names = [
+            e["file_name"]
+            for e in client.get("/files/list", params={"user_id": user_id}).json()
+        ]
+        assert names.count("map.geojson") == 1
+
+    async def test_the_file_is_written_even_when_memory_cannot_be(self, client):
+        """A memory failure must not fail a save that already happened.
+
+        The bytes are the source of truth. Without a user row the frame write
+        fails its foreign key — the PUT must still report success, or the UI says
+        "could not save" about a map that is on disk.
+        """
+        assert client.put("/map", json=_fc(_point(-122.68, 45.523, "shed"))).status_code == 200
+        assert MAP_PATH.exists()
+
     async def test_settings_carry_the_map_keys(self, client):
         s = client.get("/settings").json()
         assert "maps_enabled" in s
         assert "map_tiles_base_url" in s
         assert isinstance(s["map_styles"], list) and s["map_styles"]
+        # The renderer draws labels with this font, and a glyph stack that is not
+        # on the tile server's glyph endpoint has zero advance width — the label
+        # comes out as unreadable overlapping text rather than as a missing font.
+        assert all(style.get("label_font") for style in s["map_styles"])

@@ -24,4 +24,11 @@ export interface MapStyle {
   supports3d: boolean
   point_color: string
   label_color: string
+  /**
+   * The font the basemap's glyph endpoint serves. Must be named: MapLibre's
+   * default is `Open Sans Regular`, which OpenFreeMap 404s, and a missing glyph
+   * has zero advance width — the label draws with every character stacked on the
+   * last instead of failing visibly.
+   */
+  label_font: string[]
 }
