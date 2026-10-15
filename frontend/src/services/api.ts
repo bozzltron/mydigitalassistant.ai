@@ -21,6 +21,8 @@ import type {
   DeletedSession,
   OgPreviewResponse,
   MapFeatureCollection,
+  Task,
+  TaskChange,
 } from '../types'
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
@@ -563,7 +565,6 @@ export async function getSettings(): Promise<z.infer<typeof SettingsSchema>> {
 export async function getMap(): Promise<MapFeatureCollection> {
   return api<MapFeatureCollection>('/map')
 }
-
 /**
  * Replace the map with the whole FeatureCollection.
  *
@@ -576,6 +577,39 @@ export async function putMap(fc: MapFeatureCollection): Promise<MapFeatureCollec
     method: 'PUT',
     body: JSON.stringify(fc),
   })
+}
+
+/**
+ * Scheduled tasks. A task is memory, so the page reads and writes the same
+ * `scheduled_task` frames chat does — a task created here is visible to "list my
+ * scheduled tasks" and vice versa.
+ */
+export async function getTasks(): Promise<Task[]> {
+  return api<Task[]>(`/tasks?user_id=${actingUser()}`)
+}
+
+export async function createTask(name: string, prompt: string): Promise<Task> {
+  return api<Task>(`/tasks?user_id=${actingUser()}`, {
+    method: 'POST',
+    body: JSON.stringify({ name, prompt }),
+  })
+}
+
+/**
+ * Change a task's prompt, or pause/resume it.
+ *
+ * The server accepts exactly these two fields (`extra="forbid"`), so a typo here is a
+ * 422 rather than a silently ignored change.
+ */
+export async function updateTask(id: number, change: TaskChange): Promise<Task> {
+  return api<Task>(`/tasks/${id}?user_id=${actingUser()}`, {
+    method: 'PATCH',
+    body: JSON.stringify(change),
+  })
+}
+
+export async function deleteTask(id: number): Promise<{ status: string }> {
+  return api<{ status: string }>(`/tasks/${id}?user_id=${actingUser()}`, { method: 'DELETE' })
 }
 
 /**

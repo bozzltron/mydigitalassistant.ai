@@ -217,12 +217,12 @@ established shape for a list-and-detail page):
 
 ```
 frontend/src/components/tasks/TasksPage.tsx      # the page: list + detail panel
-frontend/src/components/tasks/TaskList.tsx       # the rows
-frontend/src/components/tasks/TaskForm.tsx       # create (name + prompt) and edit (prompt)
-frontend/src/components/tasks/TaskRuns.tsx       # what it has been learning
+frontend/src/components/tasks/TaskForm.tsx       # detail: prompt edit, pause/resume, delete
+frontend/src/components/tasks/TaskRuns.tsx       # what it has been learning (Phase 3)
 frontend/src/components/tasks/TasksPage.test.tsx
 frontend/src/styles/tasks.css                    # imported from styles/index.css (#12)
-frontend/src/types/task.ts                       # Task, TaskRun, LearnedFrame
+frontend/src/types/task.ts                       # Task, TaskChange
+frontend/src/utils/taskLib.ts                    # formatStamp, taskStateLabel, taskNextRunLabel, taskSubtitle
 ```
 
 - **Route** `/tasks` in `routes.tsx` (static import, like `/files`).
@@ -288,8 +288,14 @@ name in a `task_name` slot. Failing tests first; both reproduced the measured er
 **Do this before Phase 2** — building a Create button on top of a name that cannot be
 recreated is building on a known break.
 
-**Phase 2 — the Tasks page (4h).** List, create, edit the prompt, pause/resume, delete.
-No learning panel yet — the page must be useful on its own.
+**Phase 2 — the Tasks page (4h). DONE.** List, create, edit the prompt, pause/resume,
+delete. No learning panel yet — the page must be useful on its own.
+
+Two deviations from the file list below, both deliberate: **`TaskList.tsx` was not
+needed** — the list is ~30 lines of JSX inside the page, and a component whose only
+caller is its parent is indirection, not modularity. And the delete confirmation is
+`window.confirm`, not the house `Modal`: it is one call and needs no state. If the page
+grows a second destructive action, both should move to `Modal` together.
 
 **Phase 3 — the learning panel (3h).** The `TaskRuns` view, shaped by Phase 0's result,
 plus `GET /tasks/{id}/runs` (moved here from Phase 1 — it *is* the learning read) and the

@@ -1,0 +1,256 @@
+/* Tasks page (plans/2026-10-15-daily-tasks-ui.md). Task-only selectors: the page
+   reuses the design system's base classes and defines nothing that files.css already
+   owns — `designSystem.test.ts` fails a bare class defined in two stylesheets. */
+
+.tasks-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.tasks-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 0.75rem 1.5rem;
+  flex-shrink: 0;
+}
+
+.tasks-header h1 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--accent);
+  margin: 0;
+}
+
+.tasks-status {
+  margin-left: auto;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+}
+
+.tasks-back {
+  flex-shrink: 0;
+  text-decoration: none;
+}
+
+.tasks-content {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.tasks-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  min-width: 0;
+  padding: var(--space-lg);
+}
+
+.tasks-empty {
+  color: var(--text-dim);
+  font-size: 0.9rem;
+  padding: var(--space-md) 0;
+}
+
+/* Create */
+.task-create {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-lg);
+  margin-bottom: var(--space-lg);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.task-create-name,
+.task-create-prompt {
+  width: 100%;
+  padding: var(--space-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  transition: border-color var(--transition-fast);
+}
+
+.task-create-prompt {
+  resize: vertical;
+}
+
+.task-create-name:focus,
+.task-create-prompt:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* List */
+.task-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.task-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  width: 100%;
+  padding: var(--space-sm) var(--space-md);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+
+.task-row:hover {
+  border-color: var(--accent);
+}
+
+.task-row.is-active {
+  border-color: var(--accent);
+  background: var(--bg);
+}
+
+.task-row.is-paused .task-row-name {
+  color: var(--text-dim);
+}
+
+.task-row-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-sm);
+}
+
+.task-row-name {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.task-row-state {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+}
+
+.task-row.is-paused .task-row-state {
+  color: var(--text-dim);
+}
+
+.task-row-sub,
+.task-row-when {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Detail */
+.task-detail {
+  width: 26rem;
+  flex-shrink: 0;
+  border-left: 1px solid var(--border);
+  background: var(--surface);
+  padding: var(--space-lg);
+  overflow-y: auto;
+}
+
+.task-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.task-form h2 {
+  font-size: 1rem;
+  margin: 0;
+}
+
+.task-meta {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.25rem var(--space-md);
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.task-meta dt {
+  color: var(--text-dim);
+}
+
+.task-meta dd {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+}
+
+.task-prompt-label {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.task-prompt {
+  width: 100%;
+  resize: vertical;
+  padding: var(--space-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  transition: border-color var(--transition-fast);
+}
+
+.task-prompt:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.task-actions {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+.task-remove {
+  color: var(--color-error);
+}
+
+.task-last-run {
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-sm);
+}
+
+.task-last-run h3 {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+  margin: 0 0 var(--space-xs);
+}
+
+.task-last-run p {
+  margin: 0;
+  font-size: 0.85rem;
+  white-space: pre-wrap;
+}

@@ -32,3 +32,6 @@
 
 /* 11. Map page styles */
 @import './map.css';
+
+/* 12. Tasks page styles */
+@import './tasks.css';
