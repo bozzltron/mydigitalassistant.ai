@@ -100,7 +100,7 @@ class Feedback(BaseModel):
 
 class Alert(BaseModel):
     id: int | None = None
-    user_id: int
+    user_id: int | None = None
     type: str  # "learning", "task_result", "conflict", "correction", "search_result"
     title: str
     message: str

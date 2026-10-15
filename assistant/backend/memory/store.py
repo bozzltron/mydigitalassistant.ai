@@ -3464,7 +3464,10 @@ class MemoryStore:
             alerts.append(
                 Alert(
                     id=frame.id,
-                    user_id=frame.owner_user_id or 0,
+                    # The frame's own owner, or None. This read `frame.owner_user_id
+                    # or 0`, a sentinel that reads like an account id; None is what
+                    # "no owner" already means everywhere else in this model.
+                    user_id=frame.owner_user_id,
                     type=slots.get("kind") or "alert",
                     title=slots.get("title") or "",
                     message=slots.get("message") or "",

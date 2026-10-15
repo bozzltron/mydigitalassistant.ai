@@ -548,7 +548,11 @@ async def search_frames(
     # Search using sqlite-vec
     results = await store.search_similar_frames(
         embedding=query_response.embedding,
-        user_id=0,   # not user-specific in this endpoint
+        # `None` means "skip ownership filtering", which is what this endpoint
+        # wants. It passed `0` — and `0` is not `None`: the store then filtered to
+        # `owner_user_id = 0 OR owner_user_id IS NULL`, so the search returned only
+        # unowned frames and silently missed every frame the user actually owned.
+        user_id=None,
         embedding_model=settings.embedding_model,
         limit=limit,
         min_distance=1.0 - threshold,
@@ -1813,7 +1817,7 @@ async def submit_correction(
 
 class AlertResponse(BaseModel):
     id: int
-    user_id: int
+    user_id: int | None = None
     type: str
     title: str
     message: str
