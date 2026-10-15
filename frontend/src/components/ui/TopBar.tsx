@@ -10,7 +10,7 @@ import { AlertsPanel } from './AlertsPanel'
 import { EditModal } from './EditModal'
 import { Modal } from './Modal'
 import styles from './TopBar.module.css'
-import { PlusIcon, MicIcon, FolderIcon, BrainIcon, MapIcon, GearIcon, TraceIcon } from './TopBarIcons'
+import { PlusIcon, MicIcon, FolderIcon, BrainIcon, MapIcon, GearIcon, TraceIcon, MenuIcon, TaskIcon } from './TopBarIcons'
 
 interface TopBarProps {
   conversations: Session[]
@@ -35,6 +35,10 @@ const PREFERRED_VOICE_NAMES = [
 
 export default function TopBar(props: TopBarProps) {
   const [showSettings, setShowSettings] = createSignal(false)
+  // The page menu. Trace and Settings are deliberately NOT in it: they are toggles
+  // with an on/off state, not destinations, and folding them in would cost the
+  // one-click affordance and make the menu render their state.
+  const [showMenu, setShowMenu] = createSignal(false)
   const [editSessionId, setEditSessionId] = createSignal<string | null>(null)
   const [editTitle, setEditTitle] = createSignal('')
   const [braveConfigured, setBraveConfigured] = createSignal(false)
@@ -113,18 +117,33 @@ export default function TopBar(props: TopBarProps) {
     setVolumeDraft(settings.voiceVolume)
   })
 
-  // Ref for dropdown click-outside detection
+  // Refs for dropdown click-outside detection
   let dropdownRef: HTMLDivElement
+  let menuRef: HTMLDivElement
 
-  // Close dropdown when clicking outside
+  // Close a dropdown when clicking outside it, or on Escape.
   onMount(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (dropdownRef && !dropdownRef.contains(e.target as Node)) {
+      const target = e.target as Node
+      if (dropdownRef && !dropdownRef.contains(target)) {
+        setShowConversationDropdown(false)
+      }
+      if (menuRef && !menuRef.contains(target)) {
+        setShowMenu(false)
+      }
+    }
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setShowMenu(false)
         setShowConversationDropdown(false)
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
+    document.addEventListener('keydown', handleKey)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+      document.removeEventListener('keydown', handleKey)
+    }
   })
 
   const fetchBackendSettings = async () => {
@@ -358,20 +377,61 @@ export default function TopBar(props: TopBarProps) {
               Let's talk
             </button>
           </Show>
-          <a href="/files" class="topbar-btn" title="File Browser">
-            <FolderIcon />
-            Files
-          </a>
-          <Show when={mapsEnabled()}>
-            <a href="/maps" class="topbar-btn" title="Maps">
-              <MapIcon />
-              Maps
-            </a>
-          </Show>
-          <a href="/brain" class="topbar-btn" title="Brain Observatory">
-            <BrainIcon />
-            Brain
-          </a>
+          <div class={styles.pageMenu} ref={(el) => { menuRef = el; }}>
+            <button
+              class="topbar-btn topbar-btn--icon"
+              id="page-menu-toggle"
+              title="Pages"
+              aria-label="Pages"
+              aria-haspopup="menu"
+              aria-expanded={showMenu()}
+              onClick={() => setShowMenu((v) => !v)}
+            >
+              <MenuIcon />
+            </button>
+            <Show when={showMenu()}>
+              <div class={styles.pageMenuPanel} role="menu">
+                <a
+                  class={styles.pageMenuItem}
+                  role="menuitem"
+                  href="/tasks"
+                  onClick={() => setShowMenu(false)}
+                >
+                  <TaskIcon />
+                  Tasks
+                </a>
+                <a
+                  class={styles.pageMenuItem}
+                  role="menuitem"
+                  href="/files"
+                  onClick={() => setShowMenu(false)}
+                >
+                  <FolderIcon />
+                  Files
+                </a>
+                <Show when={mapsEnabled()}>
+                  <a
+                    class={styles.pageMenuItem}
+                    role="menuitem"
+                    href="/maps"
+                    onClick={() => setShowMenu(false)}
+                  >
+                    <MapIcon />
+                    Maps
+                  </a>
+                </Show>
+                <a
+                  class={styles.pageMenuItem}
+                  role="menuitem"
+                  href="/brain"
+                  onClick={() => setShowMenu(false)}
+                >
+                  <BrainIcon />
+                  Brain
+                </a>
+              </div>
+            </Show>
+          </div>
           <button
             class={`topbar-btn topbar-btn--icon${settings.traceVisible ? ' is-active' : ''}`}
             id="trace-toggle"

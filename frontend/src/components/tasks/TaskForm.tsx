@@ -1,4 +1,4 @@
-import { createEffect, createSignal, on, Show, untrack } from 'solid-js'
+import { createEffect, createSignal, on, Show } from 'solid-js'
 import type { Task } from '../../types/task'
 import { formatStamp } from '../../utils/taskLib'
 
@@ -22,9 +22,19 @@ export function TaskForm(props: {
 
   // Seed on a *different task*, not on every prop change: toggling pause replaces the
   // task object, and re-seeding then would throw away what the user was typing. The
-  // read is untracked on purpose — it is a snapshot of the newly selected task, not a
-  // subscription to its prompt.
-  createEffect(on(() => props.task.id, () => setText(untrack(() => props.task.prompt))))
+  // callback takes the task as a plain value, so this is not a subscription to its
+  // prompt — the id check is what decides.
+  let seededFor: number | null = null
+  createEffect(
+    on(
+      () => props.task,
+      (task) => {
+        if (task.id === seededFor) return
+        seededFor = task.id
+        setText(task.prompt)
+      }
+    )
+  )
 
   const dirty = () => text().trim() !== props.task.prompt
 

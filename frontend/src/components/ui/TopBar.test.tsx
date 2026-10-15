@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@solidjs/testing-library'
+import { render, screen, fireEvent, waitFor } from '@solidjs/testing-library'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import TopBar from './TopBar'
 import { setUser } from '../../state/user'
@@ -82,9 +82,32 @@ describe('TopBar', () => {
     expect(screen.getByRole('button', { name: /settings/i })).toBeInTheDocument()
   })
 
-  it('renders Brain link', () => {
+  it('reaches every page from the menu', () => {
     render(() => <TopBar conversations={defaultProps.conversations} activeConversation={defaultProps.activeConversation} onConversationChange={defaultProps.onConversationChange} onNewConversationClick={defaultProps.onNewConversationClick} isLoading={defaultProps.isLoading} assistantName={defaultProps.assistantName} />)
-    expect(screen.getByRole('link', { name: /brain/i })).toBeInTheDocument()
+
+    // The page links are in the menu now, so they are not in the row by default.
+    expect(screen.queryByRole('menuitem', { name: /brain/i })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /pages/i }))
+
+    expect(screen.getByRole('menuitem', { name: /tasks/i })).toHaveAttribute('href', '/tasks')
+    expect(screen.getByRole('menuitem', { name: /files/i })).toHaveAttribute('href', '/files')
+    expect(screen.getByRole('menuitem', { name: /brain/i })).toHaveAttribute('href', '/brain')
+  })
+
+  it('closes the menu on Escape and on a click outside', async () => {
+    render(() => <TopBar {...defaultProps} />)
+    const toggle = screen.getByRole('button', { name: /pages/i })
+
+    fireEvent.click(toggle)
+    expect(screen.getByRole('menu')).toBeInTheDocument()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
+
+    fireEvent.click(toggle)
+    expect(screen.getByRole('menu')).toBeInTheDocument()
+    fireEvent.mouseDown(document.body)
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument())
   })
 
   it('persists selection to localStorage', () => {
@@ -147,20 +170,21 @@ describe('TopBar', () => {
     expect(saved.voiceSpeed).toBe(1.6)
   })
 
-  it('orders the right side Alerts, Let\'s talk, Files, Brain, Trace, Settings, Trash', () => {
+  it('orders the right side Alerts, Let\'s talk, Pages, Trace, Settings, Trash', () => {
     render(() => <TopBar {...defaultProps} />)
     const labels = Array.from(
       document.querySelectorAll('.header-right .topbar-btn')
     ).map((el) => (el.getAttribute('aria-label') || el.textContent || '').trim())
 
-    expect(labels).toHaveLength(7)
+    expect(labels).toHaveLength(6)
     expect(labels[0]).toMatch(/for you/i)
     expect(labels[1]).toMatch(/let's talk/i)
-    expect(labels[2]).toBe('Files')
-    expect(labels[3]).toBe('Brain')
-    expect(labels[4]).toBe('Trace')
-    expect(labels[5]).toBe('Settings')
-    expect(labels[6]).toMatch(/trash/i)
+    // Tasks, Files, Maps and Brain are one menu button now. Adding Tasks made six
+    // items in a row that does not wrap (`header-right` is a single flex line).
+    expect(labels[2]).toBe('Pages')
+    expect(labels[3]).toBe('Trace')
+    expect(labels[4]).toBe('Settings')
+    expect(labels[5]).toMatch(/trash/i)
   })
 
   it('gives New a plus icon and every right-side control an svg icon', () => {
@@ -171,7 +195,7 @@ describe('TopBar', () => {
     expect(newBtn.querySelector('svg')).not.toBeNull()
 
     const controls = document.querySelectorAll('.header-right .topbar-btn')
-    expect(controls).toHaveLength(7)
+    expect(controls).toHaveLength(6)
     controls.forEach((el) => expect(el.querySelector('svg')).not.toBeNull())
   })
 

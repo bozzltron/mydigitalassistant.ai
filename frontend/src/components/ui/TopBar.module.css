@@ -1,5 +1,43 @@
 /* TopBar Component Styles */
 
+/* The page menu: Tasks, Files, Maps, Brain. Trace and Settings stay as buttons —
+   they are toggles with state, not destinations. */
+.pageMenu {
+  position: relative;
+}
+
+.pageMenuPanel {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 2px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 100;
+  min-width: 10rem;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+}
+
+.pageMenuItem {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.6rem;
+  border-radius: 4px;
+  color: var(--text);
+  text-decoration: none;
+  font-size: 0.85rem;
+  transition: background 0.15s;
+}
+
+.pageMenuItem:hover {
+  background: var(--border);
+}
+
 .conversationSwitcher {
   display: flex;
   align-items: center;
