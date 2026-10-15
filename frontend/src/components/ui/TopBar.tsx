@@ -10,7 +10,7 @@ import { AlertsPanel } from './AlertsPanel'
 import { EditModal } from './EditModal'
 import { Modal } from './Modal'
 import styles from './TopBar.module.css'
-import { PlusIcon, MicIcon, FolderIcon, BrainIcon, MapIcon, GearIcon, TraceIcon, MenuIcon, TaskIcon } from './TopBarIcons'
+import { PlusIcon, MicIcon, FolderIcon, BrainIcon, MapIcon, GearIcon, TraceIcon, MenuIcon, TaskIcon, TrashIcon } from './TopBarIcons'
 
 interface TopBarProps {
   conversations: Session[]
@@ -35,10 +35,12 @@ const PREFERRED_VOICE_NAMES = [
 
 export default function TopBar(props: TopBarProps) {
   const [showSettings, setShowSettings] = createSignal(false)
-  // The page menu. Trace and Settings are deliberately NOT in it: they are toggles
-  // with an on/off state, not destinations, and folding them in would cost the
-  // one-click affordance and make the menu render their state.
+  // The page menu holds the destinations *and* the panel toggles, so the row is one
+  // button plus the two conversation controls.
   const [showMenu, setShowMenu] = createSignal(false)
+  // The trash modal's open state lives here, not in TrashCan: its trigger is a menu
+  // item, and the modal must outlive the menu (see the render site).
+  const [showTrash, setShowTrash] = createSignal(false)
   const [editSessionId, setEditSessionId] = createSignal<string | null>(null)
   const [editTitle, setEditTitle] = createSignal('')
   const [braveConfigured, setBraveConfigured] = createSignal(false)
@@ -429,38 +431,65 @@ export default function TopBar(props: TopBarProps) {
                   <BrainIcon />
                   Brain
                 </a>
+
+                <hr class={styles.pageMenuDivider} />
+
+                <button
+                  class={styles.pageMenuItem}
+                  classList={{ 'is-active': settings.traceVisible }}
+                  id="trace-toggle"
+                  role="menuitem"
+                  title="Trace"
+                  aria-label="Trace"
+                  aria-pressed={settings.traceVisible}
+                  onClick={() => {
+                    // The trace and the settings panels are both right-docked, so
+                    // opening one closes the other rather than overlapping.
+                    updateSetting('traceVisible', !settings.traceVisible)
+                    setShowSettings(false)
+                    setShowMenu(false)
+                  }}
+                >
+                  <TraceIcon />
+                  Trace
+                </button>
+                <button
+                  class={styles.pageMenuItem}
+                  id="settings-toggle"
+                  role="menuitem"
+                  title="Settings"
+                  aria-label="Settings"
+                  onClick={() => {
+                    setShowSettings(true)
+                    // Both panels dock right; do not let them overlap.
+                    updateSetting('traceVisible', false)
+                    setShowMenu(false)
+                  }}
+                >
+                  <GearIcon />
+                  Settings
+                </button>
+                <button
+                  class={styles.pageMenuItem}
+                  id="trash-toggle"
+                  role="menuitem"
+                  title="Trash"
+                  aria-label="Open trash can"
+                  onClick={() => {
+                    setShowMenu(false)
+                    setShowTrash(true)
+                  }}
+                >
+                  <TrashIcon />
+                  Trash
+                </button>
               </div>
             </Show>
           </div>
-          <button
-            class={`topbar-btn topbar-btn--icon${settings.traceVisible ? ' is-active' : ''}`}
-            id="trace-toggle"
-            title="Trace"
-            aria-label="Trace"
-            aria-pressed={settings.traceVisible}
-            onClick={() => {
-              // The trace and the settings panels are both right-docked, so
-              // opening one closes the other rather than overlapping.
-              updateSetting('traceVisible', !settings.traceVisible)
-              setShowSettings(false)
-            }}
-          >
-            <TraceIcon />
-          </button>
-          <button
-            class="topbar-btn topbar-btn--icon"
-            id="settings-toggle"
-            title="Settings"
-            aria-label="Settings"
-            onClick={() => {
-              setShowSettings(true)
-              // Both panels dock right; do not let them overlap.
-              updateSetting('traceVisible', false)
-            }}
-          >
-            <GearIcon />
-          </button>
-          <TrashCan />
+          {/* Outside the menu on purpose. The panel unmounts when the menu closes, and
+              `Modal` is not a portal — so a modal rendered inside it would be torn down
+              by the first click on its own backdrop. */}
+          <TrashCan isOpen={showTrash()} onClose={() => setShowTrash(false)} />
           {/* Transient voice/TTS controls, kept out of the six-button order. */}
           <Show when={showStopSpeakingBtn()}>
             <button

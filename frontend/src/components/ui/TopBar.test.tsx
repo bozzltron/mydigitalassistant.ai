@@ -77,9 +77,11 @@ describe('TopBar', () => {
     expect(screen.getByRole('button', { name: /let's talk/i })).toBeInTheDocument()
   })
 
-  it('renders settings button', () => {
-    render(() => <TopBar conversations={defaultProps.conversations} activeConversation={defaultProps.activeConversation} onConversationChange={defaultProps.onConversationChange} onNewConversationClick={defaultProps.onNewConversationClick} isLoading={defaultProps.isLoading} assistantName={defaultProps.assistantName} />)
-    expect(screen.getByRole('button', { name: /settings/i })).toBeInTheDocument()
+  it('reaches Settings and Trash from the menu', () => {
+    render(() => <TopBar {...defaultProps} />)
+    fireEvent.click(screen.getByRole('button', { name: /pages/i }))
+    expect(screen.getByRole('menuitem', { name: /settings/i })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: /open trash can/i })).toBeInTheDocument()
   })
 
   it('reaches every page from the menu', () => {
@@ -170,21 +172,19 @@ describe('TopBar', () => {
     expect(saved.voiceSpeed).toBe(1.6)
   })
 
-  it('orders the right side Alerts, Let\'s talk, Pages, Trace, Settings, Trash', () => {
+  it('orders the right side Alerts, Let\'s talk, Pages', () => {
     render(() => <TopBar {...defaultProps} />)
     const labels = Array.from(
       document.querySelectorAll('.header-right .topbar-btn')
     ).map((el) => (el.getAttribute('aria-label') || el.textContent || '').trim())
 
-    expect(labels).toHaveLength(6)
+    // The row is down to three: every page *and* the trace/settings/trash controls
+    // are in the menu now. The row does not wrap (`header-right` is a single flex
+    // line), so it had run out of width rather than of lines.
+    expect(labels).toHaveLength(3)
     expect(labels[0]).toMatch(/for you/i)
     expect(labels[1]).toMatch(/let's talk/i)
-    // Tasks, Files, Maps and Brain are one menu button now. Adding Tasks made six
-    // items in a row that does not wrap (`header-right` is a single flex line).
     expect(labels[2]).toBe('Pages')
-    expect(labels[3]).toBe('Trace')
-    expect(labels[4]).toBe('Settings')
-    expect(labels[5]).toMatch(/trash/i)
   })
 
   it('gives New a plus icon and every right-side control an svg icon', () => {
@@ -195,27 +195,33 @@ describe('TopBar', () => {
     expect(newBtn.querySelector('svg')).not.toBeNull()
 
     const controls = document.querySelectorAll('.header-right .topbar-btn')
-    expect(controls).toHaveLength(6)
+    expect(controls).toHaveLength(3)
     controls.forEach((el) => expect(el.querySelector('svg')).not.toBeNull())
   })
 
   it('keeps the trace and settings panels mutually exclusive', async () => {
-    // Both dock on the right, so opening one must close the other.
+    // Both dock on the right, so opening one must close the other. They are menu
+    // items now, so each click opens the menu first.
     const { settings, updateSetting } = await import('../../state/settings')
     updateSetting('traceVisible', false)
     render(() => <TopBar {...defaultProps} />)
 
+    const openMenu = () => fireEvent.click(screen.getByRole('button', { name: /pages/i }))
+
+    openMenu()
     fireEvent.click(document.getElementById('settings-toggle')!)
     expect(
       document.getElementById('settings-panel')?.classList.contains('open')
     ).toBe(true)
 
+    openMenu()
     fireEvent.click(document.getElementById('trace-toggle')!)
     expect(
       document.getElementById('settings-panel')?.classList.contains('open')
     ).toBe(false)
     expect(settings.traceVisible).toBe(true)
 
+    openMenu()
     fireEvent.click(document.getElementById('settings-toggle')!)
     expect(settings.traceVisible).toBe(false)
   })

@@ -38,6 +38,18 @@
   background: var(--border);
 }
 
+/* A menu item that is a toggle, not a destination — Trace is on or off. */
+.pageMenuItem.is-active {
+  color: var(--accent);
+  background: var(--bg);
+}
+
+.pageMenuDivider {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 4px 0;
+}
+
 .conversationSwitcher {
   display: flex;
   align-items: center;

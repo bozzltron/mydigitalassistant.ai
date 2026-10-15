@@ -5,8 +5,7 @@ import { getDeletedSessions, restoreConversation } from '../../services/api'
 import { user } from '../../state/user'
 import type { DeletedSession } from '../../types/chat'
 
-export default function TrashCan() {
-  const [isOpen, setIsOpen] = createSignal(false)
+export default function TrashCan(props: { isOpen: boolean; onClose: () => void }) {
   const [deletedSessions, setDeletedSessions] = createSignal<DeletedSession[]>([])
   const [isLoading, setIsLoading] = createSignal(false)
   const [restoringId, setRestoringId] = createSignal<string | null>(null)
@@ -29,7 +28,7 @@ export default function TrashCan() {
   // Listen for archive events to refresh trash can
   onMount(() => {
     const handleArchive = () => {
-      if (isOpen()) {
+      if (props.isOpen) {
         loadDeletedSessions()
       }
     }
@@ -38,7 +37,7 @@ export default function TrashCan() {
   })
 
   createEffect(() => {
-    if (isOpen()) {
+    if (props.isOpen) {
       loadDeletedSessions()
     }
   })
@@ -86,23 +85,13 @@ export default function TrashCan() {
   }
 
   return (
-    <>
-        <button
-          class="topbar-btn"
-          onClick={() => setIsOpen(true)}
-          aria-label="Open trash can"
-        >
-          <TrashIcon />
-          <span>Trash</span>
-        </button>
-
-      <Modal
-        isOpen={isOpen()}
-        onClose={() => setIsOpen(false)}
-        title="Trash Can"
-        size="large"
-      >
-        <div class="trash-can-modal">
+    <Modal
+      isOpen={props.isOpen}
+      onClose={() => props.onClose()}
+      title="Trash Can"
+      size="large"
+    >
+      <div class="trash-can-modal">
           <Show when={isLoading()}>
             <div class="trash-loading">Loading trash can...</div>
           </Show>
@@ -165,6 +154,5 @@ export default function TrashCan() {
           </Show>
         </div>
       </Modal>
-    </>
   )
 }
