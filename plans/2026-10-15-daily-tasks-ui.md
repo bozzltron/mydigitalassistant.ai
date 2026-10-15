@@ -106,6 +106,11 @@ These are the reason a page is worth building, and five of them are defects:
 
 Gaps 5 and 6 are pre-existing, but a create/delete UI is what makes them reachable.
 
+A seventh, found while implementing: **pausing a task left its `next_run` slot set.** The
+column was cleared but the slot is what reads come from, so the API would report "next
+run: tomorrow" for a task that will not run. Caught by a test written from this plan's
+own claim that pausing clears `next_run` — the claim was right and the code was not.
+
 And one piece of data that is **written but never read**: `last_output_episode_id`
 (`runner.py:231`). It is the exact hook objective 4 needs.
 
@@ -271,21 +276,24 @@ runs have an output episode, and how many of those episodes have non-empty `fram
 `learned` list is mostly empty and Phase 3 becomes "show the run summaries" instead. Write
 `plan.md` before looking, `result.md` after.
 
-**Phase 1 — the API (4.5h).** `user_id` required on `GET /tasks`; ownership on `DELETE`
-and `/result`; `POST /tasks`; `PATCH /tasks/{id}` (prompt or enabled, `extra="forbid"`,
-at least one required); `GET /tasks/{id}/runs`; public `get_episode`. Tests for each,
-including the ownership cases.
+**Phase 1 — the API (4.5h). DONE.** `user_id` required on `GET /tasks`; ownership on
+`DELETE` and `/result`; `POST /tasks`; `PATCH /tasks/{id}` (prompt or enabled,
+`extra="forbid"`, at least one required). `GET /tasks/{id}/runs` **moved to Phase 3** —
+it is the learning read, and building it before Phase 0 measures the trail would be
+building on the unknown.
 
-**Phase 1a — the task name (3h).** Gaps 5 and 6, which a Create button makes reachable:
-owner-scope the lookup, and make the stored name owner-scoped with the logical name in a
-`task_name` slot. Includes the migration for existing rows and a test for delete-then-
-recreate. **Do this before Phase 2** — building a Create button on top of a name that
-cannot be recreated is building on a known break.
+**Phase 1a — the task name (3h). DONE.** Gaps 5 and 6, which a Create button makes
+reachable: owner-scope the lookup, and make the stored name owner-scoped with the logical
+name in a `task_name` slot. Failing tests first; both reproduced the measured errors.
+**Do this before Phase 2** — building a Create button on top of a name that cannot be
+recreated is building on a known break.
 
 **Phase 2 — the Tasks page (4h).** List, create, edit the prompt, pause/resume, delete.
 No learning panel yet — the page must be useful on its own.
 
-**Phase 3 — the learning panel (3h).** The `TaskRuns` view, shaped by Phase 0's result.
+**Phase 3 — the learning panel (3h).** The `TaskRuns` view, shaped by Phase 0's result,
+plus `GET /tasks/{id}/runs` (moved here from Phase 1 — it *is* the learning read) and the
+public `get_episode` it needs.
 
 **Phase 4 — the menu (2h).** The dropdown, Tasks added, Trace/Settings left in place,
 `TopBar.test.tsx` updated. Verify on dev (8443) **and** prod (8444) at a narrow width.

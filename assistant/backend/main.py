@@ -13,7 +13,7 @@ from fastapi import Body, FastAPI, File, HTTPException, Query, Response, UploadF
 from fastapi import Depends as _Depends
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, model_validator
 
 from assistant.backend.config import settings
 from assistant.backend.db.schema import init_db
@@ -1969,40 +1969,163 @@ class ScheduledTaskResponse(BaseModel):
     created_at: str | None
 
 
-@app.get("/tasks", response_model=list[ScheduledTaskResponse])
-async def list_tasks(
-    user_id: int | None = None,
-    store: MemoryStore = _Depends(get_store),
-):
-    """List all scheduled tasks, optionally filtered by user_id.
+def _task_response(t: dict) -> ScheduledTaskResponse:
+    """One task as the API reports it. `prompt` is the script the run executes."""
+    return ScheduledTaskResponse(
+        id=t["id"],
+        name=t["name"],
+        description=t.get("description", ""),
+        schedule_cron=t.get("schedule_cron", ""),
+        prompt=t.get("prompt", ""),
+        enabled=bool(t["enabled"]),
+        last_run=t.get("last_run"),
+        next_run=t.get("next_run"),
+        last_result_summary=t.get("last_result_summary"),
+        source_type=t.get("source_type"),
+        created_at=t.get("created_at"),
+    )
 
-    System tasks are excluded unless user_id is omitted (admin view).
+
+async def _owned_task(store: MemoryStore, task_id: int, user_id: int) -> dict:
+    """The caller's task, or 404.
+
+    Someone else's task is *not found* rather than forbidden: the id is not a secret,
+    and a 403 would confirm it exists. Every task endpoint resolves through here,
+    because two of them used to take no `user_id` at all and would read or delete
+    another account's task without noticing.
     """
     tasks = await store.get_scheduled_tasks(owner_user_id=user_id)
-    return [
-        ScheduledTaskResponse(
-            id=t["id"],
-            name=t["name"],
-            description=t.get("description", ""),
-            schedule_cron=t.get("schedule_cron", ""),
-            prompt=t.get("prompt", ""),
-            enabled=bool(t["enabled"]),
-            last_run=t.get("last_run"),
-            next_run=t.get("next_run"),
-            last_result_summary=t.get("last_result_summary"),
-            source_type=t.get("source_type"),
-            created_at=t.get("created_at"),
-        )
-        for t in tasks
-    ]
+    task = next((t for t in tasks if t["id"] == task_id), None)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return task
+
+
+class ScheduledTaskCreate(BaseModel):
+    """What a task can be created with.
+
+    `frequency` is deliberately absent: a task made here is a standing daily task, and
+    `once` stays a chat thing. `extra="forbid"` so a client that sends one is told.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    prompt: str
+
+
+class ScheduledTaskPatch(BaseModel):
+    """What the page may change: the prompt (an edit) and `enabled` (a state action).
+
+    Nothing else is writable from the UI — `name` is the task's identity and
+    `frequency` is a scheduling decision, and both stay conversational. `extra` is
+    forbidden so the contract cannot widen by accident.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    prompt: str | None = None
+    enabled: bool | None = None
+
+    @model_validator(mode="after")
+    def _at_least_one_field(self) -> "ScheduledTaskPatch":
+        if self.prompt is None and self.enabled is None:
+            raise ValueError("provide prompt or enabled")
+        return self
+
+
+@app.get("/tasks", response_model=list[ScheduledTaskResponse])
+async def list_tasks(
+    user_id: int,
+    store: MemoryStore = _Depends(get_store),
+):
+    """List the caller's scheduled tasks.
+
+    `user_id` is required. It used to default to `None`, which meant "return every
+    task in the install, system ones included" — an admin view reachable by leaving a
+    query parameter off.
+    """
+    tasks = await store.get_scheduled_tasks(owner_user_id=user_id)
+    return [_task_response(t) for t in tasks]
+
+
+@app.post("/tasks", response_model=ScheduledTaskResponse)
+async def create_task(
+    body: ScheduledTaskCreate,
+    user_id: int,
+    store: MemoryStore = _Depends(get_store),
+):
+    """Create a task, or update the one already carrying this name.
+
+    The same store method chat uses, so a task made here is visible to "list my
+    scheduled tasks" and vice versa. `upsert_scheduled_task` is owner-scoped, so this
+    cannot touch another account's task of the same name, and a name freed by a delete
+    can be used again.
+    """
+    name = body.name.strip()
+    prompt = body.prompt.strip()
+    if not name or not prompt:
+        raise HTTPException(status_code=422, detail="name and prompt must not be empty")
+
+    await store.upsert_scheduled_task(
+        name=name,
+        description="",
+        schedule_cron="daily",
+        prompt=prompt,
+        enabled=True,
+        owner_user_id=user_id,
+    )
+    tasks = await store.get_scheduled_tasks(owner_user_id=user_id)
+    created = next((t for t in tasks if t["name"] == name), None)
+    if created is None:  # pragma: no cover — the upsert just wrote it
+        raise HTTPException(status_code=500, detail="task missing after write")
+    return _task_response(created)
+
+
+@app.patch("/tasks/{task_id}", response_model=ScheduledTaskResponse)
+async def update_task(
+    task_id: int,
+    body: ScheduledTaskPatch,
+    user_id: int,
+    store: MemoryStore = _Depends(get_store),
+):
+    """Change a task's prompt, or pause/resume it.
+
+    `upsert_scheduled_task` writes a task whole, so this reads the row and re-writes it
+    with the change applied — the same read-then-write chat does, and safe because the
+    page is the only writer.
+    """
+    task = await _owned_task(store, task_id, user_id)
+
+    prompt = task.get("prompt", "") if body.prompt is None else body.prompt.strip()
+    if not prompt:
+        raise HTTPException(status_code=422, detail="prompt must not be empty")
+    enabled = bool(task["enabled"]) if body.enabled is None else body.enabled
+
+    await store.upsert_scheduled_task(
+        name=task["name"],
+        description=task.get("description", ""),
+        schedule_cron=task.get("schedule_cron", "daily"),
+        prompt=prompt,
+        enabled=enabled,
+        owner_user_id=user_id,
+    )
+    return _task_response(await _owned_task(store, task_id, user_id))
 
 
 @app.delete("/tasks/{task_id}")
 async def delete_task(
     task_id: int,
+    user_id: int,
     store: MemoryStore = _Depends(get_store),
 ):
-    """Soft-delete a scheduled task."""
+    """Soft-delete one of the caller's tasks.
+
+    The ownership check is the fix: this endpoint took no `user_id` at all, so any
+    caller could soft-delete any task frame — another household member's, or a system
+    one.
+    """
+    await _owned_task(store, task_id, user_id)
     await store.delete_scheduled_task(task_id)
     return {"status": "ok"}
 
@@ -2010,17 +2133,20 @@ async def delete_task(
 @app.get("/tasks/{task_id}/result")
 async def get_task_result(
     task_id: int,
+    user_id: int,
     store: MemoryStore = _Depends(get_store),
 ):
-    """Get the last result from a scheduled task."""
-    tasks = await store.get_scheduled_tasks(include_system=True)
-    for t in tasks:
-        if t["id"] == task_id:
-            return {
-                "last_run": t.get("last_run"),
-                "last_result_summary": t.get("last_result_summary"),
-            }
-    raise HTTPException(status_code=404, detail="Task not found")
+    """The last run's summary for one of the caller's tasks.
+
+    Ownership-checked, and the `include_system=True` scan is gone: it searched every
+    task in the install, so it would return the result of a task the caller does not
+    own.
+    """
+    task = await _owned_task(store, task_id, user_id)
+    return {
+        "last_run": task.get("last_run"),
+        "last_result_summary": task.get("last_result_summary"),
+    }
 
 
 @app.post("/tasks/run-due")

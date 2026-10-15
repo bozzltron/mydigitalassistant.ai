@@ -2659,6 +2659,15 @@ class MemoryStore:
                     "value = excluded.value, updated_at = excluded.updated_at",
                     (frame_id, next_run),
                 )
+            else:
+                # A paused task has no next run. The column is cleared by the UPDATE
+                # above, but the *slot* is what reads come from, so leaving it would
+                # report "next run: tomorrow" for a task that will not run. (The same
+                # delete `update_scheduled_task_run` does when a `once` task fires.)
+                await db.execute(
+                    "DELETE FROM slots WHERE frame_id = ? AND key = 'next_run'",
+                    (frame_id,),
+                )
             await db.commit()
             return frame_id
 
