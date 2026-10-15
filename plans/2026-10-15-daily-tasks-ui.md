@@ -56,7 +56,7 @@ Consequences, stated so they are not surprises:
 |---|---|
 | Task frame + slots, authoritative reads | `memory/store.py` — `upsert_scheduled_task` (:2541), `get_scheduled_tasks` (:2664), `update_scheduled_task_run` (:2807), `delete_scheduled_task` (:2897), `upsert_scheduled_task_slot` (:3010) |
 | The one clock, `daily` / `once` | `scheduler/schedule.py` — `next_daily_run`, `format_next_run` |
-| The run | `scheduler/runner.py` `_execute_task` (:185) — runs the full cognitive loop, writes `last_run`/`last_result_summary`, associates `task --ran_in--> daily_run`, sets `last_output_episode_id` |
+| The run | `scheduler/runner.py` `execute_and_record_task` (:179) — shared by the scheduler and the manual run-now endpoint. Runs the full cognitive loop, writes `last_run`/`last_result_summary`, associates `task --ran_in--> daily_run` (:226), and sets `last_output_episode_id` (:231). `_execute_task` (:316) wraps it |
 | Chat create/update/delete/list/pause | `pipeline/orchestrator.py` `_handle_scheduled_task` (:1055) + `_scheduled_task_management_response` (:1129) |
 | HTTP | `main.py` — `GET /tasks` (:1972), `DELETE /tasks/{id}` (:2000), `GET /tasks/{id}/result` (:2010), `POST /tasks/run-due` (:2026), `POST /tasks/run-now/{name}` (:2078) |
 | A run's output | `episodes.frame_ids` (the frames the run touched) — `store.py:1177`, `get_episodes_for_session` (:2011) |
@@ -194,14 +194,14 @@ accepted from the client at all.
         "slots": [{"key": "latest_release", "value": "…"}] } ] } ] }
 ```
 
-- **Runs** come from the `ran_in` associations (`runner.py:222`), which already link the
+- **Runs** come from the `ran_in` associations (`runner.py:226`), which already link the
   task to each `daily_run_YYYY_MM_DD` frame; that frame carries `date` and `status`.
 - **`learned`** comes from the run's output episode: `episodes.frame_ids` is the set of
   frames the run touched, and `get_episodes_for_frames` (:2088) already exists. Filter
   to frames the run *wrote* to (slots whose `source_episode_id` is that episode) so the
   panel shows what changed, not what was merely read.
 - **One new store method**: a public `get_episode(episode_id)`. `_get_episode_row`
-  (:1170) is private and `get_last_assistant_episode` (:3023) only finds the latest.
+  (:1174) is private and `get_last_assistant_episode` (:3023) only finds the latest.
 
 **This is the piece with a real unknown**, so it gets a measurement first (Phase 0).
 
@@ -241,7 +241,10 @@ frontend/src/types/task.ts                       # Task, TaskRun, LearnedFrame
 
 Today the TopBar's right side is five items plus the trash can (`TopBar.tsx:361-403`):
 **Files**, **Maps** (gated), **Brain** as links; **Trace** and **Settings** as panel
-toggles. Adding Tasks makes six, and the row already wraps on a narrow window.
+toggles. Adding Tasks makes six — and the row does **not** wrap: `header` and
+`.header-right` are single flex lines (`base.css:16`, `components.css:108`) with no
+`flex-wrap`, so a sixth item squashes the row rather than flowing onto a second line.
+That is the actual motivation: the row has run out of width, not of lines.
 
 Roll the **page links** into one menu button (the existing `conversationDropdown` pattern
 in `TopBar.module.css` is the house style: a trigger with a chevron and an
@@ -353,6 +356,27 @@ Additive and separable. Phases 1–3 add endpoints, a route and a page; deleting
 and the menu entry returns the app to today's behaviour, with the endpoints left unused
 (as three already are). No data migration to reverse: the UI writes the same slots chat
 writes. Revert is `git revert` of the phase commits; the brain is untouched.
+
+## Fact-check (RUNBOOK §6)
+
+Every `file:line` in this plan was re-read against the tree. Three claims were wrong:
+
+| Claim | Reality |
+|---|---|
+| The run recorder is `_execute_task` (:185) | It is **`execute_and_record_task` (:179)** — the function whose own docstring says "shared by scheduler runner and manual API endpoint". `_execute_task` (:316) wraps it, so the old reference pointed at the wrong function |
+| `_get_episode_row` is at :1170 | :1174 |
+| "the row already wraps on a narrow window" | It does **not**. `header` (`base.css:16`) and `.header-right` (`components.css:108`) are single flex lines with no `flex-wrap`; the `flex-wrap` in `layout.css:128` belongs to `#input-row .file-chips`. A sixth item squashes the row |
+
+Verified and unchanged: `store.py` :2541 / :2664 / :2807 / :2897 / :2940 / :3010 / :3023 /
+:2011 / :2088, `store.py:421` (`__u`), `runner.py:226` / `:231`, `orchestrator.py:1055` /
+`:1129`, `main.py:1972` / :2000 / :2010 / :2026 / :2078, `TopBar.tsx:361-403`,
+`TopBar.module.css:9` (the dropdown pattern this reuses), `schedule.py:38` / :49,
+`test_daily_schedule.py` = 25 tests, `experiments/preflight.py` exists, and
+`Episode.frame_ids` is populated by `update_episode_frame_ids` (:2079) *after extraction*
+— so it is the set of frames a turn touched, which is what the learning view needs.
+
+Ordering note: **Phase 0 only gates Phase 3.** It is a measurement of the learning trail,
+so it can run at any point before Phase 3 without holding up 1, 1a or 2.
 
 ## Design-principles check (RUNBOOK §7)
 
