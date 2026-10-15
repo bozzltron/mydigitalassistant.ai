@@ -145,6 +145,65 @@ async def test_upsert_defaults_to_daily_tick(tmp_path):
     assert next_run > datetime.now(tz=UTC)
 
 
+async def test_delete_then_recreate_the_same_name(store):
+    """Deleting a task and creating one with the same name must work.
+
+    Regression, measured rather than reasoned about: `delete_scheduled_task`
+    soft-deletes, so the name row survives, and `frames.name` is UNIQUE. The
+    upsert's live lookup filtered `deleted_at IS NULL`, found nothing, and INSERTed
+    into a name that was still taken:
+
+        IntegrityError: UNIQUE constraint failed: frames.name
+
+    Delete-then-recreate is the first thing a user does on a page with a Create
+    button, so this was a 500 on the obvious path.
+    """
+    user = await store.create_user("alice")
+    first = await store.upsert_scheduled_task(
+        name="briefing", description="", schedule_cron="daily",
+        prompt="v1", enabled=True, owner_user_id=user.id,
+    )
+    await store.delete_scheduled_task(first)
+
+    again = await store.upsert_scheduled_task(
+        name="briefing", description="", schedule_cron="daily",
+        prompt="v2", enabled=True, owner_user_id=user.id,
+    )
+
+    assert again > 0
+    tasks = await store.get_scheduled_tasks(owner_user_id=user.id)
+    assert [t["name"] for t in tasks] == ["briefing"]
+    assert tasks[0]["prompt"] == "v2"
+
+
+async def test_two_accounts_can_each_own_a_task_of_the_same_name(store):
+    """A task name is per-owner, not global.
+
+    Regression, measured: the upsert's existing-lookup was `WHERE name = ? AND type
+    = 'scheduled_task' AND deleted_at IS NULL` — no `owner_user_id` — and
+    `frames.name` is globally UNIQUE. So a second account creating "morning" updated
+    the *first* account's task: her prompt changed, and he got nothing.
+    """
+    alice = await store.create_user("alice")
+    bob = await store.create_user("bob")
+    await store.upsert_scheduled_task(
+        name="morning", description="", schedule_cron="daily",
+        prompt="hers", enabled=True, owner_user_id=alice.id,
+    )
+    await store.upsert_scheduled_task(
+        name="morning", description="", schedule_cron="daily",
+        prompt="his", enabled=True, owner_user_id=bob.id,
+    )
+
+    hers = await store.get_scheduled_tasks(owner_user_id=alice.id)
+    his = await store.get_scheduled_tasks(owner_user_id=bob.id)
+    assert [t["prompt"] for t in hers] == ["hers"]
+    assert [t["prompt"] for t in his] == ["his"]
+    # Both are listed under the name the user gave them, not an internal handle.
+    assert [t["name"] for t in hers] == ["morning"]
+    assert [t["name"] for t in his] == ["morning"]
+
+
 async def test_update_run_reschedules_daily_and_disables_once(tmp_path):
     db_path = str(tmp_path / "t.db")
     await init_db(db_path)

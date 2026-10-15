@@ -2548,13 +2548,28 @@ class MemoryStore:
         owner_user_id: int | None = None,
         next_run: str | None = None,
     ) -> int:
-        """Create or update a scheduled_task frame.
+        """Create or update a scheduled_task frame, scoped to its owner.
 
         Writes to both the legacy frame columns (for backward compat during migration)
         and to slots (the authoritative store going forward).
 
         `schedule_cron` holds the frequency tag "daily" or "once". User tasks all
         fire at the shared daily tick; `next_run` defaults to that.
+
+        **The name is per-owner; the frame name cannot be.** `frames.name` is globally
+        UNIQUE, so a second account wanting a task called "morning" can neither reuse
+        the row nor insert beside it. Both failure modes were measured, not reasoned
+        about: the old lookup was `WHERE name = ? AND type = 'scheduled_task' AND
+        deleted_at IS NULL` with no owner, so one account's create silently rewrote
+        another's task; and because `delete_scheduled_task` soft-deletes, deleting a
+        task and re-creating it raised `UNIQUE constraint failed: frames.name`.
+
+        So a task is addressed by `(name, owner_user_id)`, and when the plain name is
+        held by someone else the row is stored under `"{name}__u{owner}"` — the escape
+        hatch `create_frame` already uses for the same collision — with the name the
+        user gave it in a `task_name` slot. `get_scheduled_tasks` reads that slot, so
+        the handle stays internal and the user's own name is what comes back. A
+        soft-deleted row of *our own* is resurrected rather than collided with.
 
         Returns the frame id.
         """
@@ -2566,14 +2581,22 @@ class MemoryStore:
             if enabled:
                 next_run = next_daily_run().astimezone(UTC).isoformat()
 
+        # The same task under both handles it can be stored as: the name the user
+        # gave it, and the owner-scoped one used when that name was taken.
+        scoped_name = f"{name}__u{owner_user_id}"
+
         async with self._connect() as db:
-            existing = await db.execute_fetchall(
-                "SELECT id FROM frames WHERE name = ? AND type = 'scheduled_task' "
-                "AND deleted_at IS NULL",
-                (name,),
+            rows = await db.execute_fetchall(
+                "SELECT id, deleted_at FROM frames "
+                "WHERE name IN (?, ?) AND type = 'scheduled_task' "
+                "AND owner_user_id IS ?",
+                (name, scoped_name, owner_user_id),
             )
-            if existing:
-                frame_id = existing[0][0]
+            live = next((r[0] for r in rows if r[1] is None), None)
+            tombstoned = next((r[0] for r in rows if r[1] is not None), None)
+
+            if live is not None:
+                frame_id = live
                 await db.execute(
                     "UPDATE frames SET "
                     "description=?, schedule_cron=?, prompt=?, enabled=?, "
@@ -2582,84 +2605,62 @@ class MemoryStore:
                     (description, schedule_cron, prompt, 1 if enabled else 0,
                      next_run, frame_id),
                 )
-                # Write slots (authoritative store)
+            elif tombstoned is not None:
+                frame_id = tombstoned
                 await db.execute(
-                    "INSERT OR REPLACE INTO slots "
-                    "(frame_id, key, value, updated_at) "
-                    "VALUES (?, 'description', ?, datetime('now'))",
-                    (frame_id, description),
+                    "UPDATE frames SET deleted_at=NULL, "
+                    "description=?, schedule_cron=?, prompt=?, enabled=?, "
+                    "next_run=?, updated_at=datetime('now') "
+                    "WHERE id = ?",
+                    (description, schedule_cron, prompt, 1 if enabled else 0,
+                     next_run, frame_id),
                 )
-                await db.execute(
-                    "INSERT OR REPLACE INTO slots "
-                    "(frame_id, key, value, updated_at) "
-                    "VALUES (?, 'frequency', ?, datetime('now'))",
-                    (frame_id, schedule_cron),
-                )
-                await db.execute(
-                    "INSERT OR REPLACE INTO slots "
-                    "(frame_id, key, value, updated_at) "
-                    "VALUES (?, 'prompt', ?, datetime('now'))",
-                    (frame_id, prompt),
-                )
-                await db.execute(
-                    "INSERT OR REPLACE INTO slots "
-                    "(frame_id, key, value, updated_at) "
-                    "VALUES (?, 'enabled', ?, datetime('now'))",
-                    (frame_id, "true" if enabled else "false"),
-                )
-                if next_run:
-                    await db.execute(
-                        "INSERT OR REPLACE INTO slots "
-                        "(frame_id, key, value, updated_at) "
-                        "VALUES (?, 'next_run', ?, datetime('now'))",
-                        (frame_id, next_run),
-                    )
-                await db.commit()
-                return frame_id
             else:
-                cursor = await db.execute(
+                insert_sql = (
                     "INSERT INTO frames "
                     "(name, type, confidence, essential, priority, owner_user_id, "
                     "source_type, description, schedule_cron, prompt, enabled, next_run) "
-                    "VALUES (?, 'scheduled_task', 1.0, 1, 0.8, ?, 'user', ?, ?, ?, ?, ?)",
-                    (name, owner_user_id, description, schedule_cron, prompt,
-                     1 if enabled else 0, next_run),
+                    "VALUES (?, 'scheduled_task', 1.0, 1, 0.8, ?, 'user', ?, ?, ?, ?, ?)"
                 )
+                insert_values = (
+                    owner_user_id, description, schedule_cron, prompt,
+                    1 if enabled else 0, next_run,
+                )
+                try:
+                    cursor = await db.execute(insert_sql, (name, *insert_values))
+                except aiosqlite.IntegrityError:
+                    # Another owner holds the plain name. Store under our own handle;
+                    # `task_name` keeps the name the user gave it.
+                    cursor = await db.execute(insert_sql, (scoped_name, *insert_values))
                 frame_id = cursor.lastrowid
-                # Write slots (authoritative store)
+
+            # Slots are the authoritative store. UPSERT rather than INSERT OR REPLACE:
+            # REPLACE deletes and reinserts the row, churning the slot id that
+            # `slot_history.slot_id` points at.
+            for key, value in (
+                ("description", description),
+                ("frequency", schedule_cron),
+                ("prompt", prompt),
+                ("enabled", "true" if enabled else "false"),
+                ("task_name", name),
+            ):
                 await db.execute(
-                    "INSERT OR IGNORE INTO slots "
-                    "(frame_id, key, value, updated_at) "
-                    "VALUES (?, 'description', ?, datetime('now'))",
-                    (frame_id, description),
+                    "INSERT INTO slots (frame_id, key, value, updated_at) "
+                    "VALUES (?, ?, ?, datetime('now')) "
+                    "ON CONFLICT(frame_id, key) DO UPDATE SET "
+                    "value = excluded.value, updated_at = excluded.updated_at",
+                    (frame_id, key, value),
                 )
+            if next_run:
                 await db.execute(
-                    "INSERT OR IGNORE INTO slots "
-                    "(frame_id, key, value, updated_at) "
-                    "VALUES (?, 'frequency', ?, datetime('now'))",
-                    (frame_id, schedule_cron),
+                    "INSERT INTO slots (frame_id, key, value, updated_at) "
+                    "VALUES (?, 'next_run', ?, datetime('now')) "
+                    "ON CONFLICT(frame_id, key) DO UPDATE SET "
+                    "value = excluded.value, updated_at = excluded.updated_at",
+                    (frame_id, next_run),
                 )
-                await db.execute(
-                    "INSERT OR IGNORE INTO slots "
-                    "(frame_id, key, value, updated_at) "
-                    "VALUES (?, 'prompt', ?, datetime('now'))",
-                    (frame_id, prompt),
-                )
-                await db.execute(
-                    "INSERT OR IGNORE INTO slots "
-                    "(frame_id, key, value, updated_at) "
-                    "VALUES (?, 'enabled', ?, datetime('now'))",
-                    (frame_id, "true" if enabled else "false"),
-                )
-                if next_run:
-                    await db.execute(
-                        "INSERT OR IGNORE INTO slots "
-                        "(frame_id, key, value, updated_at) "
-                        "VALUES (?, 'next_run', ?, datetime('now'))",
-                        (frame_id, next_run),
-                    )
-                await db.commit()
-                return frame_id
+            await db.commit()
+            return frame_id
 
     async def get_scheduled_tasks(
         self,
@@ -2727,6 +2728,11 @@ class MemoryStore:
                         task["schedule_cron"] = value  # slot key != column name
                     if key == "enabled":
                         task["enabled"] = 1 if value == "true" else 0
+                    if key == "task_name":
+                        # The name the user gave it. The frame's own `name` may be an
+                        # owner-scoped handle (`morning__u2`) when the plain name was
+                        # taken by another account, so it is never what we return.
+                        task["name"] = value
 
                 results.append(task)
             return results
@@ -2774,6 +2780,12 @@ class MemoryStore:
                              "next_run", "last_run", "last_result_summary"):
                     if key in slot_map:
                         task[key] = slot_map[key]
+                if "task_name" in slot_map:
+                    # The name the user gave it. The frame's own `name` may be an
+                    # owner-scoped handle (`morning__u2`), and the scheduler puts this
+                    # value in the run's session id and in the daily-run frame's
+                    # `tasks_run` — both of which the user reads back.
+                    task["name"] = slot_map["task_name"]
                 frequency = slot_map.get("frequency", task.get("schedule_cron", "daily"))
                 if "enabled" in slot_map:
                     task["enabled"] = 1 if slot_map["enabled"] == "true" else 0
