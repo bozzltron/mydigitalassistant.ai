@@ -1,5 +1,80 @@
 # MyDigitalAssistant.ai — release notes
 
+## v0.11.19-alpha
+
+**A map page — a GeoJSON file in the sandbox the agent reads — and four bugs the map
+work flushed out, three of which were invisible in production until something asked
+the console a question.**
+
+- **Maps.** `/maps` is MapLibre GL on an OpenFreeMap basemap over an ordinary sandbox
+  file, `map.geojson` at the sandbox root. The page is the only writer (`PUT /map` with
+  the whole FeatureCollection); the agent reads it with `read_file`, and
+  `glob("*.geojson")` finds it. **One `Map` instance for the page's lifetime** — a
+  WebGL context is scarce (~8–16/page) and permanently held — so a style switch calls
+  `setStyle` rather than remounting. Off by default; on in dev, off in prod. See
+  `docs/MAPS.md`.
+- **Click the map to add a point — there is no mode.** The `＋ Add point` toggle made
+  the primary interaction two-step, and it existed for exactly one reason: a bare click
+  would drop a stray point while panning. MapLibre already handles that (`dragEnd`
+  calls `DOM.suppressClick()`), so the click carries the interaction now: bare basemap
+  starts a new point, a saved point selects it, a cluster eases in to split. The pending
+  point is drawn from its own source — visible immediately, and nothing reaches the file
+  until you confirm.
+- **`debug()` had never logged anything.** Vite injects `import.meta.env` into a module
+  only where it sees the literal; `logger.ts` read it through a variable
+  (`const meta = import.meta; meta.env?.DEV`), so it was `undefined` there and
+  `isDev()` was always false. **Every `debug()` call in the app was a silent no-op** —
+  which is why a blank map page produced nothing at all in the console. Fixed, with a
+  regression test.
+- **The map canvas lost a CSS tie and collapsed to zero height.** MapLibre stamps
+  `maplibregl-map` onto the same element as `.map-canvas` and injects its stylesheet
+  *after* ours, so `.maplibregl-map{position:relative}` beat
+  `.map-canvas{position:absolute}` at equal specificity. The container left the flow,
+  `clientHeight` became 0, and MapLibre took its own fallback — `clientHeight || 300` —
+  into a box that `overflow:hidden` then clipped to nothing: a blank page, no error, and
+  no surface to click. jsdom computes no layout, which is why every component test
+  passed; the specificity is now pinned by a stylesheet test.
+- **The labels had no font.** `text-font` was unset, so MapLibre used `Open Sans
+  Regular` — which OpenFreeMap answers **404**. A glyph that failed to load has zero
+  advance width, so the label still drew, every character on top of the last: unreadable
+  overlap rather than a missing-font error. The font now travels in
+  `MAP_STYLES[].label_font` beside the colours (the module's own rule is that the client
+  never sniffs the style's layers), and the labels are larger with a `text-max-width`, so
+  a long note wraps instead of running one line across the map.
+- **The map was on disk but not in the Files view.** `GET /files/list` is a view over
+  file *frames*, and `PUT /map` wrote the bytes and stopped. Every other writer of a
+  sandbox file — the upload endpoint, `write_file`, `edit_file` — funnels through
+  `apply_file_to_memory`, the documented "single path for upload and write"; the map page
+  skipped it, so the user's own content was readable by the agent and invisible to the
+  user. Saving now goes through that same step, wrapped like `edit_file`'s refresh: the
+  bytes are the source of truth, so a memory failure must not turn a save that happened
+  into a 500 the UI reports as "could not save".
+- **A user id is data, never a literal.** Nineteen places defaulted the account to
+  `1` — a parameter default, a fallback when a value would not parse, a stand-in for a
+  scheduled task with no owner — each assuming an account with that id existed *and* that
+  it was the one calling. The backend now takes `user_id` as a **required** parameter;
+  the frontend resolves the account once (`services/actingUser`) and the API layer
+  attaches it, so no call site carries a literal; and a tool that cannot parse the
+  caller's id writes its frame **unowned** rather than inventing an owner. The rule is
+  recorded in `assistant/AGENTS.md` and enforced by `test_user_id_not_hardcoded.py`.
+- **Two more literals, found by writing that guard.** `GET /search` passed `user_id=0`
+  with the comment "not user-specific in this endpoint" — but `0` is not `None`, so the
+  store filtered to `owner_user_id = 0 OR owner_user_id IS NULL` and returned **only
+  unowned frames**. On the dev brain that hid **311 of 4669 frames** — every scheduled
+  task, daily-run event and conversation summary the user owned — behind a
+  healthy-looking page of ten results. `Alert.user_id` used a `0` sentinel too; it is
+  `int | None` now.
+- **The plan-citation detector had been red since the maps plan shipped.** It scans
+  every durable file for `plans/<name>.md` citations — including the file that defines
+  its own fixtures. When that plan was deleted, the detector reported *itself*. The
+  fixture is built from parts now, so the check still works and no longer self-trips.
+- **Considered, not built.** Local/geo recall — answering "what's near me" without the
+  user naming a place — is recorded as declined in `docs/SEARCH.md` §3 ("Local recall
+  (geo) — deliberately not built"): it needs the user's coordinates sent to Brave, which
+  retains what it is sent for up to 90 days. The `brave_context_budget` plan was deleted
+  with its reasoning folded into the same doc (§5), alongside the `freshness` parameter
+  and the per-result text budget.
+
 ## v0.11.18-alpha
 
 **Brave search runs on the LLM Context endpoint now — one request per turn, with
