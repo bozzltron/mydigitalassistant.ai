@@ -564,6 +564,17 @@ async def _scheduler_loop(store: MemoryStore, orchestrator: Orchestrator) -> Non
                 for task in due:
                     if SHUTDOWN:
                         break
+                    owner_user_id = task["owner_user_id"]
+                    if owner_user_id is None:
+                        # The run's episodes and frames belong to someone, so a task
+                        # with no owner cannot be attributed at all. Say so and skip
+                        # it rather than firing it as a stand-in account — this read
+                        # `or 1`, which ran one household member's task as another's.
+                        logger.warning(
+                            "scheduled task %r has no owner_user_id; skipping",
+                            task["name"],
+                        )
+                        continue
                     # Catch-up guard: skip anything wildly overdue that was
                     # already handled (e.g. clock jump), fire the rest.
                     await _execute_task(
@@ -572,7 +583,7 @@ async def _scheduler_loop(store: MemoryStore, orchestrator: Orchestrator) -> Non
                         task_frame_id=task["id"],
                         task_name=task["name"],
                         task_prompt=task["prompt"],
-                        owner_user_id=task["owner_user_id"] or 1,
+                        owner_user_id=owner_user_id,
                     )
 
             await _wait_for_poll()

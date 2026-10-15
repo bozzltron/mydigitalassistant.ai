@@ -2,7 +2,6 @@ import { createSignal, createMemo } from 'solid-js'
 import { createStore } from 'solid-js/store'
 import { refreshFileList } from './files'
 import { postChatStream, createTurnId } from '../services/api'
-import { user } from './user'
 import { beginTurnStatus, endTurnStatus, setStreamStage } from '../services/status'
 import { getSessionMessages } from '../services/api'
 import {
@@ -264,8 +263,7 @@ export async function postChatMessageStream(
             setStreamingMessageContent(session_id, assistantMessageId, 'Error: ' + event.error, false)
           }
         }
-      },
-      user()?.id
+      }
     )
 
     // The non-streaming fallback result may carry the summary even if the meta

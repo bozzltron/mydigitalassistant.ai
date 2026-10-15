@@ -35,6 +35,23 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+
+def _owner_user_id(user_id: str) -> int | None:
+    """The numeric owner for a tool's memory writes, or ``None`` when the caller's
+    id is not a number.
+
+    ``None`` rather than a stand-in: inventing an owner is how a write lands under
+    the wrong household account. An unowned frame is visibly unowned; a frame owned
+    by a guessed id looks correct and is not.
+    """
+    try:
+        return int(user_id)
+    except (TypeError, ValueError):
+        logger.warning(
+            "tool user_id %r is not numeric; memory will be written unowned", user_id
+        )
+        return None
+
 # ---------------------------------------------------------------------------
 # MemoryStore instance - will be injected or created from db_path
 # ---------------------------------------------------------------------------
@@ -279,10 +296,7 @@ async def execute_upsert_slot(args: dict, user_id: str, session_id: str) -> Tool
         frame = await _store.get_frame_by_name(frame_name)
         if frame is None:
             # Create new frame with user_id as owner
-            try:
-                user_id_int = int(user_id)
-            except ValueError:
-                user_id_int = 1  # default
+            user_id_int = _owner_user_id(user_id)
             frame = await _store.create_frame(
                 frame_name,
                 "entity",
@@ -1392,10 +1406,7 @@ async def execute_write_file(args: dict, user_id: str, session_id: str) -> ToolR
         written_path = write_sandbox_bytes(path, data, overwrite)
 
         if _store is not None:
-            try:
-                user_id_int = int(user_id)
-            except (ValueError, TypeError):
-                user_id_int = 1
+            user_id_int = _owner_user_id(user_id)
             # The sandbox-relative path (not just the basename): a nested file
             # 'notes/x.txt' must resolve by its stored name. read_file maps frame
             # name -> this value.
@@ -1488,10 +1499,7 @@ async def execute_append_file(args: dict, user_id: str, session_id: str) -> Tool
         write_sandbox_file(path, new_content, overwrite=True)
 
         if _store is not None:
-            try:
-                user_id_int = int(user_id)
-            except (ValueError, TypeError):
-                user_id_int = 1
+            user_id_int = _owner_user_id(user_id)
             # The same step upload and write_file use, so an appended-to file's
             # frame stays true to its content (row frames, entity slots, size).
             await apply_file_to_memory(
@@ -1999,10 +2007,7 @@ async def execute_edit_file(args: dict, user_id: str, session_id: str) -> ToolRe
         # Best-effort: the bytes are already written, so a memory failure must not
         # report the edit as failed — that would invite a retry that re-applies it.
         if _store is not None:
-            try:
-                user_id_int = int(user_id)
-            except (ValueError, TypeError):
-                user_id_int = 1
+            user_id_int = _owner_user_id(user_id)
             try:
                 resolved = resolve_sandbox_path(path)
                 await apply_file_to_memory(

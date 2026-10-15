@@ -3,6 +3,7 @@
  * Uses Zod schemas for request/response validation.
  */
 import { z } from 'zod'
+import { actingUser } from './actingUser'
 import { debug } from './logger'
 import type {
   AttachedFile,
@@ -276,11 +277,13 @@ export async function postChatStream(
   turn_id?: string,
   search_consent?: boolean,
   max_intelligence?: boolean,
-  onEvent?: (event: StreamEvent) => void,
-  user_id: number = 1
+  onEvent?: (event: StreamEvent) => void
 ): Promise<ChatResponse> {
   const requestBody = {
-    user_id,
+    // The acting account, resolved once in `services/actingUser` rather than
+    // defaulted here: a literal default is how a turn is filed under the wrong
+    // household member.
+    user_id: actingUser(),
     message,
     session_id,
     attached_files,
@@ -421,7 +424,7 @@ export async function getAssociations(frame_id: number): Promise<Association[]> 
 
 export async function listFiles(): Promise<FileEntry[]> {
   debug('Listing files')
-  return api<FileEntry[]>(`/files/list`)
+  return api<FileEntry[]>(`/files/list?user_id=${actingUser()}`)
 }
 
 export async function postFileUpload(file: File): Promise<FileUploadResult> {
@@ -429,7 +432,7 @@ export async function postFileUpload(file: File): Promise<FileUploadResult> {
   const formData = new FormData()
   formData.append('file', file)
   
-  const response = await fetch(`${BASE_URL}/files/upload`, {
+  const response = await fetch(`${BASE_URL}/files/upload?user_id=${actingUser()}`, {
     method: 'POST',
     body: formData,
     credentials: 'include',
@@ -569,7 +572,10 @@ export async function getMap(): Promise<MapFeatureCollection> {
  * validates and canonicalises; a 422 means the map was refused and not written.
  */
 export async function putMap(fc: MapFeatureCollection): Promise<MapFeatureCollection> {
-  return api<MapFeatureCollection>('/map', { method: 'PUT', body: JSON.stringify(fc) })
+  return api<MapFeatureCollection>(`/map?user_id=${actingUser()}`, {
+    method: 'PUT',
+    body: JSON.stringify(fc),
+  })
 }
 
 /**

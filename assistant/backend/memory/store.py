@@ -3048,7 +3048,7 @@ class MemoryStore:
             )
 
     async def get_or_create_daily_run_frame(
-        self, date_str: str, owner_user_id: int = 1
+        self, date_str: str, owner_user_id: int
     ) -> int:
         """Get or create a daily_run_YYYY_MM_DD event frame. Returns the frame id."""
         frame_name = f"daily_run_{date_str}"

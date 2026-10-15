@@ -842,7 +842,7 @@ async def apply_file_to_memory(
     safe_filename: str,
     ext: str,
     content_bytes: bytes,
-    user_id: int,
+    user_id: int | None,
     source_type: str,
     source_reliability: float,
     display_name: str | None = None,
@@ -858,6 +858,10 @@ async def apply_file_to_memory(
     Callers write the bytes to disk first; this does not touch the filesystem.
     Memory holds what the file IS, never what it CONTAINS (see docs/FILES.md) —
     no content slot is written here.
+
+    ``user_id`` may be ``None`` when the owner is unknown. The frame is then
+    unowned — the column is nullable — rather than attributed to a guessed
+    account, which is how one household member's file ends up owned by another.
     """
     from assistant.backend.config import settings
 

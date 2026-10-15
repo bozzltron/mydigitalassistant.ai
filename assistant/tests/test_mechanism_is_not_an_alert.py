@@ -61,7 +61,7 @@ def _orchestrator(store, llm, search):
     )
 
 
-async def _run_turn(store, llm, search, message, session_id, user_id: int = 1):
+async def _run_turn(store, llm, search, message, session_id, user_id: int):
     orch = _orchestrator(store, llm, search)
     events = []
     async for chunk in orch.chat_stream(

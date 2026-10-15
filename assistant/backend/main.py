@@ -470,8 +470,8 @@ async def get_map() -> dict:
 
 @app.put("/map")
 async def put_map(
+    user_id: int,
     payload: dict = Body(...),
-    user_id: int = 1,
     store: MemoryStore = _Depends(get_store),
 ) -> dict:
     """Replace the map with the posted FeatureCollection.
@@ -1829,7 +1829,7 @@ class AlertsListResponse(BaseModel):
 
 @app.get("/alerts", response_model=AlertsListResponse)
 async def get_alerts(
-    user_id: int = 1,
+    user_id: int,
     unread_only: bool = False,
     limit: int = Query(default=50, ge=1, le=500),
     store: MemoryStore = _Depends(get_store),
@@ -1846,7 +1846,7 @@ async def get_alerts(
 @app.post("/alerts/{alert_id}/read")
 async def mark_alert_read(
     alert_id: int,
-    user_id: int = 1,
+    user_id: int,
     store: MemoryStore = _Depends(get_store),
 ):
     """Resolve an alert.
@@ -1865,7 +1865,7 @@ async def mark_alert_read(
 @app.post("/alerts/{alert_id}/open")
 async def open_alert_conversation(
     alert_id: int,
-    user_id: int = 1,
+    user_id: int,
     session_id: str | None = None,
     store: MemoryStore = _Depends(get_store),
 ):
@@ -1906,7 +1906,7 @@ async def open_alert_conversation(
 @app.get("/alerts/{alert_id}/conversations")
 async def alert_conversation_options(
     alert_id: int,
-    user_id: int = 1,
+    user_id: int,
     limit: int = Query(default=20, ge=1, le=100),
     store: MemoryStore = _Depends(get_store),
 ):
@@ -1943,7 +1943,7 @@ async def alert_conversation_options(
 
 @app.post("/alerts/read-all")
 async def mark_all_alerts_read(
-    user_id: int = 1,
+    user_id: int,
     store: MemoryStore = _Depends(get_store),
 ):
     """Mark all alerts as read for a user."""
@@ -2074,7 +2074,7 @@ async def run_due_tasks(
 @app.post("/tasks/run-now/{task_name}")
 async def run_task_now(
     task_name: str,
-    user_id: int = 1,
+    user_id: int,
     orchestrator: Orchestrator = _Depends(get_orchestrator),
     store: MemoryStore = _Depends(get_store),
 ):
@@ -2226,6 +2226,7 @@ class ConversationTitleUpdate(BaseModel):
 @app.post("/summarize", response_model=SummarizeResponse)
 async def summarize_session(
     request: SummarizeRequest,
+    user_id: int,
     store: MemoryStore = _Depends(get_store),
 ):
     """User-initiated summarization of a conversation session.
@@ -2240,13 +2241,14 @@ async def summarize_session(
 
     llm_client: OllamaClient = _state["llm_client"]
 
-    # Use user_id=1 as default (the first/primary user)
-    # The summarizer will filter episodes by this user_id
+    # The summarizer filters episodes by owner, so the caller must say who it is
+    # asking for. This read `user_id=1` as "the first/primary user" — an account
+    # that need not exist, and not necessarily the one the session belongs to.
     summarizer = Summarizer(store=store, llm_client=llm_client)
 
     result = await summarizer.summarize_session(
         session_id=request.session_id,
-        user_id=1,
+        user_id=user_id,
     )
 
     if result is None:
@@ -2347,7 +2349,7 @@ async def upload_file_to_memory(
     content: bytes,
     ext: str,
     store: MemoryStore,
-    user_id: int = 1,
+    user_id: int,
 ) -> dict:
     """Upload a file to memory and disk. Returns file metadata and frame info.
 
@@ -2391,6 +2393,7 @@ async def upload_file_to_memory(
 
 @app.post("/files/upload", response_model=dict)
 async def upload_file(
+    user_id: int,
     file: UploadFile = File(...),
     store: MemoryStore = _Depends(get_store),
 ):
@@ -2417,7 +2420,7 @@ async def upload_file(
         )
     
     content = await file.read()
-    return await upload_file_to_memory(filename, content, ext, store)
+    return await upload_file_to_memory(filename, content, ext, store, user_id)
 
 
 # --- File API Endpoints ---
@@ -2467,7 +2470,7 @@ class FileContentResponse(BaseModel):
 # List all file frames for the user
 @app.get("/files/list", response_model=list[FileFrameResponse])
 async def list_files(
-    user_id: int = 1,
+    user_id: int,
     store: MemoryStore = _Depends(get_store),
 ):
     """List all file frames for a user."""
@@ -2528,8 +2531,8 @@ async def list_files(
 @app.get("/files/search", response_model=FileSearchResponse)
 async def search_files(
     query: str,
+    user_id: int,
     file_type: str | None = None,
-    user_id: int = 1,
     store: MemoryStore = _Depends(get_store),
     orch: Orchestrator = _Depends(get_orchestrator),
 ):
@@ -2874,7 +2877,10 @@ async def update_file_content(
             safe_filename=file_safe_name,
             ext=ext,
             content_bytes=data,
-            user_id=frame.owner_user_id or 1,
+            # The frame's own owner, never a stand-in: an unowned frame stays
+            # unowned rather than being attributed to whichever account happens
+            # to have id 1.
+            user_id=frame.owner_user_id,
             source_type="file_create",
             source_reliability=0.8,
             display_name=display_name,

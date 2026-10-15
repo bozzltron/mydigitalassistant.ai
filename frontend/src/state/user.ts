@@ -1,5 +1,6 @@
 import { createSignal } from 'solid-js'
 import { getUsers } from '../services/api'
+import { setActingUser } from '../services/actingUser'
 
 // User type definition
 export interface User {
@@ -19,6 +20,9 @@ export const [isLoadingUser, setIsLoadingUser] = createSignal(false)
  * memory by user id. Prefer the id the user last used (localStorage), else the
  * first account. Previously this was a mock that always returned `{id: 1}`,
  * which silently assumed an account with id 1 existed.
+ *
+ * This is the one place the acting account is decided; `setActingUser` hands it to
+ * the API layer so every request carries it instead of falling back to a literal.
  */
 export const fetchUser = async () => {
   setIsLoadingUser(true)
@@ -26,6 +30,7 @@ export const fetchUser = async () => {
     const users = await getUsers()
     if (users.length === 0) {
       console.warn('No accounts found on the backend; create one via POST /users')
+      setActingUser(null)
       return
     }
     const savedId = typeof localStorage !== 'undefined'
@@ -34,6 +39,7 @@ export const fetchUser = async () => {
     const chosen = users.find((u) => u.id === savedId) ?? users[0]
     if (!chosen) return
     setUser({ id: chosen.id, name: chosen.name })
+    setActingUser(chosen.id)
     if (typeof localStorage !== 'undefined') {
       localStorage.setItem('user_id', String(chosen.id))
     }

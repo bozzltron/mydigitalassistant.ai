@@ -372,6 +372,29 @@ The agent must confirm before performing actions that could expose sensitive inf
 - **No telemetry**: Zero analytics, tracking, or phone-home code. The agent's memory stays in the local SQLite database.
 - **User consent for external calls**: Any network request beyond localhost (Ollama, SearXNG, Brave) requires explicit user action or configuration.
 
+## Accounts: a user id is data, never a literal
+
+There is no auth layer. `GET /users` lists the household's accounts and memory is
+scoped by user id, so **every user-scoped request names the account it is for**.
+
+- **The backend takes `user_id` as a required parameter.** It never defaults to `1`.
+  That default assumed an account with that id existed *and* that it was the one
+  calling, so a request could be served as — or written to — the wrong household
+  member, or fail a foreign key on an install whose only account happens to be id 3.
+  A request that cannot say who it is for has no correct answer, so it is a 422.
+- **The frontend resolves the account once**, in `state/user.ts` (`fetchUser` —
+  localStorage's last id, else the first account), and hands it to the API layer
+  (`services/actingUser`), which attaches it to every user-scoped request. No call
+  site carries a literal, and a request made before an account is loaded throws
+  rather than guessing.
+- **A tool that cannot parse the caller's id writes its frame unowned** rather than
+  inventing an owner, and a scheduled task with no owner is skipped with a warning
+  rather than run as a stand-in. `apply_file_to_memory(user_id=None)` is legal and
+  means unowned — the column is nullable, so an unowned frame is visible as unowned
+  instead of looking correct.
+
+Reading a *shared* file (the map) needs no account; writing memory about it does.
+
 ## Memory model
 - Frames: entities/concepts/events with confidence.
 - Slots: key/value pairs on a frame, each with confidence + source episode.

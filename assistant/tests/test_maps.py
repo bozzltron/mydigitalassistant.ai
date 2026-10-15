@@ -21,6 +21,7 @@ from assistant.backend.maps.geojson import (
 )
 from assistant.backend.memory.retrieval import Retriever
 from assistant.backend.pipeline.orchestrator import Orchestrator, OrchestratorDeps
+from assistant.tests.conftest import SignedInClient
 
 
 def _point(lon, lat, description=None):
@@ -121,6 +122,10 @@ async def client(store, stub_llm, stub_search):
     _state["orchestrator"] = orchestrator
     _state["search_tool"] = stub_search
 
+    # The account the page acts as. `PUT /map` requires one: it used to default to
+    # id 1, which assumed an account with that id existed.
+    user = await store.create_user("mapper")
+
     original_db_path = settings.database_path
     original_scheduler = settings.scheduler_enabled
     settings.database_path = store.db_path
@@ -129,7 +134,7 @@ async def client(store, stub_llm, stub_search):
         with TestClient(app) as c:
             _state["llm_client"] = stub_llm
             _state["search_tool"] = stub_search
-            yield c
+            yield SignedInClient(c, user.id)
     finally:
         settings.database_path = original_db_path
         settings.scheduler_enabled = original_scheduler
@@ -173,10 +178,9 @@ class TestMapApi:
         on disk and readable by the agent but absent from the Files view: the
         user's own content, invisible to the user.
         """
-        user_id = client.post("/users", params={"name": "mapper"}).json()["id"]
-        client.put("/map", params={"user_id": user_id}, json=_fc(_point(-122.68, 45.523, "shed")))
+        client.put("/map", json=_fc(_point(-122.68, 45.523, "shed")))
 
-        listed = client.get("/files/list", params={"user_id": user_id}).json()
+        listed = client.get("/files/list").json()
         entry = next((e for e in listed if e["file_name"] == "map.geojson"), None)
         assert entry is not None, [e["file_name"] for e in listed]
         assert entry["source_type"] == "file_create"
@@ -188,29 +192,36 @@ class TestMapApi:
 
         The page PUTs the whole file on every change, so this runs on each edit.
         """
-        user_id = client.post("/users", params={"name": "mapper2"}).json()["id"]
         for description in ("shed", "shed, gate code 4412"):
-            client.put(
-                "/map",
-                params={"user_id": user_id},
-                json=_fc(_point(-122.68, 45.523, description)),
-            )
+            client.put("/map", json=_fc(_point(-122.68, 45.523, description)))
 
-        names = [
-            e["file_name"]
-            for e in client.get("/files/list", params={"user_id": user_id}).json()
-        ]
+        names = [e["file_name"] for e in client.get("/files/list").json()]
         assert names.count("map.geojson") == 1
 
     async def test_the_file_is_written_even_when_memory_cannot_be(self, client):
         """A memory failure must not fail a save that already happened.
 
-        The bytes are the source of truth. Without a user row the frame write
-        fails its foreign key — the PUT must still report success, or the UI says
-        "could not save" about a map that is on disk.
+        The bytes are the source of truth. Naming an account that does not exist
+        fails the frame write on its foreign key — the PUT must still report
+        success, or the UI says "could not save" about a map that is on disk.
         """
-        assert client.put("/map", json=_fc(_point(-122.68, 45.523, "shed"))).status_code == 200
+        assert (
+            client.put(
+                "/map", params={"user_id": 999999}, json=_fc(_point(-122.68, 45.523, "shed"))
+            ).status_code
+            == 200
+        )
         assert MAP_PATH.exists()
+
+    async def test_a_save_without_an_account_is_refused(self, client):
+        """`user_id` is required, not defaulted.
+
+        Regression: every user-scoped endpoint took `user_id: int = 1`, which
+        assumed an account with that id existed *and* that it was the one calling —
+        so a request could be served as, or written to, the wrong household member.
+        A request that cannot say who it is for has no correct answer.
+        """
+        assert client.raw.put("/map", json=_fc(_point(-122.68, 45.523))).status_code == 422
 
     async def test_settings_carry_the_map_keys(self, client):
         s = client.get("/settings").json()

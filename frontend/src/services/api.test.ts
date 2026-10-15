@@ -1,17 +1,64 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { api, postChatStream, getFrames, getAssociations, listFiles, postFileUpload, deleteFile, getUserSessions, createNewConversation, updateConversationTitle, getSessionMessages, getAssistantName, getSettings, postFeedback, postCorrection, transcribeAudio, getOGPreview, createTurnId } from '../services/api'
+import { setActingUser } from './actingUser'
 
 const mockFetch = vi.fn()
 global.fetch = mockFetch
+
+/** An SSE `Response` whose body streams the given `data:` frames. */
+function sseResponse(events: string[]): Response {
+  const encoder = new TextEncoder()
+  const stream = new ReadableStream({
+    start(controller) {
+      for (const ev of events) {
+        controller.enqueue(encoder.encode(ev))
+      }
+      controller.close()
+    },
+  })
+  return { ok: true, status: 200, body: stream } as unknown as Response
+}
 
 describe('api service', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockFetch.mockReset()
+    // User-scoped requests carry the acting account; the API layer throws rather
+    // than substituting a default, so the suite has to name one — as the app does
+    // by awaiting `fetchUser` before anything else.
+    setActingUser(7)
   })
 
   afterEach(() => {
     vi.restoreAllMocks()
+    setActingUser(null)
+  })
+
+  describe('the acting account travels with the request', () => {
+    it('throws rather than guessing when no account is loaded', async () => {
+      setActingUser(null)
+      await expect(listFiles()).rejects.toThrow(/No account is loaded/)
+    })
+
+    it('scopes the file list, an upload and a map save to that account', async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        text: () => Promise.resolve(JSON.stringify([])),
+      })
+      await listFiles()
+      expect(mockFetch.mock.calls[0][0]).toBe('/files/list?user_id=7')
+
+      mockFetch.mockResolvedValue({ ok: true, json: () => Promise.resolve({}) })
+      await postFileUpload(new File(['x'], 'x.txt'))
+      expect(mockFetch.mock.calls[1][0]).toBe('/files/upload?user_id=7')
+    })
+
+    it('puts the account in the chat request body, not a literal', async () => {
+      mockFetch.mockResolvedValue(sseResponse(['data: {"type": "finalize", "answer": "ok"}\n\n']))
+      await postChatStream('Hi')
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body)
+      expect(body.user_id).toBe(7)
+    })
   })
 
   describe('api', () => {
@@ -158,7 +205,7 @@ describe('api service', () => {
 
       const result = await listFiles()
 
-      expect(mockFetch).toHaveBeenCalledWith('/files/list', expect.any(Object))
+      expect(mockFetch).toHaveBeenCalledWith('/files/list?user_id=7', expect.any(Object))
       expect(result).toEqual([{ id: '1', name: 'test.txt' }])
     })
   })
@@ -175,7 +222,7 @@ describe('api service', () => {
 
       expect(mockFetch).toHaveBeenCalled()
       const call = mockFetch.mock.calls[0]
-      expect(call[0]).toBe('/files/upload')
+      expect(call[0]).toBe('/files/upload?user_id=7')
       expect(call[1].method).toBe('POST')
       expect(call[1].body).toBeInstanceOf(FormData)
       expect(result).toEqual({ id: '1', name: 'test.txt' })
@@ -482,19 +529,6 @@ describe('api service', () => {
   })
 
   describe('postChatStream', () => {
-    function sseResponse(events: string[]): Response {
-      const encoder = new TextEncoder()
-      const stream = new ReadableStream({
-        start(controller) {
-          for (const ev of events) {
-            controller.enqueue(encoder.encode(ev))
-          }
-          controller.close()
-        },
-      })
-      return { ok: true, status: 200, body: stream } as unknown as Response
-    }
-
     it('accumulates streamed text and returns without ReferenceError', async () => {
       // Regression test: the return object previously referenced undeclared
       // `finalSessionId`/`finalTaskType`/etc., throwing a ReferenceError the
@@ -593,7 +627,7 @@ describe('api service', () => {
       const call = mockFetch.mock.calls[0]
       expect(call[0]).toBe('/chat/stream')
       expect(JSON.parse(call[1].body)).toMatchObject({
-        user_id: 1,
+        user_id: 7,
         message: 'hard stream query',
         session_id: 'session-1',
         turn_id: 'turn-9',

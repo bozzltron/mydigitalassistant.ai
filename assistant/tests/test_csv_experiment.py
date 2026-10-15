@@ -13,6 +13,7 @@ from assistant.backend.config import settings
 from assistant.backend.main import _state, app, get_orchestrator, get_store
 from assistant.backend.memory.retrieval import Retriever
 from assistant.backend.pipeline.orchestrator import Orchestrator, OrchestratorDeps
+from assistant.tests.conftest import SignedInClient
 
 
 @pytest.fixture
@@ -37,8 +38,10 @@ async def client(store, stub_llm, stub_search):
     _state["orchestrator"] = orchestrator
     _state["search_tool"] = stub_search
 
-    # Create user 1 (required by file upload endpoint)
-    await store.create_user("test_user")
+    # The account these tests act as. Every user-scoped endpoint requires one —
+    # the API used to default to id 1, which assumed an account with that id
+    # existed. This is a real row, so the id is whatever the DB assigns.
+    test_user = await store.create_user("test_user")
 
     original_db_path = settings.database_path
     original_scheduler = settings.scheduler_enabled
@@ -48,7 +51,7 @@ async def client(store, stub_llm, stub_search):
         with TestClient(app) as c:
             _state["llm_client"] = stub_llm
             _state["search_tool"] = stub_search
-            yield c
+            yield SignedInClient(c, test_user.id)
     finally:
         settings.database_path = original_db_path
         settings.scheduler_enabled = original_scheduler

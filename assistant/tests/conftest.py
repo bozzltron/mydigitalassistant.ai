@@ -2,14 +2,72 @@ import hashlib
 import json
 import random
 from pathlib import Path
+from urllib.parse import parse_qsl, urlsplit, urlunsplit
 
 import pytest
 import pytest_asyncio
+from fastapi.testclient import TestClient
 
 from assistant.backend.db.schema import init_db
 from assistant.backend.memory.store import MemoryStore, close_all_connections
 from assistant.backend.pipeline.llm_client import ChatResponse, EmbeddingResponse, OllamaClient
 from assistant.backend.pipeline.search import WebSearchTool
+
+
+class SignedInClient:
+    """A `TestClient` acting as one household account.
+
+    Every user-scoped endpoint requires `user_id` — the API no longer defaults to
+    id 1, which assumed an account with that id existed *and* that it was the one
+    calling. There is no auth layer, so the id rides each request; this stands in
+    for the signed-in member the way a test client would carry a session cookie in
+    an app that had one, so a test about files is not also a test about identity.
+
+    An explicit `params={"user_id": ...}` still wins, for a test that is about
+    identity.
+    """
+
+    def __init__(self, client: TestClient, user_id: int) -> None:
+        self._client = client
+        # The unwrapped client, for the one test that is about the requirement
+        # itself: a request that names no account must be refused, not defaulted.
+        self.raw = client
+        self.user_id = user_id
+
+    def _prepare(self, url: str, kwargs: dict) -> tuple[str, dict]:
+        """Split a query already in `url` into `params`.
+
+        httpx's `params=` *replaces* the URL's query rather than adding to it, so
+        appending the account to `/files/1/download?inline=true` silently dropped
+        `inline=true` — the download came back as an attachment and the test that
+        checks the inline MIME type failed for a reason that had nothing to do with
+        the endpoint.
+        """
+        parts = urlsplit(url)
+        params = dict(parse_qsl(parts.query))
+        params.update(kwargs.pop("params", None) or {})
+        params.setdefault("user_id", self.user_id)
+        return urlunsplit(parts._replace(query="")), params
+
+    def get(self, url, **kwargs):
+        url, params = self._prepare(url, kwargs)
+        return self._client.get(url, params=params, **kwargs)
+
+    def post(self, url, **kwargs):
+        url, params = self._prepare(url, kwargs)
+        return self._client.post(url, params=params, **kwargs)
+
+    def put(self, url, **kwargs):
+        url, params = self._prepare(url, kwargs)
+        return self._client.put(url, params=params, **kwargs)
+
+    def patch(self, url, **kwargs):
+        url, params = self._prepare(url, kwargs)
+        return self._client.patch(url, params=params, **kwargs)
+
+    def delete(self, url, **kwargs):
+        url, params = self._prepare(url, kwargs)
+        return self._client.delete(url, params=params, **kwargs)
 
 
 @pytest.fixture(autouse=True)
