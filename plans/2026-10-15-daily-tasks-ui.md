@@ -251,14 +251,15 @@ toggles. Adding Tasks makes six — and the row does **not** wrap: `header` and
 `flex-wrap`, so a sixth item squashes the row rather than flowing onto a second line.
 That is the actual motivation: the row has run out of width, not of lines.
 
-Roll the **page links** into one menu button (the existing `conversationDropdown` pattern
-in `TopBar.module.css` is the house style: a trigger with a chevron and an
-absolutely-positioned panel), containing **Tasks · Files · Maps · Brain**.
+> **Revised while implementing:** the menu took the toggles and the trash too, so the
+> row is down to **Alerts, Let's talk, Pages**. The original plan kept Trace and
+> Settings out on the grounds that they are stateful toggles; that was overruled, and
+> `Trace` renders its own `is-active` state so nothing is lost. `TrashCan` became a
+> controlled modal (`isOpen`/`onClose`) because its trigger is a menu item while the
+> modal must outlive the menu — the panel unmounts on close and `Modal` is not a portal.
 
-**Trace and Settings stay as buttons.** They are toggles with an on/off state, not
-destinations; folding them in means the menu has to render their state and the user
-loses the one-click affordance. The menu stays purely navigational, which also lets it be
-generated from one array rather than three hand-written anchors.
+The menu is one button, generated from a list, containing **Tasks · Files · Maps ·
+Brain | Trace · Settings · Trash**.
 
 Responsive: the menu button is always present (one code path, and it is what "roll up"
 asks for); the icons stay beside it for Trace/Settings/Trash. The menu closes on Escape,
@@ -416,5 +417,5 @@ so it can run at any point before Phase 3 without holding up 1, 1a or 2.
    the detail panel, collapsed by default and loaded on open.
 
 Settled during planning: **pause/resume is in the page** (as a state action, not an edit —
-see the write surface above), and **the menu holds pages only** — Tasks, Files, Maps,
-Brain — with Trace and Settings staying as icon buttons.
+see the write surface above), and **the menu holds every control** — pages, toggles and
+trash — leaving the row as Alerts, Let's talk, Pages.
