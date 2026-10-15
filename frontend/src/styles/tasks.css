@@ -165,7 +165,11 @@
 
 /* Detail */
 .task-detail {
-  width: 26rem;
+  /* The preview pane, so it gets the room: 26rem squeezed the prompt editor to
+     roughly 40 characters a line. The cap keeps the list usable on a narrow window
+     — the page has no breakpoint, so this is what stops the pane from winning. */
+  width: 34rem;
+  max-width: 55vw;
   flex-shrink: 0;
   border-left: 1px solid var(--border);
   background: var(--surface);

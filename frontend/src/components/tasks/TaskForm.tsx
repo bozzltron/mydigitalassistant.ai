@@ -1,4 +1,4 @@
-import { createEffect, createSignal, on, Show } from 'solid-js'
+import { createEffect, createSignal, on, Show, untrack } from 'solid-js'
 import type { Task } from '../../types/task'
 import { formatStamp } from '../../utils/taskLib'
 
@@ -18,7 +18,9 @@ export function TaskForm(props: {
   onToggle: () => void
   onDelete: () => void
 }) {
-  const [text, setText] = createSignal(props.task.prompt)
+  // The initial value only; the effect below owns every subsequent seed, because
+  // `Show` reuses this instance when one task replaces another.
+  const [text, setText] = createSignal(untrack(() => props.task.prompt))
 
   // Seed on a *different task*, not on every prop change: toggling pause replaces the
   // task object, and re-seeding then would throw away what the user was typing. The
