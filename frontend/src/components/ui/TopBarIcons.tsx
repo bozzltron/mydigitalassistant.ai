@@ -89,3 +89,10 @@ export const TaskIcon = (props: { class?: string }) => (
     <line x1="12" y1="17" x2="20" y2="17" />
   </Icon>
 )
+
+/** Back to the conversation — the menu's first entry on every page but the chat. */
+export const ChatIcon = (props: { class?: string }) => (
+  <Icon class={props.class}>
+    <path d="M21 12a8 8 0 0 1-8 8H7l-4 3v-5.6A8 8 0 0 1 3 12a8 8 0 0 1 8-8h2a8 8 0 0 1 8 8Z" />
+  </Icon>
+)

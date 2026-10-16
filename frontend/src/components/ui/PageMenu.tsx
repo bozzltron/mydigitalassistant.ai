@@ -4,6 +4,7 @@ import { getSettings } from '../../services/api'
 import styles from './PageMenu.module.css'
 import {
   BrainIcon,
+  ChatIcon,
   FolderIcon,
   GearIcon,
   MapIcon,
@@ -66,10 +67,21 @@ export default function PageMenu(props: {
   })
 
   const pageLinks = (): PageLink[] => {
-    const links: PageLink[] = [
-      { id: 'tasks', label: 'Tasks', href: '/tasks', icon: TaskIcon },
-      { id: 'files', label: 'Files', href: '/files', icon: FolderIcon },
-    ]
+    const links: PageLink[] = []
+
+    // Chat first, and only where it is somewhere to *go*: this component is the chat
+    // page's own menu too, and offering "Chat" while you are in the chat is noise.
+    //
+    // Read from `window.location` rather than the router's `useLocation()` on purpose:
+    // every page renders this, and requiring a Router context would mean wrapping every
+    // page test in one. The read is safe because a route change remounts the page —
+    // and therefore this component — so it is never stale.
+    if (window.location.pathname !== '/') {
+      links.push({ id: 'chat', label: 'Chat', href: '/', icon: ChatIcon })
+    }
+
+    links.push({ id: 'tasks', label: 'Tasks', href: '/tasks', icon: TaskIcon })
+    links.push({ id: 'files', label: 'Files', href: '/files', icon: FolderIcon })
     if (mapsEnabled()) {
       links.push({ id: 'maps', label: 'Maps', href: '/maps', icon: MapIcon })
     }
