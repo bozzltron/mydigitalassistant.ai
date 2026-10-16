@@ -22,6 +22,7 @@ export const SUPPORTED_UPLOAD_EXTS = [
   'md',
   'csv',
   'json',
+  'geojson',
   'ics',
   'pdf',
   'docx',

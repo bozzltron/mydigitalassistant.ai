@@ -1106,6 +1106,34 @@ class TestFileWriteParity:
         assert not result.success
         assert "extension" in result.error
 
+    async def test_the_agent_can_write_a_geojson_file(self, client, store):
+        """`.geojson` is writable, so the agent writes a map rather than a `.json`.
+
+        Regression, from a live session's log:
+
+            write_file(path='ship-tracker.geojson') -> failed: cannot write .geojson:
+              no writer. Writable formats: csv, docx, ics, json, md, ...
+            write_file(path='ship-tracker.json') -> ok
+
+        The model asked for a map, was refused, and fell back to a `.json` the map page
+        would not list. GeoJSON *is* JSON, so it shares the JSON writer — and the
+        file it writes is a map the page can find.
+        """
+        from assistant.backend.pipeline.tool_executor import execute_write_file
+
+        user_id = client.post("/users", params={"name": "mapper"}).json()["id"]
+        result = await execute_write_file(
+            {
+                "path": "track.geojson",
+                "content": '{"type": "FeatureCollection", "features": []}',
+            },
+            str(user_id),
+            "sess",
+        )
+
+        assert result.success, result.error
+        assert "track.geojson" in client.get("/map/files").json()["files"]
+
     @pytest.mark.asyncio
     async def test_agent_written_file_appears_in_files_list(self, client, store):
         """A write_file'd file shows up in GET /files/list.

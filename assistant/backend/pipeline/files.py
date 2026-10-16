@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 SUPPORTED_UPLOAD_EXTS = frozenset(
     {
         # Text
-        "txt", "md", "csv", "json", "ics",
+        "txt", "md", "csv", "json", "geojson", "ics",
         # Documents
         "pdf", "docx", "odt",
         # Spreadsheets
@@ -774,6 +774,11 @@ _TEXT_WRITERS = {
     "md": _render_text,
     "csv": _render_text,
     "json": _render_json,
+    # GeoJSON *is* JSON, and `_render_json` keeps content that already parses verbatim —
+    # which a FeatureCollection does. Without this the agent asked for `.geojson`, was
+    # refused, and wrote `.json` instead: the user asked for a map and got a file the
+    # map page would not list.
+    "geojson": _render_json,
 }
 
 # Format -> serializer. Every SUPPORTED_UPLOAD_EXTS ext must appear here or
