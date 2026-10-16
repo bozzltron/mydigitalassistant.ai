@@ -12,11 +12,19 @@ https://localhost {
     
     # Route API requests to backend.
     #
-    # `/map` is listed exactly (not `/map*`): the API path is `/map` but the page
-    # is `/maps`, and a `/map*` wildcard would send the SPA route to the backend
-    # too. `/map/*` covers a future sub-path. Prod needs none of this — it routes
-    # everything to the backend.
-    @api path /api/* /health /chat* /users* /memory* /brain* /files* /settings* /map /map/* /tasks* /db* /feedback* /correction* /conversations* /assistant* /search* /og-preview /image-proxy* /transcribe* /uploads* /embeddings* /show* /tags* /chat-ui /brain-ui /summarize /alerts*
+    # **Every matcher here must be a path the backend has an *exact* route for.** The
+    # backend serves the SPA for anything it does not match (`spa_catch_all`), so a
+    # wildcard that swallows a page route silently serves the *built* bundle from the
+    # backend instead of the Vite dev server — the page works, HMR does not, and it can
+    # be arbitrarily stale. `/files*` and `/brain*` did exactly that until this was
+    # written down; `/tasks` was worse and returned JSON, because a bare API route beat
+    # the page.
+    #
+    # So: wildcards are `/prefix/*`, never `/prefix*`, and a page route must not share
+    # a path with an API route. `/map` is the worked example — the API path is `/map`
+    # and the page is `/maps`, so a `/map*` wildcard would have sent the page to the
+    # backend. See `docs/DEPLOYMENT_MODES.md`, "Page routes and API paths".
+    @api path /api/* /health /chat* /users* /memory* /brain/* /files/* /settings* /map /map/* /tasks/* /db* /feedback* /correction* /conversations* /assistant* /search* /og-preview /image-proxy* /transcribe* /uploads* /embeddings* /show* /tags* /chat-ui /brain-ui /summarize /alerts*
     reverse_proxy @api assistant:8000 {
         transport http {
             response_header_timeout 300s

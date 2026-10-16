@@ -71,20 +71,20 @@ class TestListRequiresAnAccount:
         filter" — so a caller who forgot the parameter got every task in the install,
         system ones included.
         """
-        assert client.raw.get("/tasks").status_code == 422
+        assert client.raw.get("/tasks/list").status_code == 422
 
     def test_it_lists_the_callers_tasks(self, client):
-        client.post("/tasks", json={"name": "briefing", "prompt": "do the thing"})
-        listed = client.get("/tasks").json()
+        client.post("/tasks/create", json={"name": "briefing", "prompt": "do the thing"})
+        listed = client.get("/tasks/list").json()
         assert [t["name"] for t in listed] == ["briefing"]
 
     def test_an_empty_list_is_an_empty_list(self, client):
-        assert client.get("/tasks").json() == []
+        assert client.get("/tasks/list").json() == []
 
 
 class TestCreate:
     def test_creates_a_daily_task(self, client):
-        r = client.post("/tasks", json={"name": "briefing", "prompt": "summarise AI news"})
+        r = client.post("/tasks/create", json={"name": "briefing", "prompt": "summarise AI news"})
         assert r.status_code == 200
         task = r.json()
         assert task["name"] == "briefing"
@@ -95,19 +95,19 @@ class TestCreate:
         assert task["next_run"], "a new enabled task must have a next run"
 
     def test_creating_the_same_name_twice_updates_rather_than_duplicating(self, client):
-        client.post("/tasks", json={"name": "briefing", "prompt": "v1"})
-        client.post("/tasks", json={"name": "briefing", "prompt": "v2"})
-        listed = client.get("/tasks").json()
+        client.post("/tasks/create", json={"name": "briefing", "prompt": "v1"})
+        client.post("/tasks/create", json={"name": "briefing", "prompt": "v2"})
+        listed = client.get("/tasks/list").json()
         assert [t["prompt"] for t in listed] == ["v2"]
 
     def test_frequency_cannot_be_set_from_the_page(self, client):
         """`extra="forbid"` — a client asking for `once` is told, not silently obeyed."""
-        r = client.post("/tasks", json={"name": "x", "prompt": "y", "frequency": "once"})
+        r = client.post("/tasks/create", json={"name": "x", "prompt": "y", "frequency": "once"})
         assert r.status_code == 422
 
     def test_a_blank_prompt_is_refused(self, client):
-        assert client.post("/tasks", json={"name": "x", "prompt": "   "}).status_code == 422
-        assert client.post("/tasks", json={"name": "  ", "prompt": "y"}).status_code == 422
+        assert client.post("/tasks/create", json={"name": "x", "prompt": "   "}).status_code == 422
+        assert client.post("/tasks/create", json={"name": "  ", "prompt": "y"}).status_code == 422
 
     def test_delete_then_recreate_the_same_name(self, client):
         """The first thing a user does on a page with a Create button.
@@ -116,18 +116,18 @@ class TestCreate:
         so re-creating raised `UNIQUE constraint failed: frames.name` — a 500 on the
         obvious path.
         """
-        created = client.post("/tasks", json={"name": "briefing", "prompt": "v1"}).json()
+        created = client.post("/tasks/create", json={"name": "briefing", "prompt": "v1"}).json()
         assert client.delete(f"/tasks/{created['id']}").status_code == 200
 
-        again = client.post("/tasks", json={"name": "briefing", "prompt": "v2"})
+        again = client.post("/tasks/create", json={"name": "briefing", "prompt": "v2"})
         assert again.status_code == 200
         assert again.json()["prompt"] == "v2"
-        assert [t["name"] for t in client.get("/tasks").json()] == ["briefing"]
+        assert [t["name"] for t in client.get("/tasks/list").json()] == ["briefing"]
 
 
 class TestUpdate:
     def test_edits_the_prompt(self, client):
-        created = client.post("/tasks", json={"name": "briefing", "prompt": "old"}).json()
+        created = client.post("/tasks/create", json={"name": "briefing", "prompt": "old"}).json()
         r = client.patch(f"/tasks/{created['id']}", json={"prompt": "new"})
         assert r.status_code == 200
         assert r.json()["prompt"] == "new"
@@ -136,7 +136,7 @@ class TestUpdate:
         assert r.json()["schedule_cron"] == "daily"
 
     def test_pause_clears_next_run_and_resume_sets_it(self, client):
-        created = client.post("/tasks", json={"name": "briefing", "prompt": "x"}).json()
+        created = client.post("/tasks/create", json={"name": "briefing", "prompt": "x"}).json()
 
         paused = client.patch(f"/tasks/{created['id']}", json={"enabled": False}).json()
         assert paused["enabled"] is False
@@ -148,7 +148,7 @@ class TestUpdate:
 
     def test_only_prompt_and_enabled_are_writable(self, client):
         """The write surface is two fields, and the contract says so out loud."""
-        created = client.post("/tasks", json={"name": "briefing", "prompt": "x"}).json()
+        created = client.post("/tasks/create", json={"name": "briefing", "prompt": "x"}).json()
         for body in (
             {"name": "renamed"},
             {"frequency": "once"},
@@ -160,7 +160,7 @@ class TestUpdate:
         assert client.patch(f"/tasks/{created['id']}", json={}).status_code == 422
 
     def test_a_blank_prompt_is_refused(self, client):
-        created = client.post("/tasks", json={"name": "briefing", "prompt": "x"}).json()
+        created = client.post("/tasks/create", json={"name": "briefing", "prompt": "x"}).json()
         assert client.patch(f"/tasks/{created['id']}", json={"prompt": "  "}).status_code == 422
 
 
@@ -176,13 +176,13 @@ class TestOwnership:
         """A second account with its own task."""
         them = await store.create_user("someone-else")
         their_client = SignedInClient(client.raw, them.id)
-        created = their_client.post("/tasks", json={"name": "theirs", "prompt": "secret"})
+        created = their_client.post("/tasks/create", json={"name": "theirs", "prompt": "secret"})
         assert created.status_code == 200
         return their_client, created.json()["id"]
 
     async def test_it_is_not_listed(self, client, other):
         _theirs, _task_id = other
-        assert client.get("/tasks").json() == []
+        assert client.get("/tasks/list").json() == []
 
     async def test_result_is_a_404_not_a_leak(self, client, other):
         _theirs, task_id = other
@@ -192,21 +192,21 @@ class TestOwnership:
         theirs, task_id = other
         assert client.patch(f"/tasks/{task_id}", json={"prompt": "hijacked"}).status_code == 404
         # And the prompt is untouched.
-        assert theirs.get("/tasks").json()[0]["prompt"] == "secret"
+        assert theirs.get("/tasks/list").json()[0]["prompt"] == "secret"
 
     async def test_it_cannot_be_deleted(self, client, other):
         theirs, task_id = other
         assert client.delete(f"/tasks/{task_id}").status_code == 404
-        assert [t["name"] for t in theirs.get("/tasks").json()] == ["theirs"]
+        assert [t["name"] for t in theirs.get("/tasks/list").json()] == ["theirs"]
 
     async def test_two_accounts_can_each_own_a_task_of_the_same_name(self, client, store):
         them = await store.create_user("second")
         their_client = SignedInClient(client.raw, them.id)
-        client.post("/tasks", json={"name": "morning", "prompt": "hers"})
-        their_client.post("/tasks", json={"name": "morning", "prompt": "his"})
+        client.post("/tasks/create", json={"name": "morning", "prompt": "hers"})
+        their_client.post("/tasks/create", json={"name": "morning", "prompt": "his"})
 
-        assert [t["prompt"] for t in client.get("/tasks").json()] == ["hers"]
-        assert [t["prompt"] for t in their_client.get("/tasks").json()] == ["his"]
+        assert [t["prompt"] for t in client.get("/tasks/list").json()] == ["hers"]
+        assert [t["prompt"] for t in their_client.get("/tasks/list").json()] == ["his"]
         # Each sees the name they gave it, not an internal handle.
-        assert client.get("/tasks").json()[0]["name"] == "morning"
-        assert their_client.get("/tasks").json()[0]["name"] == "morning"
+        assert client.get("/tasks/list").json()[0]["name"] == "morning"
+        assert their_client.get("/tasks/list").json()[0]["name"] == "morning"

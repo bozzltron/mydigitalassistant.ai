@@ -111,6 +111,14 @@ column was cleared but the slot is what reads come from, so the API would report
 run: tomorrow" for a task that will not run. Caught by a test written from this plan's
 own claim that pausing clears `next_run` — the claim was right and the code was not.
 
+And an eighth, found by using the page: **`GET /tasks` and the `/tasks` page route were
+the same path.** The backend serves the SPA for any path it has no exact route for, so
+the API handler won and the page returned `422 {"detail": …}`. Fixed by moving every
+route under `/tasks/` (`/tasks/list`, `/tasks/create`). The same investigation found the
+dev `Caddyfile`'s `/files*` and `/brain*` matchers were serving the **built** bundle for
+those two pages instead of Vite — the page worked, HMR did not. The rule is now in
+`docs/DEPLOYMENT_MODES.md`.
+
 And one piece of data that is **written but never read**: `last_output_episode_id`
 (`runner.py:231`). It is the exact hook objective 4 needs.
 
@@ -166,10 +174,15 @@ stored name and the logical one breaks run-now.
 
 ## The API
 
+> **Every task route lives under `/tasks/`.** `/tasks` is the page route, and the backend
+> serves the SPA for any path it has no *exact* route for — so a handler at the bare path
+> wins and the page returns JSON. That is exactly what `GET /tasks` did on the first
+> build. See `docs/DEPLOYMENT_MODES.md`, "Page routes and API paths".
+
 | Method | Path | Change |
 |---|---|---|
-| `GET` | `/tasks?user_id=` | `user_id` **required**. System tasks are not returned. Today `user_id` omitted means "include system tasks" — an admin view reachable by accident |
-| `POST` | `/tasks?user_id=` | **New.** Create. Body `{name, prompt}`. `frequency` is fixed at `daily`; `description` is empty |
+| `GET` | `/tasks/list?user_id=` | `user_id` **required**. System tasks are not returned. Today `user_id` omitted means "include system tasks" — an admin view reachable by accident |
+| `POST` | `/tasks/create?user_id=` | **New.** Create. Body `{name, prompt}`. `frequency` is fixed at `daily`; `description` is empty |
 | `PATCH` | `/tasks/{id}?user_id=` | **New.** Body `{prompt?}` or `{enabled?}` — the page's two writable fields and nothing else. 404 when the id is not the caller's |
 | `DELETE` | `/tasks/{id}?user_id=` | **Fix.** Verify ownership before the soft delete |
 | `GET` | `/tasks/{id}/result?user_id=` | **Fix.** Ownership-checked; drop `include_system=True` |

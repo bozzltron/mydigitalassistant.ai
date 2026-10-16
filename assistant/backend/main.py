@@ -2034,28 +2034,40 @@ class ScheduledTaskPatch(BaseModel):
         return self
 
 
-@app.get("/tasks", response_model=list[ScheduledTaskResponse])
+@app.get("/tasks/list", response_model=list[ScheduledTaskResponse])
 async def list_tasks(
     user_id: int,
     store: MemoryStore = _Depends(get_store),
 ):
     """List the caller's scheduled tasks.
 
-    `user_id` is required. It used to default to `None`, which meant "return every
-    task in the install, system ones included" — an admin view reachable by leaving a
-    query parameter off.
+    **Not `GET /tasks`.** `/tasks` is the SPA's page route, and the backend serves the
+    SPA for any path it has no *exact* route for (`spa_catch_all`). An API handler at
+    the bare page path therefore wins and the page returns JSON — which is exactly what
+    happened. Every task route lives under `/tasks/`, so `/tasks` itself falls through
+    to the SPA. See `docs/DEPLOYMENT_MODES.md`, "Page routes and API paths".
+
+    `user_id` is required. It used to default to `None`, which meant "return every task
+    in the install, system ones included" — an admin view reachable by leaving a query
+    parameter off.
     """
     tasks = await store.get_scheduled_tasks(owner_user_id=user_id)
     return [_task_response(t) for t in tasks]
 
 
-@app.post("/tasks", response_model=ScheduledTaskResponse)
+@app.post("/tasks/create", response_model=ScheduledTaskResponse)
 async def create_task(
     body: ScheduledTaskCreate,
     user_id: int,
     store: MemoryStore = _Depends(get_store),
 ):
     """Create a task, or update the one already carrying this name.
+
+    `/tasks/create` rather than `POST /tasks` for the same reason the list route moved:
+    one rule for every route under this prefix, so nobody has to remember which bare
+    paths are safe. (A `POST` cannot be mistaken for a page navigation, but the dev
+    Caddy matcher matches by path alone, so a bare `POST /tasks` would be routed to the
+    SPA.)
 
     The same store method chat uses, so a task made here is visible to "list my
     scheduled tasks" and vice versa. `upsert_scheduled_task` is owner-scoped, so this

@@ -38,7 +38,13 @@ export default defineConfig({
         target: 'http://assistant:8000',
         changeOrigin: true,
       },
-      '/files': {
+      // Trailing slashes on the paths that are also page routes. Vite matches a proxy
+      // key by prefix, so a bare '/files' swallows the '/files' *page* and forwards it
+      // to the backend — which then serves the built bundle (or, for a path the backend
+      // has a route for, its JSON). `/files/…` is the API; `/files` is the page. The
+      // same rule as the dev `Caddyfile`'s `@api` matcher — see
+      // `docs/DEPLOYMENT_MODES.md`, "Page routes and API paths".
+      '/files/': {
         target: 'http://assistant:8000',
         changeOrigin: true,
       },
@@ -46,7 +52,7 @@ export default defineConfig({
         target: 'http://assistant:8000',
         changeOrigin: true,
       },
-      '/tasks': {
+      '/tasks/': {
         target: 'http://assistant:8000',
         changeOrigin: true,
       },

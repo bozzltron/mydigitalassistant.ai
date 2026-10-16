@@ -44,6 +44,71 @@ compiled SPA rather than a placeholder.
 
 ---
 
+## Page routes and API paths
+
+**A page route and an API path must not share a path.** This is a rule about how the SPA
+is served, and breaking it fails in a way that looks like a caching problem.
+
+The backend serves the SPA for **any path it has no exact route for** (`spa_catch_all`,
+`main.py`). So:
+
+- If an API route exists at `/foo`, a browser navigating to `/foo` gets the API's
+  response — JSON, or a 422 — never the page.
+- If no API route exists at `/foo`, the browser gets the SPA, whether or not `/foo` is a
+  page the router knows about.
+
+Two failure modes follow, and both have happened here:
+
+| Symptom | Cause |
+|---|---|
+| The page shows JSON | an API handler sits at the bare page path — `GET /tasks` beat the Tasks page |
+| The page loads the **old** app in dev, with no HMR | the dev Caddy `@api` matcher is too coarse — `/files*` swallowed the `/files` page and served the **built** bundle from the backend instead of Vite |
+
+The second is the nastier one: the page looks like it works, so it reads as a stale
+browser or a bad rebuild rather than a routing rule.
+
+**Rules**
+
+1. **Wildcards are `/prefix/*`, never `/prefix*`** in the dev `Caddyfile`'s `@api`
+   matcher, and **proxy keys end in `/`** in `vite.config.ts`. The backend's own
+   `spa_catch_all` already uses the trailing-slash form for exactly this reason
+   (`/files/`, `/brain/`, `/tasks/`).
+2. **A page route must not sit at an API path.** `/map` (API) with `/maps` (page) is the
+   worked example; `/tasks/list` (API) with `/tasks` (page) is the second. If a page
+   wants a name an API already owns, move one of them — do not rely on a method or an
+   `Accept` header to tell them apart, because the dev matcher matches on path alone.
+3. **Every route under an API prefix lives under it.** `POST /tasks` would not collide
+   with a page navigation, but it *would* be missed by `/tasks/*` in the dev matcher and
+   sent to the SPA. One rule for the whole prefix beats remembering which bare paths are
+   safe.
+
+Prod needs no matcher — Caddy sends everything to the backend and `spa_catch_all` makes
+the same decision there.
+
+**There are three matchers, and they have to agree.** This is the part that costs time:
+the same split is decided in three places, and fixing one leaves the others wrong.
+
+| Where | Covers |
+|---|---|
+| `Caddyfile` `@api` (dev) | what Caddy sends to the backend rather than the dev server |
+| `frontend/vite.config.ts` `proxy` | what the **dev server** forwards when a request reaches it directly. Vite matches a proxy key by **prefix**, so a bare `'/files'` swallows the `/files` page |
+| `spa_catch_all`'s `api_prefixes` (`main.py`) | what the backend serves as a page vs an API route — the only one that runs in **prod** |
+
+`/brain` is absent from the Vite proxy, which is why it was the one page that behaved
+while `/files` and `/tasks` did not: Caddy had been fixed and the Vite proxy was still
+prefix-matching the bare paths. **When you add a page route, check all three.**
+
+**Checking it**
+
+```bash
+# A page in dev must come from Vite, not the built bundle:
+curl -sk https://localhost:8443/files | grep -o '@vite/client'   # present = Vite, absent = the stale bundle
+# And it must not be JSON:
+curl -sk https://localhost:8443/tasks | head -c 40
+```
+
+---
+
 ## Quick Reference
 
 | Aspect | Dev Mode | Prod Mode |
