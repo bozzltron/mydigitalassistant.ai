@@ -103,6 +103,16 @@ describe('AlertsPanel', () => {
     expect(await screen.findByText('1')).toBeTruthy()
   })
 
+  it('shows no trigger at all when nothing is waiting', async () => {
+    // An entry point to "Nothing waiting" is worse than no entry point: the bell sat in
+    // the row permanently and opened an empty panel.
+    vi.mocked(getAlerts).mockResolvedValue({ alerts: [], unread_count: 0 })
+    render(() => <AlertsPanel />)
+
+    await waitFor(() => expect(getAlerts).toHaveBeenCalled())
+    expect(screen.queryByRole('button', { name: /for you/i })).toBeNull()
+  })
+
   describe('resolving by conversation', () => {
     beforeEach(() => {
       vi.mocked(getAlertConversationOptions).mockResolvedValue({

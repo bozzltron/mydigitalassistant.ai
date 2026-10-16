@@ -188,19 +188,19 @@ describe('TopBar', () => {
     expect(saved.voiceSpeed).toBe(1.6)
   })
 
-  it('orders the right side Alerts, Let\'s talk, Pages', () => {
+  it('orders the right side For You, Let\'s talk, Pages', () => {
     render(() => <TopBar {...defaultProps} />)
     const labels = Array.from(
       document.querySelectorAll('.header-right .topbar-btn')
     ).map((el) => (el.getAttribute('aria-label') || el.textContent || '').trim())
 
-    // The row is down to three: every page *and* the trace/settings/trash controls
-    // are in the menu now. The row does not wrap (`header-right` is a single flex
-    // line), so it had run out of width rather than of lines.
-    expect(labels).toHaveLength(3)
-    expect(labels[0]).toMatch(/for you/i)
-    expect(labels[1]).toMatch(/let's talk/i)
-    expect(labels[2]).toBe('Pages')
+    // "For You" is absent here because nothing is waiting — with an empty alert list the
+    // button is not rendered at all, so the row is Let's talk and the page menu. The
+    // order test for a *populated* bell lives in AlertsPanel.test.tsx.
+    expect(labels).toHaveLength(2)
+    expect(labels[0]).toMatch(/let's talk/i)
+    expect(labels[1]).toBe('Pages')
+    expect(screen.queryByRole('button', { name: /for you/i })).toBeNull()
   })
 
   it('gives New a plus icon and every right-side control an svg icon', () => {
@@ -211,7 +211,7 @@ describe('TopBar', () => {
     expect(newBtn.querySelector('svg')).not.toBeNull()
 
     const controls = document.querySelectorAll('.header-right .topbar-btn')
-    expect(controls).toHaveLength(3)
+    expect(controls).toHaveLength(2)
     controls.forEach((el) => expect(el.querySelector('svg')).not.toBeNull())
   })
 

@@ -203,22 +203,31 @@ export function AlertsPanel() {
 
   return (
     <>
-      <button
-        class="topbar-btn"
-        classList={{ 'has-alerts': unreadCount() > 0 }}
-        onClick={() => setIsOpen(true)}
-        aria-label={
-          unreadCount() > 0
-            ? `For You (${unreadCount()} waiting)`
-            : 'For You'
-        }
-      >
-        <BellIcon />
-        <Show when={unreadCount() > 0}>
-          <span class={styles.unreadBadge}>{unreadCount()}</span>
-        </Show>
-        <span class={styles.alertsLabel}>For You</span>
-      </button>
+      {/* Nothing waiting, nothing to press. The bell used to sit in the row permanently
+          and open an empty panel — an entry point to "Nothing waiting" is a worse
+          affordance than no entry point. It appears as soon as the 30s poll sees
+          something, so an alert raised while you are reading still surfaces.
+
+          Gated on `hasLoaded()` as well as the list, so the button does not flash in
+          and out while the first read is in flight. */}
+      <Show when={hasLoaded() && alerts().length > 0}>
+        <button
+          class="topbar-btn"
+          classList={{ 'has-alerts': unreadCount() > 0 }}
+          onClick={() => setIsOpen(true)}
+          aria-label={
+            unreadCount() > 0
+              ? `For You (${unreadCount()} waiting)`
+              : 'For You'
+          }
+        >
+          <BellIcon />
+          <Show when={unreadCount() > 0}>
+            <span class={styles.unreadBadge}>{unreadCount()}</span>
+          </Show>
+          <span class={styles.alertsLabel}>For You</span>
+        </button>
+      </Show>
 
       <Modal
         isOpen={isOpen()}
