@@ -432,8 +432,11 @@ export default function TopBar(props: TopBarProps) {
                   Brain
                 </a>
 
-                <hr class={styles.pageMenuDivider} />
-
+                {/* Destinations are links and these three are buttons — that is the
+                    distinction, not drift: an `<a>` without an `href` is not focusable
+                    and cannot be activated with Space, and a screen reader would
+                    announce "link" for something that opens a panel. They are styled
+                    identically by `.pageMenuItem`, which resets the UA button box. */}
                 <button
                   class={styles.pageMenuItem}
                   classList={{ 'is-active': settings.traceVisible }}

@@ -99,6 +99,20 @@ describe('TopBar', () => {
     expect(screen.getByRole('menuitem', { name: /brain/i })).toHaveAttribute('href', '/brain')
   })
 
+  it('lists every item flat — no wrapper, no divider between them', () => {
+    render(() => <TopBar {...defaultProps} />)
+    fireEvent.click(screen.getByRole('button', { name: /pages/i }))
+
+    const menu = screen.getByRole('menu')
+    const items = screen.getAllByRole('menuitem')
+    expect(items.length).toBeGreaterThan(4)
+    // Every item is a direct child of the menu: no grouping divs, no `<hr>`.
+    for (const item of items) {
+      expect(item.parentElement).toBe(menu)
+    }
+    expect(menu.querySelector('hr')).toBeNull()
+  })
+
   it('closes the menu on Escape and on a click outside', async () => {
     render(() => <TopBar {...defaultProps} />)
     const toggle = screen.getByRole('button', { name: /pages/i })
