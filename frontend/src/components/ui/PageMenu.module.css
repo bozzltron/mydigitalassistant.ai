@@ -1,0 +1,59 @@
+/* PageMenu — on every page. Sized to match the conversation dropdown in
+   TopBar.module.css: same padding, gap, radius and hover token, so the two menus read as
+   one component. `--color-background` rather than `--surface`, which is what the
+   conversation panel uses. */
+
+.pageMenu {
+  position: relative;
+}
+
+.pageMenuPanel {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 2px;
+  background: var(--color-background);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 100;
+  max-height: 300px;
+  overflow-y: auto;
+  min-width: fit-content;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+}
+
+.pageMenuItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
+  /* Reset the UA button box. The row is `<a>` links *and* `<button>` toggles, and
+     nothing in the stylesheet styles a bare `button`, so Trace/Settings/Trash kept the
+     browser's `buttonface` background, `outset` border and system font — three white
+     chips sitting in an otherwise flat menu. `font: inherit` must come before
+     `font-size`: the shorthand resets it. */
+  background: none;
+  border: none;
+  font: inherit;
+  font-size: 0.8rem;
+  text-align: left;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.pageMenuItem:hover {
+  background: var(--color-background-hover);
+}
+
+/* A menu item that is a toggle, not a destination — Trace is on or off. */
+.pageMenuItem.is-active {
+  color: var(--accent);
+  background: var(--color-background-hover);
+}

@@ -3,6 +3,7 @@ import { createTask, deleteTask, getTasks, runTaskNow, updateTask } from '../../
 import { debug } from '../../services/logger'
 import type { Task } from '../../types/task'
 import { taskNextRunLabel, taskStateLabel, taskSubtitle } from '../../utils/taskLib'
+import PageMenu from '../ui/PageMenu'
 import { TaskForm } from './TaskForm'
 
 /**
@@ -154,9 +155,7 @@ export default function TasksPage() {
         <span class="tasks-status" aria-live="polite">
           {busy() ? 'Saving…' : error()}
         </span>
-        <a class="btn-secondary tasks-back" href="/">
-          Back to chat
-        </a>
+        <PageMenu />
       </div>
 
       <div class="tasks-content">

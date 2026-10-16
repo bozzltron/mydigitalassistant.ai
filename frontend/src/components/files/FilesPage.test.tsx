@@ -42,9 +42,10 @@ describe('FilesPage', () => {
     expect(screen.getByText('grid:none')).toBeInTheDocument()
   })
 
-  it('offers a back button to the chat', () => {
+  it('offers the page menu, so every page is reachable from here', () => {
+    // It used to be a single "Back to chat" link, which made Files -> Tasks a trip
+    // through the conversation. Two pages had no way out at all.
     render(() => <FilesPage />)
-    const back = screen.getByText('Back to chat').closest('a')
-    expect(back?.getAttribute('href')).toBe('/')
+    expect(screen.getByRole('button', { name: /pages/i })).toBeInTheDocument()
   })
 })

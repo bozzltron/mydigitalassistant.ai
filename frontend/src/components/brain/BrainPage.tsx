@@ -13,6 +13,7 @@ import type {
 import { TYPE_COLORS } from './brainLib'
 import { getFrames } from '../../services/api'
 import { actingUser } from '../../services/actingUser'
+import PageMenu from '../ui/PageMenu'
 
 function initialViewMode(): '2d' | '3d' {
   try {
@@ -223,6 +224,7 @@ export default function BrainPage() {
     <div class="brain-page">
       <header class="brain-header">
         <h1 id="agent-name">{agentName()}</h1>
+        <PageMenu />
         <div class="header-controls">
           <div class="legend">
             <div class="legend-item"><div class="legend-dot" style={{ '--dot-color': TYPE_COLORS.person }} />person</div>

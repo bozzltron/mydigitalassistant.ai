@@ -3,6 +3,7 @@ import { useSearchParams } from '@solidjs/router';
 import { FileGrid } from './FileGrid';
 import { UploadZone } from './UploadZone';
 import { FileViewer } from './FileViewer';
+import PageMenu from '../ui/PageMenu';
 
 export default function FilesPage() {
   const [selectedFileId, setSelectedFileId] = createSignal<string | null>(null);
@@ -20,7 +21,8 @@ export default function FilesPage() {
     <div class="files-page">
       <div class="files-header">
         <h1>Files</h1>
-        <a class="btn-secondary files-back" href="/">Back to chat</a>
+        {/* Every page carries the same menu, so Tasks is one click from here. */}
+        <PageMenu />
       </div>
 
       <div class="files-content">

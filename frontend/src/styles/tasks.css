@@ -33,10 +33,6 @@
   color: var(--text-dim);
 }
 
-.tasks-back {
-  flex-shrink: 0;
-  text-decoration: none;
-}
 
 .tasks-content {
   display: flex;

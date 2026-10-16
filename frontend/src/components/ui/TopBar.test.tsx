@@ -248,7 +248,7 @@ describe('the page menu item is one look, links and buttons alike', () => {
   // styles a bare `button` — so Trace, Settings and Trash kept the UA's `buttonface`
   // background, `outset` border and system font, and read as three separate white chips
   // inside an otherwise flat menu. jsdom computes no layout, so this reads the CSS.
-  const css = readFileSync(join(__dirname, 'TopBar.module.css'), 'utf8')
+  const css = readFileSync(join(__dirname, 'PageMenu.module.css'), 'utf8')
   const rule = css.match(/\.pageMenuItem\s*\{[^}]*\}/)?.[0] ?? ''
 
   it('resets the UA button box', () => {

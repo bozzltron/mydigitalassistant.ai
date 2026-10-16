@@ -24,11 +24,6 @@
   color: var(--accent);
 }
 
-/* The Files page is a separate route; this is its way back to the chat. */
-.files-back {
-  flex-shrink: 0;
-  text-decoration: none;
-}
 
 .files-content {
   display: flex;

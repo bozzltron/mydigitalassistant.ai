@@ -3,6 +3,7 @@ import { getMap, getSettings, putMap } from '../../services/api'
 import { debug } from '../../services/logger'
 import type { MapFeatureCollection, MapStyle } from '../../types'
 import { describeFeature, emptyCollection, pointFeature } from '../../utils/mapLib'
+import PageMenu from '../ui/PageMenu'
 import MapCanvas from './MapCanvas'
 
 const STYLE_KEY = 'map_style'
@@ -139,6 +140,7 @@ export default function MapPage() {
       >
         <header class="map-toolbar">
           <h1>Map</h1>
+          <PageMenu />
           <label class="map-field">
             Basemap
             <select

@@ -11,6 +11,8 @@ vi.mock('../../services/api', () => ({
   updateTask: vi.fn(),
   deleteTask: vi.fn(),
   runTaskNow: vi.fn(),
+  // The page menu reads settings to decide whether the Maps entry belongs in the list.
+  getSettings: vi.fn(async () => ({ maps_enabled: false })),
 }))
 
 function task(over: Partial<Task> = {}): Task {

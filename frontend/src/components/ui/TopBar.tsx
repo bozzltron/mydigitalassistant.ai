@@ -10,7 +10,8 @@ import { AlertsPanel } from './AlertsPanel'
 import { EditModal } from './EditModal'
 import { Modal } from './Modal'
 import styles from './TopBar.module.css'
-import { PlusIcon, MicIcon, FolderIcon, BrainIcon, MapIcon, GearIcon, TraceIcon, MenuIcon, TaskIcon, TrashIcon } from './TopBarIcons'
+import { PlusIcon, MicIcon } from './TopBarIcons'
+import PageMenu from './PageMenu'
 
 interface TopBarProps {
   conversations: Session[]
@@ -35,18 +36,12 @@ const PREFERRED_VOICE_NAMES = [
 
 export default function TopBar(props: TopBarProps) {
   const [showSettings, setShowSettings] = createSignal(false)
-  // The page menu holds the destinations *and* the panel toggles, so the row is one
-  // button plus the two conversation controls.
-  const [showMenu, setShowMenu] = createSignal(false)
   // The trash modal's open state lives here, not in TrashCan: its trigger is a menu
   // item, and the modal must outlive the menu (see the render site).
   const [showTrash, setShowTrash] = createSignal(false)
   const [editSessionId, setEditSessionId] = createSignal<string | null>(null)
   const [editTitle, setEditTitle] = createSignal('')
   const [braveConfigured, setBraveConfigured] = createSignal(false)
-  // Maps gate the button, the route and tile rendering together; the button only
-  // appears when the backend has maps enabled.
-  const [mapsEnabled, setMapsEnabled] = createSignal(false)
   const [archiveConfirmSessionId, setArchiveConfirmSessionId] = createSignal<string | null>(null)
 
   // Local voices, rendered declaratively. Previously the <select> was built
@@ -119,24 +114,19 @@ export default function TopBar(props: TopBarProps) {
     setVolumeDraft(settings.voiceVolume)
   })
 
-  // Refs for dropdown click-outside detection
+  // Ref for the conversation dropdown's click-outside detection. The page menu owns its
+  // own (see `PageMenu`), because it is on every page rather than only this one.
   let dropdownRef: HTMLDivElement
-  let menuRef: HTMLDivElement
 
-  // Close a dropdown when clicking outside it, or on Escape.
+  // Close the conversation dropdown when clicking outside it, or on Escape.
   onMount(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      const target = e.target as Node
-      if (dropdownRef && !dropdownRef.contains(target)) {
+      if (dropdownRef && !dropdownRef.contains(e.target as Node)) {
         setShowConversationDropdown(false)
-      }
-      if (menuRef && !menuRef.contains(target)) {
-        setShowMenu(false)
       }
     }
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        setShowMenu(false)
         setShowConversationDropdown(false)
       }
     }
@@ -152,7 +142,6 @@ export default function TopBar(props: TopBarProps) {
     try {
       const backendSettings = await getSettings()
       setBraveConfigured(backendSettings.brave_configured)
-      setMapsEnabled(backendSettings.maps_enabled)
       if (backendSettings.brave_configured) {
         updateSetting('braveEnabled', backendSettings.brave_enabled)
       }
@@ -379,116 +368,22 @@ export default function TopBar(props: TopBarProps) {
               Let's talk
             </button>
           </Show>
-          <div class={styles.pageMenu} ref={(el) => { menuRef = el; }}>
-            <button
-              class="topbar-btn topbar-btn--icon"
-              id="page-menu-toggle"
-              title="Pages"
-              aria-label="Pages"
-              aria-haspopup="menu"
-              aria-expanded={showMenu()}
-              onClick={() => setShowMenu((v) => !v)}
-            >
-              <MenuIcon />
-            </button>
-            <Show when={showMenu()}>
-              <div class={styles.pageMenuPanel} role="menu">
-                <a
-                  class={styles.pageMenuItem}
-                  role="menuitem"
-                  href="/tasks"
-                  onClick={() => setShowMenu(false)}
-                >
-                  <TaskIcon />
-                  Tasks
-                </a>
-                <a
-                  class={styles.pageMenuItem}
-                  role="menuitem"
-                  href="/files"
-                  onClick={() => setShowMenu(false)}
-                >
-                  <FolderIcon />
-                  Files
-                </a>
-                <Show when={mapsEnabled()}>
-                  <a
-                    class={styles.pageMenuItem}
-                    role="menuitem"
-                    href="/maps"
-                    onClick={() => setShowMenu(false)}
-                  >
-                    <MapIcon />
-                    Maps
-                  </a>
-                </Show>
-                <a
-                  class={styles.pageMenuItem}
-                  role="menuitem"
-                  href="/brain"
-                  onClick={() => setShowMenu(false)}
-                >
-                  <BrainIcon />
-                  Brain
-                </a>
-
-                {/* Destinations are links and these three are buttons — that is the
-                    distinction, not drift: an `<a>` without an `href` is not focusable
-                    and cannot be activated with Space, and a screen reader would
-                    announce "link" for something that opens a panel. They are styled
-                    identically by `.pageMenuItem`, which resets the UA button box. */}
-                <button
-                  class={styles.pageMenuItem}
-                  classList={{ 'is-active': settings.traceVisible }}
-                  id="trace-toggle"
-                  role="menuitem"
-                  title="Trace"
-                  aria-label="Trace"
-                  aria-pressed={settings.traceVisible}
-                  onClick={() => {
-                    // The trace and the settings panels are both right-docked, so
-                    // opening one closes the other rather than overlapping.
-                    updateSetting('traceVisible', !settings.traceVisible)
-                    setShowSettings(false)
-                    setShowMenu(false)
-                  }}
-                >
-                  <TraceIcon />
-                  Trace
-                </button>
-                <button
-                  class={styles.pageMenuItem}
-                  id="settings-toggle"
-                  role="menuitem"
-                  title="Settings"
-                  aria-label="Settings"
-                  onClick={() => {
-                    setShowSettings(true)
-                    // Both panels dock right; do not let them overlap.
-                    updateSetting('traceVisible', false)
-                    setShowMenu(false)
-                  }}
-                >
-                  <GearIcon />
-                  Settings
-                </button>
-                <button
-                  class={styles.pageMenuItem}
-                  id="trash-toggle"
-                  role="menuitem"
-                  title="Trash"
-                  aria-label="Open trash can"
-                  onClick={() => {
-                    setShowMenu(false)
-                    setShowTrash(true)
-                  }}
-                >
-                  <TrashIcon />
-                  Trash
-                </button>
-              </div>
-            </Show>
-          </div>
+          <PageMenu
+            chatControls
+            traceVisible={settings.traceVisible}
+            onTrace={() => {
+              // The trace and the settings panels are both right-docked, so opening
+              // one closes the other rather than overlapping.
+              updateSetting('traceVisible', !settings.traceVisible)
+              setShowSettings(false)
+            }}
+            onSettings={() => {
+              setShowSettings(true)
+              // Both panels dock right; do not let them overlap.
+              updateSetting('traceVisible', false)
+            }}
+            onTrash={() => setShowTrash(true)}
+          />
           {/* Outside the menu on purpose. The panel unmounts when the menu closes, and
               `Modal` is not a portal — so a modal rendered inside it would be torn down
               by the first click on its own backdrop. */}
