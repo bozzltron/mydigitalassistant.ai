@@ -244,6 +244,7 @@ async def _maybe_nudge(
     *,
     expects_action: bool,
     already_nudged: bool,
+    completion_nudged: bool,
     request_text: str,
     tool_calls_made: list[str],
 ) -> str | None:
@@ -251,19 +252,30 @@ async def _maybe_nudge(
 
     The model-first fix for a turn that announces an action and never performs it:
     a decision model judged the request needs an action (``expects_action``); if
-    the turn ends without doing it, the model is handed its own message back once
-    and asked to act. Fires at most once per turn.
+    the turn ends without doing it, the model is handed its own message back and
+    asked to act.
+
+    **One nudge per failure, not one per turn.** There are two distinct failures — the
+    model narrated and called nothing, and the model called something that did not
+    perform the action — and a single shared allowance meant the second could never fire
+    after the first. That is the *common* sequence: narrate, get nudged, then make a
+    **read** call, then finalise. The completion judgement exists for exactly that turn
+    and was unreachable for it.
     """
-    if not expects_action or already_nudged:
+    if not expects_action:
         return None
 
     if not tool_calls_made:
+        if already_nudged:
+            return None
         logger.info("Action nudge: no tool was called for a request that needs an action")
         return _ACTION_NUDGE
 
     # A tool ran — but did it do the job? A turn can call a *different* tool (a
     # read) and still claim the write, measured live. Judge the calls, not the
     # assistant's claim.
+    if completion_nudged:
+        return None
     from assistant.backend.pipeline.decision import outstanding
 
     if await outstanding(request_text, tool_calls_made):
@@ -349,8 +361,9 @@ async def stream_tool_loop(
     turn = 0
     reasoning_trace: list[str] = []
     empty_retried = False
-    # The action nudge: fired at most once, and only when the action is missing.
+    # The action nudge: one per *failure*, and only when the action is missing.
     action_nudged = False
+    completion_nudged = False
     tool_calls_made: list[str] = []
 
     while turn < max_turns:
@@ -517,11 +530,16 @@ async def stream_tool_loop(
             nudge = await _maybe_nudge(
                 expects_action=expects_action,
                 already_nudged=action_nudged,
+                completion_nudged=completion_nudged,
                 request_text=request_text,
                 tool_calls_made=tool_calls_made,
             )
             if nudge:
                 action_nudged = True
+                # Which failure this was: the completion branch is the one that runs
+                # with tool calls in hand, and it is the only one that spends this.
+                if tool_calls_made:
+                    completion_nudged = True
             if nudge:
                 # Surface it: a self-correction the user cannot see is just latency.
                 yield serialize_event(

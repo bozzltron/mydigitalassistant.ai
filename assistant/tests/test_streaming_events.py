@@ -693,6 +693,76 @@ async def test_stream_tool_loop_nudges_once_when_an_action_was_expected(tmp_path
     assert events and '"type": "finalize"' in events[-1]
 
 
+async def test_stream_tool_loop_still_judges_completion_after_the_first_nudge(
+    tmp_path, monkeypatch
+):
+    """Narrate -> nudged -> *read* -> finalise: the completion judgement must still run.
+
+    Regression, from a live scheduled task. `_maybe_nudge` checked `already_nudged`
+    before both of its branches, so the single allowance was spent by the
+    missing-call nudge and the completion judgement — the one written for "a tool ran
+    but it did not do the job" — could never fire afterwards. That is the *common*
+    sequence, so the branch was dead for the case it exists for: the model narrated, was
+    nudged, called `search_file` (a read), and finalised claiming the write.
+    """
+    from assistant.backend.pipeline import decision
+    from assistant.backend.pipeline.llm_client import ChatResponse, ToolCall
+    from assistant.backend.pipeline.streaming import stream_tool_loop
+    from assistant.backend.pipeline.tool_executor import init_store
+
+    init_store(str(tmp_path / "sequence.db"))
+
+    async def fake_outstanding(request, tools_called):
+        return True  # the read did not perform the write
+
+    monkeypatch.setattr(decision, "outstanding", fake_outstanding)
+
+    class StubLLM:
+        def __init__(self):
+            self.tools_model = "test-model"
+            self.calls: list = []
+
+        async def chat(self, messages, **kwargs):
+            self.calls.append(messages)
+            if len(self.calls) == 1:
+                # Narrates, calls nothing — the missing-call nudge.
+                return ChatResponse(content="I'll update the file now.", model="m", done=True)
+            if len(self.calls) == 2:
+                # Answers the nudge with a *read*, not the write.
+                return ChatResponse(
+                    content="",
+                    model="m",
+                    done=True,
+                    tool_calls=[
+                        ToolCall(name="search_file", arguments={"path": "x.csv", "query": "y"})
+                    ],
+                )
+            if len(self.calls) == 3:
+                return ChatResponse(content="Done — the file is updated.", model="m", done=True)
+            return ChatResponse(content="Wrote it for real now.", model="m", done=True)
+
+        def context_window(self, model=None):
+            return 16384
+
+    llm = StubLLM()
+    events = [
+        ev
+        async for ev in stream_tool_loop(
+            llm,
+            [{"role": "user", "content": "Update x.csv and write x.geojson"}],
+            [],
+            expects_action=True,
+        )
+    ]
+
+    # The *completion* note specifically. Both notes mention "perform", so asserting on
+    # that word alone passes even when this branch never runs — which is how the first
+    # version of this test passed against the bug it was written for.
+    contents = [getattr(m, "content", "") or "" for call in llm.calls for m in call]
+    assert any("the tools you called did not perform it" in c for c in contents), contents
+    assert events and '"type": "finalize"' in events[-1]
+
+
 async def test_stream_tool_loop_nudges_when_the_calls_did_not_do_it(tmp_path, monkeypatch):
     """The live failure: a tool ran (read_file) but the action was not performed.
 
