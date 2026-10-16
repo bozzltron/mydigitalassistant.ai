@@ -125,6 +125,10 @@ export default function MapPage() {
         when={enabled()}
         fallback={
           <div class="map-disabled">
+            {/* The menu belongs on the page in both states. With maps off this page had
+                no way to reach any other one — and maps are off by default in prod, so
+                that was the *normal* case, not the edge. */}
+            <PageMenu />
             <Show when={enabled() === null}>
               <p>Loading…</p>
             </Show>

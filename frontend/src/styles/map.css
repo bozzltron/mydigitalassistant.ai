@@ -24,6 +24,9 @@
 .map-toolbar h1 {
   font-size: 1.1rem;
   margin: 0;
+  /* Holds the page menu off the title; the toolbar's own `gap` alone read as cramped
+     between a bold heading and the menu button. */
+  margin-right: var(--space-sm);
 }
 
 .map-field {
