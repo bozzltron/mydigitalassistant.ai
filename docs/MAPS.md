@@ -6,6 +6,18 @@ store, no `map` frame type, and no `/maps` index — the file *is* the map.
 
 ## The file
 
+A map is **any** GeoJSON file at the sandbox root, not one fixed name. The page's file
+picker lists them (`GET /map/files` — root only, `.geojson` only) and every map request
+names the one it is about (`GET`/`PUT /map?file=`). `map.geojson` is the default and is
+always offered, even before it exists, because the page creates it on first save.
+
+The name is validated at the boundary: a bare `.geojson` filename, no path separators, no
+leading dot. The sandbox readers already guard traversal; a name that *could* escape is
+refused where the refusal can say which rule broke.
+
+Each file gets its own `file_<name>` frame, so every map is also a file the user can find
+in the Files view.
+
 ```json
 {
   "type": "FeatureCollection",

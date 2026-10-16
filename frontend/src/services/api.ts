@@ -560,21 +560,37 @@ export async function getSettings(): Promise<z.infer<typeof SettingsSchema>> {
 }
 
 /**
- * The map file as a FeatureCollection (`map.geojson`). An absent file comes back
- * as an empty FeatureCollection, so the page has one shape to handle.
+ * The map files the page can open — the `.geojson` files in the sandbox root.
+ *
+ * A map is an ordinary sandbox file, so the agent may have written more than one; the
+ * page picks which it is working on rather than assuming `map.geojson`.
  */
-export async function getMap(): Promise<MapFeatureCollection> {
-  return api<MapFeatureCollection>('/map')
+export async function listMapFiles(): Promise<{ files: string[] }> {
+  return api<{ files: string[] }>('/map/files')
+}
+
+/**
+ * The named map as a FeatureCollection (`map.geojson` when no name is given). An absent
+ * file comes back as an empty FeatureCollection, so the page has one shape to handle.
+ */
+export async function getMap(file?: string): Promise<MapFeatureCollection> {
+  const query = file ? `?file=${encodeURIComponent(file)}` : ''
+  return api<MapFeatureCollection>(`/map${query}`)
 }
 /**
- * Replace the map with the whole FeatureCollection.
+ * Replace the named map with the whole FeatureCollection.
  *
  * The page is the only writer (the agent only reads), so it sends the whole file
  * on every change — no per-point endpoints, no read-modify-write race. The server
  * validates and canonicalises; a 422 means the map was refused and not written.
  */
-export async function putMap(fc: MapFeatureCollection): Promise<MapFeatureCollection> {
-  return api<MapFeatureCollection>(`/map?user_id=${actingUser()}`, {
+export async function putMap(
+  fc: MapFeatureCollection,
+  file?: string
+): Promise<MapFeatureCollection> {
+  const query = new URLSearchParams({ user_id: String(actingUser()) })
+  if (file) query.set('file', file)
+  return api<MapFeatureCollection>(`/map?${query}`, {
     method: 'PUT',
     body: JSON.stringify(fc),
   })

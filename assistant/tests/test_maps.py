@@ -223,6 +223,52 @@ class TestMapApi:
         """
         assert client.raw.put("/map", json=_fc(_point(-122.68, 45.523))).status_code == 422
 
+    async def test_a_second_map_is_a_separate_file(self, client, tmp_path):
+        """Two maps are two files; the page names which one it is working on.
+
+        The point of the picker: `map.geojson` was the only addressable map, so a
+        second one could exist in the sandbox and the page could not open it.
+        """
+        client.put("/map", json=_fc(_point(-122.68, 45.523, "home")))
+        client.put("/map", params={"file": "camping.geojson"},
+                   json=_fc(_point(-121.5, 46.8, "campsite")))
+
+        assert client.get("/map").json()["features"][0]["properties"]["description"] == "home"
+        camping = client.get("/map", params={"file": "camping.geojson"}).json()
+        assert camping["features"][0]["properties"]["description"] == "campsite"
+
+    async def test_the_picker_lists_only_root_geojson(self, client, tmp_path):
+        """What the picker offers: `.geojson`, at the root, and the default always."""
+        client.put("/map", params={"file": "camping.geojson"}, json=_fc())
+        # A nested one, and a non-geojson one, must not be offered.
+        from assistant.backend.pipeline.filesystem import get_sandbox_root
+
+        (get_sandbox_root() / "notes.txt").write_text("not a map")
+        (get_sandbox_root() / "nested").mkdir(exist_ok=True)
+        (get_sandbox_root() / "nested" / "deep.geojson").write_text("{}")
+
+        files = client.get("/map/files").json()["files"]
+        assert "camping.geojson" in files
+        assert "map.geojson" in files, "the default is offered before it exists"
+        assert "notes.txt" not in files
+        assert "deep.geojson" not in files
+
+    async def test_a_file_name_cannot_escape_the_sandbox(self, client):
+        """Refused at the boundary, with a message that says which rule broke."""
+        for bad in ("../secrets.geojson", "sub/dir.geojson", "map.json", ".hidden.geojson"):
+            r = client.get("/map", params={"file": bad})
+            assert r.status_code == 422, bad
+            assert "geojson" in r.json()["detail"]
+
+    async def test_put_makes_each_map_visible_in_the_files_list(self, client):
+        """One file frame per map file, so each is a file the user can find."""
+        client.put("/map", json=_fc())
+        client.put("/map", params={"file": "camping.geojson"}, json=_fc())
+
+        names = [e["file_name"] for e in client.get("/files/list").json()]
+        assert "map.geojson" in names
+        assert "camping.geojson" in names
+
     async def test_settings_carry_the_map_keys(self, client):
         s = client.get("/settings").json()
         assert "maps_enabled" in s

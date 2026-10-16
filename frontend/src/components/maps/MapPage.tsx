@@ -1,5 +1,5 @@
 import { createMemo, createSignal, For, onMount, Show } from 'solid-js'
-import { getMap, getSettings, putMap } from '../../services/api'
+import { getMap, getSettings, listMapFiles, putMap } from '../../services/api'
 import { debug } from '../../services/logger'
 import type { MapFeatureCollection, MapStyle } from '../../types'
 import { describeFeature, emptyCollection, pointFeature } from '../../utils/mapLib'
@@ -7,6 +7,9 @@ import PageMenu from '../ui/PageMenu'
 import MapCanvas from './MapCanvas'
 
 const STYLE_KEY = 'map_style'
+/** Which map file the page is working on. A map is an ordinary sandbox file. */
+const FILE_KEY = 'map_file'
+const DEFAULT_FILE = 'map.geojson'
 
 /** Mirrors the backend's default when `/settings` does not carry a style list. */
 const FALLBACK_STYLE: MapStyle = {
@@ -19,11 +22,12 @@ const FALLBACK_STYLE: MapStyle = {
 }
 
 /**
- * `/maps` — the map page. One map, one file (`map.geojson`), one canvas.
+ * `/maps` — the map page. One canvas, and one *chosen* file from the sandbox.
  *
- * The page is the only writer: it loads the file once, edits it in memory, and
- * PUTs the whole FeatureCollection on every change. The agent reads the same file
- * with the file tools. See `docs/MAPS.md`.
+ * A map is an ordinary sandbox file, so there can be more than one — the picker lists
+ * the `.geojson` files at the sandbox root. The page is the only writer: it loads the
+ * chosen file, edits it in memory, and PUTs the whole FeatureCollection on every change.
+ * The agent reads the same files with the file tools. See `docs/MAPS.md`.
  */
 export default function MapPage() {
   const [enabled, setEnabled] = createSignal<boolean | null>(null)
@@ -31,6 +35,10 @@ export default function MapPage() {
   const [styles, setStyles] = createSignal<MapStyle[]>([])
   const [styleId, setStyleId] = createSignal(
     (typeof localStorage !== 'undefined' ? localStorage.getItem(STYLE_KEY) : null) || 'liberty'
+  )
+  const [files, setFiles] = createSignal<string[]>([DEFAULT_FILE])
+  const [file, setFile] = createSignal(
+    (typeof localStorage !== 'undefined' ? localStorage.getItem(FILE_KEY) : null) || DEFAULT_FILE
   )
   const [data, setData] = createSignal<MapFeatureCollection>(emptyCollection())
   const [selected, setSelected] = createSignal<number | null>(null)
@@ -51,8 +59,13 @@ export default function MapPage() {
       }
       debug('[maps] settings', { maps_enabled: s.maps_enabled, styles: s.map_styles.length })
       if (!s.maps_enabled) return
-      const fc = await getMap()
-      debug('[maps] map loaded', { features: fc?.features?.length ?? 'null' })
+      const listing = await listMapFiles()
+      setFiles(listing.files)
+      // A remembered file may have been deleted outside the page; fall back rather than
+      // opening an empty canvas with a name nothing backs.
+      if (!listing.files.includes(file())) setFile(DEFAULT_FILE)
+      const fc = await getMap(file())
+      debug('[maps] map loaded', { file: file(), features: fc?.features?.length ?? 'null' })
       setData(fc)
     } catch (e) {
       console.error('[maps] failed to load the map page', e)
@@ -74,7 +87,7 @@ export default function MapPage() {
     setError('')
     debug('[maps] saving', next.features.length, 'feature(s)')
     try {
-      const saved = await putMap(next)
+      const saved = await putMap(next, file())
       debug('[maps] saved', saved?.features?.length ?? 'null')
       setData(saved)
     } catch (e) {
@@ -112,6 +125,29 @@ export default function MapPage() {
     )
   }
 
+  /**
+   * Open another map file.
+   *
+   * Nothing is written by switching: the page PUTs only on a change. The canvas
+   * re-frames itself when the point set changes, so no camera work is needed here.
+   */
+  const switchFile = async (name: string) => {
+    if (name === file()) return
+    setFile(name)
+    if (typeof localStorage !== 'undefined') localStorage.setItem(FILE_KEY, name)
+    setSelected(null)
+    setDraft(null)
+    setError('')
+    try {
+      const fc = await getMap(name)
+      debug('[maps] switched', name, fc?.features?.length ?? 'null')
+      setData(fc)
+    } catch (e) {
+      console.error('[maps] could not open the map', name, e)
+      setError(`Could not open ${name}.`)
+    }
+  }
+
   const removeSelected = () => {
     const i = selected()
     if (i === null) return
@@ -145,6 +181,15 @@ export default function MapPage() {
         <header class="map-toolbar">
           <h1>Map</h1>
           <PageMenu />
+          <label class="map-field">
+            Map
+            <select
+              value={file()}
+              onChange={(e) => void switchFile(e.currentTarget.value)}
+            >
+              <For each={files()}>{(f) => <option value={f}>{f}</option>}</For>
+            </select>
+          </label>
           <label class="map-field">
             Basemap
             <select

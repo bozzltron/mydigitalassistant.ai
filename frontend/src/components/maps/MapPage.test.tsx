@@ -1,13 +1,15 @@
 import { fireEvent, render, screen, waitFor } from '@solidjs/testing-library'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { getMap, getSettings } from '../../services/api'
+import { getMap, getSettings, listMapFiles } from '../../services/api'
 import MapPage from './MapPage'
 
 vi.mock('../../services/api', () => ({
   getSettings: vi.fn(),
   getMap: vi.fn(),
   putMap: vi.fn(),
+  // The page lists the sandbox's GeoJSON files for its picker on mount.
+  listMapFiles: vi.fn(async () => ({ files: ['map.geojson'] })),
 }))
 
 // jsdom cannot initialise MapLibre, so the canvas is stubbed down to the one thing
@@ -69,5 +71,23 @@ describe('MapPage', () => {
     // The form echoes the clicked coordinates, lat first — the axis order the user
     // reads, not the one the file stores.
     expect(screen.getByText('41.90000, 12.50000')).toBeInTheDocument()
+  })
+
+  it('offers the sandbox GeoJSON files and opens the one chosen', async () => {
+    // A map is an ordinary sandbox file, so there can be more than one; before this the
+    // page could only ever open `map.geojson`.
+    vi.mocked(getSettings).mockResolvedValue(ENABLED)
+    vi.mocked(listMapFiles).mockResolvedValue({
+      files: ['camping.geojson', 'map.geojson'],
+    })
+    vi.mocked(getMap).mockResolvedValue({ type: 'FeatureCollection', features: [] })
+    render(() => <MapPage />)
+
+    const picker = await screen.findByLabelText('Map')
+    expect(picker).toHaveValue('map.geojson')
+
+    fireEvent.change(picker, { target: { value: 'camping.geojson' } })
+
+    await waitFor(() => expect(getMap).toHaveBeenCalledWith('camping.geojson'))
   })
 })

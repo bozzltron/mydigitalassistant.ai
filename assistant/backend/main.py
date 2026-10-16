@@ -440,30 +440,82 @@ async def get_settings() -> dict:
 # An ordinary sandbox file at the sandbox root, so the agent reaches it with the
 # existing file tools — `read_file("map.geojson")`, `glob("*.geojson")`.
 _MAP_FILE = "map.geojson"
+_MAP_SUFFIX = ".geojson"
+
+
+def _map_filename(file: str | None) -> str:
+    """The map file a request names, or the default.
+
+    A bare filename ending in `.geojson`, and nothing else. This reaches the filesystem
+    through `read_sandbox_file` / `write_sandbox_bytes`, which already guard traversal —
+    but a name that *could* escape is refused at the boundary rather than relied on
+    being caught deeper, and the refusal says which rule was broken. Subdirectories are
+    out: the sandbox root is where the page looks.
+    """
+    if not file:
+        return _MAP_FILE
+    if (
+        not file.endswith(_MAP_SUFFIX)
+        or "/" in file
+        or "\\" in file
+        or file in (".", "..")
+        or file.startswith(".")
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail=f"a map file must be a plain {_MAP_SUFFIX} filename, not {file!r}",
+        )
+    return file
+
+
+@app.get("/map/files")
+async def list_map_files() -> dict:
+    """The GeoJSON files in the sandbox root — what the page's file picker offers.
+
+    Only the root, and only `.geojson`: a picker that walked the tree would offer files
+    the page cannot address. The default is always included, even before it exists,
+    because the page creates it on first save and a picker that cannot name it could
+    never start one.
+    """
+    from assistant.backend.pipeline.filesystem import get_sandbox_root
+
+    try:
+        names = sorted(
+            p.name
+            for p in get_sandbox_root().iterdir()
+            if p.is_file() and p.name.endswith(_MAP_SUFFIX)
+        )
+    except OSError:
+        names = []
+    if _MAP_FILE not in names:
+        names.insert(0, _MAP_FILE)
+    return {"files": names}
 
 
 @app.get("/map")
-async def get_map() -> dict:
-    """The map as a FeatureCollection, or an empty one when the file is absent.
+async def get_map(file: str | None = None) -> dict:
+    """The named map as a FeatureCollection, or an empty one when the file is absent.
 
-    The page is the only writer; the agent only reads. A file that will not parse
-    is reported honestly rather than repaired.
+    The page is the only writer; the agent only reads. A file that will not parse is
+    reported honestly rather than repaired, and the message names the file — with more
+    than one map in the sandbox, "not a FeatureCollection" alone does not say which.
     """
     from assistant.backend.pipeline.filesystem import read_sandbox_file
 
+    name = _map_filename(file)
     try:
-        text = read_sandbox_file(_MAP_FILE)
+        text = read_sandbox_file(name)
     except FileNotFoundError:
         return empty_fc()
     try:
         data = json.loads(text)
     except ValueError as e:
         raise HTTPException(
-            status_code=422, detail=f"map.geojson is not valid JSON: {e}"
+            status_code=422, detail=f"{name} is not valid JSON: {e}"
         ) from e
     if not isinstance(data, dict) or data.get("type") != "FeatureCollection":
         raise HTTPException(
-            status_code=422, detail="map.geojson is not a FeatureCollection"
+            status_code=422, detail=f"{name} is not a FeatureCollection"
         )
     return data
 
@@ -472,9 +524,10 @@ async def get_map() -> dict:
 async def put_map(
     user_id: int,
     payload: dict = Body(...),
+    file: str | None = None,
     store: MemoryStore = _Depends(get_store),
 ) -> dict:
-    """Replace the map with the posted FeatureCollection.
+    """Replace the named map with the posted FeatureCollection.
 
     The page holds the whole map, so it PUTs the whole file on every change (add,
     edit, remove) — no per-point endpoints, no read-modify-write race, because the
@@ -483,18 +536,20 @@ async def put_map(
     from assistant.backend.pipeline.files import apply_file_to_memory
     from assistant.backend.pipeline.filesystem import write_sandbox_bytes
 
+    name = _map_filename(file)
     try:
         canonical = validate_fc(payload)
     except GeoJSONError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
     content = dumps(canonical).encode("utf-8")
-    write_sandbox_bytes(_MAP_FILE, content, overwrite=True)
+    write_sandbox_bytes(name, content, overwrite=True)
     # The bytes alone are not enough: `GET /files/list` is a view over *file
     # frames*, and every other writer of a sandbox file — the upload endpoint,
     # `write_file`, `edit_file` — funnels through `apply_file_to_memory`. Skipping
     # it left map.geojson on disk and readable by the agent but absent from the
     # Files view: the user's own content, invisible to the user. Idempotent by
-    # frame name, so a save that only edits a description just refreshes it.
+    # frame name, so a save that only edits a description just refreshes it — and
+    # one frame per map file, so each map is a file the user can find.
     #
     # Wrapped like `edit_file`'s refresh: the file is written and is the source of
     # truth, so a memory problem must not turn a save that happened into a 500 the
@@ -502,8 +557,8 @@ async def put_map(
     try:
         await apply_file_to_memory(
             store,
-            frame_name=f"file_{_MAP_FILE}",
-            safe_filename=_MAP_FILE,
+            frame_name=f"file_{name}",
+            safe_filename=name,
             ext="geojson",
             content_bytes=content,
             user_id=user_id,
@@ -511,7 +566,7 @@ async def put_map(
             source_reliability=0.8,
         )
     except Exception as e:
-        logger.warning("map memory refresh failed for %s: %s", _MAP_FILE, e)
+        logger.warning("map memory refresh failed for %s: %s", name, e)
     return canonical
 
 
