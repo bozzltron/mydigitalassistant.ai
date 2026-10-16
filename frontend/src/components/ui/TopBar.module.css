@@ -1,7 +1,9 @@
 /* TopBar Component Styles */
 
-/* The page menu: Tasks, Files, Maps, Brain. Trace and Settings stay as buttons —
-   they are toggles with state, not destinations. */
+/* The page menu: Tasks, Files, Maps, Brain | Trace, Settings, Trash.
+   Sized to match the conversation dropdown above — same padding, gap, radius and
+   hover token — so the two menus read as one component. `--color-background` rather
+   than `--surface`, which is what the conversation panel uses. */
 .pageMenu {
   position: relative;
 }
@@ -11,12 +13,14 @@
   top: 100%;
   right: 0;
   margin-top: 2px;
-  background: var(--surface);
+  background: var(--color-background);
   border: 1px solid var(--border);
   border-radius: 6px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   z-index: 100;
-  min-width: 10rem;
+  max-height: 300px;
+  overflow-y: auto;
+  min-width: fit-content;
   padding: 4px;
   display: flex;
   flex-direction: column;
@@ -25,23 +29,27 @@
 .pageMenuItem {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.4rem 0.6rem;
+  gap: 8px;
+  padding: 8px 12px;
   border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
+  /* `<a>` and `<button>` do not inherit type, and the conversation items are a
+     `<div>` whose title carries 0.8rem — this is the same visible size. */
+  font-size: 0.8rem;
   color: var(--text);
   text-decoration: none;
-  font-size: 0.85rem;
-  transition: background 0.15s;
 }
 
 .pageMenuItem:hover {
-  background: var(--border);
+  background: var(--color-background-hover);
 }
 
 /* A menu item that is a toggle, not a destination — Trace is on or off. */
 .pageMenuItem.is-active {
   color: var(--accent);
-  background: var(--bg);
+  background: var(--color-background-hover);
 }
 
 .pageMenuDivider {
