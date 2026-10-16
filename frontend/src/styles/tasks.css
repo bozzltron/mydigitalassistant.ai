@@ -240,6 +240,34 @@
   color: var(--color-error);
 }
 
+/* A run is a long, opaque wait; this is the "still working" cue. */
+.task-running {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+}
+
+.task-running-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: taskRunPulse 1.2s ease-in-out infinite;
+}
+
+@keyframes taskRunPulse {
+  0%,
+  100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
 .task-last-run {
   border-top: 1px solid var(--border);
   padding-top: var(--space-sm);

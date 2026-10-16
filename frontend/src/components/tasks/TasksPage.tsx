@@ -1,5 +1,5 @@
 import { createMemo, createSignal, For, onMount, Show } from 'solid-js'
-import { createTask, deleteTask, getTasks, updateTask } from '../../services/api'
+import { createTask, deleteTask, getTasks, runTaskNow, updateTask } from '../../services/api'
 import { debug } from '../../services/logger'
 import type { Task } from '../../types/task'
 import { taskNextRunLabel, taskStateLabel, taskSubtitle } from '../../utils/taskLib'
@@ -24,6 +24,10 @@ export default function TasksPage() {
   const [busy, setBusy] = createSignal(false)
   const [error, setError] = createSignal('')
   const [loaded, setLoaded] = createSignal(false)
+  // The task currently being run. A run is one blocking request through the whole
+  // cognitive loop, so it gets its own state: the list must stay usable and the panel
+  // must say which task is working.
+  const [runningId, setRunningId] = createSignal<number | null>(null)
 
   const load = async () => {
     try {
@@ -87,6 +91,42 @@ export default function TasksPage() {
       setTasks((list) => list.filter((t) => t.id !== task.id))
       setSelected(null)
     })
+  }
+
+  /**
+   * Run a task now, through the same path the scheduler uses.
+   *
+   * It is a real run, so the confirmation says what it costs rather than calling it a
+   * test: it writes an episode and frames, updates `last_run` and the summary, and a
+   * `once` task switches itself off afterwards.
+   */
+  const runNow = (task: Task) => {
+    const effect =
+      task.schedule_cron === 'once'
+        ? 'It runs once and then switches itself off, so it will not fire again.'
+        : 'It counts as today’s run, so the next scheduled run moves to tomorrow.'
+    const ok = window.confirm(
+      `Run “${task.name}” now?\n\n${effect}\n\n` +
+        'The run is written to memory and can take a minute.'
+    )
+    if (!ok) return
+
+    setRunningId(task.id)
+    setError('')
+    void (async () => {
+      try {
+        const result = await runTaskNow(task.name)
+        debug('[tasks] ran', task.name, result.success ? 'ok' : 'reported a problem')
+      } catch (e) {
+        console.error('[tasks] run failed', e)
+        setError('The run did not finish. See the console for the reason.')
+      } finally {
+        setRunningId(null)
+        // The run moved last_run, the summary and possibly `enabled`, so re-read the
+        // list rather than guess which fields changed.
+        await load()
+      }
+    })()
   }
 
   const create = () => {
@@ -186,7 +226,9 @@ export default function TasksPage() {
               <TaskForm
                 task={task()}
                 busy={busy()}
+                running={runningId() === task().id}
                 onSavePrompt={savePrompt}
+                onRunNow={() => runNow(task())}
                 onToggle={() => toggle(task())}
                 onDelete={() => remove(task())}
               />

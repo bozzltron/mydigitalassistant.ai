@@ -1,4 +1,4 @@
-import { createEffect, createSignal, on, Show, untrack } from 'solid-js'
+import { createEffect, createSignal, on, onCleanup, Show, untrack } from 'solid-js'
 import type { Task } from '../../types/task'
 import { renderMarkdown } from '../../utils/markdown'
 import { formatStamp } from '../../utils/taskLib'
@@ -15,13 +15,35 @@ import { formatStamp } from '../../utils/taskLib'
 export function TaskForm(props: {
   task: Task
   busy: boolean
+  running: boolean
   onSavePrompt: (prompt: string) => void
+  onRunNow: () => void
   onToggle: () => void
   onDelete: () => void
 }) {
   // The initial value only; the effect below owns every subsequent seed, because
   // `Show` reuses this instance when one task replaces another.
   const [text, setText] = createSignal(untrack(() => props.task.prompt))
+
+  /**
+   * Seconds since the run started.
+   *
+   * A run is one blocking request through the whole cognitive loop — routing, recall,
+   * planning, extraction, search, generation, tools — and the backend exposes no
+   * stage events on this path, so there is no finer progress to report. A moving number
+   * is what separates "working" from "hung" when the wait runs to a minute.
+   */
+  const [elapsed, setElapsed] = createSignal(0)
+  createEffect(() => {
+    if (!props.running) return
+    const started = Date.now()
+    setElapsed(0)
+    const timer = setInterval(
+      () => setElapsed(Math.round((Date.now() - started) / 1000)),
+      1000
+    )
+    onCleanup(() => clearInterval(timer))
+  })
 
   // Seed on a *different task*, not on every prop change: toggling pause replaces the
   // task object, and re-seeding then would throw away what the user was typing. The
@@ -74,13 +96,25 @@ export function TaskForm(props: {
       />
 
       <div class="task-actions">
-        <button type="submit" class="topbar-btn" disabled={props.busy || !dirty()}>
+        <button
+          type="submit"
+          class="topbar-btn"
+          disabled={props.busy || props.running || !dirty()}
+        >
           Save
         </button>
         <button
           type="button"
           class="topbar-btn"
-          disabled={props.busy}
+          disabled={props.busy || props.running}
+          onClick={() => props.onRunNow()}
+        >
+          Run now
+        </button>
+        <button
+          type="button"
+          class="topbar-btn"
+          disabled={props.busy || props.running}
           onClick={() => props.onToggle()}
         >
           {props.task.enabled ? 'Pause' : 'Resume'}
@@ -88,12 +122,19 @@ export function TaskForm(props: {
         <button
           type="button"
           class="topbar-btn task-remove"
-          disabled={props.busy}
+          disabled={props.busy || props.running}
           onClick={() => props.onDelete()}
         >
           Delete
         </button>
       </div>
+
+      <Show when={props.running}>
+        <p class="task-running" aria-live="polite">
+          <span class="task-running-dot" aria-hidden="true" />
+          Running… {elapsed()}s
+        </p>
+      </Show>
 
       <Show when={props.task.last_result_summary}>
         {(summary) => (

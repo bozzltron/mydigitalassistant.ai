@@ -23,6 +23,7 @@ import type {
   MapFeatureCollection,
   Task,
   TaskChange,
+  TaskRunResult,
 } from '../types'
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
@@ -614,6 +615,24 @@ export async function updateTask(id: number, change: TaskChange): Promise<Task> 
 
 export async function deleteTask(id: number): Promise<{ status: string }> {
   return api<{ status: string }>(`/tasks/${id}?user_id=${actingUser()}`, { method: 'DELETE' })
+}
+
+/**
+ * Run a task now, through the same path the scheduler uses.
+ *
+ * **Not a dry run.** The loop runs for real: it writes an output episode, extraction
+ * writes frames and slots, `last_run` and `last_result_summary` are updated, a daily
+ * task is rescheduled to the next tick, and a `once` task **disables itself**. There is
+ * deliberately no dry-run endpoint — `execute_and_record_task` is the single shared
+ * path, and a second one would drift from what the scheduler actually does.
+ *
+ * The name is URL-encoded: a task name is free text and may contain spaces.
+ */
+export async function runTaskNow(name: string): Promise<TaskRunResult> {
+  return api<TaskRunResult>(
+    `/tasks/run-now/${encodeURIComponent(name)}?user_id=${actingUser()}`,
+    { method: 'POST' }
+  )
 }
 
 /**

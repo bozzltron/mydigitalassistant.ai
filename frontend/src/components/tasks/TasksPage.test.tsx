@@ -1,8 +1,8 @@
 import { fireEvent, render, screen, waitFor } from '@solidjs/testing-library'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { createTask, deleteTask, getTasks, updateTask } from '../../services/api'
-import type { Task } from '../../types/task'
+import { createTask, deleteTask, getTasks, runTaskNow, updateTask } from '../../services/api'
+import type { Task, TaskRunResult } from '../../types/task'
 import TasksPage from './TasksPage'
 
 vi.mock('../../services/api', () => ({
@@ -10,6 +10,7 @@ vi.mock('../../services/api', () => ({
   createTask: vi.fn(),
   updateTask: vi.fn(),
   deleteTask: vi.fn(),
+  runTaskNow: vi.fn(),
 }))
 
 function task(over: Partial<Task> = {}): Task {
@@ -125,6 +126,66 @@ describe('TasksPage', () => {
     expect(await screen.findByRole('heading', { name: 'Findings' })).toBeInTheDocument()
     expect(screen.getByText('bold')).toBeInTheDocument()
     expect(screen.queryByText(/## Findings/)).not.toBeInTheDocument()
+  })
+
+  it('runs the prompt for real, after saying what it costs', async () => {
+    vi.mocked(getTasks).mockResolvedValue([task()])
+    vi.mocked(runTaskNow).mockResolvedValue({
+      name: 'briefing',
+      success: true,
+      result_summary: '## fresh result',
+    })
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    render(() => <TasksPage />)
+
+    fireEvent.click(await screen.findByText('briefing'))
+    fireEvent.click(screen.getByRole('button', { name: 'Run now' }))
+
+    // Declined: nothing ran.
+    expect(confirm).toHaveBeenCalled()
+    expect(runTaskNow).not.toHaveBeenCalled()
+
+    confirm.mockReturnValue(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Run now' }))
+    await waitFor(() => expect(runTaskNow).toHaveBeenCalledWith('briefing'))
+    // The list is re-read, because the run moved last_run, the summary and possibly
+    // `enabled` — the page does not guess which fields changed.
+    await waitFor(() => expect(getTasks).toHaveBeenCalledTimes(2))
+    confirm.mockRestore()
+  })
+
+  it('says what a run costs before spending it', async () => {
+    vi.mocked(getTasks).mockResolvedValue([task({ schedule_cron: 'once' })])
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    render(() => <TasksPage />)
+
+    fireEvent.click(await screen.findByText('briefing'))
+    fireEvent.click(screen.getByRole('button', { name: 'Run now' }))
+
+    // A `once` task disables itself when it runs, so the prompt says so rather than
+    // calling this a harmless "test".
+    expect(confirm.mock.calls[0][0]).toMatch(/switches itself off/i)
+    confirm.mockRestore()
+  })
+
+  it('shows progress while the run is in flight', async () => {
+    vi.mocked(getTasks).mockResolvedValue([task()])
+    let release: (r: TaskRunResult) => void = () => {}
+    vi.mocked(runTaskNow).mockReturnValue(new Promise((resolve) => { release = resolve }))
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    render(() => <TasksPage />)
+
+    fireEvent.click(await screen.findByText('briefing'))
+    fireEvent.click(screen.getByRole('button', { name: 'Run now' }))
+
+    // The wait is opaque, so the panel says it is working rather than looking hung,
+    // and the controls are locked while it runs.
+    expect(await screen.findByText(/Running/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Run now' })).toBeDisabled()
+
+    release({ name: 'briefing', success: true, result_summary: 'ok' })
+    await waitFor(() => expect(screen.queryByText(/Running/)).not.toBeInTheDocument())
+    confirm.mockRestore()
   })
 
   it('asks before deleting', async () => {

@@ -27,3 +27,15 @@ export interface TaskChange {
   prompt?: string
   enabled?: boolean
 }
+
+/**
+ * The result of running a task on demand (`POST /tasks/run-now/{name}`).
+ *
+ * `result_summary` is the run's own report, truncated to 2000 characters by the
+ * backend — the same text that lands in `last_result_summary`.
+ */
+export interface TaskRunResult {
+  name: string
+  success: boolean
+  result_summary: string
+}
