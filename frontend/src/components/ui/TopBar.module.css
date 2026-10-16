@@ -35,9 +35,16 @@
   cursor: pointer;
   transition: background 0.15s;
   white-space: nowrap;
-  /* `<a>` and `<button>` do not inherit type, and the conversation items are a
-     `<div>` whose title carries 0.8rem — this is the same visible size. */
+  /* Reset the UA button box. The row is `<a>` links *and* `<button>` toggles, and
+     nothing in the stylesheet styles a bare `button`, so Trace/Settings/Trash kept the
+     browser's `buttonface` background, `outset` border and system font — three white
+     chips sitting in an otherwise flat menu. `font: inherit` must come before
+     `font-size`: the shorthand resets it. */
+  background: none;
+  border: none;
+  font: inherit;
   font-size: 0.8rem;
+  text-align: left;
   color: var(--text);
   text-decoration: none;
 }

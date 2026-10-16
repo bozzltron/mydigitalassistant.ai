@@ -1,5 +1,7 @@
 import { render, screen, fireEvent, waitFor } from '@solidjs/testing-library'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import TopBar from './TopBar'
 import { setUser } from '../../state/user'
 
@@ -224,5 +226,26 @@ describe('TopBar', () => {
     openMenu()
     fireEvent.click(document.getElementById('settings-toggle')!)
     expect(settings.traceVisible).toBe(false)
+  })
+})
+
+describe('the page menu item is one look, links and buttons alike', () => {
+  // The menu holds `<a>` links and `<button>` toggles, and nothing in the stylesheet
+  // styles a bare `button` — so Trace, Settings and Trash kept the UA's `buttonface`
+  // background, `outset` border and system font, and read as three separate white chips
+  // inside an otherwise flat menu. jsdom computes no layout, so this reads the CSS.
+  const css = readFileSync(join(__dirname, 'TopBar.module.css'), 'utf8')
+  const rule = css.match(/\.pageMenuItem\s*\{[^}]*\}/)?.[0] ?? ''
+
+  it('resets the UA button box', () => {
+    expect(rule).not.toBe('')
+    expect(rule).toMatch(/background:\s*none/)
+    expect(rule).toMatch(/border:\s*none/)
+    expect(rule).toMatch(/font:\s*inherit/)
+  })
+
+  it('sets font-size after the font shorthand, which would otherwise reset it', () => {
+    expect(rule).toMatch(/font-size/)
+    expect(rule.indexOf('font: inherit')).toBeLessThan(rule.indexOf('font-size'))
   })
 })
