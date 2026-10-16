@@ -45,7 +45,8 @@ PATTERNS = (
     # first two patterns missed: BrainPage read user 1's brain for anyone whose account
     # was not id 1, and it *hid* a real failure, because that page looked fine on a full
     # refresh while every other page's first read threw.
-    re.compile(r"\b(?:user\(\)|user_id|owner_user_id)\b[^\n;]{0,30}?\?\?\s*[0-9]+\b"),
+    # No trailing `\b`: the group can end in `)`, which has no word boundary after it.
+    re.compile(r"\b(?:user\(\)|user_id|owner_user_id)[^\n;]{0,30}?\?\?\s*[0-9]+\b"),
 )
 
 SCANNED_SUFFIXES = frozenset({".py", ".ts", ".tsx"})
