@@ -2717,34 +2717,36 @@ class MemoryStore:
                 "enabled", "last_run", "next_run", "last_result_summary",
                 "owner_user_id", "source_type", "created_at", "updated_at",
             ]
-            results = []
-            for r in rows:
-                frame_id = r[0]
-                task = dict(zip(col_names, r, strict=True))
 
-                # Fetch slots and override column values
-                slot_rows = await db.execute_fetchall(
-                    "SELECT key, value FROM slots WHERE frame_id = ?",
-                    (frame_id,),
-                )
-                for key, value in slot_rows:
-                    if key in (
-                        "description", "frequency", "prompt", "enabled",
-                        "next_run", "last_run", "last_result_summary",
-                    ):
-                        task[key] = value
-                    if key == "frequency":
-                        task["schedule_cron"] = value  # slot key != column name
-                    if key == "enabled":
-                        task["enabled"] = 1 if value == "true" else 0
-                    if key == "task_name":
-                        # The name the user gave it. The frame's own `name` may be an
-                        # owner-scoped handle (`morning__u2`) when the plain name was
-                        # taken by another account, so it is never what we return.
-                        task["name"] = value
+        # One slot query for the whole list, not one per task. This is the Tasks page's
+        # hot path, and the per-frame loop was N+1: 19 tasks meant 19 extra round trips,
+        # and 200 would mean 200. `get_frames_by_ids` carries the same warning.
+        slots_by_frame = await self.get_slots_for_frames([r[0] for r in rows])
 
-                results.append(task)
-            return results
+        results = []
+        for r in rows:
+            frame_id = r[0]
+            task = dict(zip(col_names, r, strict=True))
+
+            for slot in slots_by_frame.get(frame_id, []):
+                key, value = slot.key, slot.value
+                if key in (
+                    "description", "frequency", "prompt", "enabled",
+                    "next_run", "last_run", "last_result_summary",
+                ):
+                    task[key] = value
+                if key == "frequency":
+                    task["schedule_cron"] = value  # slot key != column name
+                if key == "enabled":
+                    task["enabled"] = 1 if value == "true" else 0
+                if key == "task_name":
+                    # The name the user gave it. The frame's own `name` may be an
+                    # owner-scoped handle (`morning__u2`) when the plain name was taken
+                    # by another account, so it is never what we return.
+                    task["name"] = value
+
+            results.append(task)
+        return results
 
     async def get_due_scheduled_tasks(self) -> list[dict]:
         """Get tasks that are enabled and whose next_run <= now.
@@ -2773,43 +2775,41 @@ class MemoryStore:
         now = datetime.now(UTC)
         due: list[dict] = []
 
-        async with self._connect() as db:
-            for r in rows:
-                frame_id = r[0]
-                task = dict(zip(col_names, r, strict=True))
+        # Same batch as `get_scheduled_tasks`: one slot query for every due task.
+        slots_by_frame = await self.get_slots_for_frames([r[0] for r in rows])
 
-                slot_rows = await db.execute_fetchall(
-                    "SELECT key, value FROM slots WHERE frame_id = ?",
-                    (frame_id,),
-                )
-                slot_map = dict(slot_rows)
+        for r in rows:
+            frame_id = r[0]
+            task = dict(zip(col_names, r, strict=True))
 
-                # Override with slot values
-                for key in ("description", "frequency", "prompt",
-                             "next_run", "last_run", "last_result_summary"):
-                    if key in slot_map:
-                        task[key] = slot_map[key]
-                if "task_name" in slot_map:
-                    # The name the user gave it. The frame's own `name` may be an
-                    # owner-scoped handle (`morning__u2`), and the scheduler puts this
-                    # value in the run's session id and in the daily-run frame's
-                    # `tasks_run` — both of which the user reads back.
-                    task["name"] = slot_map["task_name"]
-                frequency = slot_map.get("frequency", task.get("schedule_cron", "daily"))
-                if "enabled" in slot_map:
-                    task["enabled"] = 1 if slot_map["enabled"] == "true" else 0
-                    if slot_map["enabled"] != "true":
-                        continue  # not actually enabled
-                if frequency == "once" and task["enabled"] == 1:
-                    # One-shot tasks are due (they fire at next tick then disable themselves).
-                    # They are NOT skipped here — update_scheduled_task_run disables after firing.
-                    pass
-                if "next_run" in slot_map:
-                    nr = _parse_iso_ts(slot_map["next_run"])
-                else:
-                    nr = _parse_iso_ts(task.get("next_run"))
-                if nr is not None and nr <= now:
-                    due.append(task)
+            slot_map = {s.key: s.value for s in slots_by_frame.get(frame_id, [])}
+
+            # Override with slot values
+            for key in ("description", "frequency", "prompt",
+                         "next_run", "last_run", "last_result_summary"):
+                if key in slot_map:
+                    task[key] = slot_map[key]
+            if "task_name" in slot_map:
+                # The name the user gave it. The frame's own `name` may be an
+                # owner-scoped handle (`morning__u2`), and the scheduler puts this
+                # value in the run's session id and in the daily-run frame's
+                # `tasks_run` — both of which the user reads back.
+                task["name"] = slot_map["task_name"]
+            frequency = slot_map.get("frequency", task.get("schedule_cron", "daily"))
+            if "enabled" in slot_map:
+                task["enabled"] = 1 if slot_map["enabled"] == "true" else 0
+                if slot_map["enabled"] != "true":
+                    continue  # not actually enabled
+            if frequency == "once" and task["enabled"] == 1:
+                # One-shot tasks are due (they fire at next tick then disable themselves).
+                # They are NOT skipped here — update_scheduled_task_run disables after firing.
+                pass
+            if "next_run" in slot_map:
+                nr = _parse_iso_ts(slot_map["next_run"])
+            else:
+                nr = _parse_iso_ts(task.get("next_run"))
+            if nr is not None and nr <= now:
+                due.append(task)
         return due
 
     async def get_nearest_scheduled_task_run(self) -> datetime | None:

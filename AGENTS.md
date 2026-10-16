@@ -209,6 +209,11 @@ Result quality is guarded in three layers:
   project does not spoof a browser UA to evade a block.
 
 ## Do / Don't
+- **Do** keep a page route and an API path distinct. The backend serves the SPA for any
+  path it has no *exact* route for, so an API handler at a page's path wins and the page
+  returns JSON (`/tasks` did exactly this). Two more matchers have to agree with it — the
+  dev `Caddyfile` and the Vite proxy. See `docs/DEPLOYMENT_MODES.md`, "Page routes and
+  API paths".
 - **Do** let the model handle ambiguous or unparseable input — when the utility model fails, pass the user's message to the chat model rather than generating a scripted fallback. The model's own reasoning determines the response.
 - **Do** lean on the model everywhere design allows a choice between scripted logic and model reasoning.
 - Don't make a second blocking LLM call for task routing when heuristics suffice.

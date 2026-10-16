@@ -2142,25 +2142,6 @@ async def delete_task(
     return {"status": "ok"}
 
 
-@app.get("/tasks/{task_id}/result")
-async def get_task_result(
-    task_id: int,
-    user_id: int,
-    store: MemoryStore = _Depends(get_store),
-):
-    """The last run's summary for one of the caller's tasks.
-
-    Ownership-checked, and the `include_system=True` scan is gone: it searched every
-    task in the install, so it would return the result of a task the caller does not
-    own.
-    """
-    task = await _owned_task(store, task_id, user_id)
-    return {
-        "last_run": task.get("last_run"),
-        "last_result_summary": task.get("last_result_summary"),
-    }
-
-
 @app.post("/tasks/run-due")
 async def run_due_tasks(
     store: MemoryStore = _Depends(get_store),

@@ -9,7 +9,9 @@ endpoints got wrong:
 - `DELETE /tasks/{id}` took no `user_id` at all: any caller could soft-delete any task
   frame.
 - `GET /tasks/{id}/result` scanned with `include_system=True`, so it would return the
-  result of a task the caller does not own.
+  result of a task the caller does not own. It has since been **removed** rather than
+  fixed: the list carries `last_result_summary` on every row, so the endpoint had no
+  consumer left (the review found only the test that pinned its ownership).
 
 Plus the two the store had (delete-then-recreate, and two accounts sharing a name),
 which a Create button is what makes reachable.
@@ -167,8 +169,9 @@ class TestUpdate:
 class TestOwnership:
     """A task belonging to another account cannot be read, changed or deleted.
 
-    Regression: `DELETE /tasks/{id}` and `GET /tasks/{id}/result` took no `user_id` at
-    all, and the result endpoint scanned with `include_system=True`.
+    Regression: `DELETE /tasks/{id}` took no `user_id` at all, and `GET
+    /tasks/{id}/result` scanned with `include_system=True` before it was removed as
+    unconsumed.
     """
 
     @pytest.fixture
@@ -183,10 +186,6 @@ class TestOwnership:
     async def test_it_is_not_listed(self, client, other):
         _theirs, _task_id = other
         assert client.get("/tasks/list").json() == []
-
-    async def test_result_is_a_404_not_a_leak(self, client, other):
-        _theirs, task_id = other
-        assert client.get(f"/tasks/{task_id}/result").status_code == 404
 
     async def test_it_cannot_be_edited(self, client, other):
         theirs, task_id = other
