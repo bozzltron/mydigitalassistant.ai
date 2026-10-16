@@ -112,7 +112,13 @@ export default function MapCanvas(props: {
         paint: {
           'text-color': style.label_color,
           'text-halo-color': '#ffffff',
-          'text-halo-width': 2,
+          // Thinner than it was (2), and softly edged. A wide hard halo is what made the
+          // label read as *thick*: it fattens every glyph outward, and at 14px that closed
+          // up the counters. There is no other typeface to reach for — OpenFreeMap serves
+          // only Noto Sans (Regular/Bold/Italic; Open Sans, Roboto and Inter all 404), and
+          // this already uses Regular — so weight is not the lever here, the halo is.
+          'text-halo-width': 1.1,
+          'text-halo-blur': 0.5,
         },
       })
     }

@@ -189,7 +189,6 @@ export default function MapPage() {
       >
         <header class="map-toolbar">
           <h1>Map</h1>
-          <PageMenu />
           <label class="map-field">
             Map
             <select
@@ -228,6 +227,9 @@ export default function MapPage() {
           <span class="map-status" aria-live="polite">
             {saving() ? 'Saving…' : error()}
           </span>
+          {/* Far right, like every other page's header — `.map-status` carries the
+              `margin-left: auto`, so the menu lands past it. */}
+          <PageMenu />
         </header>
 
         <div class="map-body">

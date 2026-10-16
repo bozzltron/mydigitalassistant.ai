@@ -18,7 +18,7 @@ interface FileContentResponse {
 // the content route decodes with errors="replace", so a PDF or .docx rendered as
 // text is noise, not a preview.
 const TEXT_EXTS = new Set([
-  'txt', 'csv', 'tsv', 'json', 'xml', 'html', 'htm', 'yaml', 'yml', 'toml',
+  'txt', 'csv', 'tsv', 'json', 'geojson', 'xml', 'html', 'htm', 'yaml', 'yml', 'toml',
   'ini', 'cfg', 'conf', 'log', 'eml', 'ics', 'srt', 'vtt',
   'py', 'js', 'jsx', 'ts', 'tsx', 'css', 'scss', 'sh', 'bash', 'zsh',
   'sql', 'rs', 'go', 'java', 'c', 'h', 'cpp', 'hpp', 'rb', 'php', 'swift', 'kt',
