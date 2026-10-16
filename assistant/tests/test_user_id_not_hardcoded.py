@@ -41,6 +41,11 @@ PATTERNS = (
     re.compile(r"\b(?:user_id|owner_user_id)\w*\s*(?::[^=!,\n()]*)?(?:==|!=|=)\s*[0-9]+\b"),
     # `... or 1` / `... || 1` standing in for an owner that is not known
     re.compile(r"\b(?:user_id|owner_user_id)\w*\b[^\n;]{0,60}?(?:\bor\b|\|\|)\s*[0-9]+\b"),
+    # `user()?.id ?? 1` — the frontend's version of the same mistake, and the shape the
+    # first two patterns missed: BrainPage read user 1's brain for anyone whose account
+    # was not id 1, and it *hid* a real failure, because that page looked fine on a full
+    # refresh while every other page's first read threw.
+    re.compile(r"\b(?:user\(\)|user_id|owner_user_id)\b[^\n;]{0,30}?\?\?\s*[0-9]+\b"),
 )
 
 SCANNED_SUFFIXES = frozenset({".py", ".ts", ".tsx"})
@@ -100,6 +105,9 @@ def test_the_scanner_finds_the_shapes_it_forbids() -> None:
     for line in (
         "owner_user_id=task['owner_user_id'] or 1,",
         "const id = user_id || 1",
+        # The frontend's version, which the first two patterns missed.
+        "getFrames(user()?.id ?? 1)",
+        "href={`/download?user_id=${user()?.id ?? 1}`}",
     ):
         assert any(p.search(line) for p in PATTERNS), line
 
@@ -111,6 +119,8 @@ def test_the_scanner_finds_the_shapes_it_forbids() -> None:
         "owner_user_id=owner_user_id,",
         "user_id=actingUser(),",
         "const id = actingUserOrNull()",
+        "getFrames(actingUser())",
+        "const userId = actingUser()",
     ):
         assert not any(p.search(line) for p in PATTERNS), line
 

@@ -1,7 +1,7 @@
 import { createSignal, createEffect, For, onMount, onCleanup, Show, createMemo } from 'solid-js'
 import type { Session } from '../../state/session'
-import { user } from '../../state/user'
 import { settings, updateSetting } from '../../state/settings'
+import { actingUser } from '../../services/actingUser'
 import { enterVoiceMode, exitVoiceMode, voice, isListening, isProcessing, isIdle, isTtsSpeaking, stopRecording, cancelSpeech } from '../../state/voice'
 import { getSettings, updateConversationTitle, deleteConversation } from '../../services/api'
 import { debug } from '../../services/logger'
@@ -293,7 +293,7 @@ export default function TopBar(props: TopBarProps) {
                           <a
                             class={styles.conversationItemAction}
                             title="Download as text"
-                            href={`/chat/session/${encodeURIComponent(conv.id)}/download?user_id=${user()?.id ?? 1}`}
+                            href={`/chat/session/${encodeURIComponent(conv.id)}/download?user_id=${actingUser()}`}
                             download=""
                             onClick={(e) => e.stopPropagation()}
                           >
@@ -644,7 +644,7 @@ export default function TopBar(props: TopBarProps) {
         onSave={(newTitle) => {
           const sessionId = editSessionId()
           if (sessionId) {
-            const userId = user()?.id ?? 1
+            const userId = actingUser()
             // Called from a promise continuation, not from a render, so there is
             // no tracked scope to read the prop in and none is needed: this is an
             // imperative refresh after a write.
@@ -685,16 +685,16 @@ export default function TopBar(props: TopBarProps) {
               onClick={async () => {
                 const sessionId = archiveConfirmSessionId()
                 if (!sessionId) return
-                const u = user()
-                if (u) {
-                  debug('[Archive] Deleting conversation', sessionId)
-                  await deleteConversation(sessionId, u.id)
-                  if (props.onRefreshConversations) {
-                    await props.onRefreshConversations()
-                  }
-                  // Notify trash can to refresh if open
-                  window.dispatchEvent(new CustomEvent('conversation-archived'))
+                // `actingUser()`, not `user()` behind an `if`: the account is resolved
+                // before the router renders, so a missing one is a bug, not a case to
+                // swallow.
+                debug('[Archive] Deleting conversation', sessionId)
+                await deleteConversation(sessionId, actingUser())
+                if (props.onRefreshConversations) {
+                  await props.onRefreshConversations()
                 }
+                // Notify trash can to refresh if open
+                window.dispatchEvent(new CustomEvent('conversation-archived'))
                 setArchiveConfirmSessionId(null)
               }}
             >

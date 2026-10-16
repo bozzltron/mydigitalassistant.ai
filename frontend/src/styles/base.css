@@ -44,6 +44,16 @@ header h1 {
   color: var(--text);
 }
 
+/* The account is resolved before the router renders (see index.tsx), so this is
+   visible only while `GET /users` is in flight — or if the backend is slow. */
+.app-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  color: var(--text-dim);
+}
+
 .app-error-detail {
   max-width: 40rem;
   color: var(--text-dim);

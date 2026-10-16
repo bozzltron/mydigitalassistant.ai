@@ -2,8 +2,16 @@ import { createRoot } from 'solid-js'
 import '@solidjs/testing-library'
 import { expect, vi } from 'vitest'
 import * as matchers from '@testing-library/jest-dom/matchers'
+import { setActingUser } from './src/services/actingUser'
 
 expect.extend(matchers)
+
+// The app resolves the acting account **before the router renders** (see `index.tsx`),
+// so every component starts from that state. Tests must too: `actingUser()` throws
+// rather than guessing a default, and a component that reads it during render —
+// `TopBar`'s conversation download link does — would crash instead of failing one
+// request. A test that is *about* the missing account sets it back to null itself.
+setActingUser(1)
 
 // Create a persistent root for the entire test run
 // This ensures all module-level signals are created inside a root

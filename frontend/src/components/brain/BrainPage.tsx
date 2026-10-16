@@ -12,7 +12,7 @@ import type {
 } from '../../types'
 import { TYPE_COLORS } from './brainLib'
 import { getFrames } from '../../services/api'
-import { user } from '../../state/user'
+import { actingUser } from '../../services/actingUser'
 
 function initialViewMode(): '2d' | '3d' {
   try {
@@ -67,7 +67,11 @@ export default function BrainPage() {
     setError(null)
     try {
       const [framesData, assocRes, conflictsRes] = await Promise.all([
-        getFrames(user()?.id ?? 1),
+        // `actingUser()`, not `user()?.id ?? 1`. The fallback silently read user 1's
+        // brain for anyone whose account was not id 1, and it hid a real failure: with
+        // no account resolved this page looked fine while every other page's first
+        // read failed. It throws now, which is the honest outcome.
+        getFrames(actingUser()),
         fetch('/memory/associations'),
         fetch('/memory/conflicts'),
       ])

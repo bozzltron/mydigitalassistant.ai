@@ -23,8 +23,22 @@ export const [isLoadingUser, setIsLoadingUser] = createSignal(false)
  *
  * This is the one place the acting account is decided; `setActingUser` hands it to
  * the API layer so every request carries it instead of falling back to a literal.
+ *
+ * **Idempotent while a call is in flight.** Two callers race for it legitimately:
+ * `index.tsx` resolves the account before the router renders (so no page mounts
+ * without one), and `useAppInit` awaits it for its own ordering. Without the guard
+ * that is two `GET /users` on the chat route.
  */
-export const fetchUser = async () => {
+let inFlight: Promise<void> | null = null
+
+export const fetchUser = (): Promise<void> => {
+  inFlight ??= loadUser().finally(() => {
+    inFlight = null
+  })
+  return inFlight
+}
+
+const loadUser = async () => {
   setIsLoadingUser(true)
   try {
     const users = await getUsers()
