@@ -237,28 +237,55 @@ class TestMapApi:
         camping = client.get("/map", params={"file": "camping.geojson"}).json()
         assert camping["features"][0]["properties"]["description"] == "campsite"
 
-    async def test_the_picker_lists_only_root_geojson(self, client, tmp_path):
-        """What the picker offers: `.geojson`, at the root, and the default always."""
-        client.put("/map", params={"file": "camping.geojson"}, json=_fc())
-        # A nested one, and a non-geojson one, must not be offered.
+    async def test_the_picker_lists_geojson_by_content_not_by_name(self, client, tmp_path):
+        """A map is a FeatureCollection wherever it sits and whatever it is called.
+
+        The sandbox that prompted this holds a ship's track at `geojson/ever_given.json`:
+        nested, and `.json` rather than `.geojson`. A root-only, extension-only rule
+        offered one of the user's two maps and could not explain the other.
+        """
         from assistant.backend.pipeline.filesystem import get_sandbox_root
 
-        (get_sandbox_root() / "notes.txt").write_text("not a map")
-        (get_sandbox_root() / "nested").mkdir(exist_ok=True)
-        (get_sandbox_root() / "nested" / "deep.geojson").write_text("{}")
+        root = get_sandbox_root()
+        (root / "geojson").mkdir(exist_ok=True)
+        (root / "geojson" / "track.json").write_text(
+            '{"type": "FeatureCollection", "features": []}'
+        )
+        # Neither of these is a map, and neither is offered.
+        (root / "notes.txt").write_text("not a map")
+        (root / "config.json").write_text('{"type": "something-else"}')
+        (root / "broken.json").write_text("{ not json")
 
         files = client.get("/map/files").json()["files"]
-        assert "camping.geojson" in files
+        assert "geojson/track.json" in files
         assert "map.geojson" in files, "the default is offered before it exists"
         assert "notes.txt" not in files
-        assert "deep.geojson" not in files
+        assert "config.json" not in files
+        assert "broken.json" not in files
+
+    async def test_a_nested_map_round_trips(self, client):
+        """A path the picker offers is a path the page can actually open."""
+        client.put(
+            "/map",
+            params={"file": "geojson/track.json"},
+            json=_fc(_point(-122.68, 45.523, "the ship")),
+        )
+        got = client.get("/map", params={"file": "geojson/track.json"}).json()
+        assert got["features"][0]["properties"]["description"] == "the ship"
+        assert "geojson/track.json" in client.get("/map/files").json()["files"]
 
     async def test_a_file_name_cannot_escape_the_sandbox(self, client):
         """Refused at the boundary, with a message that says which rule broke."""
-        for bad in ("../secrets.geojson", "sub/dir.geojson", "map.json", ".hidden.geojson"):
+        for bad in (
+            "../secrets.geojson",
+            "geojson/../../secrets.json",
+            "/etc/passwd.json",
+            ".hidden.geojson",
+            "map.yaml",
+        ):
             r = client.get("/map", params={"file": bad})
             assert r.status_code == 422, bad
-            assert "geojson" in r.json()["detail"]
+            assert "sandbox-relative" in r.json()["detail"]
 
     async def test_put_makes_each_map_visible_in_the_files_list(self, client):
         """One file frame per map file, so each is a file the user can find."""

@@ -59,11 +59,20 @@ export default function MapPage() {
       }
       debug('[maps] settings', { maps_enabled: s.maps_enabled, styles: s.map_styles.length })
       if (!s.maps_enabled) return
-      const listing = await listMapFiles()
-      setFiles(listing.files)
-      // A remembered file may have been deleted outside the page; fall back rather than
-      // opening an empty canvas with a name nothing backs.
-      if (!listing.files.includes(file())) setFile(DEFAULT_FILE)
+      // The picker is a convenience, so it gets its own failure path: a listing that
+      // fails falls back to the default file. Sharing the outer catch made a missing
+      // `/map/files` render as **"Maps are off"** — a backend that predated the route
+      // answered with the SPA's HTML, `response.json()` threw, and the page reported a
+      // disabled feature for a convenience that had merely not loaded.
+      try {
+        const listing = await listMapFiles()
+        setFiles(listing.files)
+        // A remembered file may have been deleted outside the page; fall back rather
+        // than opening an empty canvas with a name nothing backs.
+        if (!listing.files.includes(file())) setFile(DEFAULT_FILE)
+      } catch (e) {
+        console.error('[maps] could not list the map files; using the default', e)
+      }
       const fc = await getMap(file())
       debug('[maps] map loaded', { file: file(), features: fc?.features?.length ?? 'null' })
       setData(fc)

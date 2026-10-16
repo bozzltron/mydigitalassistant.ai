@@ -440,53 +440,75 @@ async def get_settings() -> dict:
 # An ordinary sandbox file at the sandbox root, so the agent reaches it with the
 # existing file tools — `read_file("map.geojson")`, `glob("*.geojson")`.
 _MAP_FILE = "map.geojson"
-_MAP_SUFFIX = ".geojson"
+_MAP_SUFFIXES = (".geojson", ".json")
 
 
 def _map_filename(file: str | None) -> str:
     """The map file a request names, or the default.
 
-    A bare filename ending in `.geojson`, and nothing else. This reaches the filesystem
+    A sandbox-relative path to a `.geojson` or `.json` file. This reaches the filesystem
     through `read_sandbox_file` / `write_sandbox_bytes`, which already guard traversal —
-    but a name that *could* escape is refused at the boundary rather than relied on
-    being caught deeper, and the refusal says which rule was broken. Subdirectories are
-    out: the sandbox root is where the page looks.
+    but a name that *could* escape is refused at the boundary, where the refusal can say
+    which rule broke.
     """
     if not file:
         return _MAP_FILE
     if (
-        not file.endswith(_MAP_SUFFIX)
-        or "/" in file
-        or "\\" in file
-        or file in (".", "..")
+        not file.endswith(_MAP_SUFFIXES)
+        or file.startswith("/")
         or file.startswith(".")
+        or "\\" in file
+        or ".." in Path(file).parts
     ):
         raise HTTPException(
             status_code=422,
-            detail=f"a map file must be a plain {_MAP_SUFFIX} filename, not {file!r}",
+            detail=(
+                "a map file must be a sandbox-relative .geojson or .json path, "
+                f"not {file!r}"
+            ),
         )
     return file
 
 
+def _is_feature_collection(path: Path) -> bool:
+    """Whether a file is a GeoJSON FeatureCollection — **by content**.
+
+    Not by extension, and not by where it sits. The extension is a habit, and this
+    sandbox already holds a ship's track at `geojson/ever_given.json`: a map by every
+    measure that matters to this page. Anything that will not parse, or parses to
+    something else, is not offered.
+    """
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (ValueError, OSError, UnicodeDecodeError):
+        return False
+    return isinstance(data, dict) and data.get("type") == "FeatureCollection"
+
+
 @app.get("/map/files")
 async def list_map_files() -> dict:
-    """The GeoJSON files in the sandbox root — what the page's file picker offers.
+    """The sandbox's GeoJSON files — what the page's picker offers.
 
-    Only the root, and only `.geojson`: a picker that walked the tree would offer files
-    the page cannot address. The default is always included, even before it exists,
-    because the page creates it on first save and a picker that cannot name it could
-    never start one.
+    Recursive, and decided by content: a map is a FeatureCollection wherever it sits and
+    whatever it is called. Files that cannot parse are skipped rather than reported,
+    because the picker is a list of things to open and an unopenable entry is not one.
+
+    `map.geojson` is always included, even before it exists — the page creates it on
+    first save, and a picker that could not name it could never start one.
     """
     from assistant.backend.pipeline.filesystem import get_sandbox_root
 
+    root = get_sandbox_root()
+    names: list[str] = []
     try:
-        names = sorted(
-            p.name
-            for p in get_sandbox_root().iterdir()
-            if p.is_file() and p.name.endswith(_MAP_SUFFIX)
-        )
+        for path in root.rglob("*"):
+            if not path.is_file() or path.suffix.lower() not in _MAP_SUFFIXES:
+                continue
+            if _is_feature_collection(path):
+                names.append(str(path.relative_to(root)))
     except OSError:
         names = []
+    names.sort()
     if _MAP_FILE not in names:
         names.insert(0, _MAP_FILE)
     return {"files": names}
