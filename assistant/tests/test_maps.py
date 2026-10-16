@@ -296,6 +296,39 @@ class TestMapApi:
         assert "map.geojson" in names
         assert "camping.geojson" in names
 
+    async def test_a_bare_feature_is_a_one_point_map(self, client):
+        """A file holding one Feature is a map, and the page renders it.
+
+        Regression, from the sandbox that prompted the picker: `ship-tracker.geojson` was
+        `{"type": "Feature", …}` — written by the agent on request — and a
+        FeatureCollection-only rule offered every map except the one the user had just
+        asked for. `get_map` wraps it, so the page still sees the one shape it renders.
+        """
+        from assistant.backend.pipeline.filesystem import write_sandbox_bytes
+
+        write_sandbox_bytes(
+            "one.geojson",
+            b'{"type": "Feature", "geometry": {"type": "Point", '
+            b'"coordinates": [-122.68, 45.523]}, "properties": {"description": "shed"}}',
+            overwrite=True,
+        )
+
+        assert "one.geojson" in client.get("/map/files").json()["files"]
+        got = client.get("/map", params={"file": "one.geojson"}).json()
+        assert got["type"] == "FeatureCollection"
+        assert got["features"][0]["properties"]["description"] == "shed"
+
+    async def test_a_file_that_is_not_geojson_is_refused(self, client):
+        """Listed by content, so an unopenable one is not offered — and a direct request
+        says why."""
+        from assistant.backend.pipeline.filesystem import write_sandbox_bytes
+
+        write_sandbox_bytes("config.json", b'{"type": "something-else"}', overwrite=True)
+        assert "config.json" not in client.get("/map/files").json()["files"]
+        r = client.get("/map", params={"file": "config.json"})
+        assert r.status_code == 422
+        assert "FeatureCollection" in r.json()["detail"]
+
     async def test_settings_carry_the_map_keys(self, client):
         s = client.get("/settings").json()
         assert "maps_enabled" in s

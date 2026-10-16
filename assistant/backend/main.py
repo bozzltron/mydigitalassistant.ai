@@ -470,19 +470,24 @@ def _map_filename(file: str | None) -> str:
     return file
 
 
-def _is_feature_collection(path: Path) -> bool:
-    """Whether a file is a GeoJSON FeatureCollection — **by content**.
+def _is_map_geojson(path: Path) -> bool:
+    """Whether a file is GeoJSON the map page can render — **by content**.
 
-    Not by extension, and not by where it sits. The extension is a habit, and this
-    sandbox already holds a ship's track at `geojson/ever_given.json`: a map by every
-    measure that matters to this page. Anything that will not parse, or parses to
-    something else, is not offered.
+    Not by extension, and not by where it sits: the extension is a habit, and this
+    sandbox already holds a ship's track at `geojson/ever_given.json`, a map by every
+    measure that matters. Anything that will not parse, or parses to something else, is
+    not offered.
+
+    `Feature` counts, not just `FeatureCollection`. A file holding one Feature is a
+    one-point map, and refusing it meant a file the agent had just written on request did
+    not appear in the picker — the user asked for a map and could not open it. `get_map`
+    wraps it, so the page still sees the one shape it renders.
     """
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (ValueError, OSError, UnicodeDecodeError):
         return False
-    return isinstance(data, dict) and data.get("type") == "FeatureCollection"
+    return isinstance(data, dict) and data.get("type") in ("FeatureCollection", "Feature")
 
 
 @app.get("/map/files")
@@ -504,7 +509,7 @@ async def list_map_files() -> dict:
         for path in root.rglob("*"):
             if not path.is_file() or path.suffix.lower() not in _MAP_SUFFIXES:
                 continue
-            if _is_feature_collection(path):
+            if _is_map_geojson(path):
                 names.append(str(path.relative_to(root)))
     except OSError:
         names = []
@@ -535,9 +540,15 @@ async def get_map(file: str | None = None) -> dict:
         raise HTTPException(
             status_code=422, detail=f"{name} is not valid JSON: {e}"
         ) from e
-    if not isinstance(data, dict) or data.get("type") != "FeatureCollection":
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=422, detail=f"{name} is not a GeoJSON object")
+    if data.get("type") == "Feature":
+        # One Feature is a one-point map. The page renders FeatureCollections, so wrap it
+        # rather than refusing a file the picker just offered.
+        return {"type": "FeatureCollection", "features": [data]}
+    if data.get("type") != "FeatureCollection":
         raise HTTPException(
-            status_code=422, detail=f"{name} is not a FeatureCollection"
+            status_code=422, detail=f"{name} is not a FeatureCollection or Feature"
         )
     return data
 

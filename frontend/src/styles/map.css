@@ -37,6 +37,17 @@
   color: var(--text-dim);
 }
 
+/* The one `select` rule (`components.css:147`) owns the look — border, background,
+   radius, type. Only the width needs saying: inside an `inline-flex` label a `width:
+   100%` resolves to intrinsic, so the two pickers in this toolbar sized to their longest
+   option and read as two different controls. A shared min-width makes them a set, and the
+   cap stops a long sandbox path from pushing the toolbar wide. */
+.map-field select {
+  width: auto;
+  min-width: 11rem;
+  max-width: 18rem;
+}
+
 .map-status {
   margin-left: auto;
   font-size: 0.85rem;
