@@ -1,7 +1,6 @@
 import { createSignal, Show, createMemo, createEffect } from 'solid-js';
-import { marked } from 'marked';
-import DOMPurify from 'dompurify';
 import { api, renameFile, saveFileContent } from '../../services/api';
+import { renderMarkdown } from '../../utils/markdown';
 import { Toast } from '../ui/Toast';
 import { Modal } from '../ui/Modal';
 import { FileIcon, fileKind } from '../ui/Icons';
@@ -162,10 +161,8 @@ export const FileViewer = (props: { fileId?: string | null }) => {
       setIsRenaming(false);
     }
   };
-  // Sanitized before it touches innerHTML, exactly like chat markdown.
-  const markdownHtml = createMemo(() =>
-    DOMPurify.sanitize(marked.parse(fileData()?.content || '') as string)
-  );
+  // Sanitized before it touches innerHTML, by the shared renderer.
+  const markdownHtml = createMemo(() => renderMarkdown(fileData()?.content || ''));
 
   const formatFileSize = (bytes: number | null | undefined) => {
     if (!bytes) return 'Unknown';

@@ -1,5 +1,6 @@
 import { createEffect, createSignal, on, Show, untrack } from 'solid-js'
 import type { Task } from '../../types/task'
+import { renderMarkdown } from '../../utils/markdown'
 import { formatStamp } from '../../utils/taskLib'
 
 /**
@@ -98,7 +99,11 @@ export function TaskForm(props: {
         {(summary) => (
           <section class="task-last-run">
             <h3>Last run said</h3>
-            <p>{summary()}</p>
+            {/* The summary is the model's own output, written as markdown. Rendering it
+                beats showing the source: a run's report carries headings, lists and a
+                `**Sources:**` footer, which read as noise as raw text. */}
+            {/* eslint-disable-next-line solid/no-innerhtml -- sanitized by renderMarkdown */}
+            <div class="task-last-run-body" innerHTML={renderMarkdown(summary())} />
           </section>
         )}
       </Show>

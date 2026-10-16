@@ -253,8 +253,39 @@
   margin: 0 0 var(--space-xs);
 }
 
-.task-last-run p {
-  margin: 0;
+.task-last-run-body {
   font-size: 0.85rem;
-  white-space: pre-wrap;
+  line-height: 1.5;
+}
+
+.task-last-run-body p,
+.task-last-run-body ul,
+.task-last-run-body ol {
+  margin: 0 0 var(--space-xs);
+}
+
+.task-last-run-body ul,
+.task-last-run-body ol {
+  padding-left: 1.2em;
+}
+
+/* The rendered block's own last element should not add trailing space. */
+.task-last-run-body > :last-child {
+  margin-bottom: 0;
+}
+
+.task-last-run-body a {
+  color: var(--accent);
+}
+
+.task-last-run-body code {
+  font-family: var(--mono);
+  font-size: 0.95em;
+}
+
+.task-last-run-body h1,
+.task-last-run-body h2,
+.task-last-run-body h3 {
+  font-size: 0.9rem;
+  margin: var(--space-xs) 0;
 }

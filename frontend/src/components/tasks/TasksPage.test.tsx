@@ -113,6 +113,20 @@ describe('TasksPage', () => {
     expect(screen.getByLabelText('What it runs')).toHaveValue('typed but unsaved')
   })
 
+  it('renders the last run summary as markdown, not its source', async () => {
+    vi.mocked(getTasks).mockResolvedValue([
+      task({ last_result_summary: '## Findings\n\n- a **bold** item' }),
+    ])
+    render(() => <TasksPage />)
+
+    fireEvent.click(await screen.findByText('briefing'))
+
+    // It is markup now, not characters.
+    expect(await screen.findByRole('heading', { name: 'Findings' })).toBeInTheDocument()
+    expect(screen.getByText('bold')).toBeInTheDocument()
+    expect(screen.queryByText(/## Findings/)).not.toBeInTheDocument()
+  })
+
   it('asks before deleting', async () => {
     vi.mocked(getTasks).mockResolvedValue([task()])
     vi.mocked(deleteTask).mockResolvedValue({ status: 'ok' })

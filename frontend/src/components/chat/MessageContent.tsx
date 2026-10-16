@@ -1,22 +1,12 @@
 import { createMemo, For, Show } from 'solid-js'
-import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 import { searchMedia, getHeroMedia } from '../../utils/media'
 import { collectGroundingSlots, applyGrounding } from '../../utils/grounding'
 import { fileLinksFrom, linkifyFileMentions } from '../../utils/fileLinks'
+import { parseMarkdown, renderMarkdown } from '../../utils/markdown'
 import { fileList } from '../../state/files'
 import MediaCard from './MediaCard'
 import type { ChatMessage } from '../../types/chat'
-
-marked.use({
-  renderer: {
-    link(token) {
-      const href = token.href
-      const title = token.title ? ` title="${token.title}"` : ''
-      return `<a href="${href}"${title} target="_blank" rel="noopener">${token.text}</a>`
-    }
-  }
-})
 
 // The backend appends a `**Sources:**` footer to search answers. Render it after
 // the media so it ends the response, instead of sitting between the answer text
@@ -51,14 +41,14 @@ export default function MessageContent(props: { message: () => ChatMessage }) {
     // skips inside links, so the two passes do not fight.
     applyGrounding(
       linkifyFileMentions(
-        DOMPurify.sanitize(marked.parse(parts().body) as string),
+        renderMarkdown(parts().body),
         fileLinksFrom(fileList())
       ),
       collectGroundingSlots(props.message())
     )
   )
   const sourcesHtml = createMemo(() =>
-    parts().sources ? (marked.parse(parts().sources) as string) : ''
+    parts().sources ? parseMarkdown(parts().sources) : ''
   )
 
   return (
