@@ -1,5 +1,77 @@
 # MyDigitalAssistant.ai — release notes
 
+## v0.11.20-alpha
+
+**A Tasks page — list, create, edit the prompt, pause/resume and run now, over the
+`scheduled_task` frames that were already memory — plus a routing collision that had been
+serving the *built* bundle for two pages in dev.**
+
+- **The Tasks page.** `/tasks` is a view over memory, not a second model of a task: it
+  reads the same `scheduled_task` frames chat writes, through the same store method.
+  Create, delete, and exactly two writable fields — `prompt` (an edit) and `enabled` (a
+  state action). `name`, `frequency` and `description` stay conversational, and the server
+  refuses anything else (`extra="forbid"`), so a third field cannot drift in unnoticed. A
+  test asserts the exact request bodies.
+- **Run now.** Runs the prompt through the same path the scheduler uses and shows the new
+  result. Called *Run now* rather than *test run* because it is one: the loop writes an
+  episode, extraction writes frames, `last_run` moves, a daily task is rescheduled to
+  tomorrow, and a `once` task switches itself off — so the button confirms first and says
+  which applies. Progress is an elapsed-seconds counter, because a run is one blocking
+  request and this path exposes no stage events; a moving number is what separates
+  "working" from "hung". There is deliberately no dry-run endpoint — a second path would
+  drift from what the 9am run actually does.
+- **A task name is per-owner, and can be recreated.** Two defects, both measured against a
+  scratch store rather than reasoned about:
+
+  ```
+  delete->recreate: RAISED IntegrityError UNIQUE constraint failed: frames.name
+  alice's task after bob created the same name: [('morning', "BOB'S")]
+  ```
+
+  `frames.name` is globally UNIQUE, but a task belongs to an owner. A task is now addressed
+  by `(name, owner_user_id)`, stored under `{name}__u{owner}` when the plain name is taken,
+  with the name the user gave it in a `task_name` slot so the handle stays internal. Both
+  are the first thing a Create button reaches.
+- **Ownership on every task endpoint.** `GET /tasks` defaulted `user_id` to `None`, which
+  the store reads as "no owner filter" — omitting the parameter returned **every** task in
+  the install, system ones included. `DELETE /tasks/{id}` took no `user_id` at all, so any
+  caller could soft-delete any task frame. `GET /tasks/{id}/result` scanned with
+  `include_system=True`; it is **removed** rather than fixed, because the list carries
+  `last_result_summary` on every row and the review found no consumer left. A task you do
+  not own is a **404**, not a 403 — the id is not a secret, and a 403 would confirm it.
+- **A page route and an API path must not share a path.** `/tasks` served the API's 422
+  instead of the page: the backend serves the SPA for any path it has no *exact* route for,
+  so a handler at the bare page path wins. Underneath were two more problems — the dev
+  `Caddyfile`'s `/files*` and `/brain*` wildcards were swallowing those two **pages** and
+  serving the **built** bundle from the backend rather than Vite (the page worked, HMR did
+  not, and it could be arbitrarily stale), and `vite.config.ts` prefix-matches its proxy
+  keys, so a bare `'/files'` forwarded the page before Vite ever served it. Three matchers
+  have to agree; that is now in `docs/DEPLOYMENT_MODES.md` with both failure modes and a
+  one-line check.
+- **One menu for every right-side control.** Tasks, Files, Maps, Brain, Trace, Settings and
+  Trash in one dropdown, leaving the row as Alerts · Let's talk · Pages. The row does not
+  wrap — `header-right` is a single flex line — so adding Tasks squashed it. Destinations
+  are links and the toggles are buttons, styled identically by one rule that resets the UA
+  button box: nothing in the stylesheet styles a bare `button`, which is why three of them
+  were sitting there as white chips.
+- **One markdown renderer.** `marked.use` lived inside `MessageContent.tsx` — global state
+  configured in a component, so it applied only when that component happened to be loaded;
+  the Files viewer and the Tasks page parsed markdown with no config at all. A test written
+  for the new `utils/markdown.ts` found that the `target="_blank"` in that config **never
+  took effect** (DOMPurify strips it), which is fine: `ExternalLinkGuard` opens off-origin
+  links in a new tab *after confirming*, and exists precisely because `innerHTML` cannot
+  carry a per-link handler.
+- **From the review.** The task list was N+1 — a slot query per task, on the new page's hot
+  path; `get_slots_for_frames` already existed for exactly that and now backs both
+  `get_scheduled_tasks` and `get_due_scheduled_tasks`. One endpoint was removed as dead. The
+  routing rule moved into `AGENTS.md`'s Do/Don't, so it is found before the next page is
+  added rather than after.
+- **Not in this release.** The Tasks page's *learning* panel — what a task's runs have been
+  writing — is planned and not built. It waits on a measurement
+  (`plans/2026-10-15-daily-tasks-ui.md`, Phase 0): how many runs leave an output episode
+  with `frame_ids`, which is what the panel would read. Building the view before measuring
+  the trail is the thing that plan exists to avoid.
+
 ## v0.11.19-alpha
 
 **A map page — a GeoJSON file in the sandbox the agent reads — and four bugs the map
