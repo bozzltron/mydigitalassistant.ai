@@ -213,3 +213,74 @@ and then theorised anyway.
   instrument, not a finding — and the cost question belongs to `toolset_scope` anyway.
 - **Not 3/10 ± anything.** Ten trials cannot resolve a 10% difference. Three successes and
   seven failures is a direction and a call-list pattern, not a rate with error bars.
+
+## Run 4 — the first valid measurement: 7/10
+
+| class | run 1 | run 2 | run 3 | **run 4** |
+|---|---|---|---|---|
+| `wrote_complete` | 3 | 4 | 1 | **7** |
+| `no_attempt` | 7 | 5 | 8 | **3** |
+| `refused_stale` | 0 | 1 | 1 | **0** |
+| H1 / H5 | F / F | F / F | F / F | **F / F** |
+
+With the search tool actually wired (`verification.md`), the agent does the task most of the
+time. H1 (>= 8/10) still fails. The bar was set before the data and the run did not meet it.
+
+```
+trial  2..5, 8..10: wrote_complete  coverage=1.00 fields=True  nudge=empty,completion
+trial  1:           no_attempt      nudge=empty                 6 calls, all reads
+trial  6:           no_attempt      nudge=empty,completion      7 calls
+trial  7:           no_attempt      nudge=empty                 5 calls
+trials nudged 10/10 . completion nudges 8 . tool errors 1
+```
+
+### The nudge is load-bearing, and I had it backwards
+
+Every writing trial shows one sequence: the model answers with no tool call, gets the **`empty`**
+nudge, reads something, gets the **`completion`** nudge (a read cannot perform a change), and
+then calls `write_file`. All seven writes came after a completion nudge.
+
+The run-3 conclusion that "the model answers the nudge with more looking" was an artifact of the
+unwired search tool: it was re-searching because searching kept failing.
+
+### What the model actually says — no earlier run could show this
+
+The failures are not confusion. They are **invented limitations and requests for permission**:
+
+| trial | verbatim |
+|---|---|
+| 6 | "I couldn't update the ship-tracker.geojson file because **I don't have direct write access**" |
+| 7 | "**I cannot directly write** new GeoJSON features ... without having the complete vessel data" |
+| 1 | "I need you to confirm: **should I write** the complete geojson file ... now?" |
+| 2 (wrote) | "I cannot pull fresh real-time AIS positions from external maritime databases in this enviro..." |
+
+All false: `write_file` exists and succeeded in seven trials. Trial 2 makes the same claim and
+writes anyway, because the completion nudge overrides it.
+
+### The defect: exhaustion is answered by a report, with tools disabled
+
+Trials 1 and 7 recorded only the `empty` nudge, yet each made tool calls. **That is a proof by
+construction**: a round ending with no tool call *must* pass through `_maybe_nudge`, so the only
+path to a final answer that skips it is the round ceiling — `while turn < max_turns`
+(`max_tool_rounds = 6`) falling through.
+
+That path does two things, both measured here:
+
+1. It **skips `_maybe_nudge` entirely**, so the completion nudge — the thing that produced all
+   seven writes — is unreachable on the one path where "did not act" is most likely.
+2. It makes a wrap-up call with **`tool_choice="none"`** and a prompt asking the model to "state
+   what you were able to do, **what blocked you** ... and what you need from them next". Acting
+   is impossible by construction, and the prompt *invites a blocker*. Trials 1 and 7 complied
+   with "I don't have direct write access" and "should I write ... now?".
+
+The model is not failing to act. At the moment its rounds run out, it is asked to explain why it
+did not act — by a prompt that can only produce a reason.
+
+All seven successes used exactly 4 calls; the two unexplained failures used 5 and 6. The ceiling
+is the variable.
+
+### What this does not establish
+
+Whether the completion nudge is *necessary* — no counterfactual arm ran, and none of the seven
+writes happened unprompted — and whether raising the ceiling or spending the nudge on the
+exhaustion path is the better fix. Both are testable; H1 remains the bar.
