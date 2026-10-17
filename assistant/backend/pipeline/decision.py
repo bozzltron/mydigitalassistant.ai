@@ -34,11 +34,11 @@ from assistant.backend.config import settings
 logger = logging.getLogger(__name__)
 
 _NEEDS_ACTION_QUESTION = (
-    "Does this user request ask the assistant to perform an action with a tool that "
-    "changes something (create, edit, rename, delete, append, or move a file or record; "
-    "run a task that changes state) or that fetches current external information (search "
-    "the web) — as opposed to satisfying the request by answering from what it already "
-    "knows (including reading its own stored memory)?"
+    "Does this user request ask the assistant to (a) CHANGE something with a tool — "
+    "create, edit, rename, delete, append or move a file or record, or run a task that "
+    "changes state; (b) LOOK something up that is current and external — search the web, "
+    "fetch a page; or (c) be ANSWERED from what the assistant already knows, including "
+    "reading its own stored memory?"
 )
 
 _OUTSTANDING_QUESTION = (
@@ -85,8 +85,14 @@ async def _ask(
         return None
 
 
-async def needs_action(text: str) -> bool | None:
-    """Whether ``text`` asks for a state-changing action or an external lookup.
+async def needs_action(text: str) -> str | None:
+    """**Which kind** of action ``text`` asks for — ``"change"``, ``"lookup"``, or ``None``.
+
+    The kind, not a bool, because the completion check needs it: a request to change
+    something is not performed by a lookup. Treating both as one "action" let a
+    ``fetch_url`` satisfy a request to write a file — measured in
+    ``experiments/ship_tracker_efficacy/`` run 2, where 5 of 10 trials fetched, never
+    wrote, and were reported done.
 
     "Action" here is deliberately narrow — a **change** (create/edit/rename/delete/
     append/move) or an **external lookup** (search): the deeds whose result words can
@@ -109,7 +115,14 @@ async def needs_action(text: str) -> bool | None:
         "needs_action",
         _NEEDS_ACTION_QUESTION,
         {
-            "do": "the assistant must change something or fetch current external information",
+            "change": (
+                "the assistant must change something with a tool — create, edit, rename, "
+                "delete, append or move a file or record, or run a task that changes state"
+            ),
+            "lookup": (
+                "the assistant must fetch current external information — search the web or "
+                "fetch a page"
+            ),
             "answer": (
                 "the assistant can satisfy the request by answering from what it already knows"
             ),
@@ -117,9 +130,21 @@ async def needs_action(text: str) -> bool | None:
     )
     if answer is None:
         return None
-    decided = _yes(answer, settings.decision_action_threshold, positive_key="do")
-    _log_decision("needs_action", model, answer, decided, positive_key="do")
-    return decided
+
+    # The kind with the highest probability, if it clears the (still biased-toward-firing)
+    # threshold. `answer` wins ties by being absent from this set.
+    probabilities = answer.get("probabilities") or {}
+    scored = {
+        kind: probabilities[kind]
+        for kind in ("change", "lookup")
+        if isinstance(probabilities.get(kind), (int, float))
+    }
+    if not scored:
+        return None
+    kind = max(scored, key=lambda k: scored[k])
+    decided = scored[kind] >= settings.decision_action_threshold
+    _log_decision("needs_action", model, answer, decided, positive_key=kind)
+    return kind if decided else None
 
 
 # The tools that *perform* each kind of action. `needs_action` is already scoped to
@@ -140,7 +165,7 @@ _MUTATING_TOOLS = frozenset(
 _LOOKUP_TOOLS = frozenset({"web_search", "fetch_url"})
 
 
-def action_performed(tools_called: list[str]) -> bool:
+def action_performed(tools_called: list[str], kind: str | None) -> bool:
     """Whether the calls that ran could have performed the action.
 
     **Structural on purpose.** This replaces a model judgement (`outstanding`, `nimble`)
@@ -152,9 +177,17 @@ def action_performed(tools_called: list[str]) -> bool:
 
     A tool name is not a guess about wording, and a request that needs a change is not
     satisfied by a read. Both facts are structural, so this is too.
+
+    **The kind decides which set counts.** The first version of this checked both sets and
+    accepted either — so a `fetch_url` satisfied a request to write a file, and run 2 of
+    the experiment failed the same way run 1 had, one tool further along.
     """
     called = set(tools_called)
-    return bool(called & _MUTATING_TOOLS) or bool(called & _LOOKUP_TOOLS)
+    if kind == "change":
+        return bool(called & _MUTATING_TOOLS)
+    if kind == "lookup":
+        return bool(called & _LOOKUP_TOOLS)
+    return False
 
 
 async def outstanding(request: str, tools_called: list[str]) -> bool | None:

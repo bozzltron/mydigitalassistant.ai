@@ -20,40 +20,32 @@
       "tool_calls": [
         "read_file",
         "read_file",
+        "search_file",
         "write_file",
-        "search_file"
+        "write_file"
       ],
       "nudges": 0,
-      "elapsed_ms": 94679,
+      "elapsed_ms": 101129,
       "outcome_class": "wrote_complete"
     },
     {
-      "written": true,
+      "written": false,
       "valid": true,
-      "features": 5,
-      "coverage": 1.0,
-      "fields_complete": true,
-      "description_shape": true,
+      "features": 0,
+      "coverage": 0.0,
+      "fields_complete": false,
+      "description_shape": false,
       "missing_fields": [],
-      "vessels_present": [
-        "COSTA DIAMANTE",
-        "EVER GIVEN",
-        "MAERSK ESSEX",
-        "MSC GULSUN",
-        "SEAWISE GIANT"
-      ],
+      "vessels_present": [],
       "trial": 2,
       "success_flag": true,
       "tool_calls": [
         "read_file",
-        "fetch_url",
-        "fetch_url",
-        "write_file",
         "search_file"
       ],
       "nudges": 0,
-      "elapsed_ms": 94405,
-      "outcome_class": "wrote_complete"
+      "elapsed_ms": 45172,
+      "outcome_class": "no_attempt"
     },
     {
       "written": false,
@@ -68,10 +60,14 @@
       "success_flag": true,
       "tool_calls": [
         "read_file",
-        "fetch_url"
+        "search_file",
+        "search_file",
+        "search_file",
+        "search_file",
+        "search_file"
       ],
       "nudges": 0,
-      "elapsed_ms": 65999,
+      "elapsed_ms": 62593,
       "outcome_class": "no_attempt"
     },
     {
@@ -87,39 +83,39 @@
       "success_flag": true,
       "tool_calls": [
         "read_file",
-        "fetch_url"
+        "web_search",
+        "web_search",
+        "web_search",
+        "web_search",
+        "web_search",
+        "web_search",
+        "read_file",
+        "web_search"
       ],
       "nudges": 0,
-      "elapsed_ms": 57204,
+      "elapsed_ms": 59502,
       "outcome_class": "no_attempt"
     },
     {
-      "written": true,
+      "written": false,
       "valid": true,
-      "features": 5,
-      "coverage": 1.0,
-      "fields_complete": true,
-      "description_shape": true,
+      "features": 0,
+      "coverage": 0.0,
+      "fields_complete": false,
+      "description_shape": false,
       "missing_fields": [],
-      "vessels_present": [
-        "COSTA DIAMANTE",
-        "EVER GIVEN",
-        "MAERSK ESSEX",
-        "MSC GULSUN",
-        "SEAWISE GIANT"
-      ],
+      "vessels_present": [],
       "trial": 5,
       "success_flag": true,
       "tool_calls": [
         "read_file",
-        "write_file",
-        "write_file",
-        "write_file",
+        "web_search",
+        "web_search",
         "write_file"
       ],
       "nudges": 0,
-      "elapsed_ms": 128252,
-      "outcome_class": "wrote_complete"
+      "elapsed_ms": 73858,
+      "outcome_class": "refused_stale"
     },
     {
       "written": false,
@@ -134,10 +130,13 @@
       "success_flag": true,
       "tool_calls": [
         "read_file",
-        "fetch_url"
+        "web_search",
+        "fetch_url",
+        "web_search",
+        "web_search"
       ],
       "nudges": 0,
-      "elapsed_ms": 55780,
+      "elapsed_ms": 66191,
       "outcome_class": "no_attempt"
     },
     {
@@ -153,40 +152,32 @@
       "success_flag": true,
       "tool_calls": [
         "read_file",
-        "fetch_url",
-        "write_file",
-        "read_file"
+        "web_search",
+        "read_file",
+        "fetch_url"
       ],
       "nudges": 0,
-      "elapsed_ms": 77921,
-      "outcome_class": "refused_stale"
+      "elapsed_ms": 72360,
+      "outcome_class": "no_attempt"
     },
     {
-      "written": true,
+      "written": false,
       "valid": true,
-      "features": 5,
-      "coverage": 1.0,
-      "fields_complete": true,
-      "description_shape": true,
+      "features": 0,
+      "coverage": 0.0,
+      "fields_complete": false,
+      "description_shape": false,
       "missing_fields": [],
-      "vessels_present": [
-        "COSTA DIAMANTE",
-        "EVER GIVEN",
-        "MAERSK ESSEX",
-        "MSC GULSUN",
-        "SEAWISE GIANT"
-      ],
+      "vessels_present": [],
       "trial": 8,
       "success_flag": true,
       "tool_calls": [
-        "write_file",
         "read_file",
-        "write_file",
-        "write_file"
+        "read_file"
       ],
       "nudges": 0,
-      "elapsed_ms": 112702,
-      "outcome_class": "wrote_complete"
+      "elapsed_ms": 53047,
+      "outcome_class": "no_attempt"
     },
     {
       "written": false,
@@ -200,12 +191,11 @@
       "trial": 9,
       "success_flag": true,
       "tool_calls": [
-        "fetch_url",
-        "fetch_url",
-        "fetch_url"
+        "read_file",
+        "read_file"
       ],
       "nudges": 0,
-      "elapsed_ms": 62824,
+      "elapsed_ms": 50327,
       "outcome_class": "no_attempt"
     },
     {
@@ -221,16 +211,16 @@
       "success_flag": true,
       "tool_calls": [
         "read_file",
-        "fetch_url"
+        "read_file"
       ],
       "nudges": 0,
-      "elapsed_ms": 55306,
+      "elapsed_ms": 51412,
       "outcome_class": "no_attempt"
     }
   ],
   "outcome_classes": {
-    "wrote_complete": 4,
-    "no_attempt": 5,
+    "wrote_complete": 1,
+    "no_attempt": 8,
     "refused_stale": 1
   },
   "k": 10,

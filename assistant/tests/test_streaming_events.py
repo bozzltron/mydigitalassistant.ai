@@ -694,27 +694,34 @@ async def test_stream_tool_loop_nudges_once_when_an_action_was_expected(tmp_path
 
 
 def test_action_performed_is_structural():
-    """A read is not a write, and no model is asked.
+    """A read is not a write, and a lookup is not a change.
 
-    Regression for the measured failure in `experiments/ship_tracker_efficacy/`: 7 of 10
-    trials read the CSV, never called a write tool, and the previous *model* judgement
-    (`outstanding`, `nimble`) called that done. `decision.py` had already measured that
-    model as useless here; the run reproduced it.
+    Both halves are regressions from `experiments/ship_tracker_efficacy/`:
+
+    - run 1: 7 of 10 trials read the CSV, never called a write tool, and the previous
+      *model* judgement (`outstanding`, `nimble`) called that done;
+    - run 2: the first structural rule checked both tool sets and accepted either, so a
+      `fetch_url` satisfied a request to write a file — 5 of 10 still failed, one tool
+      further along.
     """
     from assistant.backend.pipeline.decision import action_performed
 
-    # Reads do not perform an action.
-    assert not action_performed([])
-    assert not action_performed(["read_file"])
-    assert not action_performed(["read_file", "search_file", "glob", "recall"])
-    # A write does.
-    assert action_performed(["write_file"])
-    assert action_performed(["read_file", "edit_file"])
-    assert action_performed(["upsert_slot"])
-    # And an external lookup is performed by the tools that perform it.
-    assert action_performed(["web_search"])
-    assert action_performed(["fetch_url"])
-    assert not action_performed(["search_episodes"])  # internal, not external
+    # A *change* is not performed by a read, nor by a lookup.
+    assert not action_performed([], "change")
+    assert not action_performed(["read_file", "search_file", "glob"], "change")
+    assert not action_performed(["read_file", "fetch_url"], "change")  # run 2's bug
+    assert action_performed(["write_file"], "change")
+    assert action_performed(["read_file", "edit_file"], "change")
+    assert action_performed(["upsert_slot"], "change")
+
+    # A *lookup* is performed by a lookup, and not by a write.
+    assert not action_performed(["read_file"], "lookup")
+    assert action_performed(["web_search"], "lookup")
+    assert action_performed(["fetch_url"], "lookup")
+    assert not action_performed(["search_episodes"], "lookup")  # internal, not external
+
+    # An unknown kind performs nothing: the check must not fire on a guess.
+    assert not action_performed(["write_file"], None)
 
 
 async def test_stream_tool_loop_still_judges_completion_after_the_first_nudge(

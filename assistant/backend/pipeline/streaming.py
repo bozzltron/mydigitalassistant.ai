@@ -243,6 +243,7 @@ def _summarize_call(name: str, args: dict) -> str:
 async def _maybe_nudge(
     *,
     expects_action: bool,
+    action_kind: str | None,
     already_nudged: bool,
     completion_nudged: bool,
     tool_calls_made: list[str],
@@ -277,7 +278,7 @@ async def _maybe_nudge(
         return None
     from assistant.backend.pipeline.decision import action_performed
 
-    if not action_performed(tool_calls_made):
+    if not action_performed(tool_calls_made, action_kind):
         logger.info("Action nudge: the tool calls did not perform the action")
         return _COMPLETION_NUDGE
     return None
@@ -294,6 +295,7 @@ async def stream_tool_loop(
     session_id: str = "",
     max_turns: int | None = None,
     expects_action: bool = False,
+    action_kind: str | None = None,
     search_sink: dict | None = None,
 ) -> AsyncGenerator[str, None]:
     """Stream the full tool loop including tool calls and final answer (SSE format).
@@ -522,6 +524,7 @@ async def stream_tool_loop(
             # perform it, hand the model its own message back once (see _maybe_nudge).
             nudge = await _maybe_nudge(
                 expects_action=expects_action,
+                action_kind=action_kind,
                 already_nudged=action_nudged,
                 completion_nudged=completion_nudged,
                 tool_calls_made=tool_calls_made,

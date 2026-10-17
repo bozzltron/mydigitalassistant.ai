@@ -1389,10 +1389,15 @@ class Orchestrator:
         routing_start = time.monotonic()
         recall_start = time.monotonic()
 
-        # Does the request need an action? A local decision model judges it
-        # (decision.needs_action) — the model-first half of the fix for a turn that
-        # announces an action and never calls the tool. It runs alongside routing
+        # Does the request need an action, and of which kind? A local decision model
+        # judges it (decision.needs_action) — the model-first half of the fix for a turn
+        # that announces an action and never calls the tool. It runs alongside routing
         # and retrieval, so it adds no serial latency to the turn.
+        #
+        # The *kind* rides along because the completion check needs it: a request to
+        # change something is not performed by a lookup, and treating both as one action
+        # let a fetch satisfy a request to write a file.
+        action_kind: str | None = None
         from assistant.backend.pipeline.decision import needs_action
 
         if skip_route:
@@ -1404,7 +1409,8 @@ class Orchestrator:
                 user_id=request.user_id,
                 session_id=session_id,
             )
-            expects_action = bool(await needs_action(request.message))
+            action_kind = await needs_action(request.message)
+            expects_action = action_kind is not None
         else:
             # Run routing, retrieval and the action judgement concurrently
             route_task = asyncio.create_task(route(request.message, self.llm_client))
@@ -1419,7 +1425,8 @@ class Orchestrator:
             classification, memory_context, action_judgement = await asyncio.gather(
                 route_task, retrieve_task, action_task
             )
-            expects_action = bool(action_judgement)
+            action_kind = action_judgement
+            expects_action = action_kind is not None
             task_type = classification.task_type
 
         routing_time = time.monotonic() - routing_start
@@ -1979,6 +1986,7 @@ class Orchestrator:
                     session_id=session_id,
                     max_turns=loop_max_turns,
                     expects_action=expects_action,
+                    action_kind=action_kind,
                     search_sink=tool_search,
                 ):
                     # Parse event to capture final answer

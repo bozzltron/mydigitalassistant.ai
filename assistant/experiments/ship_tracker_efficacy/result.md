@@ -137,6 +137,62 @@ No extra model call — the judgement is already made — but the question gains
 `experiments/decision_nudge_scope/`. That measurement has to be redone, and the plan for it
 should be re-read before this change is made.
 
+## Run 3 — after the kind-aware rule (`cca58f3` + the `kind` change)
+
+| class | run 1 | run 2 | run 3 |
+|---|---|---|---|
+| `wrote_complete` | 3 | 4 | **1** |
+| `no_attempt` | 7 | 5 | **8** |
+| `refused_stale` | 0 | 1 | 1 |
+| H1 / H5 | FAIL / FAIL | FAIL / FAIL | **FAIL / FAIL** |
+
+```
+trial  2: read_file,search_file
+trial  3: read_file,search_file ×5
+trial  4: read_file,web_search ×6,read_file,web_search
+trial  8,9,10: read_file,read_file
+```
+
+**The rule now works and the outcome got worse.** A `fetch_url` no longer satisfies a
+change, so the completion nudge fires on the read-and-stop trials — and the model answers
+the nudge with *more looking*. Trial 4 called nine tools, six of them searches, and never
+wrote. Trials 3 and 8–10 are reads alone.
+
+Read the direction honestly: 8 vs 5 `no_attempt` and 1 vs 4 complete is consistent across
+two classes, but **K=10 cannot resolve this** and the plan said so in advance. What it is
+is *suggestive*: the nudge consumes a round and produces more of the behaviour it was
+meant to interrupt.
+
+### What that means for the hypothesis
+
+Three runs have now varied the *check*:
+
+| run | check | result |
+|---|---|---|
+| 1 | model judgement (`outstanding`) | 3 complete |
+| 2 | structural, either tool set | 4 complete |
+| 3 | structural, kind-aware | 1 complete |
+
+The check is no longer the problem — run 3's nudge fires on exactly the trials it was
+written for. **The model is being told, correctly and specifically, that it did not write
+the file, and it responds by reading again.** So "the model does not realise" is falsified
+as the mechanism, and the nudge is not the lever.
+
+### The next measurement, not the next fix
+
+The runner still cannot distinguish three states, and they need different fixes:
+
+1. the model *believes* it wrote the file (a claim/reality gap);
+2. the model *knows* it did not and declines silently — the `refused_stale` behaviour
+   without the report;
+3. the model is trying and failing at the write itself.
+
+`refused_stale` occurred twice across three runs, which is evidence for (2): the model does
+exercise this judgement, and a judgement it does not voice looks identical to a failure.
+**Capture the final answer text per trial** and read it. That is a change to the
+instrument, not to the agent, and it should have been done before run 3 — I flagged the gap
+and then theorised anyway.
+
 ## What this does not establish
 
 - **Not correctness.** `coverage` and `fields_complete` say the shape is right; the
