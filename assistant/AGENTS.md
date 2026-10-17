@@ -103,12 +103,18 @@ The fix is model-first, in two halves:
    counterfeit. A read of the user's own stored content is **not** an action, so a
    request the assistant can answer from memory never fires the nudge
    (`experiments/decision_nudge_scope/`).
-2. **The loop nudges once** (`stream_tool_loop`, `expects_action`). If the turn ends
-   with no tool call — or a tool ran but the *action* is still outstanding
-   (`decision.outstanding`, `nimble`, which judges the calls and not the answer's
-   claim) — the model is handed its own message back once and asked to act. Bounded
-   to one nudge per turn, and it emits an `acting` stage so the user sees the
-   self-correction rather than only the latency.
+2. **The loop nudges once per failure** (`stream_tool_loop`, `expects_action`). If the turn
+   ends with no tool call, the model is handed its own message back and asked to act.
+   Separately, if tools ran but none *could* have performed the action, it is nudged again
+   — `decision.action_performed`, which is **structural**: the tool names are checked
+   against the kind of act (`needs_action` decides the kind; the code decides whether a
+   tool of that kind ran). It used to be a model judgement (`decision.outstanding`,
+   `nimble`) that asked a small model whether the calls had done the job; measured in
+   `experiments/ship_tracker_efficacy/`, a `read_file` satisfied it and 7 of 10 trials were
+   judged done without ever writing. A tool name is not a guess about wording, which is
+   what the "no phrasing detector" rule forbids. Each failure gets one nudge, and the loop
+   emits an `acting` stage so the user sees the self-correction rather than only the
+   latency.
 
 **Do not add a phrasing detector** ("the answer says *I'll…*"). That is a guess about
 wording, which this project rejects; the trigger is structural (no tool call) and the

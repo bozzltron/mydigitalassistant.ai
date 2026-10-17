@@ -245,7 +245,6 @@ async def _maybe_nudge(
     expects_action: bool,
     already_nudged: bool,
     completion_nudged: bool,
-    request_text: str,
     tool_calls_made: list[str],
 ) -> str | None:
     """The nudge note for this turn, or ``None``.
@@ -329,12 +328,6 @@ async def stream_tool_loop(
 
     chat_messages = [ChatMessage(**m) for m in messages]
     loop_model = model or llm_client.tools_model
-    # The user's request, for the completion judgement — read once, before any
-    # nudge adds a user-role message of its own.
-    request_text = next(
-        (m.content for m in reversed(chat_messages) if getattr(m, "role", "") == "user"),
-        "",
-    )
 
     # The cap is a runaway guard; the model ends the loop itself. A caller that
     # knows the task's complexity (the orchestrator, from the reasoner's plan)
@@ -531,7 +524,6 @@ async def stream_tool_loop(
                 expects_action=expects_action,
                 already_nudged=action_nudged,
                 completion_nudged=completion_nudged,
-                request_text=request_text,
                 tool_calls_made=tool_calls_made,
             )
             if nudge:

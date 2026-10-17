@@ -208,6 +208,7 @@ different models**, because no single one does both jobs
 |---|---|---|---|
 | `needs_action` — does the request need a change or an external lookup? | `tev1:0.8b` | 95% | 70 ms |
 | `outstanding` — did the calls leave it undone? | `nimble` | 93.8% | 604 ms |
+| ~~`outstanding`~~ — **superseded by `action_performed`, which is structural and calls no model** (a `read_file` satisfied `nimble`, so 7 of 10 scheduled-task trials were judged done without writing — `experiments/ship_tracker_efficacy/`) | — | — | — |
 
 `tev1:0.8b` cannot separate the completion classes at all (0.44 vs 0.42), and
 `nimble` cannot match it on routing (90%). Both beat the mechanism they replaced —
