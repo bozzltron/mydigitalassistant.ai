@@ -693,6 +693,30 @@ async def test_stream_tool_loop_nudges_once_when_an_action_was_expected(tmp_path
     assert events and '"type": "finalize"' in events[-1]
 
 
+def test_action_performed_is_structural():
+    """A read is not a write, and no model is asked.
+
+    Regression for the measured failure in `experiments/ship_tracker_efficacy/`: 7 of 10
+    trials read the CSV, never called a write tool, and the previous *model* judgement
+    (`outstanding`, `nimble`) called that done. `decision.py` had already measured that
+    model as useless here; the run reproduced it.
+    """
+    from assistant.backend.pipeline.decision import action_performed
+
+    # Reads do not perform an action.
+    assert not action_performed([])
+    assert not action_performed(["read_file"])
+    assert not action_performed(["read_file", "search_file", "glob", "recall"])
+    # A write does.
+    assert action_performed(["write_file"])
+    assert action_performed(["read_file", "edit_file"])
+    assert action_performed(["upsert_slot"])
+    # And an external lookup is performed by the tools that perform it.
+    assert action_performed(["web_search"])
+    assert action_performed(["fetch_url"])
+    assert not action_performed(["search_episodes"])  # internal, not external
+
+
 async def test_stream_tool_loop_still_judges_completion_after_the_first_nudge(
     tmp_path, monkeypatch
 ):
@@ -705,17 +729,11 @@ async def test_stream_tool_loop_still_judges_completion_after_the_first_nudge(
     sequence, so the branch was dead for the case it exists for: the model narrated, was
     nudged, called `search_file` (a read), and finalised claiming the write.
     """
-    from assistant.backend.pipeline import decision
     from assistant.backend.pipeline.llm_client import ChatResponse, ToolCall
     from assistant.backend.pipeline.streaming import stream_tool_loop
     from assistant.backend.pipeline.tool_executor import init_store
 
     init_store(str(tmp_path / "sequence.db"))
-
-    async def fake_outstanding(request, tools_called):
-        return True  # the read did not perform the write
-
-    monkeypatch.setattr(decision, "outstanding", fake_outstanding)
 
     class StubLLM:
         def __init__(self):
@@ -767,19 +785,14 @@ async def test_stream_tool_loop_nudges_when_the_calls_did_not_do_it(tmp_path, mo
     """The live failure: a tool ran (read_file) but the action was not performed.
 
     "No tool call" is too coarse — the model called a *different* tool and then
-    claimed the write. The completion judgement (decision.outstanding) catches it.
+    claimed the write. The completion check is structural now: a request that needs a
+    change is not performed by a read, and no model has to be asked.
     """
-    from assistant.backend.pipeline import decision
     from assistant.backend.pipeline.llm_client import ChatResponse, ToolCall
     from assistant.backend.pipeline.streaming import stream_tool_loop
     from assistant.backend.pipeline.tool_executor import init_store
 
     init_store(str(tmp_path / "completion.db"))
-
-    async def fake_outstanding(request, tools_called):
-        return True  # the calls left the action undone
-
-    monkeypatch.setattr(decision, "outstanding", fake_outstanding)
 
     class StubLLM:
         def __init__(self):

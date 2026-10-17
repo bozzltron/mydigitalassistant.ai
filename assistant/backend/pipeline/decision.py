@@ -122,8 +122,49 @@ async def needs_action(text: str) -> bool | None:
     return decided
 
 
+# The tools that *perform* each kind of action. `needs_action` is already scoped to
+# exactly two kinds — a change, or an external lookup — so "did a tool capable of it
+# run?" is answerable structurally, without a second judgement.
+_MUTATING_TOOLS = frozenset(
+    {
+        "write_file",
+        "edit_file",
+        "append_file",
+        "delete_file",
+        "rename_file",
+        "upsert_slot",
+        "upsert_association",
+        "mark_essential",
+    }
+)
+_LOOKUP_TOOLS = frozenset({"web_search", "fetch_url"})
+
+
+def action_performed(tools_called: list[str]) -> bool:
+    """Whether the calls that ran could have performed the action.
+
+    **Structural on purpose.** This replaces a model judgement (`outstanding`, `nimble`)
+    that asked a small model whether a `read_file` had performed a write. Measured live in
+    ``experiments/ship_tracker_efficacy/``: 7 of 10 trials read a CSV, never called a write
+    tool, and were judged *done* — the task failed 70% of the time and the check reported
+    nothing wrong. This module had already measured `nimble` as "useless at ``outstanding``
+    (no separation)"; that run reproduced it, on the task the judgement was written for.
+
+    A tool name is not a guess about wording, and a request that needs a change is not
+    satisfied by a read. Both facts are structural, so this is too.
+    """
+    called = set(tools_called)
+    return bool(called & _MUTATING_TOOLS) or bool(called & _LOOKUP_TOOLS)
+
+
 async def outstanding(request: str, tools_called: list[str]) -> bool | None:
     """Whether the tool calls left an action the user asked for undone.
+
+    **Superseded by `action_performed`, and no longer called.** Kept until the structural
+    replacement is verified by a re-run of ``ship_tracker_efficacy`` — removing the old
+    path before the new one is measured is the wrong order. Delete it, and
+    ``decision_completion_model`` / ``decision_outstanding_threshold`` with it, once H5
+    reads 0.
 
     ``None`` when undecidable (no completion model, an error, an unusable answer).
     The threshold is biased toward ``outstanding`` (``settings.decision_outstanding_threshold``)

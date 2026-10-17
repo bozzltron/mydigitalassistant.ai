@@ -271,14 +271,14 @@ async def _maybe_nudge(
         logger.info("Action nudge: no tool was called for a request that needs an action")
         return _ACTION_NUDGE
 
-    # A tool ran — but did it do the job? A turn can call a *different* tool (a
-    # read) and still claim the write, measured live. Judge the calls, not the
-    # assistant's claim.
+    # A tool ran — but did it do the job? A turn can call a *different* tool (a read)
+    # and still claim the write, measured live. Judge the calls structurally: a request
+    # scoped to a change or a lookup is not performed by a read.
     if completion_nudged:
         return None
-    from assistant.backend.pipeline.decision import outstanding
+    from assistant.backend.pipeline.decision import action_performed
 
-    if await outstanding(request_text, tool_calls_made):
+    if not action_performed(tool_calls_made):
         logger.info("Action nudge: the tool calls did not perform the action")
         return _COMPLETION_NUDGE
     return None
