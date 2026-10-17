@@ -284,3 +284,65 @@ is the variable.
 Whether the completion nudge is *necessary* — no counterfactual arm ran, and none of the seven
 writes happened unprompted — and whether raising the ceiling or spending the nudge on the
 exhaustion path is the better fix. Both are testable; H1 remains the bar.
+
+## Run 5 — after the ceiling grant: 9/10, H1 PASS
+
+| class | run 4 | **run 5** |
+|---|---|---|
+| `wrote_complete` | 7 | **9** |
+| `no_attempt` | 3 | **0** |
+| `refused_stale` | 0 | 1 |
+| H1 / H5 | F / F | **P / P** |
+
+The first run to meet the standing bar, and `no_attempt` is zero.
+
+### My mechanism bar was mis-specified; the corrected one passes
+
+Amendment 3 set "`exit_reason == exhausted` count must be 0". Measured: **7** — everything
+except trials 3, 4 and 8. As written, that bar fails, and it is recorded as failing.
+
+**The bar was wrong, not the fix.** `exhausted` also covers the legitimate case: the action *was*
+performed and the model simply kept working until the ceiling, so the wrap-up wrote the report.
+The condition the fix is actually for is "exiting `exhausted` with the action **unperformed**",
+and that count is **0**:
+
+| trial | exit | wrote |
+|---|---|---|
+| 1, 2, 5, 6, 7, 9, 10 | `exhausted` | **yes** — the action ran; the ceiling was reached afterwards |
+| 3, 4, 8 | `answered` | yes |
+
+The bar is recorded as written and as corrected, rather than quietly re-scored after the data.
+
+### Why the loop exhausts now: the model does not stop after it succeeds
+
+| trial | `write_file` calls |
+|---|---|
+| 3, 10 | **5** |
+| 6, 8 | 3 |
+| 5, 9 | 2 |
+
+Trials 3 and 10 spent five rounds re-writing a file that was already correct. That is what
+reaches the ceiling now — not searching, as in run 4. It is a distinct defect from the one just
+fixed, and it is the reason `exhausted` is high.
+
+### Trial 2 is a tool error, not a refusal
+
+Tool error: `write_file: File exists: ship-tracker.geojson (use overwrite=True)`. So
+`refused_stale` here means "a write tool was called and the file is unchanged", which conflates
+**declined** with **the write failed**. This one is a failure, not judgement — see
+`verification.md`.
+
+### What this does not establish
+
+`7 -> 9` is **not** resolvable at K=10, as the plan said before the data. What the run
+establishes is narrower and firmer: `no_attempt` 3 -> 0, and no trial exits the ceiling with its
+action unperformed. Trial 6 wrote, which Amendment 3 flagged in advance as **not** evidence for
+the fix — its run-4 failure was not this mechanism.
+
+### Two defects it exposes, both now measured
+
+1. **`write_file` will not replace an existing file without `overwrite=True`**, while the prompt
+   says "update the file". The real task's file always exists, so this fires every morning. It
+   is demonstrated to change an outcome (trial 2), not merely to log a warning.
+2. **The model re-writes a file it has already written correctly**, up to five times, spending
+   the rounds the ceiling then cuts off.

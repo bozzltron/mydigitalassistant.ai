@@ -150,3 +150,17 @@ interpreted and written up.
 The lesson is not "be careful". It is that **a harness must assert its own wiring and an
 instrument must record tool failures**, because a defaulted parameter fails silently by
 construction — and a silent failure is indistinguishable from a decision.
+
+## Run 5 — preflight clean, and one label is ambiguous
+
+The wiring assert passed, every trial recorded an `exit_reason` (no `(unlogged)`), and the tool
+errors were surfaced — so the new fields are live rather than assumed.
+
+But `refused_stale` means two different things, and this run shows it. Trial 2's answer says
+"I encountered a **tool error** when trying to update the ship-tracker.geojson file", and the
+tool-error tally names it: `write_file: File exists: ship-tracker.geojson (use overwrite=True)`.
+The class is `refused_stale` only because `classify` sees a write tool in the call list while
+the file is unchanged. **A failed write and a deliberate decline are the same observation** —
+the same shape as the fault this whole run exists to correct, at a smaller scale, and it means
+both `refused_stale` appearances (runs 2 and 5) must be read with the tool-error tally beside
+them rather than on their own.
