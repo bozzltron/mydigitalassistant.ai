@@ -80,6 +80,63 @@ peak, `truncated=False` on every observed turn — the plan ruled it out in adva
    model needs to be told *which* tool performs a write — which is the `toolset_scope`
    question, and it becomes the efficacy fix rather than the cost one.
 
+## Run 2 — after the structural completion check (`cca58f3`)
+
+Same instrument, same seed, K=10, brain copy taken after run 1.
+
+| class | run 1 | run 2 |
+|---|---|---|
+| `wrote_complete` | 3 | **4** |
+| `no_attempt` | 7 | **5** |
+| `refused_stale` | 0 | **1** |
+| `wrote_partial` | 0 | 0 |
+| H1 / H5 | FAIL / FAIL | **FAIL / FAIL** |
+
+```
+trial  3,4,6,10: no_attempt   read_file, fetch_url
+trial  9:        no_attempt   fetch_url,fetch_url,fetch_url
+trial  7:        refused_stale  read_file,fetch_url,write_file,read_file
+```
+
+**The fix was falsified, and by its own mechanism.** Every remaining `no_attempt` called
+`fetch_url` — which is in `_LOOKUP_TOOLS` — so `action_performed` returned true and no nudge
+fired. The rule I wrote was:
+
+```python
+return bool(called & _MUTATING_TOOLS) or bool(called & _LOOKUP_TOOLS)
+```
+
+**The `or` is the bug.** A request to *change* something is not performed by a *lookup*, and
+the rule accepts either. The seven-to-five improvement is real but incidental: run 1's
+failures called only reads, run 2's called reads *and* a fetch, and only the fetch reached
+the permissive branch.
+
+### What run 2 establishes beyond the falsification
+
+- **`refused_stale` appeared**, exactly as `plan.md` predicted and run 1 did not produce. Trial
+  7 called `write_file` and left the file an empty FeatureCollection — declining to write
+  positions it could not confirm. That is the *correct* behaviour, and it is why the class
+  exists: scored as `written`, it would have been a fifth failure.
+- **The model reaches for the network when it cannot find data.** Trials 3, 4, 6, 9, 10 all
+  fetched. So the "read the CSV and stop" pattern of run 1 was partly a *no-search* pattern,
+  and the fetch is progress — it just is not the write.
+
+### The corrected rule
+
+The kind of the request has to decide which tool set counts, which means `needs_action` must
+return the kind rather than a bool. It already asks the model; it is throwing the answer's
+*shape* away.
+
+| request kind | performed when |
+|---|---|
+| change | `called & _MUTATING_TOOLS` |
+| lookup | `called & _LOOKUP_TOOLS` |
+
+No extra model call — the judgement is already made — but the question gains a third option
+(`change` / `lookup` / `answer`), which **invalidates the `needs_action` measurement** in
+`experiments/decision_nudge_scope/`. That measurement has to be redone, and the plan for it
+should be re-read before this change is made.
+
 ## What this does not establish
 
 - **Not correctness.** `coverage` and `fields_complete` say the shape is right; the
