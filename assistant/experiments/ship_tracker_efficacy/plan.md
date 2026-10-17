@@ -83,6 +83,36 @@ scoring — so it is recorded here rather than discovered in the result.
    worse one. This is a scoring decision, so it had to be made before the data, not after
    seeing which key the model chose.
 
+## Amendment 2 — the instrument, before run 4
+
+Runs 1–3 could not answer the question they raised. This document declares `nudges` as
+dependent variable 7, and the runner reported `nudges: 0` for every trial in every run —
+because `one_trial` initialised `nudges: list[str] = []` and **never appended to it**. Run 3's
+claim that "the nudge is firing" was therefore an *inference from the call lists*, not a
+measurement; the record was silent either way. That is the gap that let runs 2 and 3 be
+explained by guesswork twice, and it was a bug in the instrument rather than a missing idea.
+
+Three fields are added. All are reads on the run; none is a decision about it.
+
+| field | what it now records | why |
+|---|---|---|
+| `answer` | the final answer text, as stored on the task frame | whether the model *claims* it wrote the file or says it could not — the difference between a claim/reality gap and a silent decline |
+| `call_log` | each call with its identifying argument (`path=…`, `query=…`) | `read_file, read_file` cannot distinguish reading `vessels.csv` from reading `ship-tracker.geojson` back, and step 4 instructs exactly that read |
+| `nudges` | the kinds that actually fired (`empty` / `completion`) | the declared variable, now collected instead of reported as zero |
+
+`_maybe_nudge` is **wrapped, not modified** — it already returns the note it hands the model,
+so the observer records and delegates, and cannot change a trial's behaviour.
+
+**No phrasing detector is added to the instrument.** It is tempting to score "the answer
+claims a write" as a boolean, and that would be a regex over wording — the thing this project
+forbids as a *trigger*. A boolean here would be a judgement wearing a count's clothes. The
+text is captured, and read.
+
+Consequence for interpretation: runs 1–3 lack these fields, so **run 4 is a new observation,
+not a repetition.** H1 and H5 keep their meaning as rate hypotheses over K=10; the three-way
+distinction the instrument now draws (claim / silent decline / write failure) is descriptive,
+and one run of ten resolves it no further than the classes it prints.
+
 ## Dependent variables, per trial
 
 | # | Variable | Definition |

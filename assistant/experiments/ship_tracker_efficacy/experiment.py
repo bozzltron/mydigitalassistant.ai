@@ -63,7 +63,7 @@ from assistant.backend.config import settings  # noqa: E402
 from assistant.backend.db.schema import init_db  # noqa: E402
 from assistant.backend.memory.retrieval import Retriever  # noqa: E402
 from assistant.backend.memory.store import MemoryStore  # noqa: E402
-from assistant.backend.pipeline import tool_executor  # noqa: E402
+from assistant.backend.pipeline import streaming, tool_executor  # noqa: E402
 from assistant.backend.pipeline.llm_client import OllamaClient  # noqa: E402
 from assistant.backend.pipeline.orchestrator import (  # noqa: E402
     Orchestrator,
@@ -122,6 +122,28 @@ def seed() -> None:
 
 def _norm(s: object) -> str:
     return re.sub(r"\s+", " ", str(s or "")).strip()
+
+
+def _summarise_args(raw_args: object) -> str:
+    """The argument that says *what* a call was about, for the record.
+
+    Tool *names* alone cannot tell a read of `vessels.csv` from a read of
+    `ship-tracker.geojson`, and that distinction is the question run 4 exists to answer:
+    the prompt's step 4 tells the model to read the map back, so `read_file, read_file` is
+    ambiguous between "verified the write" and "never got there". The value is truncated —
+    this is an identifier for a log, not a copy of the payload.
+    """
+    if isinstance(raw_args, str):
+        try:
+            raw_args = json.loads(raw_args)
+        except (TypeError, ValueError):
+            return raw_args[:80]
+    if not isinstance(raw_args, dict):
+        return str(raw_args)[:80]
+    for key in ("path", "file", "filename", "url", "query", "name"):
+        if key in raw_args:
+            return f"{key}={str(raw_args[key])[:60]}"
+    return json.dumps(raw_args, sort_keys=True)[:80]
 
 
 def measure(text: str) -> dict:
@@ -196,17 +218,45 @@ def classify(m: dict, tool_calls: list[str]) -> str:
 async def one_trial(orch: Orchestrator, store: MemoryStore, n: int) -> dict:
     seed()
     calls: list[str] = []
+    call_log: list[dict] = []
     nudges: list[str] = []
 
     # Capture the call list by wrapping the executor: `execute_and_record_task` does not
     # return it, and the *calls* are the evidence for `no_attempt` vs `refused_stale`.
+    # Each entry also records whether the call **succeeded** — a tool that fails silently
+    # looks exactly like a model that chose not to act, and that is the fault that made
+    # runs 1-3 unreadable.
     real_execute = tool_executor.execute_tool
 
     async def recording(tool_name, raw_args, user_id, session_id):
         calls.append(tool_name)
-        return await real_execute(tool_name, raw_args, user_id, session_id)
+        entry: dict = {"tool": tool_name, "args": _summarise_args(raw_args)}
+        try:
+            result = await real_execute(tool_name, raw_args, user_id, session_id)
+        except Exception as exc:
+            entry["error"] = f"raised {type(exc).__name__}: {exc}"[:200]
+            call_log.append(entry)
+            raise
+        entry["ok"] = bool(getattr(result, "success", True))
+        if getattr(result, "error", None):
+            entry["error"] = str(result.error)[:200]
+        call_log.append(entry)
+        return result
+
+    # The nudge was invisible in the record: a trial that was nudged and then wrote nothing
+    # looked identical to one that was never nudged. `_maybe_nudge` *returns* the note it
+    # hands the model, so wrapping it records the event without altering it. This is the gap
+    # that let runs 2 and 3 be explained twice by guesswork.
+    real_nudge = streaming._maybe_nudge
+
+    async def recording_nudge(**kwargs: object) -> str | None:
+        note = await real_nudge(**kwargs)  # type: ignore[arg-type]
+        if note:
+            nudges.append("completion" if kwargs.get("tool_calls_made") else "empty")
+        return note
 
     tool_executor.execute_tool = recording
+    streaming._maybe_nudge = recording_nudge
     started = time.monotonic()
     try:
         task = await store.upsert_scheduled_task(
@@ -217,7 +267,7 @@ async def one_trial(orch: Orchestrator, store: MemoryStore, n: int) -> dict:
             enabled=True,
             owner_user_id=1,
         )
-        success, _result = await execute_and_record_task(
+        success, answer = await execute_and_record_task(
             store=store,
             orchestrator=orch,
             task_frame_id=task,
@@ -227,6 +277,7 @@ async def one_trial(orch: Orchestrator, store: MemoryStore, n: int) -> dict:
         )
     finally:
         tool_executor.execute_tool = real_execute
+        streaming._maybe_nudge = real_nudge
     elapsed_ms = int((time.monotonic() - started) * 1000)
 
     text = (_fs.get_sandbox_root() / "ship-tracker.geojson").read_text(encoding="utf-8")
@@ -236,7 +287,12 @@ async def one_trial(orch: Orchestrator, store: MemoryStore, n: int) -> dict:
             "trial": n,
             "success_flag": bool(success),
             "tool_calls": calls,
-            "nudges": len(nudges),
+            "call_log": call_log,
+            "nudges": nudges,
+            # The final answer as recorded on the task frame (capped at 2000 chars there).
+            # Whether the model *claims* it wrote the file is only visible here, and it is
+            # what separates a claim/reality gap from a silent decline.
+            "answer": answer or "",
             "elapsed_ms": elapsed_ms,
             "outcome_class": classify(m, calls),
         }
@@ -244,6 +300,7 @@ async def one_trial(orch: Orchestrator, store: MemoryStore, n: int) -> dict:
     print(
         f"  trial {n:>2}: {m['outcome_class']:<15} "
         f"coverage={m['coverage']:.2f} fields={m['fields_complete']!s:<5} "
+        f"nudge={','.join(nudges) or '-':<10} "
         f"calls={','.join(calls) or '(none)'}"
     )
     return m
@@ -278,16 +335,32 @@ async def run() -> None:
         keep_alive=settings.ollama_keep_alive,
     )
     retriever = Retriever(store=store, llm_client=llm)
+    search_tool = WebSearchTool()
     orch = Orchestrator(
         deps=OrchestratorDeps(
             store=store,
             retriever=retriever,
             llm_client=llm,
-            search_tool=WebSearchTool(),
+            search_tool=search_tool,
         )
     )
+    # `init_store` defaults both `search_tool` and `orchestrator` to **None**, and
+    # `main.py` passes both. This runner passed neither, so every `web_search` the model
+    # made returned "Search tool not initialized" — in all 30 trials of runs 1-3 — and
+    # `fetch_url` ran with no `llm_client`, losing its extraction. A tool that fails
+    # silently is indistinguishable from a model that chose not to act, which is exactly
+    # how three runs came to be read as a completion-check problem. Wired to match
+    # production, because "the same path the scheduler uses" is this experiment's premise.
     tool_executor.init_store(
-        store.db_path, embed_fn=orch.embed_fn(), embedding_model=settings.embedding_model
+        store.db_path,
+        embed_fn=orch.embed_fn(),
+        embedding_model=settings.embedding_model,
+        search_tool=search_tool,
+        orchestrator=orch,
+    )
+    assert tool_executor._search_tool is not None, (
+        "search tool unwired: every web_search would return an error and every trial "
+        "would be invalid (the fault that invalidated runs 1-3)"
     )
 
     trials = [await one_trial(orch, store, n) for n in range(1, TRIALS + 1)]
@@ -307,6 +380,24 @@ async def run() -> None:
     print(f"\n  H1 (>= 8/10 complete)      : {h1}")
     print(f"  H3 (no silent partial write): {'PASS' if partial == 0 else 'FAIL'}")
     print(f"  H5 (no_attempt == 0)        : {'PASS' if classes.get('no_attempt', 0) == 0 else 'FAIL'}")
+
+    # The instrument's new reads — facts about the run, not decisions about it.
+    print(f"\n  trials nudged               : {sum(1 for t in trials if t['nudges'])}/{TRIALS}")
+    print(f"  completion-check nudges     : {sum('completion' in t['nudges'] for t in trials)}")
+    print(f"  empty-turn nudges           : {sum('empty' in t['nudges'] for t in trials)}")
+    print(f"  trials reading the map back : {sum(1 for t in trials if any('ship-tracker' in c['args'] for c in t['call_log']))}")
+
+    # A tool error is a harness fault, not a result, and it must be impossible to read
+    # past. Runs 1-3 could not show this line.
+    errors = [
+        (t["trial"], c["tool"], c["error"])
+        for t in trials
+        for c in t["call_log"]
+        if c.get("error")
+    ]
+    print(f"  tool errors                 : {len(errors)}")
+    for trial_no, tool, err in errors[:6]:
+        print(f"    trial {trial_no:>2} {tool}: {err}")
 
     payload = {
         "trials": trials,

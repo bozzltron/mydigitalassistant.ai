@@ -1,7 +1,16 @@
 # Result
 
+> **VOID — runs 1–3 measured a broken harness, not the agent.** `init_store()` was called
+> without `search_tool`, so every `web_search` in all 30 trials returned
+> `Search tool not initialized`. The model read the CSV, read the map, searched, was told the
+> search had failed, and honestly reported that it could not get positions — which scores as
+> `no_attempt`. Nothing below about completion, nudges, or the checks is a measurement of the
+> agent. See `verification.md`, "Runs 2 and 3 — INVALID, retrospectively". Run 4 follows
+> below once it completes.
+
 K = 10, real LLM, real web search, brain copy, scratch sandbox. Pre-registration in
-`plan.md` (amended once, before data, for the `type`/`vesselType` and CSV-shape findings).
+`plan.md` (amended twice, before data: the `type`/`vesselType` and CSV-shape findings, then
+the instrument — answer text, tool arguments, real nudge counts, tool errors).
 The invalid first run is in `verification.md`.
 
 ## Outcome classes
