@@ -68,6 +68,21 @@ live brain was not touched. **The scratch sandbox is asserted, not assumed** —
 aborts unless `EXP_SANDBOX` is set and is outside the live sandbox, the way
 `file_write_parity` does it.
 
+## Amendment, made before any trial
+
+Two things about the real inputs were checked while wiring the runner, and one changes the
+scoring — so it is recorded here rather than discovered in the result.
+
+1. **`vessels.csv` is a bare list of names** — no header, no types. The seed therefore uses
+   the file's own content verbatim. A synthetic `ship_name,ship_type` file would hand the
+   model the `type` field it is supposed to have to look up, which would flatter `fields_complete`.
+2. **The prompt asks for `type`; the user's own `ship-tracker.geojson` uses `vesselType`.**
+   Either key now satisfies the field. Scoring `vesselType` as a failure would measure the
+   *prompt's* inconsistency with the user's data rather than the agent's competence — and
+   the agent following the schema already in the file is the better behaviour, not the
+   worse one. This is a scoring decision, so it had to be made before the data, not after
+   seeing which key the model chose.
+
 ## Dependent variables, per trial
 
 | # | Variable | Definition |

@@ -1,0 +1,228 @@
+{
+  "trials": [
+    {
+      "written": true,
+      "valid": true,
+      "features": 5,
+      "coverage": 1.0,
+      "fields_complete": true,
+      "description_shape": true,
+      "missing_fields": [],
+      "vessels_present": [
+        "COSTA DIAMANTE",
+        "EVER GIVEN",
+        "MAERSK ESSEX",
+        "MSC GULSUN",
+        "SEAWISE GIANT"
+      ],
+      "trial": 1,
+      "success_flag": true,
+      "tool_calls": [
+        "read_file",
+        "read_file",
+        "search_file",
+        "write_file",
+        "write_file"
+      ],
+      "nudges": 0,
+      "elapsed_ms": 114249,
+      "outcome_class": "wrote_complete"
+    },
+    {
+      "written": false,
+      "valid": true,
+      "features": 0,
+      "coverage": 0.0,
+      "fields_complete": false,
+      "description_shape": false,
+      "missing_fields": [],
+      "vessels_present": [],
+      "trial": 2,
+      "success_flag": true,
+      "tool_calls": [
+        "search_file"
+      ],
+      "nudges": 0,
+      "elapsed_ms": 50173,
+      "outcome_class": "no_attempt"
+    },
+    {
+      "written": false,
+      "valid": true,
+      "features": 0,
+      "coverage": 0.0,
+      "fields_complete": false,
+      "description_shape": false,
+      "missing_fields": [],
+      "vessels_present": [],
+      "trial": 3,
+      "success_flag": true,
+      "tool_calls": [
+        "read_file"
+      ],
+      "nudges": 0,
+      "elapsed_ms": 53584,
+      "outcome_class": "no_attempt"
+    },
+    {
+      "written": false,
+      "valid": true,
+      "features": 0,
+      "coverage": 0.0,
+      "fields_complete": false,
+      "description_shape": false,
+      "missing_fields": [],
+      "vessels_present": [],
+      "trial": 4,
+      "success_flag": true,
+      "tool_calls": [
+        "read_file",
+        "search_file"
+      ],
+      "nudges": 0,
+      "elapsed_ms": 47246,
+      "outcome_class": "no_attempt"
+    },
+    {
+      "written": false,
+      "valid": true,
+      "features": 0,
+      "coverage": 0.0,
+      "fields_complete": false,
+      "description_shape": false,
+      "missing_fields": [],
+      "vessels_present": [],
+      "trial": 5,
+      "success_flag": true,
+      "tool_calls": [
+        "read_file"
+      ],
+      "nudges": 0,
+      "elapsed_ms": 45478,
+      "outcome_class": "no_attempt"
+    },
+    {
+      "written": false,
+      "valid": true,
+      "features": 0,
+      "coverage": 0.0,
+      "fields_complete": false,
+      "description_shape": false,
+      "missing_fields": [],
+      "vessels_present": [],
+      "trial": 6,
+      "success_flag": true,
+      "tool_calls": [
+        "read_file"
+      ],
+      "nudges": 0,
+      "elapsed_ms": 45927,
+      "outcome_class": "no_attempt"
+    },
+    {
+      "written": false,
+      "valid": true,
+      "features": 0,
+      "coverage": 0.0,
+      "fields_complete": false,
+      "description_shape": false,
+      "missing_fields": [],
+      "vessels_present": [],
+      "trial": 7,
+      "success_flag": true,
+      "tool_calls": [
+        "read_file"
+      ],
+      "nudges": 0,
+      "elapsed_ms": 45530,
+      "outcome_class": "no_attempt"
+    },
+    {
+      "written": true,
+      "valid": true,
+      "features": 5,
+      "coverage": 1.0,
+      "fields_complete": true,
+      "description_shape": true,
+      "missing_fields": [],
+      "vessels_present": [
+        "COSTA DIAMANTE",
+        "EVER GIVEN",
+        "MAERSK ESSEX",
+        "MSC GULSUN",
+        "SEAWISE GIANT"
+      ],
+      "trial": 8,
+      "success_flag": true,
+      "tool_calls": [
+        "web_search",
+        "search_file",
+        "read_file",
+        "web_search",
+        "write_file",
+        "read_file",
+        "write_file"
+      ],
+      "nudges": 0,
+      "elapsed_ms": 111346,
+      "outcome_class": "wrote_complete"
+    },
+    {
+      "written": false,
+      "valid": true,
+      "features": 0,
+      "coverage": 0.0,
+      "fields_complete": false,
+      "description_shape": false,
+      "missing_fields": [],
+      "vessels_present": [],
+      "trial": 9,
+      "success_flag": true,
+      "tool_calls": [
+        "read_file"
+      ],
+      "nudges": 0,
+      "elapsed_ms": 48149,
+      "outcome_class": "no_attempt"
+    },
+    {
+      "written": true,
+      "valid": true,
+      "features": 5,
+      "coverage": 1.0,
+      "fields_complete": true,
+      "description_shape": true,
+      "missing_fields": [],
+      "vessels_present": [
+        "COSTA DIAMANTE",
+        "EVER GIVEN",
+        "MAERSK ESSEX",
+        "MSC GULSUN",
+        "SEAWISE GIANT"
+      ],
+      "trial": 10,
+      "success_flag": true,
+      "tool_calls": [
+        "read_file",
+        "read_file",
+        "write_file"
+      ],
+      "nudges": 0,
+      "elapsed_ms": 66922,
+      "outcome_class": "wrote_complete"
+    }
+  ],
+  "outcome_classes": {
+    "wrote_complete": 3,
+    "no_attempt": 7
+  },
+  "k": 10,
+  "prompt": "1. Look up ships we are tracking in the vessels.csv\n2. Pull vessel location data from available sources (e.g., AIS feeds, maritime databases)\n3. update the ship-tracker.geojson file. For each vessel, include:\n\n    shipName: Proper name of the vessel\n    type: Vessel type (e.g., Container Ship, Bulk Carrier)\n    location: Current position or region (e.g., 'Near Suez Canal', 'Indian Ocean')\n    description: A human-readable string combining ship name, type, and location for map display (e.g., 'EVER GIVEN - Container Ship near Suez Canal')\n\n4. Read the ship-tracker.geojson file to make sure our changes above were written and are accurate.\n5. If the file is not updated, try again.",
+  "seed_vessels": [
+    "Ever Given",
+    "MSC GULSUN",
+    "MAERSK ESSEX",
+    "COSTA DIAMANTE",
+    "SEAWISE GIANT"
+  ]
+}

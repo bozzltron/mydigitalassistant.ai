@@ -59,6 +59,7 @@ import assistant.backend.pipeline.filesystem as _fs  # noqa: E402
 
 _fs.SANDBOX_ROOT = SCRATCH_DIR
 
+from assistant.backend.config import settings  # noqa: E402
 from assistant.backend.db.schema import init_db  # noqa: E402
 from assistant.backend.memory.retrieval import Retriever  # noqa: E402
 from assistant.backend.memory.store import MemoryStore  # noqa: E402
@@ -87,19 +88,27 @@ PROMPT = """1. Look up ships we are tracking in the vessels.csv
 
 # --- the seeded world --------------------------------------------------------
 
-VESSELS = [
-    ("EVER GIVEN", "Container Ship"),
-    ("MSC GULSUN", "Container Ship"),
-    ("MAERSK ESSEX", "Container Ship"),
-    ("COSTA DIAMANTE", "Cruise Ship"),
-    ("SEAWISE GIANT", "Bulk Carrier"),
+# The user's real `vessels.csv` is a bare list of names — no header, no types. Seeded
+# verbatim: a synthetic `ship_name,ship_type` file would hand the model the type field it
+# is supposed to have to look up.
+VESSEL_NAMES = [
+    "Ever Given",
+    "MSC GULSUN",
+    "MAERSK ESSEX",
+    "COSTA DIAMANTE",
+    "SEAWISE GIANT",
 ]
-SEED_CSV = "ship_name,ship_type\n" + "\n".join(f"{n},{t}" for n, t in VESSELS) + "\n"
+SEED_CSV = "\n".join(VESSEL_NAMES) + "\n"
 # A known-wrong state, so "the file was updated" is detectable from content rather than
 # from a timestamp.
 EMPTY_FC = '{\n  "type": "FeatureCollection",\n  "features": []\n}\n'
 
-REQUIRED_FIELDS = ("shipName", "type", "location", "description")
+# The prompt asks for `type`; the user's own `ship-tracker.geojson` uses `vesselType`.
+# Either satisfies the field, because scoring one of them as a failure would be measuring
+# the prompt's inconsistency with the user's data, not the agent. Decided before any trial
+# — see the amendment in plan.md.
+TYPE_KEYS = ("type", "vesselType")
+REQUIRED_FIELDS = ("shipName", "location", "description")
 
 
 def seed() -> None:
@@ -145,13 +154,15 @@ def measure(text: str) -> dict:
 
     names = {_norm(p.get("shipName")).upper() for p in props}
     out["vessels_present"] = sorted(n for n in names if n)
-    out["coverage"] = sum(1 for n, _ in VESSELS if n in names) / len(VESSELS)
+    out["coverage"] = sum(1 for n in VESSEL_NAMES if n.upper() in names) / len(VESSEL_NAMES)
 
     gaps: list[str] = []
     for p in props:
         for field in REQUIRED_FIELDS:
             if not _norm(p.get(field)):
                 gaps.append(field)
+        if not any(_norm(p.get(k)) for k in TYPE_KEYS):
+            gaps.append("type")
     out["missing_fields"] = sorted(set(gaps))
     out["fields_complete"] = bool(features) and not gaps
 
@@ -250,7 +261,22 @@ async def run() -> None:
     store = MemoryStore(DB_PATH)
     if not await store.list_users():
         await store.create_user("experimenter")
-    llm = OllamaClient()
+    # `OllamaClient()`'s `base_url` **defaults to 127.0.0.1**, so a bare construction
+    # ignores `settings.ollama_url` entirely and silently talks to localhost. Inside a
+    # container that is nothing, and every trial dies on the first embedding with
+    # `ConnectError` — which the first run of this experiment did, and which is a harness
+    # fault rather than a result. Same wiring as `frame_budget` and `main.py`.
+    llm = OllamaClient(
+        base_url=settings.ollama_url,
+        chat_model=settings.chat_model,
+        utility_model=settings.utility_model,
+        embedding_model=settings.embedding_model,
+        tools_model=settings.tools_model,
+        chat_num_ctx=settings.chat_num_ctx,
+        utility_num_ctx=settings.utility_num_ctx,
+        timeout=settings.ollama_timeout,
+        keep_alive=settings.ollama_keep_alive,
+    )
     retriever = Retriever(store=store, llm_client=llm)
     orch = Orchestrator(
         deps=OrchestratorDeps(
@@ -260,7 +286,9 @@ async def run() -> None:
             search_tool=WebSearchTool(),
         )
     )
-    tool_executor.init_store(store.db_path, embed_fn=orch.embed_fn(), embedding_model=None)
+    tool_executor.init_store(
+        store.db_path, embed_fn=orch.embed_fn(), embedding_model=settings.embedding_model
+    )
 
     trials = [await one_trial(orch, store, n) for n in range(1, TRIALS + 1)]
 
@@ -285,7 +313,7 @@ async def run() -> None:
         "outcome_classes": classes,
         "k": TRIALS,
         "prompt": PROMPT,
-        "seed_vessels": [name for name, _ in VESSELS],
+        "seed_vessels": VESSEL_NAMES,
     }
     (OUT_DIR / "result.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
     print(f"\nwrote {OUT_DIR / 'result.json'}")
