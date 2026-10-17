@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import re
 import sys
@@ -124,6 +125,31 @@ def _norm(s: object) -> str:
     return re.sub(r"\s+", " ", str(s or "")).strip()
 
 
+class _LoopExitReason(logging.Handler):
+    """The loop's own statement of why it stopped.
+
+    A round that exhausts the ceiling returns a *report*, produced with
+    `tool_choice="none"` and a prompt asking the model what blocked it — indistinguishable
+    from an ordinary answer at the file level. Run 4 therefore had to establish which trials
+    exited that way *by construction*, inferring it from the absence of a nudge in the
+    record. This reads the loop's `tool_loop_exit` line instead, so the exit is observed
+    rather than deduced. `streaming.py` logs it at INFO, pinned by
+    `test_streaming_events.py::TestToolLoopExitReasonIsLogged`.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(level=logging.INFO)
+        self.reason: str | None = None
+
+    def emit(self, record: logging.LogRecord) -> None:
+        message = record.getMessage()
+        if message.startswith("tool_loop_exit:"):
+            self.reason = message.split("reason=", 1)[1].split()[0]
+
+
+_LOOP_EXIT = _LoopExitReason()
+
+
 def _summarise_args(raw_args: object) -> str:
     """The argument that says *what* a call was about, for the record.
 
@@ -217,6 +243,7 @@ def classify(m: dict, tool_calls: list[str]) -> str:
 
 async def one_trial(orch: Orchestrator, store: MemoryStore, n: int) -> dict:
     seed()
+    _LOOP_EXIT.reason = None
     calls: list[str] = []
     call_log: list[dict] = []
     nudges: list[str] = []
@@ -293,6 +320,10 @@ async def one_trial(orch: Orchestrator, store: MemoryStore, n: int) -> dict:
             # Whether the model *claims* it wrote the file is only visible here, and it is
             # what separates a claim/reality gap from a silent decline.
             "answer": answer or "",
+            # How the loop stopped: `answered`, `finalize`, or `exhausted` (the ceiling
+            # falling through to a report that cannot act). "(unlogged)" means the
+            # instrument lost the line, which is a harness fault and not a result.
+            "exit_reason": _LOOP_EXIT.reason or "(unlogged)",
             "elapsed_ms": elapsed_ms,
             "outcome_class": classify(m, calls),
         }
@@ -351,6 +382,12 @@ async def run() -> None:
     # silently is indistinguishable from a model that chose not to act, which is exactly
     # how three runs came to be read as a completion-check problem. Wired to match
     # production, because "the same path the scheduler uses" is this experiment's premise.
+    # The loop logs its exit reason at INFO; the handler must be attached to its logger,
+    # whose effective level would otherwise drop the record.
+    _streaming_logger = logging.getLogger("assistant.backend.pipeline.streaming")
+    _streaming_logger.setLevel(logging.INFO)
+    _streaming_logger.addHandler(_LOOP_EXIT)
+
     tool_executor.init_store(
         store.db_path,
         embed_fn=orch.embed_fn(),
@@ -396,6 +433,10 @@ async def run() -> None:
         if c.get("error")
     ]
     print(f"  tool errors                 : {len(errors)}")
+    exits: dict[str, int] = {}
+    for t in trials:
+        exits[t["exit_reason"]] = exits.get(t["exit_reason"], 0) + 1
+    print(f"  loop exits                  : {exits}")
     for trial_no, tool, err in errors[:6]:
         print(f"    trial {trial_no:>2} {tool}: {err}")
 

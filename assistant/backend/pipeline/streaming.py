@@ -222,6 +222,15 @@ _COMPLETION_NUDGE = (
     "perform it. Call the tool that performs it now."
 )
 
+# Rounds granted past the ceiling so a nudge can be acted on. The ceiling is a runaway
+# guard, not a policy: the wrap-up path disables tools (`tool_choice="none"`) and asks the
+# model what blocked it, so a turn that exhausts its rounds can produce a *reason* but can
+# never act. Measured in `experiments/ship_tracker_efficacy/` run 4 — two of three failures
+# exited there and supplied the blocker the prompt had asked for ("I don't have direct
+# write access"; "should I write ... now?"), while all seven writes followed the completion
+# nudge that path skips.
+_CEILING_GRACE_ROUNDS = 2
+
 def _summarize_call(name: str, args: dict) -> str:
     """A short ``name(key=value, …)`` line for the completion judgement.
 
@@ -361,7 +370,36 @@ async def stream_tool_loop(
     completion_nudged = False
     tool_calls_made: list[str] = []
 
-    while turn < max_turns:
+    last_content = ""
+
+    def _ceiling_needs_an_acting_round() -> bool:
+        """At the ceiling, with the request's action still unperformed.
+
+        Bounded by ``completion_nudged``: the nudge is spent the first time this grants a
+        round, so it can grant at most once and the loop cannot run away.
+        """
+        if not expects_action or completion_nudged:
+            return False
+        from assistant.backend.pipeline.decision import action_performed
+
+        return not action_performed(tool_calls_made, action_kind)
+
+    while True:
+        if turn >= max_turns:
+            if not _ceiling_needs_an_acting_round():
+                break
+            logger.info(
+                "Tool loop: ceiling reached with the action unperformed; granting %d "
+                "round(s) so the completion nudge can fire",
+                _CEILING_GRACE_ROUNDS,
+            )
+            completion_nudged = True
+            chat_messages.append(ChatMessage(role="assistant", content=last_content))
+            chat_messages.append(ChatMessage(role="user", content=_COMPLETION_NUDGE))
+            yield serialize_event(
+                StageEvent(stage="acting", detail="making sure that was done")
+            )
+            max_turns += _CEILING_GRACE_ROUNDS
         turn += 1
 
         logger.info(
@@ -414,6 +452,8 @@ async def stream_tool_loop(
                 num_predict=num_predict,
             )
             max_prompt_tokens = max(max_prompt_tokens, response.prompt_eval_count)
+
+        last_content = response.content or ""
 
         if response.tool_calls:
             # Yield tool call events
@@ -491,6 +531,11 @@ async def stream_tool_loop(
                         tool_result_chars=peak_tool_result_chars,
                         tool_results_dropped=tool_results_dropped,
                     )
+                    logger.info(
+                        "tool_loop_exit: reason=finalize turns=%d tool_calls=%d",
+                        turn,
+                        len(tool_calls_made),
+                    )
                     yield serialize_event(event)
                     return
 
@@ -535,6 +580,11 @@ async def stream_tool_loop(
                 # with tool calls in hand, and it is the only one that spends this.
                 if tool_calls_made:
                     completion_nudged = True
+                    # The nudge was just spent and needs a round to be acted on. If it
+                    # fired on the last round, `continue` would fall straight out to the
+                    # wrap-up that cannot act. Bounded the same way as the grant above.
+                    if turn >= max_turns:
+                        max_turns += _CEILING_GRACE_ROUNDS
             if nudge:
                 # Surface it: a self-correction the user cannot see is just latency.
                 yield serialize_event(
@@ -546,6 +596,11 @@ async def stream_tool_loop(
                 chat_messages.append(ChatMessage(role="user", content=nudge))
                 continue
             # No tool calls = direct answer
+            logger.info(
+                "tool_loop_exit: reason=answered turns=%d tool_calls=%d",
+                turn,
+                len(tool_calls_made),
+            )
             answer = (response.content or "").strip() or EMPTY_GENERATION_FALLBACK
             event = FinalizeEvent(
                 answer,
@@ -557,6 +612,12 @@ async def stream_tool_loop(
             )
             yield serialize_event(event)
             return
+
+    logger.info(
+        "tool_loop_exit: reason=exhausted turns=%d tool_calls=%d",
+        turn,
+        len(tool_calls_made),
+    )
 
     # Max turns reached - synthesize a graceful wrap-up from the model instead
     # of dumping raw tool metadata at the user. This extra LLM call only fires

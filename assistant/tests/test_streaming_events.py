@@ -949,3 +949,218 @@ async def test_stream_tool_loop_keeps_the_search_it_ran_and_announces_it(monkeyp
     ), "the search was never announced while it ran"
     assert sink.get("info") is info, "the search record the model used was discarded"
 
+
+
+async def test_stream_tool_loop_grants_a_round_at_the_ceiling_to_act(tmp_path):
+    """Exhaustion must spend the completion nudge, not fall through to a report.
+
+    Regression, from `experiments/ship_tracker_efficacy/` run 4. The ceiling
+    (`while turn < max_turns`) fell through to a wrap-up call that sets
+    `tool_choice="none"` and asks the model to "state what blocked you". A turn that ran
+    out of rounds could therefore produce a *reason* but never act — and the completion
+    nudge, which produced all seven of the run's writes, was never reached, because only
+    a round ending with no tool call passes through `_maybe_nudge`.
+
+    Measured: 2 of 3 failures exited that way. The model complied with the question it was
+    asked — "I don't have direct write access", "should I write ... now?" — while its tool
+    list contained `write_file`.
+    """
+    from assistant.backend.pipeline.llm_client import ChatResponse, ToolCall
+    from assistant.backend.pipeline.streaming import stream_tool_loop
+    from assistant.backend.pipeline.tool_executor import init_store
+
+    init_store(str(tmp_path / "ceiling.db"))
+
+    class StubLLM:
+        """Reads until the ceiling, exactly like run 4's trials 1 and 7."""
+
+        def __init__(self):
+            self.tools_model = "test-model"
+            self.calls: list = []
+
+        async def chat(self, messages, **kwargs):
+            self.calls.append(list(messages))
+            if len(self.calls) <= 2:
+                return ChatResponse(
+                    content="",
+                    model="m",
+                    done=True,
+                    tool_calls=[
+                        ToolCall(
+                            name="search_file",
+                            arguments={"path": "vessels.csv", "query": "ever"},
+                        )
+                    ],
+                )
+            return ChatResponse(content="Done - the file is updated.", model="m", done=True)
+
+        def context_window(self, model=None):
+            return 16384
+
+    llm = StubLLM()
+    events = [
+        ev
+        async for ev in stream_tool_loop(
+            llm,
+            [{"role": "user", "content": "Update ship-tracker.geojson"}],
+            [],
+            max_turns=2,
+            expects_action=True,
+            action_kind="change",
+        )
+    ]
+
+    contents = [m.content or "" for call in llm.calls for m in call]
+    assert any("the tools you called did not perform it" in c for c in contents), contents
+    # The report-only exit must not run while the action is still unperformed: its prompt
+    # asks the model what blocked it, which is how run 4 got a fabricated blocker.
+    assert not any("You have used all your available tool-call turns" in c for c in contents), (
+        contents
+    )
+    assert events and '"type": "finalize"' in events[-1]
+
+
+async def test_stream_tool_loop_grants_a_round_when_the_nudge_lands_on_the_last_turn(
+    tmp_path,
+):
+    """The completion nudge firing on the final round must still get a round to be acted on.
+
+    The other half of the same fix. `_maybe_nudge` hands the model its own message back and
+    the loop `continue`s — but if that happens on the last round, the ceiling check
+    immediately breaks out to the wrap-up, and the nudge is spent for nothing.
+    """
+    from assistant.backend.pipeline.llm_client import ChatResponse, ToolCall
+    from assistant.backend.pipeline.streaming import stream_tool_loop
+    from assistant.backend.pipeline.tool_executor import init_store
+
+    init_store(str(tmp_path / "lastround.db"))
+
+    class StubLLM:
+        def __init__(self):
+            self.tools_model = "test-model"
+            self.calls: list = []
+
+        async def chat(self, messages, **kwargs):
+            self.calls.append(list(messages))
+            if len(self.calls) == 1:
+                return ChatResponse(
+                    content="",
+                    model="m",
+                    done=True,
+                    tool_calls=[
+                        ToolCall(
+                            name="search_file",
+                            arguments={"path": "vessels.csv", "query": "ever"},
+                        )
+                    ],
+                )
+            if len(self.calls) == 2:
+                # Answers the *first* round's read with a claim and no tool call — on the
+                # last round, so the completion nudge fires here.
+                return ChatResponse(
+                    content="The file is updated.", model="m", done=True
+                )
+            return ChatResponse(content="Done for real now.", model="m", done=True)
+
+        def context_window(self, model=None):
+            return 16384
+
+    llm = StubLLM()
+    events = [
+        ev
+        async for ev in stream_tool_loop(
+            llm,
+            [{"role": "user", "content": "Update ship-tracker.geojson"}],
+            [],
+            max_turns=2,
+            expects_action=True,
+            action_kind="change",
+        )
+    ]
+
+    contents = [m.content or "" for call in llm.calls for m in call]
+    assert any("the tools you called did not perform it" in c for c in contents), contents
+    assert not any("You have used all your available tool-call turns" in c for c in contents), (
+        contents
+    )
+    # The nudge was answered by the model, not replaced by a wrap-up.
+    assert "Done for real now." in events[-1]
+
+
+class TestToolLoopExitReasonIsLogged:
+    """The loop states why it stopped, at INFO, one greppable line per turn.
+
+    Run 4 had to establish that two trials exited through the ceiling *by construction* —
+    from the absence of a nudge in the record — because the wrap-up's answer is
+    indistinguishable from an ordinary one at the file level. It is the same reasoning the
+    turn-timing lines exist for, and it is pinned the same way.
+    """
+
+    def _stub(self, *, always_tools: bool):
+        from assistant.backend.pipeline.llm_client import ChatResponse, ToolCall
+
+        class StubLLM:
+            def __init__(self):
+                self.tools_model = "test-model"
+                self.calls = 0
+
+            async def chat(self, messages, **kwargs):
+                self.calls += 1
+                if always_tools:
+                    return ChatResponse(
+                        content="",
+                        model="m",
+                        done=True,
+                        tool_calls=[
+                            ToolCall(
+                                name="search_file",
+                                arguments={"path": "vessels.csv", "query": "ever"},
+                            )
+                        ],
+                    )
+                return ChatResponse(content="An answer.", model="m", done=True)
+
+            def context_window(self, model=None):
+                return 16384
+
+        return StubLLM()
+
+    async def test_logs_answered(self, tmp_path, caplog):
+        import logging
+
+        from assistant.backend.pipeline.streaming import stream_tool_loop
+        from assistant.backend.pipeline.tool_executor import init_store
+
+        init_store(str(tmp_path / "answered.db"))
+        caplog.set_level(logging.INFO, logger="assistant.backend.pipeline.streaming")
+
+        async for _ in stream_tool_loop(
+            self._stub(always_tools=False),
+            [{"role": "user", "content": "hello"}],
+            [],
+            max_turns=3,
+        ):
+            pass
+
+        assert "tool_loop_exit: reason=answered" in caplog.text, caplog.text
+
+    async def test_logs_exhausted(self, tmp_path, caplog):
+        import logging
+
+        from assistant.backend.pipeline.streaming import stream_tool_loop
+        from assistant.backend.pipeline.tool_executor import init_store
+
+        init_store(str(tmp_path / "exhausted.db"))
+        caplog.set_level(logging.INFO, logger="assistant.backend.pipeline.streaming")
+
+        # `expects_action` is False, so there is nothing to act on and the ceiling is a
+        # genuine stop — no grant, and the wrap-up path is taken.
+        async for _ in stream_tool_loop(
+            self._stub(always_tools=True),
+            [{"role": "user", "content": "hello"}],
+            [],
+            max_turns=1,
+        ):
+            pass
+
+        assert "tool_loop_exit: reason=exhausted" in caplog.text, caplog.text

@@ -206,3 +206,40 @@ a *semantic* mismatch between two affordances, not a symptom of there being twen
 them. Measuring efficacy first is what tells us whether that second experiment is worth
 running at all: if `wrote_complete` is 10/10, tool-set trimming is a cost optimisation, not
 an efficacy fix.
+
+## Amendment 3 — run 5's fix and its prediction, before data
+
+**The fix.** At the ceiling, if the request's action is still unperformed, the loop spends the
+completion nudge and grants `_CEILING_GRACE_ROUNDS = 2` rounds instead of falling through to a
+wrap-up that sets `tool_choice="none"` and asks the model to "state what blocked you". Bounded:
+spending the nudge sets `completion_nudged`, so the grant can happen at most once.
+
+**A new instrument field: `exit_reason`.** The loop now logs `tool_loop_exit: reason=…`
+(`answered` / `finalize` / `exhausted`) at INFO, and the runner records it. Run 4 had to
+establish that trials 1 and 7 exited through the ceiling *by construction* — inferring it from
+the absence of a nudge in the record — because the wrap-up's answer is not distinguishable from
+an ordinary one. It is now observed.
+
+**Judged on mechanism, not rate.** K=10 cannot resolve 7→9, so the primary claim is about the
+exit path.
+
+| trial | run 4 | predicted run 5 |
+|---|---|---|
+| 1, 7 | `no_attempt`, exit `exhausted` | `wrote_complete`, exit `answered` — the ceiling grants the round the nudge needs |
+| 2–5, 8–10 | `wrote_complete`, exit `answered` | unchanged; they never reached the ceiling |
+| 6 | `no_attempt` after **both** nudges | **still `no_attempt`** — the completion nudge did fire within budget and the model still claimed it had no write access. A different mechanism, which this fix does not address |
+
+Bars, set before the data:
+
+- **H1 ≥ 8/10** — the standing bar, unchanged.
+- **`exit_reason == "exhausted"` count must be 0.** That is falsifiable at K=10, which a
+  two-trial rate difference is not.
+
+Falsification conditions:
+
+1. A trial exiting `exhausted` with its action unperformed means the grant did not do its job.
+2. A trial exiting `answered` with no write *and* no nudge in its record means the grant fired
+   and the model refused anyway — which moves the problem from the loop's structure to the
+   model's belief, and is then the next thing to measure.
+3. Trial 6 writing is not evidence for the fix — it was never on the exhaustion path. It would
+   mean its run-4 failure was noise, and should be treated as such rather than as a win.
