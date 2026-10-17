@@ -193,11 +193,18 @@ def action_performed(tools_called: list[str], kind: str | None) -> bool:
 async def outstanding(request: str, tools_called: list[str]) -> bool | None:
     """Whether the tool calls left an action the user asked for undone.
 
-    **Superseded by `action_performed`, and no longer called.** Kept until the structural
-    replacement is verified by a re-run of ``ship_tracker_efficacy`` — removing the old
-    path before the new one is measured is the wrong order. Delete it, and
-    ``decision_completion_model`` / ``decision_outstanding_threshold`` with it, once H5
-    reads 0.
+    **Superseded by `action_performed`, and no longer called by the loop.** It is *not* dead
+    code, and the earlier note here — "delete it, and `decision_completion_model` /
+    `decision_outstanding_threshold` with it, once H5 reads 0" — was wrong about what that
+    would cost.
+
+    Three experiments hold it as the thing under comparison: `nudge_bound` and
+    `terminal_declaration` monkeypatch it to count whether the completion judgement was
+    consulted at all (their `outstanding_consulted` column is the evidence that the old design
+    could not fire for the case it was built for), and `decision_model_completion` measured it
+    against labelled cases. `main.py` also reports `decision_completion` in `/health`.
+    Deleting it would take those runs' apparatus with it, and they are the record of *why* the
+    check is structural now — they have to stay runnable to remain evidence.
 
     ``None`` when undecidable (no completion model, an error, an unusable answer).
     The threshold is biased toward ``outstanding`` (``settings.decision_outstanding_threshold``)
