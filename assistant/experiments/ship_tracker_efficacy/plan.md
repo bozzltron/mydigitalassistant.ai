@@ -1,0 +1,163 @@
+# Experiment: ship-tracker task efficacy and consistency
+
+**Status: pre-registered.** This file was written before any trial was run. `result.md`
+comes after `verification.md`, never before.
+
+## The question
+
+Given a real, user-authored task prompt, how **effective** and how **consistent** is the
+agent? Effectiveness is "did it do the thing"; consistency is "does it do the thing the
+same way twice". They are different questions and a task can pass one and fail the other.
+
+The prompt under test, verbatim:
+
+```
+1. Look up ships we are tracking in the vessels.csv
+2. Pull vessel location data from available sources (e.g., AIS feeds, maritime databases)
+3. update the ship-tracker.geojson file. For each vessel, include:
+     shipName: Proper name of the vessel
+     type: Vessel type (e.g., Container Ship, Bulk Carrier)
+     location: Current position or region (e.g., 'Near Suez Canal', 'Indian Ocean')
+     description: A human-readable string combining ship name, type, and location for
+                  map display (e.g., 'EVER GIVEN - Container Ship near Suez Canal')
+4. Read the ship-tracker.geojson file to make sure our changes above were written and
+   are accurate.
+5. If the file is not updated, try again.
+```
+
+## Why this experiment exists
+
+Three things about this task are known from one live run, and none of them is a
+measurement:
+
+1. **It failed once, and the reason was mechanical.** `ship_tracker` read `vessels.csv`,
+   searched the web, and finalised without ever calling `write_file`. The completion nudge
+   that exists for exactly that turn was unreachable (fixed in `6f3d888`). One run cannot
+   tell us whether the fix made the task reliable.
+2. **The model's tool choice varies.** A later attempt called
+   `search_file(vessels.csv, query='MAERSK ESSEX IMO 9632630')` — a substring search with a
+   compound string — and got 114 characters back, where the earlier run used `read_file`
+   and got the whole file. Same task, different affordance, different information.
+3. **The window is not the constraint.** Peak prompt was 13485/16384 (82%) with
+   `truncated=False` on every one of 13 observed turns. Whatever limits this task, it is
+   not the context window — so the experiment must not be designed around that hypothesis.
+
+The point of measuring is that "the agent can do this" and "the agent does this" are
+different claims, and only the second one is useful to a user who set a daily task.
+
+## Design
+
+**Single arm, repeated measures.** The same prompt, K = 10 trials, identical seed state.
+There is no treatment to vary: the question is the distribution of outcomes, not the
+effect of an intervention. A one-arm design is the honest one — inventing a second arm to
+compare against would be measuring something nobody asked about.
+
+**Why 10.** The outcome is binary, so 10 trials bound the failure rate we can see
+(0 failures in 10 ⇒ ≲ 26% at 95%, by the rule of three) and that is enough to separate
+"works" from "flaky". It is **not** enough to resolve a 10% difference, and the result must
+say so rather than implying precision it does not have.
+
+**Seeding.** A scratch sandbox (`EXP_SANDBOX`) is seeded per trial with:
+- `vessels.csv` — the five vessels, as the user's own file has them.
+- `ship-tracker.geojson` — a **known-wrong** state (an empty FeatureCollection), so
+  "the file was updated" is detectable from content rather than from a timestamp.
+
+**Isolation.** `preflight.py` gates the run: the DB must be a copy, the live volume must
+not be mounted, and the copy's SHA-256 is recorded. Table digests after the run prove the
+live brain was not touched. **The scratch sandbox is asserted, not assumed** — the runner
+aborts unless `EXP_SANDBOX` is set and is outside the live sandbox, the way
+`file_write_parity` does it.
+
+## Dependent variables, per trial
+
+| # | Variable | Definition |
+|---|---|---|
+| 1 | `written` | `ship-tracker.geojson` differs from the seeded empty FeatureCollection |
+| 2 | `valid` | it parses, and its `type` is `FeatureCollection` |
+| 3 | `coverage` | vessels in the file ÷ vessels in `vessels.csv` |
+| 4 | `fields_complete` | every feature has non-empty `shipName`, `type`, `location`, `description` |
+| 5 | `description_shape` | `description` matches `"<shipName> - <type> <location>"` |
+| 6 | `tool_calls` | the ordered call list — *how* it got there |
+| 7 | `nudges` | how many action nudges fired |
+| 8 | `outcome_class` | see below |
+
+**`outcome_class` is the most important variable, and it exists because the naive scoring
+would be wrong.** The task conflates two different asks: *fetch current positions* and
+*write them*. An agent that finds the data is five days stale and says so instead of
+writing it as current has done the *right* thing — and a binary `written` would score it a
+failure. So each trial is classified:
+
+| class | meaning |
+|---|---|
+| `wrote_complete` | written, all four fields, every vessel — the intended outcome |
+| `wrote_partial` | written, but missing vessels or fields — **the worst outcome, because it looks done** |
+| `refused_stale` | did not write, and said why (data could not be made current) — arguably correct |
+| `no_attempt` | did not write, and never tried — the `6f3d888` failure |
+| `error` | the trial crashed or the model errored |
+
+A bare "written" rate would merge `refused_stale` with `no_attempt`, which is exactly the
+distinction that tells us whether to fix the agent or the prompt.
+
+## Hypotheses and falsification
+
+Each is falsifiable, and the bar is stated **before** the data.
+
+| # | Hypothesis | Falsified if |
+|---|---|---|
+| H1 | The task completes: `wrote_complete` in ≥ 8 of 10 | ≤ 7 of 10 |
+| H2 | It is consistent: the modal `outcome_class` covers ≥ 8 of 10 | no class reaches 8 |
+| H3 | No vessel is silently dropped: `coverage = 1.0` whenever `written` | any trial writes a partial file |
+| H4 | The schema contract holds: `fields_complete` and `description_shape` whenever `written` | any trial writes a malformed field |
+| H5 | The `6f3d888` fix holds: `no_attempt` = 0 | any `no_attempt` |
+
+**H1 is the headline.** If it fails, the answer to "is the agent effective at this task"
+is *no*, and the `outcome_class` distribution says which of the four failures to work on.
+**H5 is the regression check** for the nudge fix — it is the only hypothesis that is about
+code rather than the model, and it should be clean.
+
+## The bar, in advance
+
+> If fewer than 8 of 10 trials produce a complete file, this task is not yet reliably
+> achievable, and I will say so plainly rather than reporting the parts that worked.
+>
+> If `wrote_partial` occurs at all, that is worse than a refusal: a file that looks
+> complete and is not. I will treat a single instance as a defect worth fixing ahead of
+> any rate improvement.
+
+## Threats, named before the data
+
+1. **Web search is not deterministic.** The available position data varies by run, so a
+   failure may be *data* rather than *agent*. This is why `outcome_class` separates
+   `refused_stale` from `no_attempt`: the first is the world, the second is the agent.
+   It also means H1 could fail for a reason no code change fixes, and the result must say
+   which happened rather than blaming the model.
+2. **The prompt asks for two things at once** (fetch, and write). A trial that fetches well
+   and declines to write stale data is a *prompt* finding, not an agent finding. I expect
+   at least one, given the one live run did exactly this.
+3. **10 trials is small.** 8/10 and 10/10 are not distinguishable at this N. No p-values
+   will be reported; the counts are the result.
+4. **Model residency.** Ollama holding chat + utility + embeddings affects latency, not
+   the binary outcomes. Latency is reported as context, never as a hypothesis.
+5. **The agent's own memory is seeded from the live brain copy**, so it may recall prior
+   ship-tracking episodes. That makes the trials *not* independent of the user's history —
+   which is realistic, but means the result describes *this* install, not a cold start.
+   Recorded, not corrected: a fresh brain would be a different experiment.
+6. **A trial can pass by accident.** `wrote_complete` does not prove the positions are
+   *correct* — only that the shape is right and every vessel is present. Correctness of a
+   fetched coordinate is not measurable here without ground truth, and claiming it would be
+   the "false negative produced by a no-op manipulation" this project has been burned by.
+
+## Cost
+
+K = 10 full cognitive loops with web search: roughly 10 × (20–50 s) ≈ 4–8 minutes of wall
+clock, plus model load. Each trial writes to the scratch sandbox and the scratch DB only.
+
+## What this experiment does not answer
+
+**Whether fewer tools per turn would help.** That is a separate question with a separate
+design (see the sibling plan, `toolset_scope/`), because it needs an intervention and a
+control, and because the observed failure — `search_file` where `read_file` was meant — is
+a *semantic* mismatch between two affordances, not a symptom of there being twenty-one of
+them. Measuring efficacy first is what tells us whether that second experiment is worth
+running at all: if `wrote_complete` is 10/10, tool-set trimming is a cost optimisation, not
+an efficacy fix.
