@@ -102,7 +102,8 @@ docker compose -f docker-compose.test.yml run --rm test
 
 ### Locally
 ```bash
-pip install -e ".[dev]"
+pip install -e ".[dev]"   # from the repo root — there is no assistant/pyproject.toml
+cd assistant              # every path in this document is relative to assistant/
 pytest tests/ -v
 ```
 
