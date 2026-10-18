@@ -386,3 +386,43 @@ class TestRaggedCsvIngestion:
         # reserved-prefix guard and slot uniqueness both trip over).
         assert slots.get("col_1") == "ignored"
         assert slots.get("notes") == "hello"
+
+
+async def test_run_scheduled_task_refuses_inside_a_scheduled_run(tmp_path, monkeypatch):
+    """A task must not start a task.
+
+    `execute_and_record_task` runs a task's script through the full loop *with the tools
+    available*, so `run_scheduled_task` is in the model's hands during a scheduled run. The
+    scheduler's firing path has no timeout, so a task that named itself would nest whole
+    runs rather than fail one turn. Measured reachable: a run-4 smoke trial called this tool
+    from inside the `ship_tracker` task, once the orchestrator was wired.
+
+    The chat route must stay open — "run my briefing now" is a different path, and blocking
+    it here would break AGENTS.md critical path #2.
+    """
+    from assistant.backend.pipeline import tool_executor
+    from assistant.backend.pipeline.tool_executor import execute_tool, init_store
+
+    init_store(str(tmp_path / "scheduled_guard.db"))
+
+    blocked = await execute_tool(
+        "run_scheduled_task",
+        {"task_name": "ship_tracker"},
+        user_id="1",
+        session_id="scheduled-ship_tracker-2026_10_17",
+    )
+    assert blocked.success is False
+    assert "cannot start another task" in (blocked.error or ""), blocked.error
+
+    # Pinned so the chat case is deterministic: without an orchestrator this fails on the
+    # missing orchestrator, which proves the guard above did not fire for a chat session.
+    monkeypatch.setattr(tool_executor, "_orchestrator", None)
+    chat = await execute_tool(
+        "run_scheduled_task",
+        {"task_name": "ship_tracker"},
+        user_id="1",
+        session_id="chat-abc",
+    )
+    assert chat.success is False
+    assert "cannot start another task" not in (chat.error or ""), chat.error
+    assert "orchestrator not initialized" in (chat.error or ""), chat.error

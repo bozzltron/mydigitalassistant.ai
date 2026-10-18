@@ -2224,6 +2224,22 @@ async def execute_run_scheduled_task(args: dict, user_id: str, session_id: str =
     path uses, so the two cannot drift.
     """
     try:
+        # A task must not start a task. `execute_and_record_task` runs a task's script
+        # through the full loop *with the tools available*, so this tool is in the model's
+        # hands during a scheduled run — and the scheduler's firing path has no timeout, so
+        # a task that named itself would nest whole runs rather than fail a single turn.
+        # Measured reachable: a run-4 smoke trial called this tool from inside the
+        # `ship_tracker` task. The chat-side "run my briefing now" route is unaffected —
+        # it does not arrive here, and its session id is not a scheduled one.
+        if session_id.startswith("scheduled-"):
+            return ToolResult(
+                success=False,
+                error=(
+                    "already running a scheduled task; a task cannot start another task. "
+                    "Do this run's work directly instead."
+                ),
+            )
+
         task_name = (args.get("task_name") or "").strip()
         if not task_name:
             return ToolResult(success=False, error="task_name is required")

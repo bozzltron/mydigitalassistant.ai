@@ -20,7 +20,9 @@ Measured in ``assistant/experiments/decision_model_routing/`` and
 ``.../decision_model_completion/``: ``tev1:0.8b`` is the best ``needs_action`` judge
 (95% / 70 ms) and useless at ``outstanding`` (no separation), while ``nimble`` is
 the reverse (93.8% with a 0.63 margin). Hence two models — a deliberate fleet cost.
-The *scope* of ``needs_action`` is measured in ``.../decision_nudge_scope/``.
+The *scope* of ``needs_action`` is measured in ``.../decision_nudge_scope/`` — but against
+the earlier two-way question. The three-way question now in the code owes a
+re-measurement; see ``experiments/ship_tracker_efficacy/result.md``.
 """
 
 from __future__ import annotations
@@ -100,11 +102,12 @@ async def needs_action(text: str) -> str | None:
     model has the content, answering from it is the design; if it does not, it has
     nothing to answer with and reads anyway. So a question the assistant can answer
     from memory never fires the nudge. Measured in
-    ``assistant/experiments/decision_nudge_scope/``.
+    ``assistant/experiments/decision_nudge_scope/`` — against the earlier two-way
+    question; the three-way question now in this function owes a re-measurement.
 
     The threshold is **biased toward firing** (``settings.decision_action_threshold``,
-    default 0.4): a wrong ``answer`` skips the fix entirely, while a wrong ``do`` costs
-    one nudge round.
+    default 0.4): a wrong ``answer`` skips the fix entirely, while a wrong ``change`` or
+    ``lookup`` costs one nudge round.
     """
     if not text.strip():
         return None

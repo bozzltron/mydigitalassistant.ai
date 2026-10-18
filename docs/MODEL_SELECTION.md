@@ -218,7 +218,10 @@ a `qwen3.5:4b` chat call emitting JSON — which scored 90% at 7,162 ms.
 *external lookup* — the deeds whose result words can counterfeit — and not on a read
 of the user's own stored content, which an answer can satisfy
 (`experiments/decision_nudge_scope/`: 10/10 change recall, 0/15 read/answer fires,
-3/3 lookup fires).
+3/3 lookup fires). **Those figures were measured against the earlier two-way question.**
+The question is now three-way (`change` / `lookup` / `answer`, with the threshold applied
+per kind), so the scope owes a re-measurement before these numbers are cited again as
+describing the current code.
 
 **Cost:** `nimble` is a 9.5 GB on-demand load, but it runs only on turns that
 already need an action; `tev1:0.8b` is 0.8 GB and runs every turn, in parallel with

@@ -54,7 +54,12 @@ it in the directory invites it being read as a finding.
 ## Runs 2 and 3 — INVALID, retrospectively. The search tool was never wired.
 
 **Verdict: nothing about the agent's completion behaviour is measured by runs 2 and 3. Every
-`web_search` the model made, in all 20 trials, returned an error.**
+`web_search` the model made returned an error.**
+
+**Run 1 is a separate question, and it survives.** Its failures never searched — their call
+lists are `read_file`, `search_file`, `read_file,search_file` and `read_file x4` — so the
+unwired search does not explain them. Run 1's finding, that the `outstanding` judgement
+accepted a read as having performed the write, is therefore a measurement and not an artifact.
 
 Run 4 was preceded by an instrument change (`plan.md`, Amendment 2) that added the final
 answer text, the tool arguments, and a real nudge count. The **first** trial under it said

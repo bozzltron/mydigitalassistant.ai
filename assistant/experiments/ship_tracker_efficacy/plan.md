@@ -123,7 +123,7 @@ and one run of ten resolves it no further than the classes it prints.
 | 4 | `fields_complete` | every feature has non-empty `shipName`, `type`, `location`, `description` |
 | 5 | `description_shape` | `description` matches `"<shipName> - <type> <location>"` |
 | 6 | `tool_calls` | the ordered call list — *how* it got there |
-| 7 | `nudges` | how many action nudges fired |
+| 7 | `nudges` | which action nudges fired and of which kind (`empty` / `completion`) |
 | 8 | `outcome_class` | see below |
 
 **`outcome_class` is the most important variable, and it exists because the naive scoring

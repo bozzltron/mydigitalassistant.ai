@@ -1,5 +1,57 @@
 # MyDigitalAssistant.ai — release notes
 
+## v0.11.21-alpha
+
+**The agent now finishes what it starts — and why it did not was measured, twice wrongly, and
+then found.** A scheduled task that asks for a file to be written was finishing its report and
+leaving the file alone. Three defects in the tool loop were fixed in sequence, and an
+experiment that runs the task end to end says which of them mattered.
+
+- **The completion check is structural.** It used to be a model judgement (`outstanding`,
+  `nimble`) asking a small model whether the calls had done the job. A `read_file` satisfied
+  it: in the first measured run all seven failures had read the CSV and stopped, and the check
+  reported nothing wrong. It is a rule about tool names now: `needs_action` decides the **kind** of act the request needs (`change` / `lookup`), and
+  the code decides whether a tool of that kind ran. A lookup cannot satisfy a change.
+- **One nudge per failure, not per turn.** There are two distinct failures — the model
+  narrated and called nothing, and the model called something that did not perform the action
+  — and a single shared allowance meant the second could never fire. That is the *common*
+  sequence, so the completion nudge was dead for the case it exists for.
+- **The ceiling spends the nudge instead of reporting.** Running out of rounds fell through to
+  a wrap-up that disables tools (`tool_choice="none"`) and asks the model what blocked it, so
+  a turn could produce a *reason* but never act — and the completion nudge, which produced
+  every write in the measured runs, was never reached. The ceiling now grants a bounded acting
+  round first; `grace_rounds_left` is the loop's termination argument.
+- **A task cannot start a task.** `run_scheduled_task` was callable from inside a scheduled
+  run, and the scheduler's firing path has no timeout, so a task naming itself would nest
+  whole runs rather than fail one turn. Refused now, on the scheduled session id. The
+  chat-side "run my briefing now" route is unaffected.
+- **`tool_loop_exit: reason=…`** is logged at INFO, so why a turn stopped is observed rather
+  than inferred.
+- **Measured, not asserted.** `experiments/ship_tracker_efficacy/` runs the user's real prompt
+  K=10 against a brain copy: `no_attempt` 3/10 → **0/10**, `wrote_complete` 7/10 → **9/10**,
+  H1 met. `7 → 9` is *not* resolvable at K=10; what the run establishes is `no_attempt` → 0
+  and that no trial exits the ceiling with its action unperformed. **Two runs are recorded as
+  invalid**, for two different harness faults: an early attempt died on a hardcoded `base_url`
+  default before the model saw the prompt, and runs 2–3 measured an agent whose `web_search`
+  was never wired (`init_store(search_tool=None)`) — which read exactly like a model refusing
+  to act. The first run whose results were kept is not in that class: its failures never
+  searched.
+- **UI:** the page menu is on every page, with Chat leading off the chat page; the map page
+  picks which sandbox GeoJSON file it is working on and treats a bare `Feature` as a one-point
+  map; `.geojson` can be written and previewed; the "For You" bell is absent when nothing is
+  waiting; and the account is resolved before any route renders.
+
+**Known, measured, and not yet fixed** — recorded rather than left to be rediscovered:
+
+- `write_file` refuses to replace an existing file without `overwrite=True`, while a task
+  prompt typically says "update the file". It changed an outcome in run 5, and it will fire on
+  the ship-tracker task every morning.
+- The model re-writes a file it has already written correctly — up to five times in one run —
+  spending the rounds the ceiling then cuts off.
+- The `needs_action` scope was measured against the earlier **two-way** question. The question
+  is three-way now, with the threshold applied per kind, so those figures owe a
+  re-measurement. Every place that cites them says so.
+
 ## v0.11.20-alpha
 
 **A Tasks page — list, create, edit the prompt, pause/resume and run now, over the

@@ -102,7 +102,8 @@ The fix is model-first, in two halves:
    append/move) or an *external lookup* (search): the deeds whose result words can
    counterfeit. A read of the user's own stored content is **not** an action, so a
    request the assistant can answer from memory never fires the nudge
-   (`experiments/decision_nudge_scope/`).
+   (`experiments/decision_nudge_scope/` — measured against the earlier two-way question;
+   the three-way question now in the code owes a re-measurement).
 2. **The loop nudges once per failure** (`stream_tool_loop`, `expects_action`). If the turn
    ends with no tool call, the model is handed its own message back and asked to act.
    Separately, if tools ran but none *could* have performed the action, it is nudged again

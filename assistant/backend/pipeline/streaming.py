@@ -371,6 +371,11 @@ async def stream_tool_loop(
     tool_calls_made: list[str] = []
 
     last_content = ""
+    # One grant of grace rounds per turn, spent by whichever site reaches the ceiling with
+    # an unperformed action. This variable *is* the loop's termination argument, and it is
+    # deliberately local: `while True` above is bounded because the ceiling breaks unless
+    # this budget is unspent, and every grant spends it.
+    grace_rounds_left = _CEILING_GRACE_ROUNDS
 
     def _ceiling_needs_an_acting_round() -> bool:
         """At the ceiling, with the request's action still unperformed.
@@ -386,7 +391,7 @@ async def stream_tool_loop(
 
     while True:
         if turn >= max_turns:
-            if not _ceiling_needs_an_acting_round():
+            if grace_rounds_left <= 0 or not _ceiling_needs_an_acting_round():
                 break
             logger.info(
                 "Tool loop: ceiling reached with the action unperformed; granting %d "
@@ -399,6 +404,7 @@ async def stream_tool_loop(
             yield serialize_event(
                 StageEvent(stage="acting", detail="making sure that was done")
             )
+            grace_rounds_left -= _CEILING_GRACE_ROUNDS
             max_turns += _CEILING_GRACE_ROUNDS
         turn += 1
 
@@ -576,16 +582,17 @@ async def stream_tool_loop(
             )
             if nudge:
                 action_nudged = True
-                # Which failure this was: the completion branch is the one that runs
-                # with tool calls in hand, and it is the only one that spends this.
+                # Which failure this was: the completion branch is the one that runs with
+                # tool calls in hand, and it is the only one that spends this.
                 if tool_calls_made:
                     completion_nudged = True
-                    # The nudge was just spent and needs a round to be acted on. If it
-                    # fired on the last round, `continue` would fall straight out to the
-                    # wrap-up that cannot act. Bounded the same way as the grant above.
-                    if turn >= max_turns:
+                    # The nudge was just spent and needs a round to be acted on: if it fired
+                    # on the last round, `continue` would fall straight out to the wrap-up
+                    # that cannot act. Spends the same budget as the ceiling grant, so the
+                    # two sites cannot both extend the loop.
+                    if turn >= max_turns and grace_rounds_left > 0:
+                        grace_rounds_left -= _CEILING_GRACE_ROUNDS
                         max_turns += _CEILING_GRACE_ROUNDS
-            if nudge:
                 # Surface it: a self-correction the user cannot see is just latency.
                 yield serialize_event(
                     StageEvent(stage="acting", detail="making sure that was done")

@@ -1164,3 +1164,60 @@ class TestToolLoopExitReasonIsLogged:
             pass
 
         assert "tool_loop_exit: reason=exhausted" in caplog.text, caplog.text
+
+
+async def test_stream_tool_loop_terminates_when_the_model_never_stops_acting(tmp_path):
+    """`while True` is bounded, and the bound is `grace_rounds_left`.
+
+    The ceiling stopped being the loop condition when it became a grant, so the
+    termination argument is now a variable: the budget starts positive, only decreases,
+    and every grant spends it. This pins that, because a runaway here would not fail a
+    single turn — a scheduled task's firing path has no cap, so the damage would be
+    unbounded work rather than a bad answer.
+    """
+    from assistant.backend.pipeline.llm_client import ChatResponse, ToolCall
+    from assistant.backend.pipeline.streaming import stream_tool_loop
+    from assistant.backend.pipeline.tool_executor import init_store
+
+    init_store(str(tmp_path / "runaway.db"))
+
+    class StubLLM:
+        """Reads forever and never performs the change."""
+
+        def __init__(self):
+            self.tools_model = "test-model"
+            self.calls = 0
+
+        async def chat(self, messages, **kwargs):
+            self.calls += 1
+            return ChatResponse(
+                content="",
+                model="m",
+                done=True,
+                tool_calls=[
+                    ToolCall(
+                        name="search_file",
+                        arguments={"path": "vessels.csv", "query": "ever"},
+                    )
+                ],
+            )
+
+        def context_window(self, model=None):
+            return 16384
+
+    llm = StubLLM()
+    events = [
+        ev
+        async for ev in stream_tool_loop(
+            llm,
+            [{"role": "user", "content": "Update ship-tracker.geojson"}],
+            [],
+            max_turns=1,
+            expects_action=True,
+            action_kind="change",
+        )
+    ]
+
+    # One round, one granted grace round, then the wrap-up call. Bounded, not a spin.
+    assert llm.calls == 4, f"loop did not terminate as bounded: {llm.calls} LLM calls"
+    assert events and '"type": "finalize"' in events[-1]

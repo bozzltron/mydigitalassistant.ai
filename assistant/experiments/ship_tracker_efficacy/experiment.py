@@ -395,10 +395,17 @@ async def run() -> None:
         search_tool=search_tool,
         orchestrator=orch,
     )
-    assert tool_executor._search_tool is not None, (
-        "search tool unwired: every web_search would return an error and every trial "
-        "would be invalid (the fault that invalidated runs 1-3)"
-    )
+    if tool_executor._search_tool is None:
+        # An `assert` would be stripped by `python -O`, and this is a *validity* guard
+        # rather than a convenience — the same reason `_assert_scratch` exits explicitly.
+        # With `_search_tool` unset every `web_search` returns "Search tool not
+        # initialized", the model reports that it could not get the data, and the trial is
+        # scored as a completion failure. That is exactly how runs 1-3 were misread.
+        print(
+            "ABORT: tool_executor has no search tool; every web_search would return an "
+            "error and every trial would be invalid (the fault that invalidated runs 1-3)"
+        )
+        sys.exit(2)
 
     trials = [await one_trial(orch, store, n) for n in range(1, TRIALS + 1)]
 

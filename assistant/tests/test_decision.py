@@ -4,7 +4,8 @@
 (create/edit/rename/delete/append/move) or an external lookup — and ``None`` when an answer
 can satisfy it. A read of the user's own stored content is deliberately out of scope: an
 answer can satisfy it, so a nudge there is an unrequested round trip. Scope measured in
-``assistant/experiments/decision_nudge_scope/``.
+``assistant/experiments/decision_nudge_scope/`` — measured against the earlier two-way
+question. The three-way question now in the code owes a re-measurement.
 
 It returns the **kind**, not a bool, because the completion check needs it: a request to
 change something is not performed by a lookup.

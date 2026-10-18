@@ -1,12 +1,12 @@
 # Result
 
-> **VOID — runs 1–3 measured a broken harness, not the agent.** `init_store()` was called
-> without `search_tool`, so every `web_search` in all 30 trials returned
-> `Search tool not initialized`. The model read the CSV, read the map, searched, was told the
-> search had failed, and honestly reported that it could not get positions — which scores as
-> `no_attempt`. Nothing below about completion, nudges, or the checks is a measurement of the
-> agent. See `verification.md`, "Runs 2 and 3 — INVALID, retrospectively". Run 4 follows
-> below once it completes.
+> **Runs 2 and 3 are VOID — they measured a broken harness, not the agent.** `init_store()`
+> was called without `search_tool`, so every `web_search` in those runs returned
+> `Search tool not initialized`; the model reported that it could not get positions, which
+> scores as `no_attempt`. **Run 1 below is not in that class and stands**: its seven failures
+> read files and stopped, and its call lists contain **no `web_search` at all** — so the
+> unwired search cannot explain them, and they remain evidence for the completion check, which
+> is the finding the next section draws. See `verification.md`.
 
 K = 10, real LLM, real web search, brain copy, scratch sandbox. Pre-registration in
 `plan.md` (amended twice, before data: the `type`/`vesselType` and CSV-shape findings, then
