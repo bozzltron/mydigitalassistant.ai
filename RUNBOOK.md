@@ -239,11 +239,12 @@ Once all phases/milestones are done:
 ```bash
 # Dev environment
 docker compose up -d --build
-# Verify: FastAPI on 127.0.0.1:8443 via Caddy, all services healthy
+# Verify: curl -sk https://localhost:8443/healthz  -> 200, all services healthy
+# (the bind is 127.0.0.1; the URL is localhost — the IP fails Caddy's SNI match)
 
 # Prod environment
 docker compose -f docker-compose.prod.yml up -d --build
-# Verify: Compiles, runs, no published backend ports, Caddy on 127.0.0.1:8444
+# Verify: curl -sk https://localhost:8444/healthz  -> 200; no published backend ports
 
 # Both: containers report healthy, and only this project's containers are
 # autohealed (autoheal is label-scoped, not global).

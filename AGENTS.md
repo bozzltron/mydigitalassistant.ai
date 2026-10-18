@@ -96,12 +96,19 @@ it works.
 
 ## Build and test commands
 - Install: `docker build -t assistant .`
-- Run backend (dev): `docker compose up -d --build` — Vite dev server, Caddy on 127.0.0.1:8443
-- Run backend (prod): `docker compose -f docker-compose.prod.yml up -d --build` — built bundle, Caddy on 127.0.0.1:8444
+- Run backend (dev): `docker compose up -d --build` — Vite dev server, reachable at
+  **`https://localhost:8443`**
+- Run backend (prod): `docker compose -f docker-compose.prod.yml up -d --build` — built bundle,
+  reachable at **`https://localhost:8444`**
+  - **Use `localhost`, not the IP.** Caddy's site is declared `https://localhost` and its
+    certificate is `CN=localhost`, so `https://127.0.0.1:8443` fails the SNI match and Caddy
+    drops the connection. `curl` reports `000` with no error — which reads like a dead
+    container while every container is healthy. The *bind* is `127.0.0.1` (and must stay
+    loopback-only); the *URL* is `localhost`. See `docs/DEPLOYMENT_MODES.md`.
   - **Dev and prod are separate Compose projects** (separate images, databases, ports) and run side by side. A source change does not reach either until its image is rebuilt, so rebuild **both** to verify a change: "it still does the old thing" is usually an un-rebuilt environment. After rebuilding, hard-refresh the browser (⌘⇧R) — the SPA holds its JS in memory.
   - The two Caddy ports differ on purpose (dev 8443, prod 8444); working in one says nothing about the other.
 - Run CLI: `./assistant/bin/assistant chat`
-- Run tests: `docker run -it --rm -v $(pwd):/app -w /app assistant pytest assistant/tests/`
+- Run tests: `docker run -it --rm -v $(pwd):/app -w /app assistant pytest assistant/tests/ --timeout=120`
 - Run full suite (plain + encrypted): `./run_ci.sh`
 - Run single test mode: `docker compose -f docker-compose.test.yml run --rm test-plain`
 - Lint: `docker run -it --rm -v $(pwd):/app -w /app assistant ruff check .`
@@ -127,7 +134,7 @@ it works.
 ```bash
 # Backend
 docker run -it --rm -v $(pwd):/app -w /app assistant ruff check .
-docker run -it --rm -v $(pwd):/app -w /app assistant pytest assistant/tests/
+docker run -it --rm -v $(pwd):/app -w /app assistant pytest assistant/tests/ --timeout=120
 
 # Frontend
 docker run -it --rm -v $(pwd)/frontend:/app -w /app assistant npm run lint

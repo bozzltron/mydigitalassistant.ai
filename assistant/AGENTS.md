@@ -827,7 +827,7 @@ full suite below is the pre-commit gate, not the inner loop.
 ```bash
 # Backend (from repo root)
 docker run -it --rm -v $(pwd):/app -w /app assistant ruff check .
-docker run -it --rm -v $(pwd):/app -w /app assistant pytest assistant/tests/
+docker run -it --rm -v $(pwd):/app -w /app assistant pytest assistant/tests/ --timeout=120
 
 # Frontend — `check` runs lint + typecheck + tests. Typecheck is not optional:
 # `tsconfig.typecheck.json` is strict and source-only, because vite build and vitest

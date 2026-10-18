@@ -118,6 +118,13 @@ curl -sk https://localhost:8443/tasks | head -c 40
 | Hot reload | ✅ Yes | ❌ No |
 | Port published | 8443 (Caddy) | 8444 (Caddy) |
 | API endpoint | `https://localhost:8443` | `https://localhost:8444` |
+
+**The endpoint is `localhost`, and the IP will not work.** The site address in `Caddyfile` is
+`https://localhost` and the certificate is `CN=localhost`, so a request to
+`https://127.0.0.1:8443` carries an SNI of `127.0.0.1`, matches no site, and the connection is
+dropped. `curl` reports `000` and no error — indistinguishable from a container that is down,
+while `docker compose ps` says healthy. Only the *published bind* is `127.0.0.1` (and it must
+stay loopback-only); the address to open and to curl is `localhost`.
 | Frontend edits | Instant | Requires rebuild |
 
 ---
