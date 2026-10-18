@@ -166,7 +166,7 @@ Model selection rationale lives in [`docs/MODEL_SELECTION.md`](docs/MODEL_SELECT
 
 ```bash
 docker run -it --rm -v $(pwd):/app -w /app assistant ruff check .
-docker run -it --rm -v $(pwd):/app -w /app assistant pytest assistant/tests/ --timeout=120
+docker run -it --rm -v $(pwd):/app -v assistant-test-data:/app/data -w /app -e DATABASE_PATH=/app/data/assistant-test.db -e DB_KEY= assistant pytest assistant/tests/ --timeout=120
 ```
 
 **Frontend** — the SolidJS dev server hot-reloads on `http://localhost:5174` (the

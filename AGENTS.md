@@ -108,7 +108,7 @@ it works.
   - **Dev and prod are separate Compose projects** (separate images, databases, ports) and run side by side. A source change does not reach either until its image is rebuilt, so rebuild **both** to verify a change: "it still does the old thing" is usually an un-rebuilt environment. After rebuilding, hard-refresh the browser (⌘⇧R) — the SPA holds its JS in memory.
   - The two Caddy ports differ on purpose (dev 8443, prod 8444); working in one says nothing about the other.
 - Run CLI: `./assistant/bin/assistant chat`
-- Run tests: `docker run -it --rm -v $(pwd):/app -w /app assistant pytest assistant/tests/ --timeout=120`
+- Run tests: `docker run -it --rm -v $(pwd):/app -v assistant-test-data:/app/data -w /app -e DATABASE_PATH=/app/data/assistant-test.db -e DB_KEY= assistant pytest assistant/tests/ --timeout=120`
 - Run full suite (plain + encrypted): `./run_ci.sh`
 - Run single test mode: `docker compose -f docker-compose.test.yml run --rm test-plain`
 - Lint: `docker run -it --rm -v $(pwd):/app -w /app assistant ruff check .`
@@ -129,12 +129,20 @@ it works.
   per LLM call).
 
 ## Pre-Commit Flow (Required)
-**Before every commit, run both lint and tests in Docker:**
+**Before every commit, run both lint and tests in Docker.**
+
+**The named volume is not optional.** Without `-v assistant-test-data:/app/data` the
+container's `/app/data` *is* the repo's `data/` — a gitignored directory that then
+accumulates test files in your working tree — and the test database lands in the repo
+root. It is also ~4x slower: writes go through the host bind mount instead of a
+Docker-native volume (64 file tests: 25.0s shared versus 6.5s isolated). Both Compose
+test services already isolate this way (`assistant-data:/app/data`); the `docker run`
+form below has to say so explicitly.
 
 ```bash
 # Backend
 docker run -it --rm -v $(pwd):/app -w /app assistant ruff check .
-docker run -it --rm -v $(pwd):/app -w /app assistant pytest assistant/tests/ --timeout=120
+docker run -it --rm -v $(pwd):/app -v assistant-test-data:/app/data -w /app -e DATABASE_PATH=/app/data/assistant-test.db -e DB_KEY= assistant pytest assistant/tests/ --timeout=120
 
 # Frontend
 docker run -it --rm -v $(pwd)/frontend:/app -w /app assistant npm run lint

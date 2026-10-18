@@ -347,7 +347,7 @@ Detailed in [`docs/TESTING.md`](./docs/TESTING.md). Summary:
 Run tests with:
 
 ```bash
-docker run --rm -v $(pwd):/app -w /app assistant pytest assistant/tests/ --timeout=120
+docker run --rm -v $(pwd):/app -v assistant-test-data:/app/data -w /app -e DATABASE_PATH=/app/data/assistant-test.db -e DB_KEY= assistant pytest assistant/tests/ --timeout=120
 ```
 
 Lint with:

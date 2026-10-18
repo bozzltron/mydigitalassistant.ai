@@ -174,7 +174,7 @@ memory and will otherwise keep running the previous bundle.
 
 **Backend (Python):**
 ```bash
-docker run -it --rm -v $(pwd):/app -w /app assistant pytest assistant/tests/ --timeout=120
+docker run -it --rm -v $(pwd):/app -v assistant-test-data:/app/data -w /app -e DATABASE_PATH=/app/data/assistant-test.db -e DB_KEY= assistant pytest assistant/tests/ --timeout=120
 ```
 
 **Frontend (TypeScript):**
@@ -271,10 +271,10 @@ git push
 
 ```bash
 # Required before considering any change done
-docker run -it --rm -v $(pwd):/app -w /app assistant pytest assistant/tests/test_daily_schedule.py assistant/tests/test_review_fixes.py --timeout=120
+docker run -it --rm -v $(pwd):/app -v assistant-test-data:/app/data -w /app -e DATABASE_PATH=/app/data/assistant-test.db -e DB_KEY= assistant pytest assistant/tests/test_daily_schedule.py assistant/tests/test_review_fixes.py --timeout=120
 
 # Full suite must pass before merge
-docker run -it --rm -v $(pwd):/app -w /app assistant pytest assistant/tests/ --timeout=120
+docker run -it --rm -v $(pwd):/app -v assistant-test-data:/app/data -w /app -e DATABASE_PATH=/app/data/assistant-test.db -e DB_KEY= assistant pytest assistant/tests/ --timeout=120
 ```
 
 ---
