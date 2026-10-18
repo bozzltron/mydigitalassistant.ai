@@ -669,7 +669,10 @@ did nothing.
   memory only leaves through an explicit `forget` or a deliberate frame/file deletion.
   (Merges tombstone duplicate losers, but their content is unioned onto the survivor first.)
 - **Missed ticks** (backend down at 09:00) fire once late on restart, then reschedule.
-- **API:** `GET /tasks`, `DELETE /tasks/{id}`, `GET /tasks/{id}/result`.
+- **API:** `GET /tasks/list`, `POST /tasks/create`, `PATCH`/`DELETE /tasks/{task_id}`,
+  `POST /tasks/run-now/{task_name}` (and `POST /tasks/run-due` for the scheduler). There is
+  **no** per-task result endpoint — a run's output is an ordinary assistant episode, so it is
+  read through retrieval or the session, not through a task route.
 - **Tests:** `assistant/tests/test_daily_schedule.py` plus a new integration test for
   end-to-end task execution.
 
@@ -760,13 +763,14 @@ Endpoint: `POST /summarize` with body `{"session_id": "..."}`
 - `backend/memory/consolidate.py` — merges near-duplicate frames onto a survivor (unions
   slots, redirects associations, tombstones losers); runs via the scheduler and
   `assistant db consolidate`. This is the only maintenance that changes frame identity.
-- `backend/static/brain.html` — Brain Observatory: force-graph of frames/associations,
-  conflict resolution, and topic memory search (`GET /memory/search` unions semantic
-  frame matches with keyword hits, returning slots, associations, source episodes,
-  and pending conflicts per match).
-- `backend/static/chat.html` — chat UI; mic button is one-shot dictation into the
-  input (continuous conversation mode is the separate toggle); conversation history
-  restores from `GET /chat/session/{id}/messages` on reload.
+- The **chat UI and the Brain Observatory are the SolidJS SPA** (`frontend/src/`), served for
+  `/chat-ui` and `/brain-ui` by `backend/main.py`. The Brain Observatory is the force-graph of
+  frames/associations with conflict resolution and topic memory search (`GET /memory/search`
+  unions semantic frame matches with keyword hits, returning slots, associations, source
+  episodes, and pending conflicts per match). The chat mic is one-shot dictation into the
+  input (continuous conversation mode is the separate toggle); history restores from
+  `GET /chat/session/{id}/messages` on reload. (The pre-SPA single-file interfaces were
+  replaced in the Vite migration — git history holds them.)
 - `backend/memory/confidence.py` — confidence + conflict math. Single source of truth.
 - `backend/memory/retrieval.py` — embed + sqlite-vec + graph-walk.
 - `backend/pipeline/task_router.py` — functional/introspective/scheduled classification.
@@ -788,7 +792,7 @@ Endpoint: `POST /summarize` with body `{"session_id": "..."}`
 ## UI / UX Standards
 - **Browser support:** Latest Firefox and Chromium (Chrome/Edge). Voice mode audio uses progressive MIME type detection (`audio/ogg` → `audio/wav` → `audio/webm` → `audio/mp4`) so every browser gets its best-supported format.
 - **Icons:** Use SVG icons only (no emoji). Preferred source: [SVGrepo](https://www.svgrepo.com/).
-  All SVG icons should be inlined as `<svg>` elements in HTML — no external icon font dependencies.
+  All SVG icons should be inlined as `<svg>` elements in the components — no external icon font dependencies.
 - **Links:** All links must open in a new tab (`target="_blank"`) so users don't lose their session.
 - **Interactions:** Show feedback on user actions (copied toast, loading states, confirmation messages).
 
@@ -804,13 +808,14 @@ Endpoint: `POST /summarize` with body `{"session_id": "..."}`
 ## Clean Code & Modularity
 Dead code is a liability. Unused functions, duplicate logic, and monolithic files make the codebase harder to reason about and increase the risk of breaking something that still matters. Before shipping a change:
 
-- **Extract shared utilities** before duplicating logic across files (see `static/shared/utils.js`, `static/shared/components.css`).
+- **Extract shared utilities** before duplicating logic across files (see `frontend/src/utils/`, `frontend/src/styles/components.css`).
 - **Delete unused code** — run `grep -r "functionName" .` to verify zero callers across the entire codebase before removing.
-- **Prefer composition over monoliths** — split files by responsibility (see `static/shared/`, `static/chat/`, `static/brain/`).
+- **Prefer composition over monoliths** — split files by responsibility (see `frontend/src/styles/`, `frontend/src/components/`).
 - **Shared utilities first** — before writing similar logic twice, check `shared/` first.
-- **Modular CSS** — component-scoped styles with shared base classes (see `static/shared/components.css`).
+- **Modular CSS** — component-scoped styles with shared base classes (see `frontend/src/styles/components.css`).
 - **Testable modules** — pure functions over side-effect-heavy IIFEs.
-- **ES Modules** — use `<script type="module">` for native browser modules (no build step required).
+- **Modules** — the frontend is a Vite + SolidJS build (`frontend/`); there is no
+  no-build-step path any more. Dev serves through Vite, prod through the built bundle.
 
 ## Pre-Commit Flow (Required)
 **Before every commit, run both lint and tests:**
@@ -824,8 +829,10 @@ full suite below is the pre-commit gate, not the inner loop.
 docker run -it --rm -v $(pwd):/app -w /app assistant ruff check .
 docker run -it --rm -v $(pwd):/app -w /app assistant pytest assistant/tests/
 
-# Frontend
-cd frontend && npm run lint && npm run test
+# Frontend — `check` runs lint + typecheck + tests. Typecheck is not optional:
+# `tsconfig.typecheck.json` is strict and source-only, because vite build and vitest
+# both transpile without checking, so a type error would otherwise ship silently.
+cd frontend && npm run check
 ```
 
 ## SolidJS Frontend Development Notes
