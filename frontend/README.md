@@ -55,7 +55,7 @@ docker run -it --rm -v $(pwd)/frontend:/app -w /app assistant npm run test
 This mirrors the backend requirement (also run in Docker):
 ```bash
 docker run -it --rm -v $(pwd):/app -w /app assistant ruff check .
-docker run -it --rm -v $(pwd):/app -v assistant-test-data:/app/data -w /app -e DATABASE_PATH=/app/data/assistant-test.db -e DB_KEY= assistant pytest assistant/tests/ --timeout=120
+docker run -it --rm -v $(pwd):/app -v assistant-test-data:/app/data -w /app -e DATABASE_PATH=/app/data/assistant-test.db assistant pytest assistant/tests/ --timeout=120
 ```
 
 ## Testing Strategy
