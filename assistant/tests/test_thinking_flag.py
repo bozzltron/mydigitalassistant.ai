@@ -281,7 +281,7 @@ class TestOrchestratorMaxIntelligence:
 
     @pytest.mark.asyncio
     async def test_explicit_max_toggle_routes_tool_loop_to_max_model(self):
-        orchestrator, patches, mocks = _setup_orchestrator("chat-model", True, False)
+        orchestrator, patches, _mocks = _setup_orchestrator("chat-model", True, False)
         orchestrator.llm_client.max_model = "max-model"
         orchestrator.llm_client.supports_tools = AsyncMock(return_value=True)
 
@@ -307,7 +307,7 @@ class TestOrchestratorMaxIntelligence:
 
         captured: dict = {}
 
-        async def _fake_chat_stream(messages, **kwargs):  # noqa: ANN001, ANN002, ANN003, ANN201
+        async def _fake_chat_stream(messages, **kwargs):
             captured.update(kwargs)
             yield MagicMock(content="test", thinking="", done=True)
 

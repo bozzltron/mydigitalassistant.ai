@@ -830,7 +830,7 @@ def render_file_bytes(ext: str, content: str) -> tuple[bytes | None, str | None]
         return None, f"cannot write .{ext}: no writer. Writable formats: {writable}"
     try:
         return writer(content), None
-    except Exception as exc:  # noqa: BLE001 - surfaced to the model as a tool error
+    except Exception as exc:
         logger.warning("Rendering .%s failed: %s", ext, exc)
         return None, f"failed to render .{ext}: {exc}"
 

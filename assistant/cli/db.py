@@ -90,7 +90,7 @@ async def migrate_embeddings():
 async def backup_db():
     """Create a raw file copy of the database (encryption-preserving)."""
     import shutil
-    from datetime import datetime
+    from datetime import UTC, datetime
 
     db_path = Path(settings.database_path)
     if not db_path.exists():
@@ -102,7 +102,7 @@ async def backup_db():
     async with open_checked_db(str(db_path)) as adb:
         await adb.execute("PRAGMA wal_checkpoint(TRUNCATE)")
 
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    timestamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     backup_path = Path(f"backup-{timestamp}.db")
 
     shutil.copy2(db_path, backup_path)
@@ -113,14 +113,14 @@ async def backup_db():
 async def export_db(export_path: Path | None = None):
     """Export database to SQL dump for migration to encrypted brain."""
     import gzip
-    from datetime import datetime
+    from datetime import UTC, datetime
 
     db_path = Path(settings.database_path)
     if not db_path.exists():
         console.print("✗ No database found")
         return False
 
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    timestamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     export_path = export_path or Path(f"brain-export-{timestamp}.sql.gz")
 
     console.print(f"Exporting [cyan]{db_path}[/cyan] to [green]{export_path}[/green]...")

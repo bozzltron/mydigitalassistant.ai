@@ -104,10 +104,10 @@ async def test_upsert_slot_conflict_new_wins(store: MemoryStore):
 
 async def test_upsert_slot_conflict_existing_wins(store: MemoryStore):
     frame = await store.create_frame("Daisy", "entity")
-    slot1, _ = await store.upsert_slot(frame.id, "color", "white")
+    _slot1, _ = await store.upsert_slot(frame.id, "color", "white")
     # Bump confidence to max-ish so existing wins.
     for _ in range(10):
-        slot1, _ = await store.upsert_slot(frame.id, "color", "white")
+        _slot1, _ = await store.upsert_slot(frame.id, "color", "white")
     slot, conflict = await store.upsert_slot(frame.id, "color", "yellow")
     assert slot.value == "white"
     assert conflict is not None

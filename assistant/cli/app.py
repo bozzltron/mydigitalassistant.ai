@@ -2,7 +2,7 @@ import argparse
 import asyncio
 import os
 import sys
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -430,7 +430,7 @@ def cmd_db_backup(args: argparse.Namespace, client: BackendClient) -> None:
 
         from assistant.backend.memory.backup import create_encrypted_backup
 
-        dest = args.output or f"assistant-backup-{datetime.now():%Y%m%d-%H%M%S}.enc.json"
+        dest = args.output or f"assistant-backup-{datetime.now(UTC):%Y%m%d-%H%M%S}.enc.json"
         result = asyncio.run(create_encrypted_backup(dest))
         console.print("[green]Encrypted backup created[/green]")
         console.print(f"  Path: {result['backup_path']}")
@@ -483,7 +483,7 @@ def cmd_db_backup_encrypted(args: argparse.Namespace, client: BackendClient) -> 
 
         from assistant.backend.memory.backup import create_encrypted_backup
 
-        dest = args.output or f"assistant-backup-{datetime.now():%Y%m%d-%H%M%S}.enc.json"
+        dest = args.output or f"assistant-backup-{datetime.now(UTC):%Y%m%d-%H%M%S}.enc.json"
         result = asyncio.run(create_encrypted_backup(dest))
         console.print(f"[green]Encrypted backup created: {dest}[/green]")
         db_size = result["db_size_bytes"]

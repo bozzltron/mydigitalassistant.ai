@@ -10,9 +10,9 @@ import pytest
 
 pytest.importorskip("multipart")
 
-from fastapi.testclient import TestClient  # noqa: E402
+from fastapi.testclient import TestClient
 
-import assistant.backend.main as main  # noqa: E402
+import assistant.backend.main as main
 
 app = main.app
 

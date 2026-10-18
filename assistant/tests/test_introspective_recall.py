@@ -93,7 +93,7 @@ async def introspective_test_env(tmp_path, stub_search):
 
 async def test_introspective_recall_glasgow_article(introspective_test_env):
     """Test that 'Pick up with that' is classified as INTROSPECTIVE and retrieves prior episodes."""
-    store, llm_client, user_id, orchestrator = introspective_test_env
+    _store, _llm_client, user_id, orchestrator = introspective_test_env
 
     # Query that should be introspective
     request = ChatRequest(
@@ -114,7 +114,7 @@ async def test_introspective_recall_glasgow_article(introspective_test_env):
 
 async def test_introspective_tell_me_about_article(introspective_test_env):
     """Test that 'Tell me more about the Glasgow article' is classified as INTROSPECTIVE."""
-    store, llm_client, user_id, orchestrator = introspective_test_env
+    _store, _llm_client, user_id, orchestrator = introspective_test_env
 
     request = ChatRequest(
         user_id=user_id,
@@ -134,7 +134,7 @@ async def test_introspective_tell_me_about_article(introspective_test_env):
 
 async def test_functional_not_hallucinate_capability(introspective_test_env):
     """Test that functional queries about web search don't hallucinate."""
-    store, llm_client, user_id, orchestrator = introspective_test_env
+    _store, _llm_client, user_id, orchestrator = introspective_test_env
 
     request = ChatRequest(
         user_id=user_id,

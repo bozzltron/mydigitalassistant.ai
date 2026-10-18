@@ -51,22 +51,22 @@ def test_no_telemetry_check():
 
 
 def test_bind_address_check():
-    passed, message = check_bind_address()
+    passed, _message = check_bind_address()
     assert passed is True
 
 
 def test_env_gitignored():
-    passed, message = check_env_gitignored()
+    passed, _message = check_env_gitignored()
     assert passed is True
 
 
 def test_env_example_exists():
-    passed, message = check_env_example_exists()
+    passed, _message = check_env_example_exists()
     assert passed is True
 
 
 def test_no_secrets_committed():
-    passed, message = check_no_secrets_committed()
+    passed, _message = check_no_secrets_committed()
     assert passed is True
 
 
@@ -84,7 +84,7 @@ def test_security_check_types_are_exhaustive():
 
 def test_search_tool_localhost():
     """SearXNG must default to localhost only."""
-    passed, message = check_search_tool_localhost()
+    passed, _message = check_search_tool_localhost()
     assert passed is True
 
 

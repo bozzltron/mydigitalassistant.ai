@@ -32,16 +32,16 @@ class _NoNetworkClient:
 
     attempts: list[str] = []
 
-    def __init__(self, *args, **kwargs):  # noqa: ANN002, ANN003
+    def __init__(self, *args, **kwargs):
         type(self).attempts.append("constructed")
 
     async def __aenter__(self):
         return self
 
-    async def __aexit__(self, *exc):  # noqa: ANN002
+    async def __aexit__(self, *exc):
         return False
 
-    async def get(self, url, **kwargs):  # noqa: ANN001, ANN003
+    async def get(self, url, **kwargs):
         type(self).attempts.append(url)
         raise RuntimeError("network disabled in test")
 

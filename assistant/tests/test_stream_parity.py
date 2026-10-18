@@ -113,7 +113,7 @@ async def test_streamed_search_does_not_hang_when_the_relevance_gate_stalls(
 ):
     add_embedding_cluster("capital", "texas", "austin")
 
-    async def hang(*args, **kwargs):  # noqa: ANN002, ANN003, ANN201
+    async def hang(*args, **kwargs):
         import asyncio
 
         await asyncio.sleep(30)
@@ -151,7 +151,7 @@ async def test_streamed_search_does_not_hang_when_the_relevance_gate_stalls(
 async def test_streamed_generation_failure_yields_a_readable_message(
     store, stub_llm, monkeypatch
 ):
-    async def boom(*args, **kwargs):  # noqa: ANN002, ANN003
+    async def boom(*args, **kwargs):
         raise RuntimeError("ollama down")
         yield  # pragma: no cover - makes this an async generator
 
@@ -179,10 +179,10 @@ async def test_streamed_generation_failure_yields_a_readable_message(
 
 @pytest.mark.asyncio
 async def test_streamed_computation_is_stored_in_memory(store, stub_llm, monkeypatch):
-    async def always_math(query):  # noqa: ANN001, ANN201
+    async def always_math(query):
         return True
 
-    async def fake_execute_python(code, timeout=30):  # noqa: ANN001, ANN201
+    async def fake_execute_python(code, timeout=30):
         return "The answer is 42."
 
     orchestrator = _build_orchestrator(store, stub_llm, _search_tool([]))
@@ -336,7 +336,7 @@ async def test_streamed_correction_logs_the_user_turn_once(store, stub_llm):
     # the correction semantics.
     original = _install_llm(stub_llm, task_type="correction", wants_search=False)
 
-    async def failing_extract(*args, **kwargs):  # noqa: ANN002, ANN003
+    async def failing_extract(*args, **kwargs):
         return None
 
     from assistant.backend.pipeline import extractor as extractor_mod
@@ -412,7 +412,7 @@ async def test_correction_turn_emits_a_meta_event(store, stub_llm):
 
     from assistant.backend.pipeline import extractor as extractor_mod
 
-    async def failing_extract(*args, **kwargs):  # noqa: ANN002, ANN003
+    async def failing_extract(*args, **kwargs):
         return None
 
     real_extract = extractor_mod.extract_correction
@@ -440,7 +440,7 @@ async def test_streamed_turn_persists_its_reasoning_trace(store, stub_llm, monke
     `chat()` always persisted the reasoning trace; the stream dropped it, so a
     streamed turn's trace was lost. Both now persist it.
     """
-    async def fake_loop(llm_client, messages, tools, **kwargs):  # noqa: ANN001, ANN002, ANN003, ANN201
+    async def fake_loop(llm_client, messages, tools, **kwargs):
         yield streaming.serialize_event(streaming.FinalizeEvent("answer text", "THE TRACE"))
 
     monkeypatch.setattr(streaming, "stream_tool_loop", fake_loop)

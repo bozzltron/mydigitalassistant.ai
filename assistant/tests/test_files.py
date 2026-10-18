@@ -124,7 +124,7 @@ class TestFileExtraction:
         """Empty CSV returns empty row_data."""
         from assistant.backend.pipeline.files import extract_text_from_csv
 
-        plain_text, key_entities, open_questions, row_data = extract_text_from_csv(b"")
+        plain_text, _key_entities, _open_questions, row_data = extract_text_from_csv(b"")
         assert row_data is None or row_data == []
         assert plain_text == ""
 
@@ -133,7 +133,7 @@ class TestFileExtraction:
         from assistant.backend.pipeline.files import extract_text_from_csv
 
         csv_bytes = b"name,email,status"
-        plain_text, key_entities, open_questions, row_data = extract_text_from_csv(csv_bytes)
+        plain_text, _key_entities, _open_questions, row_data = extract_text_from_csv(csv_bytes)
         assert len(row_data) == 0
         assert plain_text != ""
 

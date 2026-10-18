@@ -293,7 +293,7 @@ async def test_daily_task_full_loop(env):
 @pytest.mark.asyncio
 async def test_run_due_endpoint_logic(env):
     """Test the POST /tasks/run-due logic directly."""
-    orch, llm, store, retriever, user_id = env
+    orch, _llm, store, _retriever, user_id = env
 
     # Create a task directly in store
     from assistant.backend.scheduler.schedule import next_daily_run

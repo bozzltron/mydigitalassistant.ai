@@ -27,7 +27,7 @@ class _FakeClient:
     def __init__(self, response: _FakeResponse) -> None:
         self._response = response
 
-    async def get(self, url, timeout=None):  # noqa: ARG002
+    async def get(self, url, timeout=None):
         return self._response
 
 
@@ -61,7 +61,7 @@ async def test_absent_robots_allows():
 @pytest.mark.asyncio
 async def test_unreadable_robots_allows():
     class _Boom:
-        async def get(self, url, timeout=None):  # noqa: ARG002
+        async def get(self, url, timeout=None):
             raise RuntimeError("network down")
 
     assert await _check_robots_txt(

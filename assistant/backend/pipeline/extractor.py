@@ -1508,7 +1508,7 @@ Examples:
 
 Respond with ONLY valid JSON:
 {"intent": "create"|"list"|"delete"|"pause"|"resume"|"run_now", "name": "...",
- "description": "...", "prompt": "...", "repeat": true|false}""",  # noqa: E501
+ "description": "...", "prompt": "...", "repeat": true|false}""",
     )
     user = ChatMessage(role="user", content=user_message)
 

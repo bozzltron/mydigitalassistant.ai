@@ -405,6 +405,6 @@ if __name__ == "__main__":
     try:
         report = asyncio.run(main())
         sys.exit(0 if report["gate_pass"] else 1)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         print(f"\nA/B harness failed: {e}", file=sys.stderr)
         sys.exit(2)

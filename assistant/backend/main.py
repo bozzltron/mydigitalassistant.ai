@@ -3,7 +3,7 @@ import json
 import logging
 import time
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -1554,7 +1554,7 @@ async def db_backup(store: MemoryStore = _Depends(get_store)):
     if not db_path.exists():
         raise HTTPException(status_code=500, detail=f"DB not found at {db_path}")
 
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    timestamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     backup_name = f"backup-{timestamp}.db"
     backup_path = db_path.parent / backup_name
 
@@ -1641,7 +1641,7 @@ async def list_backups(store: MemoryStore = _Depends(get_store)):
         backups.append({
             "filename": f.name,
             "size_bytes": f.stat().st_size,
-            "created_at": datetime.fromtimestamp(f.stat().st_mtime).isoformat(),
+            "created_at": datetime.fromtimestamp(f.stat().st_mtime, tz=UTC).isoformat(),
         })
     return {"backups": backups}
 

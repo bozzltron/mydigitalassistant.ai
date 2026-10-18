@@ -78,7 +78,7 @@ async def test_consolidation_skips_the_backup_when_there_is_nothing_to_merge(
     """
     backups_taken: list[str] = []
 
-    async def fake_backup(db_path, label):  # noqa: ANN001, ANN201
+    async def fake_backup(db_path, label):
         backups_taken.append(label)
         raise AssertionError("backup must not be taken when there is no work")
 
@@ -106,7 +106,7 @@ async def test_consolidation_merges_ad_hoc_without_a_backup_when_one_is_fresh(
     backups_taken: list[str] = []
     applied: list[bool] = []
 
-    async def fake_backup(db_path, label):  # noqa: ANN001, ANN201
+    async def fake_backup(db_path, label):
         backups_taken.append(label)
 
     monkeypatch.setattr(runner, "_backup_db", fake_backup)
@@ -130,7 +130,7 @@ async def test_consolidation_takes_a_backup_before_merging_if_none_is_fresh(
     """A merge must never run unprotected: no fresh snapshot -> take one first."""
     backups_taken: list[str] = []
 
-    async def fake_backup(db_path, label):  # noqa: ANN001, ANN201
+    async def fake_backup(db_path, label):
         backups_taken.append(label)
 
     monkeypatch.setattr(runner, "_backup_db", fake_backup)
@@ -167,8 +167,8 @@ def _fake_consolidation(merges, applied=None):
 class _OrchestratorStub:
     """Only `embed_fn` is touched by the consolidation path."""
 
-    def embed_fn(self):  # noqa: ANN201
-        async def _embed(text):  # noqa: ANN001, ANN202
+    def embed_fn(self):
+        async def _embed(text):
             return [0.0] * 1024
 
         return _embed

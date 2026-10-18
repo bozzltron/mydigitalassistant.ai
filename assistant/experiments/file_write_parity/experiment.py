@@ -134,7 +134,7 @@ def _probe_owning_library(path: Path, ext: str) -> tuple[bool, str, str]:
     if ext in PLAIN_TEXT_EXTS or ext in ("csv", "json", "ics"):
         try:
             return True, "", path.read_text(encoding="utf-8")
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             return False, f"{type(exc).__name__}: {exc}", ""
     try:
         if ext == "docx":
@@ -193,7 +193,7 @@ def _probe_owning_library(path: Path, ext: str) -> tuple[bool, str, str]:
 
             return True, "", rtf_to_text(path.read_text(errors="replace"))
         return False, "no probe for this extension", ""
-    except Exception as exc:  # noqa: BLE001 - the error IS the measurement
+    except Exception as exc:
         return False, f"{type(exc).__name__}: {exc}", ""
 
 
@@ -366,7 +366,7 @@ async def _roundtrip_arm(ext: str) -> tuple[bool, str]:
             want = " ".join(DOC.split())
             ok = got in want or want in got
         return ok, f"recovered={got[:80]!r}"
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return False, f"{type(exc).__name__}: {exc}"
 
 

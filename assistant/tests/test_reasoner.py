@@ -56,7 +56,7 @@ class TestAssessMemorySufficiency:
     def test_low_relevance_frame_returns_none(self):
         frame = make_frame(1, confidence=0.8)
         memory = make_memory([(frame, [], 0.1)])  # below _MIN_CITATION_RELEVANCE
-        sufficiency, cited = assess_memory_sufficiency("test", memory)
+        sufficiency, _cited = assess_memory_sufficiency("test", memory)
         assert sufficiency == MemorySufficiency.NONE
 
     def test_partial_sufficiency(self):

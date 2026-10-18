@@ -669,7 +669,7 @@ def test_topic_search_finds_frames_by_keyword_and_semantic(client, stub_llm):
         )
         return f, slot, episode
 
-    frame, slot, episode = asyncio.run(seed())
+    frame, _slot, episode = asyncio.run(seed())
     # Semantic pass needs a stored embedding for the frame.
     asyncio.run(store.store_frame_embedding(
         frame.id, [0.1] * 768, settings.embedding_model))

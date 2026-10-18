@@ -1878,10 +1878,10 @@ class MemoryStore:
             for row in rows:
                 (
                     sid,
-                    uid,
+                    _uid,
                     title,
                     created_at,
-                    updated_at,
+                    _updated_at,
                     episode_count,
                     last_activity,
                     first_user_msg,
@@ -2220,7 +2220,7 @@ class MemoryStore:
             )
             if not row:
                 raise ValueError(f"Conflict {conflict_id} not found")
-            frame_id, slot_key, existing_value, new_value = row[0]
+            frame_id, slot_key, _existing_value, _new_value = row[0]
 
             existing_slot = await db.execute_fetchall(
                 "SELECT id, value FROM slots WHERE frame_id = ? AND key = ?",

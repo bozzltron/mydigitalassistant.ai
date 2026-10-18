@@ -47,7 +47,7 @@ from assistant.backend.pipeline.llm_client import (
 # recall|shown stays comparable to its published 0.910 and the queries are not
 # re-screened against a fix that had not shipped when they were chosen. See
 # plan.md threat 1.
-from assistant.experiments.frame_budget.experiment import (  # noqa: E402
+from assistant.experiments.frame_budget.experiment import (
     QUERIES as ALL_QUERIES,
 )
 from assistant.experiments.frame_budget.experiment import (

@@ -96,7 +96,7 @@ async def test_strengthen_is_exactly_once_per_episode(tmp_path):
 
 
 async def test_strengthen_never_mints_new_edges(tmp_path):
-    db_path, store, f1, f2, other, uid = await _seed_store(tmp_path)
+    db_path, store, f1, f2, _other, uid = await _seed_store(tmp_path)
     # Co-occurrence WITHOUT an existing association must not create one.
     await _episode(store, [f1, f2], uid)
     await store.close()

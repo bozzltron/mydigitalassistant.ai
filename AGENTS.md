@@ -141,10 +141,21 @@ docker run -it --rm -v $(pwd)/frontend:/app -w /app assistant npm run test
 silently.
 
 ## Code style
-- Python 3.11+. Type hints required on all public functions.
-- `ruff` for lint/format. Line length 100.
+- Python 3.11+. **Type hints on public functions are the house style and are not yet
+  enforced** — no `ANN` rule is selected and ~20% of public functions still lack a return
+  annotation. Close that, or stop calling it a requirement; a rule nothing checks reads as
+  satisfied.
+- `ruff` for lint. Line length 100. **Formatting is not gated**: `ruff format --check`
+  reports ~160 files it would reformat while the pre-commit flow runs only `ruff check`.
+  Reformat in one dedicated commit before adding the check, or drop the word "format".
+- **Lint gates the security constraints.** `TID` bans the cloud LLM SDKs (`openai`,
+  `anthropic`, `google.generativeai`, `cohere`, `mistralai`) at import time; `DTZ` bans
+  tz-naive datetimes (the container runs UTC, the user does not — see `timeutil`);
+  `RUF100`/`RUF059` keep dead `# noqa` comments and unused bindings out.
 - Pydantic v2 for all API schemas and config.
-- Async for all LLM/Ollama calls and DB writes in the hot path.
+- Async for all LLM/Ollama calls and DB writes in the hot path. **Not yet linted**:
+  `ASYNC230`/`ASYNC240` flag ~97 blocking `open()`/`pathlib` calls inside `async def` —
+  mostly file tools. Worth a triage pass, not a blanket fix.
 
 ## Testing instructions
 - **Scope tests to the change while iterating.** Run only the test files that

@@ -38,7 +38,7 @@ class _FakeHTTP:
         self.seq = list(seq)
         self.calls = 0
 
-    async def post(self, url: str, json: dict | None = None):  # noqa: ANN001
+    async def post(self, url: str, json: dict | None = None):
         self.calls += 1
         item = self.seq.pop(0)
         if isinstance(item, Exception):

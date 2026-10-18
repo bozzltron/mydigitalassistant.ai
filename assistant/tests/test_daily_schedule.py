@@ -37,7 +37,7 @@ class FakeLLM(OllamaClient):
         self.chat_reply: str | None = None
         self.chat_calls: list[list] = []
 
-    async def chat(self, messages, *args, **kwargs):  # noqa: ANN001, ANN002
+    async def chat(self, messages, *args, **kwargs):
         self.chat_calls.append(messages)
         system = messages[0].content.lower()
         if "task_type" in system and "classify" in system:
@@ -369,7 +369,7 @@ async def test_run_scheduled_task_delivers_task_prompt_to_model(env):
     memory context (e.g. repeating an old "file created" episode for a deals
     task), making daily tasks useless.
     """
-    orch, llm, store, user_id = env
+    orch, llm, _store, user_id = env
     await orch.run_scheduled_task(
         prompt="Keep an eye on AI in the news and report anything major",
         user_id=user_id,
@@ -394,9 +394,9 @@ async def test_scheduled_task_searches_with_the_routers_query(env, monkeypatch):
     from assistant.backend.pipeline import orchestrator as orch_mod
     from assistant.backend.pipeline.task_router import TaskType
 
-    orch, llm, store, user_id = env
+    orch, _llm, _store, user_id = env
 
-    async def fake_route(message, llm_client):  # noqa: ANN001, ANN002
+    async def fake_route(message, llm_client):
         return SimpleNamespace(
             task_type=TaskType.FUNCTIONAL,
             wants_search=True,
@@ -407,7 +407,7 @@ async def test_scheduled_task_searches_with_the_routers_query(env, monkeypatch):
 
     captured: dict = {}
 
-    async def fake_search(query, num_results=5, llm_client=None, user_consent=False):  # noqa: ANN001
+    async def fake_search(query, num_results=5, llm_client=None, user_consent=False):
         captured["query"] = query
         return [], SearchInfo(backend="test", query=query, results=[])
 
@@ -432,9 +432,9 @@ async def test_scheduled_task_search_is_not_vetoed(env, monkeypatch):
     from assistant.backend.pipeline import orchestrator as orch_mod
     from assistant.backend.pipeline.task_router import TaskType
 
-    orch, llm, store, user_id = env
+    orch, _llm, _store, user_id = env
 
-    async def fake_route(message, llm_client):  # noqa: ANN001, ANN002
+    async def fake_route(message, llm_client):
         return SimpleNamespace(
             task_type=TaskType.FUNCTIONAL, wants_search=False, search_query="q"
         )
@@ -443,7 +443,7 @@ async def test_scheduled_task_search_is_not_vetoed(env, monkeypatch):
 
     called = {"n": 0}
 
-    async def fake_search(query, num_results=5, llm_client=None, user_consent=False):  # noqa: ANN001
+    async def fake_search(query, num_results=5, llm_client=None, user_consent=False):
         called["n"] += 1
         return [], SearchInfo(backend="test", query=query, results=[])
 
@@ -463,10 +463,10 @@ async def test_scheduled_task_runs_the_tool_loop(env, monkeypatch):
     """
     import assistant.backend.pipeline.streaming as streaming
 
-    orch, llm, store, user_id = env
+    orch, _llm, _store, user_id = env
     captured: dict = {}
 
-    async def fake_loop(llm_client, messages, tools, **kwargs):  # noqa: ANN001, ANN002, ANN003, ANN201
+    async def fake_loop(llm_client, messages, tools, **kwargs):
         captured["tools"] = [t["function"]["name"] for t in tools]
         yield streaming.serialize_event(streaming.FinalizeEvent("done", ""))
 

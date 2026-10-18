@@ -43,7 +43,7 @@ async def test_transcription_decodes_off_the_event_loop(monkeypatch, tmp_path):
     seen: dict[str, threading.Thread] = {}
 
     class FakeModel:
-        def transcribe(self, path: str, **kwargs):  # noqa: ANN003, ANN201
+        def transcribe(self, path: str, **kwargs):
             seen["thread"] = threading.current_thread()
             return iter([]), None
 

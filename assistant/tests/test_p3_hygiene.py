@@ -160,7 +160,7 @@ class _JsonStub:
     def __init__(self, content: str) -> None:
         self.content = content
 
-    async def chat(self, *args, **kwargs) -> ChatResponse:  # noqa: ANN002, ANN003
+    async def chat(self, *args, **kwargs) -> ChatResponse:
         return ChatResponse(content=self.content, model="stub", done=True)
 
 
@@ -254,7 +254,7 @@ def api_client(store):
     from assistant.backend.main import _state, app, get_orchestrator, get_store
 
     class _Embeds:
-        async def embed(self, text):  # noqa: ANN001, ANN201
+        async def embed(self, text):
             from assistant.backend.pipeline.llm_client import EmbeddingResponse
 
             return EmbeddingResponse(embedding=[0.0] * 1024, model=settings.embedding_model)

@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 # refusal uses them; they are re-exported here because `retrieval` historically
 # owned them and callers still import them from this path — one home, not copies
 # that can drift.
-from assistant.backend.memory.store import (  # noqa: E402, F401
+from assistant.backend.memory.store import (  # noqa: E402
     FILE_CONTENT_HINT_SLOTS,
     FILE_FRAME_SOURCE_TYPES,
 )
