@@ -49,7 +49,7 @@ curl http://127.0.0.1:8000/health
 
 ### Run tests
 ```bash
-docker run -it --rm -v $(pwd):/app -w /app assistant pytest assistant/tests/
+docker run -it --rm -v $(pwd):/app -w /app assistant pytest assistant/tests/ --timeout=120
 ```
 
 ### Security verification

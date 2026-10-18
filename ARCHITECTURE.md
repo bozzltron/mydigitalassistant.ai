@@ -347,7 +347,7 @@ Detailed in [`docs/TESTING.md`](./docs/TESTING.md). Summary:
 Run tests with:
 
 ```bash
-docker run --rm -v $(pwd):/app -w /app assistant pytest assistant/tests/
+docker run --rm -v $(pwd):/app -w /app assistant pytest assistant/tests/ --timeout=120
 ```
 
 Lint with:
