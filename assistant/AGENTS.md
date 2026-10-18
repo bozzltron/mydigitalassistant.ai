@@ -517,14 +517,16 @@ the assessment criteria, memory budget, and re-evaluation process.
   on-demand escalation tier (auto reasoner or "Max" UI toggle); think on,
   `keep_alive=10m`, never resident next to the warm set. Empty means escalation
   falls back to thinking-mode on the chat model.
-- Math model (opt-in; empty by default): the on-demand `compute` tool. The model
+- Math model (defaults to `qwen3.5:4b` — the **utility model**, already warm, so
+  `compute` adds no model load): the on-demand `compute` tool. The model
   **writes Python and the backend executes it — the answer is the process's stdout**,
   so the arithmetic is exact by construction and the only failure mode is codegen
   (no tool call, or a missing `print`). It is **not** a security sandbox — see
-  `docs/COMPUTE.md`. Recommended
-  `sorc/qwen3.5-claude-4.6-opus-q4:9b` (equal accuracy to the 27B on the fleet
-  probe, ~4–10× faster, 6.6 GB — see `docs/MODEL_SELECTION.md`). Empty disables
-  the `compute` tool entirely.
+  `docs/COMPUTE.md`. Naming a *different* model is the expensive option, because a
+  distinct runner competes for a load slot (`OLLAMA_MAX_LOADED_MODELS`). Recommended if
+  you want the better one: `sorc/qwen3.5-claude-4.6-opus-q4:9b` (equal accuracy to the
+  27B on the fleet probe, ~4–10× faster, 6.6 GB — see `docs/MODEL_SELECTION.md`).
+  **Empty disables the `compute` tool entirely.**
 - Coder model: reserved for tool codegen; falls back to chat model.
 - No separate router/reasoning models: routing reuses utility; reasoning is a thinking-mode
   escalation on the chat model.
