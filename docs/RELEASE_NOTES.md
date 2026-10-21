@@ -1,5 +1,59 @@
 # MyDigitalAssistant.ai — release notes
 
+## v0.11.22-alpha
+
+**HTML as a real file format, imagery the model places from candidates it was given, and
+the temporal question settled where it was actually decided — at the search gate, not in
+the schema.**
+
+- **HTML is a file format now.** `.html` can be written by `write_file` and uploaded. A
+  fragment is wrapped in a real document (charset and title), a complete document is kept
+  verbatim, and untagged prose is escaped so `5 < 10` cannot become a tag. The Files page
+  previews it in `<iframe sandbox="allow-scripts">` with **no** `allow-same-origin` — an
+  opaque origin that cannot read the app's storage or call its memory API — plus a CSP
+  that forbids network egress, so a generated report cannot phone home.
+- **A writable format must be readable as source.** `read_file` on `.html` returned the
+  *extracted text* with every tag stripped; asked to rewrite a template, the agent wrote
+  a `<p>` full of CSS. `.html`/`.htm` are read raw now, like `.ics`.
+- **The model places images, from candidates it is given.** After a search, the prompt
+  lists up to six images (Brave's index first, then each result's full image, junk
+  filtered) and the model puts at most two where they illustrate the point. It has **not
+  seen** them, so its caption must be the candidate's title — a live turn labelled NASA's
+  stock Apollo photo "An Anticrepuscular Rainbow Fan". Every image is fetched through
+  `/image-proxy`, and an inline image whose URL the turn's search did not return is
+  dropped at render.
+- **Two URL defects found in Brave's source metadata**, both fixed in `clean_image_url`:
+  HTML entities were never decoded (`&amp;` in a query string), and one page's broken
+  `og:image` was its own URL glued onto an absolute one
+  (`https://site.comhttps://cdn.site.com/…`), which the proxy refused with a 400.
+- **Facts carry the date they were observed** (`as of YYYY-MM-DD`), and the system prompt
+  carries a time-validity rule. Dating alone changes no behaviour — measured 1.000 →
+  1.000 stale-as-current.
+- **The temporal failure was fixed at the search gate.** A validity window and an
+  `## Expired` section cleared their pre-registered bars on synthetic memory
+  (1.000 → 0.556 → 0.222) and were then **deleted**: the live failure came from a prior
+  *episode*, and the reasoner's heuristic counted relevant memory as sufficient. The
+  router's `wants_search` now forces a search regardless of sufficiency: measured 0/10 →
+  **9/10** on period-scoped questions with sufficient memory, **0/10** on stable ones. The
+  veto is unchanged; the model's judgement is the gate.
+- **The research rule is written down.** `RUNBOOK.md` §10 makes "two consecutive rounds
+  miss their pre-registered bar" a stopping condition, and the three temporal experiments
+  are the worked example.
+- **UI:** images in a markdown preview fit their column instead of widening the document;
+  the Tasks detail pane is half the page, matching Files, and stacks under 768px.
+
+**Known, measured, and not fixed** — recorded rather than left to be rediscovered:
+
+- The search gate costs **11–32s** of search on the turns it fires. Three live "image of
+  the day" turns disagreed on what the image was (one "Martian Dawn", two "An
+  Anticrepuscular Rainbow Fan"), all labelled today's. That is search-result variance, not
+  memory staleness, and it belongs to the search/extraction line.
+- The slot validity window cannot ship until something writes it. The `volatile`
+  extraction flag was never built, and over-marking would file stable facts as expired —
+  a worse failure than the one being fixed.
+- The caption rule limits the model to the candidate's title. It cannot verify that an
+  image depicts what the title claims; stale `og:image`s still come through.
+
 ## v0.11.21-alpha
 
 **The agent now finishes what it starts — and why it did not was measured, twice wrongly, and
