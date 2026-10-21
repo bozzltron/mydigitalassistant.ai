@@ -64,13 +64,11 @@ def classify_heuristic(text: str) -> TaskType | None:
     return None
 
 
-async def classify_with_llm(text: str, llm_client: "OllamaClient") -> ClassificationResult:
-    """LLM-based classifier. Uses utility_model + JSON format."""
-    from assistant.backend.pipeline.llm_client import ChatMessage
-
-    system = ChatMessage(
-        role="system",
-        content="""Analyze the user's message and classify its intent.
+# The router's prompt is a module constant rather than an inline literal so an
+# experiment can compare cue lists without a production branch: `temporal_validity`
+# swaps this name to measure whether period-scoped phrases ("of the day", "today")
+# change the search decision. Production always uses this one.
+ROUTER_SYSTEM_PROMPT = """Analyze the user's message and classify its intent.
 
 Classify into exactly one of these five types based on what the user is TRYING to do:
 
@@ -145,8 +143,14 @@ keep the names and topic words that a search engine needs.
 Respond with ONLY valid JSON:
 {"task_type": "functional"|"introspective"|"correction"|"search"|"scheduled",
  "wants_search": true|false,
- "search_query": "short keyword query"}""",
-    )
+ "search_query": "short keyword query"}"""
+
+
+async def classify_with_llm(text: str, llm_client: "OllamaClient") -> ClassificationResult:
+    """LLM-based classifier. Uses utility_model + JSON format."""
+    from assistant.backend.pipeline.llm_client import ChatMessage
+
+    system = ChatMessage(role="system", content=ROUTER_SYSTEM_PROMPT)
     user = ChatMessage(role="user", content=text)
     try:
         response = await llm_client.chat(

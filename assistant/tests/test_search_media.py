@@ -38,6 +38,33 @@ class TestThumbUrls:
         assert _thumb_urls({}) == (None, None)
 
 
+class TestCleanImageUrl:
+    def test_entities_are_decoded(self):
+        # A live result carried `...?w=1024&amp;w=gi&amp;k=20`, which is not the
+        # URL the host serves.
+        from assistant.backend.pipeline.search import clean_image_url
+
+        assert clean_image_url("https://x/i.jpg?w=1&amp;k=2") == "https://x/i.jpg?w=1&k=2"
+
+    def test_a_joined_url_is_rejected(self):
+        # A page's broken og:image: its own URL glued onto an absolute image URL.
+        from assistant.backend.pipeline.search import clean_image_url
+
+        assert clean_image_url("https://www.imaios.comhttps://cdn1.imaios.com/x.png") is None
+
+    def test_relative_paths_survive(self):
+        # SearXNG emits these; `_absolute` resolves them against its host.
+        from assistant.backend.pipeline.search import clean_image_url
+
+        assert clean_image_url("/image_proxy?url=x") == "/image_proxy?url=x"
+
+    def test_missing_is_none(self):
+        from assistant.backend.pipeline.search import clean_image_url
+
+        assert clean_image_url(None) is None
+        assert clean_image_url("") is None
+
+
 class TestAbsolute:
     def test_absolute_unchanged(self):
         assert _absolute("https://a/b.png", "http://searx:8080") == "https://a/b.png"

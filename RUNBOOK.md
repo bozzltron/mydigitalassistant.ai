@@ -267,6 +267,29 @@ git push
 
 ---
 
+## 10. Diminishing Returns — the Stopping Rule
+
+Research rounds are cheap individually and expensive as a line. Before a round, write
+down the current failure rate, the cost of the next change, and the bar it must clear.
+Stop when any of these holds:
+
+- **Two consecutive rounds miss their pre-registered bar.** Report the limit in
+  `result.md` and stop; a third wording is not a new experiment.
+- **The next change adds a mechanism** — schema, column, extra model call, another
+  prompt section — **for a residual the last round already showed is model
+  behaviour.** The representation is not the lever; say so.
+- **The last round's gain is smaller than the cost of the next one.**
+
+Shipping what works beats converging. A measured 0.222 with the residue named is a
+result; a fourth mechanism is a guess with a plan attached.
+
+Worked example: `assistant/experiments/temporal_validity*/` — the router hypothesis
+was falsified at its ceiling and the cue-list change was reverted; the rule and the
+expired section each cleared their bar; the remaining four failures are the same
+model behaviour across three rounds, which is where the line stopped.
+
+---
+
 ## Critical Path Regression Tests (Run Before Any Merge)
 
 ```bash

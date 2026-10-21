@@ -1,0 +1,682 @@
+{
+  "started": "2026-10-20T13:34:25.675794+00:00",
+  "finished": "2026-10-20T13:36:23.083985+00:00",
+  "clock": {
+    "today": "2026-10-20",
+    "stale_date": "2026-09-05",
+    "age_days": 45
+  },
+  "replicates": 3,
+  "model": "qwen3.5:9b",
+  "summary": {
+    "presents_stale_as_current": {
+      "as_of": 0.889,
+      "window": 0.611,
+      "window_age": 0.444
+    },
+    "cites_date": {
+      "as_of": 0.111,
+      "window": 0.389,
+      "window_age": 0.556
+    },
+    "repeats_stale_value": {
+      "as_of": 1.0,
+      "window": 1.0,
+      "window_age": 1.0
+    },
+    "cost": {
+      "memory_chars_as_of": 882,
+      "memory_chars_window_age": 990
+    }
+  },
+  "rows": [
+    {
+      "condition": "as_of",
+      "replicate": 1,
+      "query": "What's NASA's image of the day?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "apollo 11"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "NASA's image of the day is a photograph from an Apollo 11 spacewalk."
+    },
+    {
+      "condition": "window",
+      "replicate": 1,
+      "query": "What's NASA's image of the day?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "apollo 11"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "NASA's image of the day is a photograph of an Apollo 11 spacewalk."
+    },
+    {
+      "condition": "window_age",
+      "replicate": 1,
+      "query": "What's NASA's image of the day?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "apollo 11"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "NASA's image of the day is a photograph from the Apollo 11 spacewalk."
+    },
+    {
+      "condition": "as_of",
+      "replicate": 1,
+      "query": "What's the latest version of Acme Widget?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "9.7.3"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "The latest version of Acme Widget is 9.7.3."
+    },
+    {
+      "condition": "window",
+      "replicate": 1,
+      "query": "What's the latest version of Acme Widget?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "9.7.3"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "The latest version of Acme Widget is 9.7.3."
+    },
+    {
+      "condition": "window_age",
+      "replicate": 1,
+      "query": "What's the latest version of Acme Widget?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "9.7.3"
+      ],
+      "cites_date": true,
+      "presents_stale_as_current": false,
+      "answer": "The latest version of Acme Widget is 9.7.3, as recorded in memory from September 5, 2026."
+    },
+    {
+      "condition": "as_of",
+      "replicate": 1,
+      "query": "What does the Acme Widget Pro cost right now?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "412"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "The Acme Widget Pro costs $412.00 USD."
+    },
+    {
+      "condition": "window",
+      "replicate": 1,
+      "query": "What does the Acme Widget Pro cost right now?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "412"
+      ],
+      "cites_date": true,
+      "presents_stale_as_current": false,
+      "answer": "The Acme Widget Pro costs $412.00 USD (as of 2026-09-05)."
+    },
+    {
+      "condition": "window_age",
+      "replicate": 1,
+      "query": "What does the Acme Widget Pro cost right now?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "412"
+      ],
+      "cites_date": true,
+      "presents_stale_as_current": false,
+      "answer": "Based on my memory, the last recorded price for the Acme Widget was **$412.00**, but that information is from September 5, 2026, and may not reflect the current price today."
+    },
+    {
+      "condition": "as_of",
+      "replicate": 1,
+      "query": "What's on my schedule this afternoon?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "dentist"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "You have a dentist appointment at 3:30 PM this afternoon."
+    },
+    {
+      "condition": "window",
+      "replicate": 1,
+      "query": "What's on my schedule this afternoon?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "dentist"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "You have a dentist appointment at 3:30 PM today."
+    },
+    {
+      "condition": "window_age",
+      "replicate": 1,
+      "query": "What's on my schedule this afternoon?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "dentist"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "You have a dentist appointment at 3:30 PM."
+    },
+    {
+      "condition": "as_of",
+      "replicate": 1,
+      "query": "Where is my package right now?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "memphis"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "Your package is currently in Memphis, Tennessee."
+    },
+    {
+      "condition": "window",
+      "replicate": 1,
+      "query": "Where is my package right now?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "memphis"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "Your package is currently in Memphis, Tennessee."
+    },
+    {
+      "condition": "window_age",
+      "replicate": 1,
+      "query": "Where is my package right now?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "memphis"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "Your package is currently in Memphis, Tennessee."
+    },
+    {
+      "condition": "as_of",
+      "replicate": 1,
+      "query": "How many did we sell today?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "37"
+      ],
+      "cites_date": true,
+      "presents_stale_as_current": false,
+      "answer": "Based on the memory state, you sold 37 units of Acme Widget today.\n\n*(Note: This data is from a source dated 2026-09-05. If you need the count for today, 2026-10-20, that information is not currently available in my records.)*"
+    },
+    {
+      "condition": "window",
+      "replicate": 1,
+      "query": "How many did we sell today?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "37"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "We sold 37 units today."
+    },
+    {
+      "condition": "window_age",
+      "replicate": 1,
+      "query": "How many did we sell today?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "37"
+      ],
+      "cites_date": true,
+      "presents_stale_as_current": false,
+      "answer": "Based on the available information, you sold **37 units** today. (Note: This data is from September 5, 2026; if you are asking for the actual count for today, October 20, 2026, it is not currently recorded in my memory)."
+    },
+    {
+      "condition": "window",
+      "replicate": 2,
+      "query": "What's NASA's image of the day?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "apollo 11"
+      ],
+      "cites_date": true,
+      "presents_stale_as_current": false,
+      "answer": "As of 2026-09-05, NASA's Image of the Day is a photograph from an Apollo 11 spacewalk."
+    },
+    {
+      "condition": "window_age",
+      "replicate": 2,
+      "query": "What's NASA's image of the day?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "apollo 11"
+      ],
+      "cites_date": true,
+      "presents_stale_as_current": false,
+      "answer": "NASA's image of the day is a photograph from the Apollo 11 spacewalk. The available information is dated September 5, 2026."
+    },
+    {
+      "condition": "as_of",
+      "replicate": 2,
+      "query": "What's NASA's image of the day?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "apollo 11"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "NASA's image of the day is a photograph from an Apollo 11 spacewalk."
+    },
+    {
+      "condition": "window",
+      "replicate": 2,
+      "query": "What's the latest version of Acme Widget?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "9.7.3"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "The latest version of Acme Widget is 9.7.3."
+    },
+    {
+      "condition": "window_age",
+      "replicate": 2,
+      "query": "What's the latest version of Acme Widget?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "9.7.3"
+      ],
+      "cites_date": true,
+      "presents_stale_as_current": false,
+      "answer": "The latest version of Acme Widget is 9.7.3 (as of 2026-09-05)."
+    },
+    {
+      "condition": "as_of",
+      "replicate": 2,
+      "query": "What's the latest version of Acme Widget?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "9.7.3"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "The latest version of Acme Widget is 9.7.3."
+    },
+    {
+      "condition": "window",
+      "replicate": 2,
+      "query": "What does the Acme Widget Pro cost right now?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "412"
+      ],
+      "cites_date": true,
+      "presents_stale_as_current": false,
+      "answer": "The Acme Widget Pro costs $412.00 USD as of 2026-09-05."
+    },
+    {
+      "condition": "window_age",
+      "replicate": 2,
+      "query": "What does the Acme Widget Pro cost right now?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "412"
+      ],
+      "cites_date": true,
+      "presents_stale_as_current": false,
+      "answer": "Based on my memory, the Acme Widget Pro costs $412.00 USD. This information is valid as of September 5, 2026."
+    },
+    {
+      "condition": "as_of",
+      "replicate": 2,
+      "query": "What does the Acme Widget Pro cost right now?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "412"
+      ],
+      "cites_date": true,
+      "presents_stale_as_current": false,
+      "answer": "The Acme Widget Pro costs $412.00 USD. This information is based on data from September 5, 2026."
+    },
+    {
+      "condition": "window",
+      "replicate": 2,
+      "query": "What's on my schedule this afternoon?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "dentist"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "You have a dentist appointment at 3:30 PM."
+    },
+    {
+      "condition": "window_age",
+      "replicate": 2,
+      "query": "What's on my schedule this afternoon?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "dentist"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "You have a dentist appointment at 3:30 PM."
+    },
+    {
+      "condition": "as_of",
+      "replicate": 2,
+      "query": "What's on my schedule this afternoon?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "dentist"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "You have a dentist appointment at 3:30 PM today."
+    },
+    {
+      "condition": "window",
+      "replicate": 2,
+      "query": "Where is my package right now?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "memphis"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "Your package is currently in Memphis, Tennessee."
+    },
+    {
+      "condition": "window_age",
+      "replicate": 2,
+      "query": "Where is my package right now?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "memphis"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "Your package is currently in Memphis, Tennessee."
+    },
+    {
+      "condition": "as_of",
+      "replicate": 2,
+      "query": "Where is my package right now?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "memphis"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "Your package is currently in Memphis, Tennessee."
+    },
+    {
+      "condition": "window",
+      "replicate": 2,
+      "query": "How many did we sell today?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "37"
+      ],
+      "cites_date": true,
+      "presents_stale_as_current": false,
+      "answer": "We sold 37 units today, according to the data available as of 2026-09-05."
+    },
+    {
+      "condition": "window_age",
+      "replicate": 2,
+      "query": "How many did we sell today?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "37"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "Based on the available information, you sold 37 units today."
+    },
+    {
+      "condition": "as_of",
+      "replicate": 2,
+      "query": "How many did we sell today?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "37"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "Based on the memory state, you sold 37 units today."
+    },
+    {
+      "condition": "window_age",
+      "replicate": 3,
+      "query": "What's NASA's image of the day?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "apollo 11"
+      ],
+      "cites_date": true,
+      "presents_stale_as_current": false,
+      "answer": "NASA's image of the day is a photograph from an Apollo 11 spacewalk. This information was last confirmed on September 5, 2026."
+    },
+    {
+      "condition": "as_of",
+      "replicate": 3,
+      "query": "What's NASA's image of the day?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "apollo 11"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "NASA's image of the day is an Apollo 11 spacewalk photograph."
+    },
+    {
+      "condition": "window",
+      "replicate": 3,
+      "query": "What's NASA's image of the day?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "apollo 11"
+      ],
+      "cites_date": true,
+      "presents_stale_as_current": false,
+      "answer": "Based on my memory, NASA's image of the day is a photograph from an Apollo 11 spacewalk. Note that this information is from September 5, 2026. Would you like me to search for the current actual image?"
+    },
+    {
+      "condition": "window_age",
+      "replicate": 3,
+      "query": "What's the latest version of Acme Widget?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "9.7.3"
+      ],
+      "cites_date": true,
+      "presents_stale_as_current": false,
+      "answer": "The latest version of Acme Widget is 9.7.3, as recorded in memory from September 5, 2026."
+    },
+    {
+      "condition": "as_of",
+      "replicate": 3,
+      "query": "What's the latest version of Acme Widget?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "9.7.3"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "The latest version of Acme Widget is 9.7.3."
+    },
+    {
+      "condition": "window",
+      "replicate": 3,
+      "query": "What's the latest version of Acme Widget?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "9.7.3"
+      ],
+      "cites_date": true,
+      "presents_stale_as_current": false,
+      "answer": "The latest version of Acme Widget is 9.7.3 (as of 2026-09-05)."
+    },
+    {
+      "condition": "window_age",
+      "replicate": 3,
+      "query": "What does the Acme Widget Pro cost right now?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "412"
+      ],
+      "cites_date": true,
+      "presents_stale_as_current": false,
+      "answer": "The Acme Widget Pro costs $412.00 USD, based on data from September 5, 2026."
+    },
+    {
+      "condition": "as_of",
+      "replicate": 3,
+      "query": "What does the Acme Widget Pro cost right now?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "412"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "The Acme Widget Pro costs $412.00 USD."
+    },
+    {
+      "condition": "window",
+      "replicate": 3,
+      "query": "What does the Acme Widget Pro cost right now?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "412"
+      ],
+      "cites_date": true,
+      "presents_stale_as_current": false,
+      "answer": "The Acme Widget Pro costs $412.00 USD as of 2026-09-05."
+    },
+    {
+      "condition": "window_age",
+      "replicate": 3,
+      "query": "What's on my schedule this afternoon?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "dentist"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "This afternoon you have a dentist appointment at 3:30."
+    },
+    {
+      "condition": "as_of",
+      "replicate": 3,
+      "query": "What's on my schedule this afternoon?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "dentist"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "This afternoon, you have a dentist appointment at 3:30 PM."
+    },
+    {
+      "condition": "window",
+      "replicate": 3,
+      "query": "What's on my schedule this afternoon?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "dentist"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "You have a dentist appointment at 3:30 PM this afternoon."
+    },
+    {
+      "condition": "window_age",
+      "replicate": 3,
+      "query": "Where is my package right now?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "memphis"
+      ],
+      "cites_date": true,
+      "presents_stale_as_current": false,
+      "answer": "Your package is currently in Memphis, Tennessee. This information is from September 5, 2026; if you need the most up-to-date location for today (October 20, 2026), please check with your carrier directly as my data may not reflect real-time changes."
+    },
+    {
+      "condition": "as_of",
+      "replicate": 3,
+      "query": "Where is my package right now?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "memphis"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "Your package is currently in Memphis, Tennessee."
+    },
+    {
+      "condition": "window",
+      "replicate": 3,
+      "query": "Where is my package right now?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "memphis"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "Your package is currently located in Memphis, Tennessee."
+    },
+    {
+      "condition": "window_age",
+      "replicate": 3,
+      "query": "How many did we sell today?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "37"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "Based on the available memory, units sold today is recorded as 37."
+    },
+    {
+      "condition": "as_of",
+      "replicate": 3,
+      "query": "How many did we sell today?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "37"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "You sold 37 units today."
+    },
+    {
+      "condition": "window",
+      "replicate": 3,
+      "query": "How many did we sell today?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "37"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "You sold 37 units today."
+    }
+  ]
+}

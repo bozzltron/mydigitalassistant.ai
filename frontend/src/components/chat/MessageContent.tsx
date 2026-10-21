@@ -13,25 +13,45 @@ import type { ChatMessage } from '../../types/chat'
 // and the hero.
 const SOURCES_MARKER = '\n\n**Sources:**'
 
-export default function MessageContent(props: { message: () => ChatMessage }) {
-  // Media comes only from the message's search results (see `searchMedia`).
-  const media = createMemo(() => searchMedia(props.message()))
-  const heroMedia = createMemo(() => getHeroMedia(media()))
-  // One hero, by URL rather than by type: when the hero is a video the extras are
-  // the other videos, and when it is an image they are all of them.
-  const extraVideos = createMemo(() => {
-    const hero = heroMedia()
-    return media().filter(
-      (m) =>
-        (m.type === 'youtube' || m.type === 'video') && m.url !== hero?.url
-    )
-  })
+const PROXY_PREFIX = '/image-proxy?url='
 
+/**
+ * Drop inline images whose source this turn's search did not return.
+ *
+ * The prompt tells the model to use only the candidates it was given, but an
+ * instruction is not a guarantee: a live turn joined a page URL onto an image
+ * URL (`https://site.comhttps://cdn.site.com/…`) and shipped a broken image. The
+ * candidate set is known here, so the rule is enforced rather than requested.
+ *
+ * Local and `data:` sources are left alone — they are not third-party fetches.
+ */
+export function enforceImageSources(html: string, allowed: Set<string>): string {
+  return html.replace(/<img\b[^>]*>/gi, (tag) => {
+    const src = /src="([^"]*)"/i.exec(tag)?.[1]
+    if (!src || !src.startsWith(PROXY_PREFIX)) return tag
+    const url = decodeURIComponent(src.slice(PROXY_PREFIX.length)).replace(/&amp;/g, '&')
+    return allowed.has(url) ? tag : ''
+  })
+}
+
+export default function MessageContent(props: { message: () => ChatMessage }) {
   const parts = createMemo(() => {
     const content = props.message().content || ''
     const idx = content.indexOf(SOURCES_MARKER)
     if (idx === -1) return { body: content, sources: '' }
     return { body: content.slice(0, idx), sources: content.slice(idx).trim() }
+  })
+
+  // The images this turn's search actually returned — the only ones an inline
+  // image may use (see `enforceImageSources`).
+  const allowedImageUrls = createMemo(() => {
+    const info = props.message().meta?.search_info
+    const urls = new Set<string>()
+    for (const result of [...(info?.image_results ?? []), ...(info?.results ?? [])]) {
+      if (result.thumbnail) urls.add(result.thumbnail)
+      if (result.image) urls.add(result.image)
+    }
+    return urls
   })
 
   const bodyHtml = createMemo(() =>
@@ -41,12 +61,35 @@ export default function MessageContent(props: { message: () => ChatMessage }) {
     // skips inside links, so the two passes do not fight.
     applyGrounding(
       linkifyFileMentions(
-        renderMarkdown(parts().body),
+        enforceImageSources(renderMarkdown(parts().body), allowedImageUrls()),
         fileLinksFrom(fileList())
       ),
       collectGroundingSlots(props.message())
     )
   )
+
+  /** An image the model placed inline is already this answer's visual. */
+  const hasInlineImage = createMemo(() => /<img\b/i.test(bodyHtml()))
+
+  // Media comes only from the message's search results (see `searchMedia`).
+  const media = createMemo(() => searchMedia(props.message()))
+  const heroMedia = createMemo(() => {
+    const hero = getHeroMedia(media())
+    // Suppress the banner only for an *image* hero: it would show the same
+    // picture twice, since the model picked from these very candidates. A video
+    // hero is not a duplicate of an inline still, so it stays above the text.
+    if (hero && hero.type === 'image' && hasInlineImage()) return null
+    return hero
+  })
+  // One hero, by URL rather than by type: when the hero is a video the extras are
+  // the other videos, and when it is an image they are all of them.
+  const extraVideos = createMemo(() => {
+    const hero = heroMedia()
+    return media().filter(
+      (m) =>
+        (m.type === 'youtube' || m.type === 'video') && m.url !== hero?.url
+    )
+  })
   const sourcesHtml = createMemo(() =>
     parts().sources ? parseMarkdown(parts().sources) : ''
   )

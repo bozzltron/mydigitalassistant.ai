@@ -1,0 +1,342 @@
+{
+  "started": "2026-10-20T21:46:25.190909+00:00",
+  "model": "qwen3.5:4b",
+  "summary": {
+    "search_rate": {
+      "period": {
+        "baseline": 0.0,
+        "router_positive": 0.9
+      },
+      "stable": {
+        "baseline": 0.0,
+        "router_positive": 0.0
+      }
+    },
+    "router_recall_period": 0.9,
+    "router_false_positive_stable": 0.0,
+    "flapped_queries": [],
+    "replicates": 3
+  },
+  "rows": [
+    {
+      "group": "period",
+      "query": "What's NASA's image of the day?",
+      "labels": [
+        true,
+        true,
+        true
+      ],
+      "flapped": false,
+      "wants_search": true,
+      "sufficiency": "high",
+      "decisions": {
+        "baseline": false,
+        "router_positive": true
+      }
+    },
+    {
+      "group": "period",
+      "query": "What's the price of bitcoin right now?",
+      "labels": [
+        true,
+        true,
+        true
+      ],
+      "flapped": false,
+      "wants_search": true,
+      "sufficiency": "high",
+      "decisions": {
+        "baseline": false,
+        "router_positive": true
+      }
+    },
+    {
+      "group": "period",
+      "query": "What's the weather today?",
+      "labels": [
+        true,
+        true,
+        true
+      ],
+      "flapped": false,
+      "wants_search": true,
+      "sufficiency": "high",
+      "decisions": {
+        "baseline": false,
+        "router_positive": true
+      }
+    },
+    {
+      "group": "period",
+      "query": "What's on my calendar this afternoon?",
+      "labels": [
+        false,
+        false,
+        false
+      ],
+      "flapped": false,
+      "wants_search": false,
+      "sufficiency": "high",
+      "decisions": {
+        "baseline": false,
+        "router_positive": false
+      }
+    },
+    {
+      "group": "period",
+      "query": "What's the latest version of Python?",
+      "labels": [
+        true,
+        true,
+        true
+      ],
+      "flapped": false,
+      "wants_search": true,
+      "sufficiency": "high",
+      "decisions": {
+        "baseline": false,
+        "router_positive": true
+      }
+    },
+    {
+      "group": "period",
+      "query": "Any news from the music industry this morning?",
+      "labels": [
+        true,
+        true,
+        true
+      ],
+      "flapped": false,
+      "wants_search": true,
+      "sufficiency": "high",
+      "decisions": {
+        "baseline": false,
+        "router_positive": true
+      }
+    },
+    {
+      "group": "period",
+      "query": "What's the current stock price of NVIDIA?",
+      "labels": [
+        true,
+        true,
+        true
+      ],
+      "flapped": false,
+      "wants_search": true,
+      "sufficiency": "high",
+      "decisions": {
+        "baseline": false,
+        "router_positive": true
+      }
+    },
+    {
+      "group": "period",
+      "query": "Who won the game tonight?",
+      "labels": [
+        true,
+        true,
+        true
+      ],
+      "flapped": false,
+      "wants_search": true,
+      "sufficiency": "high",
+      "decisions": {
+        "baseline": false,
+        "router_positive": true
+      }
+    },
+    {
+      "group": "period",
+      "query": "What's the release date for the next iPhone?",
+      "labels": [
+        true,
+        true,
+        true
+      ],
+      "flapped": false,
+      "wants_search": true,
+      "sufficiency": "high",
+      "decisions": {
+        "baseline": false,
+        "router_positive": true
+      }
+    },
+    {
+      "group": "period",
+      "query": "What's trending on YouTube today?",
+      "labels": [
+        true,
+        true,
+        true
+      ],
+      "flapped": false,
+      "wants_search": true,
+      "sufficiency": "high",
+      "decisions": {
+        "baseline": false,
+        "router_positive": true
+      }
+    },
+    {
+      "group": "stable",
+      "query": "How many strings does a standard guitar have?",
+      "labels": [
+        false,
+        false,
+        false
+      ],
+      "flapped": false,
+      "wants_search": false,
+      "sufficiency": "high",
+      "decisions": {
+        "baseline": false,
+        "router_positive": false
+      }
+    },
+    {
+      "group": "stable",
+      "query": "What's my name?",
+      "labels": [
+        false,
+        false,
+        false
+      ],
+      "flapped": false,
+      "wants_search": false,
+      "sufficiency": "high",
+      "decisions": {
+        "baseline": false,
+        "router_positive": false
+      }
+    },
+    {
+      "group": "stable",
+      "query": "What did I tell you about my dog?",
+      "labels": [
+        false,
+        false,
+        false
+      ],
+      "flapped": false,
+      "wants_search": false,
+      "sufficiency": "high",
+      "decisions": {
+        "baseline": false,
+        "router_positive": false
+      }
+    },
+    {
+      "group": "stable",
+      "query": "Explain how a rainbow forms.",
+      "labels": [
+        false,
+        false,
+        false
+      ],
+      "flapped": false,
+      "wants_search": false,
+      "sufficiency": "high",
+      "decisions": {
+        "baseline": false,
+        "router_positive": false
+      }
+    },
+    {
+      "group": "stable",
+      "query": "What's the capital of France?",
+      "labels": [
+        false,
+        false,
+        false
+      ],
+      "flapped": false,
+      "wants_search": false,
+      "sufficiency": "high",
+      "decisions": {
+        "baseline": false,
+        "router_positive": false
+      }
+    },
+    {
+      "group": "stable",
+      "query": "What files do I have?",
+      "labels": [
+        false,
+        false,
+        false
+      ],
+      "flapped": false,
+      "wants_search": false,
+      "sufficiency": "high",
+      "decisions": {
+        "baseline": false,
+        "router_positive": false
+      }
+    },
+    {
+      "group": "stable",
+      "query": "Remember that I prefer tea over coffee.",
+      "labels": [
+        false,
+        false,
+        false
+      ],
+      "flapped": false,
+      "wants_search": false,
+      "sufficiency": "high",
+      "decisions": {
+        "baseline": false,
+        "router_positive": false
+      }
+    },
+    {
+      "group": "stable",
+      "query": "How do I convert Celsius to Fahrenheit?",
+      "labels": [
+        false,
+        false,
+        false
+      ],
+      "flapped": false,
+      "wants_search": false,
+      "sufficiency": "high",
+      "decisions": {
+        "baseline": false,
+        "router_positive": false
+      }
+    },
+    {
+      "group": "stable",
+      "query": "What do you know about my sister?",
+      "labels": [
+        false,
+        false,
+        false
+      ],
+      "flapped": false,
+      "wants_search": false,
+      "sufficiency": "high",
+      "decisions": {
+        "baseline": false,
+        "router_positive": false
+      }
+    },
+    {
+      "group": "stable",
+      "query": "Define photosynthesis.",
+      "labels": [
+        false,
+        false,
+        false
+      ],
+      "flapped": false,
+      "wants_search": false,
+      "sufficiency": "high",
+      "decisions": {
+        "baseline": false,
+        "router_positive": false
+      }
+    }
+  ]
+}

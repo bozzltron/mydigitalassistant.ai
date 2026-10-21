@@ -61,6 +61,19 @@
   border-bottom: 1px dotted var(--accent2);
 }
 
+/* An image the model placed inline, where it illustrates the point. The src is
+   rewritten to /image-proxy by the markdown renderer, so the browser never
+   contacts the image host (see utils/markdown.ts). Natural size, never upscaled:
+   a 200px preview stretched to the column width is the blurry hero we stopped
+   rendering. */
+.msg-assistant .content img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: var(--space-md) 0;
+  border-radius: var(--radius-md);
+}
+
 .msg-assistant .content code {
   background: rgba(255, 255, 255, 0.08);
   padding: 0.12em 0.4em;

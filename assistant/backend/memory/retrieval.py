@@ -97,8 +97,106 @@ def _fits(
     return used <= max_memory_chars
 
 
+def _as_of_note(slot: Slot) -> str:
+    """When this value was observed, for the prompt.
+
+    ``updated_at`` is the **write** time, not the date a fact is about: "born
+    1969" does not expire, while "today's image" does. "as of" says exactly that,
+    and it is the missing half of a temporal question — the model is given the
+    current date and, without this, had no way to tell a fact learned yesterday
+    from one learned this morning. That is how a two-day-old photo came back
+    described as the image of the day.
+
+    A validity window (``valid for DATE``) was also built and measured; it cleared
+    its bar but the live failure it was meant to fix was carried by a prior
+    *episode*, not a slot, so the window and its renderer were removed. See
+    `experiments/temporal_validity*/result.md`.
+    """
+    stamp = (slot.updated_at or "")[:10]
+    return f", as of {stamp}" if stamp else ""
+
+
+def _frame_block(
+    rf: RetrievedFrame,
+    context: "MemoryContext",
+    show_dates: bool,
+) -> list[str]:
+    """Render one frame as prompt lines."""
+    block = [
+        f"\n### {rf.frame.name} ({rf.frame.type}) [relevance: {rf.relevance:.2f}]"
+    ]
+    is_file_frame = rf.frame.source_type in FILE_FRAME_SOURCE_TYPES
+    file_safe_name = ""
+    profile_json = ""
+    for slot in rf.slots:
+        if is_file_frame:
+            # Content snapshots are truncated on-disk hints. Full content lives
+            # in the sandbox and is read via read_file — never prefill it, or the
+            # model answers from a snippet.
+            if slot.key in FILE_CONTENT_HINT_SLOTS:
+                continue
+            if slot.key == "file_safe_name":
+                file_safe_name = slot.value or ""
+                continue  # surfaced via the read pointer below
+            if slot.key == "file_profile":
+                profile_json = slot.value or ""
+                continue  # rendered compactly below, never as raw JSON
+        source_note = ""
+        if slot.source_url:
+            if "//" in slot.source_url:
+                domain = slot.source_url.split("/")[2]
+            else:
+                domain = slot.source_url
+            source_note = f", src: {slot.source_type or 'unknown'} ({domain})"
+            if slot.source_reliability:
+                source_note += f", reliability: {slot.source_reliability:.2f}"
+        block.append(
+            f"  - {slot.key} = {slot.value} "
+            f"(conf: {slot.confidence:.2f}{source_note}"
+            f"{_as_of_note(slot) if show_dates else ''})"
+        )
+    if is_file_frame:
+        if not file_safe_name and rf.frame.name.startswith("file_"):
+            file_safe_name = rf.frame.name[len("file_"):]
+        pointer = f'  read full contents: read_file(frame_name="{rf.frame.name}")'
+        if file_safe_name:
+            pointer += f' or read_file(path="{file_safe_name}")'
+        block.append(pointer)
+        if file_safe_name:
+            block.append(
+                "  search or grow without reading: "
+                f'search_file(path="{file_safe_name}", query="…") / '
+                f'append_file(path="{file_safe_name}", content="…")'
+            )
+        if profile_json:
+            try:
+                block.extend(profile_summary_lines(json.loads(profile_json)))
+            except (ValueError, TypeError):
+                # A malformed profile is not worth failing the prompt over.
+                pass
+    if rf.associations:
+        # Render the *name* of what each edge points at, never the id. The target
+        # is whichever end is not this frame, so an inbound edge is named from its
+        # source rather than shown as a dangling id. An unresolvable target is
+        # dropped: an edge the model cannot name is not worth a prompt slot, and
+        # printing `frame:4812` is what made replies leak database ids.
+        named: list[str] = []
+        for a in rf.associations[:3]:
+            target_id = (
+                a.from_frame_id if a.to_frame_id == rf.frame.id else a.to_frame_id
+            )
+            target_name = context.frame_names.get(target_id)
+            if target_name:
+                named.append(f"{a.relation_type}\u2192{target_name}")
+        if named:
+            block.append(f"  relations: {', '.join(named)}")
+    return block
+
+
 def format_memory_context(
-    context: "MemoryContext", max_memory_chars: int | None = None
+    context: "MemoryContext",
+    max_memory_chars: int | None = None,
+    show_dates: bool = True,
 ) -> str:
     """Format a MemoryContext as structured text for LLM injection.
 
@@ -119,6 +217,11 @@ def format_memory_context(
     tops out around 2.6k chars). A budget below that floor is not honoured --
     there would be no memory left to spend it on. The caller's flat character
     cut remains the backstop.
+
+    ``show_dates`` adds the ``as of`` observation date to each slot (measured in
+    `experiments/temporal_validity/`: neutral on behaviour on its own, and kept
+    because an undated fact cannot be judged current). Off is the pre-experiment
+    baseline, kept so that comparison stays reproducible.
     """
     lines: list[str] = []
     # The episode sections are appended after the frames but are still part of
@@ -157,84 +260,15 @@ def format_memory_context(
                             source_note += f", reliability: {slot.source_reliability:.2f}"
                     block.append(
                         f"  - {slot.key} = {slot.value} "
-                        f"(conf: {slot.confidence:.2f}{source_note})"
+                        f"(conf: {slot.confidence:.2f}{source_note}"
+                        f"{_as_of_note(slot) if show_dates else ''})"
                     )
                 if _fits(lines, block, max_memory_chars, emitted):
                     lines.extend(block)
                     emitted += 1
 
         for rf in other_frames[: settings.max_frames_in_prompt]:
-            block = [
-                f"\n### {rf.frame.name} ({rf.frame.type}) [relevance: {rf.relevance:.2f}]"
-            ]
-            is_file_frame = rf.frame.source_type in FILE_FRAME_SOURCE_TYPES
-            file_safe_name = ""
-            profile_json = ""
-            for slot in rf.slots:
-                if is_file_frame:
-                    # Content snapshots are truncated on-disk hints. Full
-                    # content lives in the sandbox and is read via read_file —
-                    # never prefill it, or the model answers from a snippet.
-                    if slot.key in FILE_CONTENT_HINT_SLOTS:
-                        continue
-                    if slot.key == "file_safe_name":
-                        file_safe_name = slot.value or ""
-                        continue  # surfaced via the read pointer below
-                    if slot.key == "file_profile":
-                        profile_json = slot.value or ""
-                        continue  # rendered compactly below, never as raw JSON
-                source_note = ""
-                if slot.source_url:
-                    if "//" in slot.source_url:
-                        domain = slot.source_url.split("/")[2]
-                    else:
-                        domain = slot.source_url
-                    source_note = f", src: {slot.source_type or 'unknown'} ({domain})"
-                    if slot.source_reliability:
-                        source_note += f", reliability: {slot.source_reliability:.2f}"
-                slot_line = (
-                    f"  - {slot.key} = {slot.value} "
-                    f"(conf: {slot.confidence:.2f}{source_note})"
-                )
-                block.append(slot_line)
-            if is_file_frame:
-                if not file_safe_name and rf.frame.name.startswith("file_"):
-                    file_safe_name = rf.frame.name[len("file_"):]
-                pointer = f'  read full contents: read_file(frame_name="{rf.frame.name}")'
-                if file_safe_name:
-                    pointer += f' or read_file(path="{file_safe_name}")'
-                block.append(pointer)
-                if file_safe_name:
-                    block.append(
-                        "  search or grow without reading: "
-                        f'search_file(path="{file_safe_name}", query="…") / '
-                        f'append_file(path="{file_safe_name}", content="…")'
-                    )
-                if profile_json:
-                    try:
-                        block.extend(profile_summary_lines(json.loads(profile_json)))
-                    except (ValueError, TypeError):
-                        # A malformed profile is not worth failing the prompt over.
-                        pass
-            if rf.associations:
-                # Render the *name* of what each edge points at, never the id.
-                # The target is whichever end is not this frame, so an inbound
-                # edge is named from its source rather than shown as a dangling
-                # id. An unresolvable target is dropped: an edge the model
-                # cannot name is not worth a prompt slot, and printing
-                # `frame:4812` is what made replies leak database ids.
-                named: list[str] = []
-                for a in rf.associations[:3]:
-                    target_id = (
-                        a.from_frame_id
-                        if a.to_frame_id == rf.frame.id
-                        else a.to_frame_id
-                    )
-                    target_name = context.frame_names.get(target_id)
-                    if target_name:
-                        named.append(f"{a.relation_type}\u2192{target_name}")
-                if named:
-                    block.append(f"  relations: {', '.join(named)}")
+            block = _frame_block(rf, context, show_dates)
             if _fits(lines, block, max_memory_chars, emitted):
                 lines.extend(block)
                 emitted += 1

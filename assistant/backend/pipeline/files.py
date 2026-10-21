@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 # Formats the upload paths accept, and the formats the agent may write. Reading
 # is handled by `extract_file_content`, which supports MORE than this set on
-# purpose: files in the dropped formats (rtf/eml/tsv/html/xml) that uploads already
+# purpose: files in the dropped formats (rtf/eml/tsv/xml) that uploads already
 # put on disk must still be readable, so their extractors stay even though new
 # uploads of them are refused. See docs/FILES.md and
 # assistant/experiments/file_write_parity/.
@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 SUPPORTED_UPLOAD_EXTS = frozenset(
     {
         # Text
-        "txt", "md", "csv", "json", "geojson", "ics",
+        "txt", "md", "html", "csv", "json", "geojson", "ics",
         # Documents
         "pdf", "docx", "odt",
         # Spreadsheets
@@ -769,9 +769,58 @@ def _render_pdf(content: str) -> bytes:
 
 
 # Text-ish formats that survive a direct encode.
+_HTML_DOCUMENT_RE = re.compile(r"^\s*(?:<!doctype\s+html|<html\b)", re.IGNORECASE)
+_HTML_TAG_RE = re.compile(r"<[a-zA-Z][^>]*>")
+_HTML_H1_RE = re.compile(r"<h1[^>]*>(.*?)</h1>", re.IGNORECASE | re.DOTALL)
+
+
+def _render_html(content: str) -> bytes:
+    """Render content as a real, self-contained HTML document.
+
+    A fragment is wrapped rather than written bare. Two things are actually
+    missing from a bare fragment on disk: a charset declaration (so a report with
+    accented text does not render as mojibake when opened from the file system)
+    and a title (what a browser tab or download shows). A complete document —
+    `<!DOCTYPE html>` or `<html>` — is written verbatim, because the agent may
+    have set its own lang, charset and styles, and rewriting it is the `.ics`
+    wrapper mistake in reverse.
+
+    Content with no tags at all is escaped, not passed through: prose such as
+    "5 < 10" would otherwise become a stray start tag that swallows the rest.
+    """
+    from html import escape
+
+    text = content.strip()
+    if _HTML_DOCUMENT_RE.match(text):
+        return content.encode("utf-8")
+
+    title = "Document"
+    heading = _HTML_H1_RE.search(text)
+    if heading:
+        title = re.sub(r"<[^>]+>", "", heading.group(1)).strip() or title
+
+    if text and _HTML_TAG_RE.search(text):
+        body = text
+    else:
+        body = f"<p>{escape(text)}</p>" if text else ""
+
+    return (
+        "<!DOCTYPE html>\n"
+        '<html lang="en">\n'
+        "<head>\n"
+        '<meta charset="utf-8">\n'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
+        f"<title>{escape(title)}</title>\n"
+        "</head>\n"
+        f"<body>\n{body}\n</body>\n"
+        "</html>\n"
+    ).encode()
+
+
 _TEXT_WRITERS = {
     "txt": _render_text,
     "md": _render_text,
+    "html": _render_html,
     "csv": _render_text,
     "json": _render_json,
     # GeoJSON *is* JSON, and `_render_json` keeps content that already parses verbatim —

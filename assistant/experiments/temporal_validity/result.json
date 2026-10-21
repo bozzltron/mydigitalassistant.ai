@@ -1,0 +1,882 @@
+{
+  "started": "2026-10-20T13:01:24.576467+00:00",
+  "finished": "2026-10-20T13:03:19.695240+00:00",
+  "clock": {
+    "today": "2026-10-20",
+    "stale_date": "2026-09-05",
+    "age_days": 45
+  },
+  "replicates": 3,
+  "models": {
+    "chat": "qwen3.5:9b",
+    "utility": "qwen3.5:4b"
+  },
+  "summary": {
+    "routing": {
+      "period_search_rate": {
+        "baseline": 0.9,
+        "extended": 0.9
+      },
+      "stable_search_rate": {
+        "baseline": 0.0,
+        "extended": 0.0
+      }
+    },
+    "attribution": {
+      "presents_stale_as_current": {
+        "A_plain": 1.0,
+        "B_dates": 1.0,
+        "C_dates_and_rule": 0.667
+      },
+      "cites_date": {
+        "A_plain": 0.0,
+        "B_dates": 0.0,
+        "C_dates_and_rule": 0.333
+      },
+      "repeats_stale_value": {
+        "A_plain": 1.0,
+        "B_dates": 1.0,
+        "C_dates_and_rule": 1.0
+      }
+    },
+    "cost": {
+      "memory_chars_plain": 525,
+      "memory_chars_dated": 597,
+      "memory_char_delta": 72,
+      "system_prompt_chars_C": 4187,
+      "system_prompt_chars_A": 3561
+    }
+  },
+  "rows": [
+    {
+      "arm": "routing",
+      "condition": "baseline",
+      "group": "period",
+      "query": "What's NASA's image of the day?",
+      "wants_search": true,
+      "search_query": "NASA image of the day",
+      "task_type": "functional"
+    },
+    {
+      "arm": "routing",
+      "condition": "baseline",
+      "group": "period",
+      "query": "What's the price of bitcoin right now?",
+      "wants_search": true,
+      "search_query": "bitcoin price right now",
+      "task_type": "functional"
+    },
+    {
+      "arm": "routing",
+      "condition": "baseline",
+      "group": "period",
+      "query": "What's the weather today?",
+      "wants_search": true,
+      "search_query": "weather today",
+      "task_type": "functional"
+    },
+    {
+      "arm": "routing",
+      "condition": "baseline",
+      "group": "period",
+      "query": "What's on my calendar this afternoon?",
+      "wants_search": false,
+      "search_query": null,
+      "task_type": "introspective"
+    },
+    {
+      "arm": "routing",
+      "condition": "baseline",
+      "group": "period",
+      "query": "What's the latest version of Python?",
+      "wants_search": true,
+      "search_query": "latest version of Python",
+      "task_type": "functional"
+    },
+    {
+      "arm": "routing",
+      "condition": "baseline",
+      "group": "period",
+      "query": "Any news from the music industry this morning?",
+      "wants_search": true,
+      "search_query": "music industry news today",
+      "task_type": "search"
+    },
+    {
+      "arm": "routing",
+      "condition": "baseline",
+      "group": "period",
+      "query": "What's the current stock price of NVIDIA?",
+      "wants_search": true,
+      "search_query": "current NVIDIA stock price",
+      "task_type": "functional"
+    },
+    {
+      "arm": "routing",
+      "condition": "baseline",
+      "group": "period",
+      "query": "Who won the game tonight?",
+      "wants_search": true,
+      "search_query": "who won the game tonight",
+      "task_type": "search"
+    },
+    {
+      "arm": "routing",
+      "condition": "baseline",
+      "group": "period",
+      "query": "What's the release date for the next iPhone?",
+      "wants_search": true,
+      "search_query": "next iPhone release date",
+      "task_type": "functional"
+    },
+    {
+      "arm": "routing",
+      "condition": "baseline",
+      "group": "period",
+      "query": "What's trending on YouTube today?",
+      "wants_search": true,
+      "search_query": "trending videos on YouTube today",
+      "task_type": "search"
+    },
+    {
+      "arm": "routing",
+      "condition": "baseline",
+      "group": "stable",
+      "query": "How many strings does a standard guitar have?",
+      "wants_search": false,
+      "search_query": null,
+      "task_type": "functional"
+    },
+    {
+      "arm": "routing",
+      "condition": "baseline",
+      "group": "stable",
+      "query": "What's my name?",
+      "wants_search": false,
+      "search_query": null,
+      "task_type": "introspective"
+    },
+    {
+      "arm": "routing",
+      "condition": "baseline",
+      "group": "stable",
+      "query": "What did I tell you about my dog?",
+      "wants_search": false,
+      "search_query": null,
+      "task_type": "introspective"
+    },
+    {
+      "arm": "routing",
+      "condition": "baseline",
+      "group": "stable",
+      "query": "Explain how a rainbow forms.",
+      "wants_search": false,
+      "search_query": null,
+      "task_type": "functional"
+    },
+    {
+      "arm": "routing",
+      "condition": "baseline",
+      "group": "stable",
+      "query": "What's the capital of France?",
+      "wants_search": false,
+      "search_query": null,
+      "task_type": "functional"
+    },
+    {
+      "arm": "routing",
+      "condition": "baseline",
+      "group": "stable",
+      "query": "What files do I have?",
+      "wants_search": false,
+      "search_query": null,
+      "task_type": "introspective"
+    },
+    {
+      "arm": "routing",
+      "condition": "baseline",
+      "group": "stable",
+      "query": "Remember that I prefer tea over coffee.",
+      "wants_search": false,
+      "search_query": null,
+      "task_type": "functional"
+    },
+    {
+      "arm": "routing",
+      "condition": "baseline",
+      "group": "stable",
+      "query": "How do I convert Celsius to Fahrenheit?",
+      "wants_search": false,
+      "search_query": null,
+      "task_type": "functional"
+    },
+    {
+      "arm": "routing",
+      "condition": "baseline",
+      "group": "stable",
+      "query": "What do you know about my sister?",
+      "wants_search": false,
+      "search_query": null,
+      "task_type": "introspective"
+    },
+    {
+      "arm": "routing",
+      "condition": "baseline",
+      "group": "stable",
+      "query": "Define photosynthesis.",
+      "wants_search": false,
+      "search_query": null,
+      "task_type": "functional"
+    },
+    {
+      "arm": "routing",
+      "condition": "extended",
+      "group": "period",
+      "query": "What's NASA's image of the day?",
+      "wants_search": true,
+      "search_query": "NASA image of the day",
+      "task_type": "functional"
+    },
+    {
+      "arm": "routing",
+      "condition": "extended",
+      "group": "period",
+      "query": "What's the price of bitcoin right now?",
+      "wants_search": true,
+      "search_query": "bitcoin price right now",
+      "task_type": "functional"
+    },
+    {
+      "arm": "routing",
+      "condition": "extended",
+      "group": "period",
+      "query": "What's the weather today?",
+      "wants_search": true,
+      "search_query": "weather today",
+      "task_type": "functional"
+    },
+    {
+      "arm": "routing",
+      "condition": "extended",
+      "group": "period",
+      "query": "What's on my calendar this afternoon?",
+      "wants_search": false,
+      "search_query": null,
+      "task_type": "scheduled"
+    },
+    {
+      "arm": "routing",
+      "condition": "extended",
+      "group": "period",
+      "query": "What's the latest version of Python?",
+      "wants_search": true,
+      "search_query": "latest version of Python",
+      "task_type": "functional"
+    },
+    {
+      "arm": "routing",
+      "condition": "extended",
+      "group": "period",
+      "query": "Any news from the music industry this morning?",
+      "wants_search": true,
+      "search_query": "music industry news today",
+      "task_type": "search"
+    },
+    {
+      "arm": "routing",
+      "condition": "extended",
+      "group": "period",
+      "query": "What's the current stock price of NVIDIA?",
+      "wants_search": true,
+      "search_query": "current stock price NVIDIA",
+      "task_type": "functional"
+    },
+    {
+      "arm": "routing",
+      "condition": "extended",
+      "group": "period",
+      "query": "Who won the game tonight?",
+      "wants_search": true,
+      "search_query": "who won the game tonight",
+      "task_type": "search"
+    },
+    {
+      "arm": "routing",
+      "condition": "extended",
+      "group": "period",
+      "query": "What's the release date for the next iPhone?",
+      "wants_search": true,
+      "search_query": "next iPhone release date",
+      "task_type": "functional"
+    },
+    {
+      "arm": "routing",
+      "condition": "extended",
+      "group": "period",
+      "query": "What's trending on YouTube today?",
+      "wants_search": true,
+      "search_query": "trending videos on YouTube today",
+      "task_type": "search"
+    },
+    {
+      "arm": "routing",
+      "condition": "extended",
+      "group": "stable",
+      "query": "How many strings does a standard guitar have?",
+      "wants_search": false,
+      "search_query": null,
+      "task_type": "functional"
+    },
+    {
+      "arm": "routing",
+      "condition": "extended",
+      "group": "stable",
+      "query": "What's my name?",
+      "wants_search": false,
+      "search_query": null,
+      "task_type": "introspective"
+    },
+    {
+      "arm": "routing",
+      "condition": "extended",
+      "group": "stable",
+      "query": "What did I tell you about my dog?",
+      "wants_search": false,
+      "search_query": null,
+      "task_type": "introspective"
+    },
+    {
+      "arm": "routing",
+      "condition": "extended",
+      "group": "stable",
+      "query": "Explain how a rainbow forms.",
+      "wants_search": false,
+      "search_query": null,
+      "task_type": "functional"
+    },
+    {
+      "arm": "routing",
+      "condition": "extended",
+      "group": "stable",
+      "query": "What's the capital of France?",
+      "wants_search": false,
+      "search_query": null,
+      "task_type": "functional"
+    },
+    {
+      "arm": "routing",
+      "condition": "extended",
+      "group": "stable",
+      "query": "What files do I have?",
+      "wants_search": false,
+      "search_query": null,
+      "task_type": "introspective"
+    },
+    {
+      "arm": "routing",
+      "condition": "extended",
+      "group": "stable",
+      "query": "Remember that I prefer tea over coffee.",
+      "wants_search": false,
+      "search_query": null,
+      "task_type": "functional"
+    },
+    {
+      "arm": "routing",
+      "condition": "extended",
+      "group": "stable",
+      "query": "How do I convert Celsius to Fahrenheit?",
+      "wants_search": false,
+      "search_query": null,
+      "task_type": "functional"
+    },
+    {
+      "arm": "routing",
+      "condition": "extended",
+      "group": "stable",
+      "query": "What do you know about my sister?",
+      "wants_search": false,
+      "search_query": null,
+      "task_type": "introspective"
+    },
+    {
+      "arm": "routing",
+      "condition": "extended",
+      "group": "stable",
+      "query": "Define photosynthesis.",
+      "wants_search": false,
+      "search_query": null,
+      "task_type": "functional"
+    },
+    {
+      "arm": "attribution",
+      "condition": "A_plain",
+      "replicate": 1,
+      "query": "What's NASA's image of the day?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "apollo 11"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "NASA's Image of the Day is a photograph of an Apollo 11 spacewalk."
+    },
+    {
+      "arm": "attribution",
+      "condition": "B_dates",
+      "replicate": 1,
+      "query": "What's NASA's image of the day?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "apollo 11"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "NASA's image of the day is a photograph from an Apollo 11 spacewalk."
+    },
+    {
+      "arm": "attribution",
+      "condition": "C_dates_and_rule",
+      "replicate": 1,
+      "query": "What's NASA's image of the day?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "apollo 11"
+      ],
+      "cites_date": true,
+      "presents_stale_as_current": false,
+      "answer": "Based on my records from September 2026, NASA's image of the day was a photograph of the Apollo 11 spacewalk."
+    },
+    {
+      "arm": "attribution",
+      "condition": "A_plain",
+      "replicate": 1,
+      "query": "What's the latest version of Acme Widget?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "9.7.3"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "The latest version of Acme Widget is 9.7.3."
+    },
+    {
+      "arm": "attribution",
+      "condition": "B_dates",
+      "replicate": 1,
+      "query": "What's the latest version of Acme Widget?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "9.7.3"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "The latest version of Acme Widget is 9.7.3."
+    },
+    {
+      "arm": "attribution",
+      "condition": "C_dates_and_rule",
+      "replicate": 1,
+      "query": "What's the latest version of Acme Widget?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "9.7.3"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "The latest version of Acme Widget is 9.7.3."
+    },
+    {
+      "arm": "attribution",
+      "condition": "A_plain",
+      "replicate": 1,
+      "query": "What does the Acme Widget Pro cost right now?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "412"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "The Acme Widget Pro costs $412.00 USD."
+    },
+    {
+      "arm": "attribution",
+      "condition": "B_dates",
+      "replicate": 1,
+      "query": "What does the Acme Widget Pro cost right now?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "412"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "The Acme Widget Pro currently costs $412.00 USD."
+    },
+    {
+      "arm": "attribution",
+      "condition": "C_dates_and_rule",
+      "replicate": 1,
+      "query": "What does the Acme Widget Pro cost right now?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "412"
+      ],
+      "cites_date": true,
+      "presents_stale_as_current": false,
+      "answer": "The Acme Widget Pro costs $412.00 USD, based on information from September 5, 2026."
+    },
+    {
+      "arm": "attribution",
+      "condition": "A_plain",
+      "replicate": 1,
+      "query": "What's on my schedule this afternoon?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "dentist"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "You have a dentist appointment scheduled for 3:30 PM this afternoon."
+    },
+    {
+      "arm": "attribution",
+      "condition": "B_dates",
+      "replicate": 1,
+      "query": "What's on my schedule this afternoon?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "dentist"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "You have a dentist appointment at 3:30 PM this afternoon."
+    },
+    {
+      "arm": "attribution",
+      "condition": "C_dates_and_rule",
+      "replicate": 1,
+      "query": "What's on my schedule this afternoon?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "dentist"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "You have a dentist appointment at 3:30 PM this afternoon."
+    },
+    {
+      "arm": "attribution",
+      "condition": "B_dates",
+      "replicate": 2,
+      "query": "What's NASA's image of the day?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "apollo 11"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "NASA's image of the day is a photograph from an Apollo 11 spacewalk."
+    },
+    {
+      "arm": "attribution",
+      "condition": "C_dates_and_rule",
+      "replicate": 2,
+      "query": "What's NASA's image of the day?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "apollo 11"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "NASA's image of the day is a photograph from an Apollo 11 spacewalk."
+    },
+    {
+      "arm": "attribution",
+      "condition": "A_plain",
+      "replicate": 2,
+      "query": "What's NASA's image of the day?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "apollo 11"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "NASA's image of the day is a photograph from an Apollo 11 spacewalk."
+    },
+    {
+      "arm": "attribution",
+      "condition": "B_dates",
+      "replicate": 2,
+      "query": "What's the latest version of Acme Widget?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "9.7.3"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "The latest version of Acme Widget is 9.7.3."
+    },
+    {
+      "arm": "attribution",
+      "condition": "C_dates_and_rule",
+      "replicate": 2,
+      "query": "What's the latest version of Acme Widget?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "9.7.3"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "The latest version of Acme Widget is 9.7.3."
+    },
+    {
+      "arm": "attribution",
+      "condition": "A_plain",
+      "replicate": 2,
+      "query": "What's the latest version of Acme Widget?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "9.7.3"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "The latest version of Acme Widget is 9.7.3."
+    },
+    {
+      "arm": "attribution",
+      "condition": "B_dates",
+      "replicate": 2,
+      "query": "What does the Acme Widget Pro cost right now?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "412"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "The Acme Widget Pro costs $412.00 USD."
+    },
+    {
+      "arm": "attribution",
+      "condition": "C_dates_and_rule",
+      "replicate": 2,
+      "query": "What does the Acme Widget Pro cost right now?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "412"
+      ],
+      "cites_date": true,
+      "presents_stale_as_current": false,
+      "answer": "The Acme Widget Pro costs $412.00 USD, based on information from September 2026."
+    },
+    {
+      "arm": "attribution",
+      "condition": "A_plain",
+      "replicate": 2,
+      "query": "What does the Acme Widget Pro cost right now?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "412"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "The Acme Widget Pro currently costs $412.00."
+    },
+    {
+      "arm": "attribution",
+      "condition": "B_dates",
+      "replicate": 2,
+      "query": "What's on my schedule this afternoon?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "dentist"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "You have a dentist appointment at 3:30 PM this afternoon."
+    },
+    {
+      "arm": "attribution",
+      "condition": "C_dates_and_rule",
+      "replicate": 2,
+      "query": "What's on my schedule this afternoon?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "dentist"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "This afternoon, you have a dentist appointment at 3:30."
+    },
+    {
+      "arm": "attribution",
+      "condition": "A_plain",
+      "replicate": 2,
+      "query": "What's on my schedule this afternoon?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "dentist"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "You have a dentist appointment at 3:30 PM this afternoon."
+    },
+    {
+      "arm": "attribution",
+      "condition": "C_dates_and_rule",
+      "replicate": 3,
+      "query": "What's NASA's image of the day?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "apollo 11"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "NASA's Image of the Day is a photograph from the Apollo 11 spacewalk."
+    },
+    {
+      "arm": "attribution",
+      "condition": "A_plain",
+      "replicate": 3,
+      "query": "What's NASA's image of the day?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "apollo 11"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "Based on my memory state, NASA's image of the day is an Apollo 11 spacewalk photograph."
+    },
+    {
+      "arm": "attribution",
+      "condition": "B_dates",
+      "replicate": 3,
+      "query": "What's NASA's image of the day?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "apollo 11"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "NASA's image of the day is a photograph from the Apollo 11 spacewalk."
+    },
+    {
+      "arm": "attribution",
+      "condition": "C_dates_and_rule",
+      "replicate": 3,
+      "query": "What's the latest version of Acme Widget?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "9.7.3"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "The latest version of Acme Widget is 9.7.3."
+    },
+    {
+      "arm": "attribution",
+      "condition": "A_plain",
+      "replicate": 3,
+      "query": "What's the latest version of Acme Widget?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "9.7.3"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "The latest version of Acme Widget is 9.7.3."
+    },
+    {
+      "arm": "attribution",
+      "condition": "B_dates",
+      "replicate": 3,
+      "query": "What's the latest version of Acme Widget?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "9.7.3"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "The latest version of Acme Widget is 9.7.3."
+    },
+    {
+      "arm": "attribution",
+      "condition": "C_dates_and_rule",
+      "replicate": 3,
+      "query": "What does the Acme Widget Pro cost right now?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "412"
+      ],
+      "cites_date": true,
+      "presents_stale_as_current": false,
+      "answer": "The Acme Widget Pro costs $412.00 USD. This information is from a snapshot taken on September 5, 2026."
+    },
+    {
+      "arm": "attribution",
+      "condition": "A_plain",
+      "replicate": 3,
+      "query": "What does the Acme Widget Pro cost right now?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "412"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "The Acme Widget Pro costs $412.00 USD."
+    },
+    {
+      "arm": "attribution",
+      "condition": "B_dates",
+      "replicate": 3,
+      "query": "What does the Acme Widget Pro cost right now?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "412"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "The Acme Widget Pro costs $412.00."
+    },
+    {
+      "arm": "attribution",
+      "condition": "C_dates_and_rule",
+      "replicate": 3,
+      "query": "What's on my schedule this afternoon?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "dentist"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "You have a dentist appointment at 3:30 this afternoon."
+    },
+    {
+      "arm": "attribution",
+      "condition": "A_plain",
+      "replicate": 3,
+      "query": "What's on my schedule this afternoon?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "dentist"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "You have a dentist appointment at 3:30 this afternoon."
+    },
+    {
+      "arm": "attribution",
+      "condition": "B_dates",
+      "replicate": 3,
+      "query": "What's on my schedule this afternoon?",
+      "repeats_stale_value": true,
+      "repeated_values": [
+        "dentist"
+      ],
+      "cites_date": false,
+      "presents_stale_as_current": true,
+      "answer": "You have a dentist appointment at 3:30 PM this afternoon."
+    }
+  ],
+  "regraded": "2026-10-20T13:04:11.748593+00:00",
+  "grading": "distinctive-token"
+}

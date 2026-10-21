@@ -1,6 +1,7 @@
 import { createSignal, Show, createMemo, createEffect } from 'solid-js';
 import { api, renameFile, saveFileContent } from '../../services/api';
 import { renderMarkdown } from '../../utils/markdown';
+import { sandboxedHtml } from '../../utils/htmlPreview';
 import { Toast } from '../ui/Toast';
 import { Modal } from '../ui/Modal';
 import { FileIcon, fileKind } from '../ui/Icons';
@@ -25,6 +26,9 @@ const TEXT_EXTS = new Set([
 ]);
 
 const MARKDOWN_EXTS = new Set(['md', 'markdown']);
+// Rendered rather than shown as source. Kept out of TEXT_EXTS' render branch so
+// a .html file gets a real preview instead of a wall of markup.
+const HTML_EXTS = new Set(['html']);
 
 export const FileViewer = (props: { fileId?: string | null }) => {
   const [fileData, setFileData] = createSignal<FileContentResponse | null>(null);
@@ -67,7 +71,8 @@ export const FileViewer = (props: { fileId?: string | null }) => {
 
   const ext = createMemo(() => (fileData()?.file_ext || '').toLowerCase());
   const isMarkdown = createMemo(() => MARKDOWN_EXTS.has(ext()));
-  const isText = createMemo(() => TEXT_EXTS.has(ext()));
+  const isHtml = createMemo(() => HTML_EXTS.has(ext()));
+  const isText = createMemo(() => TEXT_EXTS.has(ext()) && !isHtml());
   // The browser renders PDFs natively, so a PDF opens in a tab instead of
   // showing "no preview".
   const isPdf = createMemo(() => ext() === 'pdf');
@@ -91,7 +96,7 @@ export const FileViewer = (props: { fileId?: string | null }) => {
 
   // In-place editing: text files only (a textarea cannot round-trip binary bytes,
   // and the backend refuses them with 415 anyway).
-  const canEdit = createMemo(() => isText() || isMarkdown());
+  const canEdit = createMemo(() => isText() || isMarkdown() || isHtml());
   const [isEditing, setIsEditing] = createSignal(false);
   const [editDraft, setEditDraft] = createSignal('');
   const [isSavingEdit, setIsSavingEdit] = createSignal(false);
@@ -163,6 +168,9 @@ export const FileViewer = (props: { fileId?: string | null }) => {
   };
   // Sanitized before it touches innerHTML, by the shared renderer.
   const markdownHtml = createMemo(() => renderMarkdown(fileData()?.content || ''));
+  // Not sanitized, and not in the app's document at all: the iframe's opaque
+  // origin is what makes agent-authored HTML safe to preview.
+  const htmlDoc = createMemo(() => sandboxedHtml(fileData()?.content || ''));
 
   const formatFileSize = (bytes: number | null | undefined) => {
     if (!bytes) return 'Unknown';
@@ -225,36 +233,52 @@ export const FileViewer = (props: { fileId?: string | null }) => {
             </div>
           </Show>
 
+          {/* Agent-authored HTML is previewed in a sandboxed iframe, never as
+              sanitized innerHTML: allow-scripts for interactive reports, and
+              never allow-same-origin — that would hand the document this app's
+              origin and its unauthenticated memory API. */}
           <Show when={!isEditing()}>
-            <Show when={isMarkdown()}>
-              {/* eslint-disable-next-line solid/no-innerhtml -- sanitized by DOMPurify */}
-              <div class="file-content-markdown" innerHTML={markdownHtml()} />
-            </Show>
-            <Show when={!isMarkdown() && isText()}>
-              <pre class="file-content-text">{fileData()?.content || '(empty file)'}</pre>
-            </Show>
-            <Show when={!isMarkdown() && !isText()}>
-              <Show
-                when={isPdf()}
-                fallback={
+            <Show
+              when={!isHtml()}
+              fallback={
+                <iframe
+                  class="file-content-html"
+                  title={displayName() || 'HTML preview'}
+                  sandbox="allow-scripts"
+                  srcdoc={htmlDoc()}
+                />
+              }
+            >
+              <Show when={isMarkdown()}>
+                {/* eslint-disable-next-line solid/no-innerhtml -- sanitized by DOMPurify */}
+                <div class="file-content-markdown" innerHTML={markdownHtml()} />
+              </Show>
+              <Show when={!isMarkdown() && isText()}>
+                <pre class="file-content-text">{fileData()?.content || '(empty file)'}</pre>
+              </Show>
+              <Show when={!isMarkdown() && !isText()}>
+                <Show
+                  when={isPdf()}
+                  fallback={
+                    <div class="file-no-preview">
+                      <p>No preview for this file type</p>
+                      <p class="file-no-preview-hint">Download it to open it in the right app.</p>
+                    </div>
+                  }
+                >
                   <div class="file-no-preview">
-                    <p>No preview for this file type</p>
-                    <p class="file-no-preview-hint">Download it to open it in the right app.</p>
+                    <p>PDF document</p>
+                    <p class="file-no-preview-hint">The browser renders PDFs natively.</p>
+                    <a
+                      class="btn-primary"
+                      href={`/files/${props.fileId}/download?inline=true`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      Open in new tab
+                    </a>
                   </div>
-                }
-              >
-                <div class="file-no-preview">
-                  <p>PDF document</p>
-                  <p class="file-no-preview-hint">The browser renders PDFs natively.</p>
-                  <a
-                    class="btn-primary"
-                    href={`/files/${props.fileId}/download?inline=true`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    Open in new tab
-                  </a>
-                </div>
+                </Show>
               </Show>
             </Show>
           </Show>

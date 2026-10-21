@@ -413,6 +413,26 @@ Reading a *shared* file (the map) needs no account; writing memory about it does
 - Embeddings: frame type + name + slot key=value lines, via qwen3-embedding:0.6b, stored
   in sqlite-vec. Conversation turns get their own vectors (`episode_embeddings`) at
   write time (best-effort; consolidation tops up misses).
+- **Facts carry an observation date.** `format_memory_context` renders
+  `as of YYYY-MM-DD` per slot (`_as_of_note`), and `build_system_prompt` carries
+  `_TIME_VALIDITY_RULE`: a period-scoped claim — today's image, a price, a
+  schedule — is valid only for its observation date, and saying what you have
+  *with* its date is not the same as answering. Measured in
+  `assistant/experiments/temporal_validity/`: **dating alone changed nothing**
+  (1.00 → 1.00 stale-as-current), the rule reduced it to 0.667 (below the
+  pre-registered 0.50 bar, n=12/condition), and the router's cue list was a
+  measured no-op and was reverted.
+- **Temporal staleness is fixed at the search gate, not in schema.** A validity
+  window (`valid for DATE`, `## Expired` section) cleared its synthetic bars
+  (1.000 → 0.556 → **0.222**) but was **deleted**: the live failure was carried by
+  a prior **episode**, not a slot, and the slot window could not touch it. The real
+  cause was the orchestrator letting memory relevance outrank the router's
+  `wants_search`. `experiments/temporal_search_gate/` measured it: with sufficient
+  memory the old gate searched **0/10** period-scoped questions and the new one
+  **9/10**, with **0/10** stable ones. Shipped as one removed condition; the veto
+  is unchanged. Live check: 3/3 refresh, at the cost of an 11–32s search on those
+  turns. `Slot.valid_as_of`, `_is_expired`, and `split_expired` were removed with
+  the window; the observation date and `_TIME_VALIDITY_RULE` remain.
 
 ## Correction pipeline
 1. User flags a response → `POST /correction` with `correction_text`.

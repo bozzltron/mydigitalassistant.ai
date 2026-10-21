@@ -614,6 +614,23 @@ class TestFileSandboxTools:
         assert Path("/app/data/test_agent.txt").read_text() == "Hello from agent"
 
     @pytest.mark.asyncio
+    async def test_write_file_writes_html_as_a_document(self, store, stub_llm):
+        """A .html write lands as a real document, not markup given an extension."""
+        from pathlib import Path
+
+        from assistant.backend.pipeline.tool_executor import execute_write_file
+
+        result = await execute_write_file(
+            {"path": "briefing.html", "content": "<h1>Briefing</h1>"},
+            user_id="1", session_id="test"
+        )
+        assert result.success
+
+        written = Path("/app/data/briefing.html").read_text()
+        assert written.startswith("<!DOCTYPE html>")
+        assert "<h1>Briefing</h1>" in written
+
+    @pytest.mark.asyncio
     async def test_write_file_rejects_traversal(self, store, stub_llm):
         """write_file rejects paths escaping sandbox."""
         from assistant.backend.pipeline.tool_executor import execute_write_file
@@ -653,6 +670,25 @@ class TestFileSandboxTools:
         result = await execute_read_file({"path": "notes/readme.md"}, "1", "test")
         assert result.success
         assert result.data["content"] == "# Readme\nContent here"
+
+    @pytest.mark.asyncio
+    async def test_read_file_returns_html_source_not_stripped_text(self, store, stub_llm):
+        """A writable format must be readable as source.
+
+        Regression: `.html` went through the HTML extractor, which strips every
+        tag, so a model asked to rewrite a template received a run of text with
+        no structure and wrote that back inside a `<p>`.
+        """
+        from assistant.backend.pipeline.tool_executor import execute_read_file, execute_write_file
+
+        await execute_write_file(
+            {"path": "src.html", "content": "<!DOCTYPE html><h1>Brief</h1><p>x</p>"},
+            "1", "test",
+        )
+        result = await execute_read_file({"path": "src.html"}, "1", "test")
+        assert result.success
+        assert "<h1>Brief</h1>" in result.data["content"]
+        assert "<!DOCTYPE html>" in result.data["content"]
 
     @pytest.mark.asyncio
     async def test_read_file_rejects_traversal(self, store, stub_llm):

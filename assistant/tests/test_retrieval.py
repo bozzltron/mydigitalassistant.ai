@@ -137,6 +137,48 @@ def test_format_memory_context_with_frames_and_episodes():
     assert "recent conversation" in formatted.lower()
 
 
+class TestObservationDateRendering:
+    """Every slot carries when it was observed.
+
+    The model is given the current date; without the observation date it cannot
+    tell a fact learned yesterday from one learned this morning. A validity window
+    (`valid for DATE`) was built and measured but removed when the live failure
+    turned out to be carried by an episode, not a slot — see
+    `experiments/temporal_validity*/result.md`.
+    """
+
+    def _ctx(self, slot: Slot) -> MemoryContext:
+        frame = Frame(id=1, name="acme_widget", type="concept", confidence=0.8)
+        rf = RetrievedFrame(
+            frame=frame, slots=[slot], associations=[], relevance=0.9,
+            source="direct_match",
+        )
+        return MemoryContext(
+            query="acme", retrieved_frames=[rf], recent_episodes=[], formatted=""
+        )
+
+    def test_a_fact_renders_its_observation_date(self):
+        slot = Slot(
+            id=1, frame_id=1, key="price_usd", value="412.00", confidence=0.8,
+            updated_at="2026-09-05 09:12:00",
+        )
+        formatted = format_memory_context(self._ctx(slot))
+        assert "as of 2026-09-05" in formatted
+
+    def test_a_fact_without_a_timestamp_renders_no_date(self):
+        slot = Slot(id=1, frame_id=1, key="price_usd", value="412.00")
+        formatted = format_memory_context(self._ctx(slot))
+        assert "as of" not in formatted
+
+    def test_dates_can_be_turned_off_for_the_experiment_baseline(self):
+        slot = Slot(
+            id=1, frame_id=1, key="price_usd", value="412.00",
+            updated_at="2026-09-05 09:12:00",
+        )
+        formatted = format_memory_context(self._ctx(slot), show_dates=False)
+        assert "as of" not in formatted
+
+
 def test_memory_context_renders_association_names_not_ids():
     """Relations must render the target's *name*, never a database id.
 

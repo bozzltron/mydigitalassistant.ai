@@ -36,6 +36,31 @@ describe('FileViewer', () => {
     expect(document.querySelector('.file-content-text')).toBeNull()
   })
 
+  it('renders .html in a sandboxed iframe, not as raw markup', async () => {
+    vi.mocked(api.api).mockResolvedValue(
+      content({
+        content: '<!DOCTYPE html><h1>Report</h1>',
+        file_name: 'report.html',
+        file_ext: 'html',
+      }) as never,
+    )
+    render(() => <FileViewer fileId="3" />)
+
+    await vi.waitFor(() =>
+      expect(document.querySelector('.file-content-html')).not.toBeNull(),
+    )
+    const frame = document.querySelector('.file-content-html') as HTMLIFrameElement
+    // Scripts run (interactive reports), but never with the app's origin: that
+    // is what keeps the unauthenticated memory API out of reach.
+    expect(frame.getAttribute('sandbox')).toBe('allow-scripts')
+    expect(frame.getAttribute('sandbox')).not.toContain('allow-same-origin')
+    expect(frame.getAttribute('srcdoc')).toContain('Content-Security-Policy')
+    // And the source is not also dumped as text.
+    expect(document.querySelector('.file-content-text')).toBeNull()
+    // It is text, so it stays editable.
+    expect(screen.queryByText('Edit')).not.toBeNull()
+  })
+
   it('offers to open a PDF in a new tab instead of "no preview"', async () => {
     vi.mocked(api.api).mockResolvedValue(
       content({ content: '%PDF-1.4 binary', file_name: 'report.pdf', file_ext: 'pdf' }) as never,

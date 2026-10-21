@@ -22,4 +22,26 @@ describe('renderMarkdown', () => {
     expect(renderMarkdown('<script>alert(1)</script>')).not.toContain('<script>')
     expect(renderMarkdown('<img src=x onerror="alert(1)">')).not.toContain('onerror')
   })
+
+  it('routes markdown images through the backend proxy', () => {
+    // The model may place an image inline. Rendering the third-party URL directly
+    // would make the browser contact that host — the same IP leak /image-proxy
+    // exists to prevent for search thumbnails.
+    const html = renderMarkdown('![a ship](https://cdn.example/ship.jpg)')
+    expect(html).toContain('src="/image-proxy?url=https%3A%2F%2Fcdn.example%2Fship.jpg"')
+    expect(html).toContain('alt="a ship"')
+    expect(html).not.toContain('src="https://cdn.example')
+  })
+
+  it('keeps a title and escapes the alt', () => {
+    const html = renderMarkdown('![a "quote"](https://x.example/a.png "Ship")')
+    expect(html).toContain('title="Ship"')
+    // The alt cannot break out of the attribute.
+    expect(html.match(/<img /g)).toHaveLength(1)
+  })
+
+  it('leaves a non-http image source alone', () => {
+    const html = renderMarkdown('![x](data:image/png;base64,AAAA)')
+    expect(html).not.toContain('/image-proxy')
+  })
 })

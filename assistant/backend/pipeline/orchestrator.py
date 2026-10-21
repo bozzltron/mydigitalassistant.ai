@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import re
 import time
 import uuid
 from collections.abc import AsyncGenerator, Awaitable, Callable
@@ -35,7 +36,6 @@ from assistant.backend.pipeline.llm_client import (
 )
 from assistant.backend.pipeline.reasoner import (
     Action,
-    MemorySufficiency,
     Plan,
     classify_intent,
     format_plan_for_prompt,
@@ -44,6 +44,7 @@ from assistant.backend.pipeline.search import (
     SearchInfo,
     SearchResult,
     WebSearchTool,
+    clean_image_url,
     normalize_url,
     search_info_payload,
 )
@@ -76,6 +77,79 @@ def _format_search_result(result: SearchResult) -> str:
     published = getattr(result, "published", None)
     stamp = f" ({published})" if isinstance(published, str) and published else ""
     return f"- [{result.title}]({result.url}){stamp} - {result.snippet}"
+
+
+# Image filenames that are site furniture rather than content. The frontend
+# filters this class before rendering a hero (`utils/media.ts` `isJunkImage`);
+# here it matters for a different reason — a logo offered as a candidate wastes a
+# prompt line and invites the model to illustrate an answer with a brand mark.
+# Measured on a live query: an image-index candidate was
+# `stock_logo_2020.png`, and a result's image was `fb-emh-default.jpg`.
+_JUNK_IMAGE = re.compile(
+    r"(^|[/_.-])(logos?|icons?|favicons?|sprite|brand|branding|badge|avatar|"
+    r"placeholder|blank|spacer|pixel|advert|advertisement|sponsor|banner|"
+    r"default|social)([/_.-]|$)",
+    re.IGNORECASE,
+)
+
+
+def _is_junk_image(url: str) -> bool:
+    return bool(_JUNK_IMAGE.search(url))
+
+
+def _format_image_candidates(
+    search_results: list[SearchResult],
+    search_info: "SearchInfo | None",
+    limit: int = 6,
+) -> str:
+    """The images this search returned, listed so the model can place one itself.
+
+    Search is the only source of imagery (docs/SEARCH.md §6). The old rule picked
+    a hero by *position* — the first result's og:image — which is why it so often
+    showed site chrome: with the LLM Context endpoint the image index is never
+    called, so the pool is OG thumbnails. The model can see the titles and knows
+    what its own paragraph says, which is the judgement a positional rule cannot
+    make.
+
+    Brave's query-matched image index comes first, then each result's own image.
+    Which URL is offered differs by source, from the measurements in
+    docs/SEARCH.md §6: an image-index entry offers its **500px CDN copy**, because
+    the source image (`properties.url`) is sometimes hotlink-blocked and a broken
+    image is worse than a smaller one; a web result offers its **full image**,
+    because its preview is always ~200px while ~76% of results have a distinct
+    1200–2048px image. Returns ``""`` when a search produced no imagery.
+    """
+    pool: list[tuple[str, str]] = []
+    for image in (search_info.image_results if search_info else None) or []:
+        url = clean_image_url(image.thumbnail or image.image)
+        if url:
+            pool.append((url, image.title))
+    for result in search_results:
+        url = clean_image_url(result.image or result.thumbnail)
+        if url:
+            pool.append((url, f"{result.title} — {result.url}"))
+
+    lines: list[str] = []
+    seen: set[str] = set()
+    for url, label in pool:
+        if url in seen or _is_junk_image(url):
+            continue
+        seen.add(url)
+        lines.append(f"{len(lines) + 1}. {url}  ({label})")
+        if len(lines) >= limit:
+            break
+    if not lines:
+        return ""
+
+    return (
+        "\n\n**Images you may use** (you have not seen them):\n"
+        + "\n".join(lines)
+        + "\n\nPlace at most two of these where they illustrate the point, as "
+        "`![caption](URL)`. The caption must be the candidate's title or a short "
+        "neutral label — **never a description of what the image shows, because "
+        "you cannot see it**. Use only the URLs above, verbatim: never join, "
+        "rebuild or guess an image URL. Do not collect images at the end."
+    )
 
 
 def _citations_from_search(
@@ -1504,15 +1578,22 @@ class Orchestrator:
             and not skip_route
             and classification is not None
             and classification.wants_search is True
-            and plan.sufficiency == MemorySufficiency.NONE
         ):
-            # The router's positive judgment overrides the reasoner's coarse
-            # length heuristic (``_is_non_info_seeking``), which declines short
-            # recommendation/research questions ("are standing desks worth
-            # it?") the model knows need a current source. Symmetric with the
-            # veto above: an explicit router judgment wins. Memory still wins —
-            # the force applies only when nothing relevant is stored.
-            logger.info("Search forced by router (no relevant memory)")
+            # The router's positive judgment overrides the reasoner's heuristic,
+            # which is coarse in two ways: `_is_non_info_seeking` declines short
+            # recommendation/research questions ("are standing desks worth it?"),
+            # and `assess_memory_sufficiency` counts *relevant* memory as
+            # sufficient whether or not it is current. The second is how a
+            # period-scoped question ("NASA's image of the day") was answered from
+            # yesterday's episode without a search.
+            #
+            # The sufficiency condition was removed rather than relaxed: measured
+            # in `experiments/temporal_search_gate/`, it suppressed 10/10
+            # period-scoped questions when memory was relevant, and letting the
+            # router through raised that to 9/10 with no rise on stable questions
+            # (0/10). The veto above is unchanged — a storage-style turn still
+            # never searches — so the model's judgement is the only gate.
+            logger.info("Search forced by router (model judged current info needed)")
             plan.action = Action.SEARCH
             plan.search_needed = True
 
@@ -1687,6 +1768,11 @@ class Orchestrator:
                     _format_search_result(r) for r in display_results
                 )
                 system_prompt += f"\n\n**Search Results:**\n{search_text}"
+                # The model places imagery itself, from the candidates this
+                # search returned; the UI no longer picks a hero behind its back.
+                image_block = _format_image_candidates(display_results, search_info)
+                if image_block:
+                    system_prompt += image_block
 
                 # Extract facts from search results
                 from assistant.backend.pipeline.extractor import (

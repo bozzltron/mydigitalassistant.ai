@@ -59,6 +59,10 @@ Concretely:
 - **A negative result is a result.** A measurement that kills a proposed feature is a
   success: it saved the work. `max_graph_frames=20` being no better than 7 was worth more
   than a yield number that looked good.
+- **Know when to stop.** Two consecutive rounds that miss their pre-registered bar end the
+  line: ship what works, name the residue, and record it. Adding a mechanism (schema,
+  column, model call, prompt section) for a residual the last round showed is *model*
+  behaviour is the diminishing-returns trap. `RUNBOOK.md` §10 has the full rule.
 - **Read-only against a brain copy.** `assistant/experiments/preflight.py` gates every
   experiment that opens a brain: the experiment DB must not be the live DB, the live volume
   must not be mounted, a restorable backup must exist, and the copy's SHA-256 is recorded.

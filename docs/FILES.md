@@ -20,13 +20,13 @@ file writer that builds its own frame** — call `apply_file_to_memory`.
 
 ## Supported formats
 
-**Uploadable + writable (13):** `txt`, `md`, `csv`, `json`, `ics`, `pdf`, `docx`,
-`odt`, `xlsx`, `xls`, `ods`, `pptx`, `odp`. The single source of truth is
-`SUPPORTED_UPLOAD_EXTS` (`pipeline/files.py`), mirrored by the frontend
-(`frontend/src/utils/uploadFormats.ts`) and pinned by a test that parses the
-backend file.
+**Uploadable + writable (15):** `txt`, `md`, `html`, `csv`, `json`, `geojson`,
+`ics`, `pdf`, `docx`, `odt`, `xlsx`, `xls`, `ods`, `pptx`, `odp`. The single
+source of truth is `SUPPORTED_UPLOAD_EXTS` (`pipeline/files.py`), mirrored by the
+frontend (`frontend/src/utils/uploadFormats.ts`) and pinned by a test that parses
+the backend file.
 
-**Dropped from upload, still readable:** `rtf`, `eml`, `tsv`, `html`, `xml`. These
+**Dropped from upload, still readable:** `rtf`, `eml`, `tsv`, `xml`. These
 are no longer *accepted* for new uploads, but their extractors stay in
 `extract_file_content` because files already on disk must remain readable.
 Removing the extractors would orphan existing files. The upload list and the read
@@ -43,6 +43,12 @@ extension via `render_file_bytes` (`pipeline/files.py`), then writes with
 
 - Text-ish (`txt`, `md`, `csv`) are the content verbatim; `json` is wrapped so it
   is valid JSON if the agent passed prose.
+- `html` writes a **complete document**: a content fragment is wrapped in
+  `<!DOCTYPE html>` with a charset and a title taken from its first `<h1>`, while
+  a document the agent wrote in full (`<!DOCTYPE html>` or `<html>`) is kept
+  verbatim. An untagged message is escaped into a `<p>` so prose containing `<`
+  cannot become a stray tag. A bare fragment is technically renderable but has no
+  charset (accented text mojibakes when opened from disk) and no title.
 - `ics` builds real VEVENTs, from one of two shapes. A complete iCalendar document
   (`BEGIN:VCALENDAR…`) is parsed and re-serialized by the `icalendar` library and
   written as-is — the model writes ICS directly, and it carries fields no
@@ -316,6 +322,16 @@ only place a value appears, and it is a count, not the file.
 - The viewer previews only text extensions (`FileViewer.TEXT_EXTS`); anything
   else shows "No preview" with a download link rather than decoding bytes as
   text. `.md`/`.markdown` render as sanitized HTML (`marked` + `DOMPurify`).
+- `.html` renders in a **sandboxed iframe**, never in the app document. The
+  iframe carries `sandbox="allow-scripts"` and deliberately **not**
+  `allow-same-origin`, so the document gets an opaque origin: it cannot read the
+  app's storage, call the memory API, or reach `window.parent`. `sandboxedHtml`
+  (`frontend/src/utils/htmlPreview.ts`) injects a CSP that forbids network egress,
+  because a sandbox alone still permits `<img src="https://…">` — a report that
+  phones home breaks the no-telemetry rule even when the file is otherwise
+  harmless. **Do not render agent-authored HTML with `innerHTML`**, even
+  sanitized: DOMPurify is a tag allowlist that is bypassed periodically, and the
+  blast radius here is the whole brain — there is no auth in front of the API.
 - Deleting goes through a confirmation modal — the row button opens it, the
   modal's confirm calls `DELETE /files/{frame_id}`.
 
@@ -333,12 +349,16 @@ only place a value appears, and it is a count, not the file.
   extractor upload uses), not raw bytes: reading a PDF as UTF-8 yields garbage.
   The rule is **extract whenever an extractor exists**; only formats with none
   (`txt`, `md`, `log`, `yaml`, `yml`) are read directly. That includes
-  `html`/`xml`/`eml`, which are text but whose extractors strip markup or parse the
-  message — reading those raw would hand the model `<h1>Title</h1>` or MIME
-  boundaries instead of the content. **`ics` is the exception**: its extractor
-  summarises the calendar (and caps at five events) for memory, but a summary
-  cannot be edited back into a calendar, so `read_file` returns the raw document
-  (see `READ_RAW_EXTS` in `tool_executor`).
+  `xml`/`eml`, which are text but whose extractors strip markup or parse the
+  message — reading those raw would hand the model tags or MIME boundaries
+  instead of the content. **`ics` and `html` are the exceptions**: their
+  extractors produce a summary (the calendar's events; the page's text with every
+  tag stripped), and a summary cannot be edited back into a document. `read_file`
+  returns those raw (see `READ_RAW_EXTS` in `tool_executor`). The rule is
+  **a format `write_file` can produce must be readable as source** — otherwise
+  the model can create a file it cannot then use. A live turn asked to rewrite a
+  `.html` template was handed the stripped text (`Morning Brief :root{--bg:…`)
+  and wrote it back inside a `<p>`.
 - The only bound is the **model's context window** on what `read_file` returns: a
   single result is capped at a fraction of the window (`_read_char_limit`), so one
   read cannot fill it. A capped read carries an **actionable** marker — the line

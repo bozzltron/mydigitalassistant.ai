@@ -48,6 +48,74 @@ describe('MessageContent dynamic ordering', () => {
     ])
   })
 
+  it('lets an inline image replace the image hero instead of repeating it', () => {
+    // The model picks from these candidates, so a banner above the text would
+    // show the same picture twice.
+    const m: ChatMessage = {
+      role: 'assistant',
+      id: 'm',
+      content: 'A ship at anchor.\n\n![ship](https://img/a.png)',
+      meta: {
+        search_info: {
+          backend: 'brave',
+          query: 'ship',
+          results: [
+            { title: 'A', url: 'https://page/a', snippet: '', engine: 'brave', thumbnail: 'https://img/a.png' },
+          ],
+        },
+      },
+    }
+
+    const { container } = render(() => <MessageContent message={() => m} />)
+
+    expect(childClasses(container)[0]).not.toContain('msg-media-hero')
+    expect(container.querySelector('.msg-markdown img')).not.toBeNull()
+  })
+
+  it('drops an inline image the search did not return', () => {
+    // A live turn joined a page URL onto an image URL. The prompt asks the model
+    // not to, so this is enforced here: the candidate set is known.
+    const m: ChatMessage = {
+      role: 'assistant',
+      id: 'm',
+      content: 'Here: ![brain](https://www.imaios.comhttps://cdn1.imaios.com/x.png)',
+      meta: {
+        search_info: {
+          backend: 'brave',
+          query: 'brain',
+          results: [
+            { title: 'A', url: 'https://page/a', snippet: '', engine: 'brave', thumbnail: 'https://img/a.png' },
+          ],
+        },
+      },
+    }
+
+    const { container } = render(() => <MessageContent message={() => m} />)
+    expect(container.querySelector('.msg-markdown img')).toBeNull()
+    // The answer text survives; only the unverified image is dropped.
+    expect(container.querySelector('.msg-markdown')?.textContent).toContain('Here:')
+  })
+
+  it('keeps an inline image that came from the candidates', () => {
+    const m: ChatMessage = {
+      role: 'assistant',
+      id: 'm',
+      content: 'Here: ![brain](https://img/a.png)',
+      meta: {
+        search_info: {
+          backend: 'brave',
+          query: 'brain',
+          results: [
+            { title: 'A', url: 'https://page/a', snippet: '', engine: 'brave', thumbnail: 'https://img/a.png' },
+          ],
+        },
+      },
+    }
+
+    const { container } = render(() => <MessageContent message={() => m} />)
+    expect(container.querySelector('.msg-markdown img')).not.toBeNull()
+  })
+
   it('renders an image hero when the query did not ask for video', () => {
     const m = message({
       search_info: {

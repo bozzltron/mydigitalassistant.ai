@@ -332,10 +332,10 @@
 
 /* File Viewer Panel */
 .file-viewer-panel {
-  /* Wider than the old fixed 420px: the preview is the point of the page, and a
-     fixed narrow column wasted the space on large screens. Scales with the
-     viewport, bounded so it never starves the file grid. */
-  width: clamp(400px, 42vw, 720px);
+  /* Half the page. The preview is the point of this page — a rendered report is
+     meant to be read, and a 42vw column wasted the space on a wide screen. The
+     file table keeps the other half and drops below the preview under 768px. */
+  width: 50%;
   border-left: 1px solid var(--border);
   background: var(--surface);
   display: flex;
@@ -482,6 +482,20 @@
   align-self: center;
 }
 
+/* Sandboxed preview for .html files. The iframe is an opaque origin (see
+   htmlPreview.ts), so this rule only has to give it space — the document's own
+   CSS owns everything inside. The white fallback is deliberate: an HTML document
+   defaults to black text, and a report that sets no background would otherwise
+   be unreadable on the dark theme. */
+.file-content-html {
+  flex: 1;
+  width: 100%;
+  min-height: 400px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+}
+
 /* Rendered markdown preview for .md files. */
 .file-content-markdown {
   flex: 1;
@@ -537,6 +551,18 @@
 }
 .file-content-markdown pre code { background: none; padding: 0; }
 
+/* A document can reference any image at any size. The preview is a reading
+   column, so the image fits it: natural size up to the column width, never
+   scaled up past 100%, never wider than the panel. Without `max-width` a single
+   4000px screenshot made the whole markdown body scroll horizontally. */
+.file-content-markdown img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0.75rem 0;
+  border-radius: 8px;
+}
+
 /* Binary / non-text files: no preview, just a nudge to download. */
 .file-no-preview {
   flex: 1;
@@ -571,8 +597,8 @@
 
 /* Responsive */
 @media (max-width: 1024px) {
-  /* The viewer panel's width is a `clamp()` now, so it scales down on its own;
-     only the table columns need a narrower definition here. */
+  /* The viewer panel is a percentage, so it scales down on its own; only the
+     table columns need a narrower definition here. */
   .files-table-header {
     grid-template-columns: 2fr 0.8fr 1fr 150px;
   }

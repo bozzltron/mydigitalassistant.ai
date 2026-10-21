@@ -47,15 +47,15 @@ describe('upload formats mirror the backend', () => {
     // The specific regression: these were in UploadZone's accept but not
     // InputBar's, so attaching them from chat did nothing. The set is now the
     // agreed 13; see assistant/experiments/file_write_parity/.
-    for (const ext of ['txt', 'md', 'csv', 'json', 'ics', 'pdf', 'docx', 'odt', 'xlsx', 'xls', 'ods', 'pptx', 'odp']) {
+    for (const ext of ['txt', 'md', 'html', 'csv', 'json', 'ics', 'pdf', 'docx', 'odt', 'xlsx', 'xls', 'ods', 'pptx', 'odp']) {
       expect(isSupportedUploadExt(ext)).toBe(true)
     }
   })
 
   it('does not advertise formats dropped from upload', () => {
-    // rtf/eml/tsv/html/xml are no longer accepted for new uploads (they remain
+    // rtf/eml/tsv/xml are no longer accepted for new uploads (they remain
     // readable for files already on disk, but must not be offered here).
-    for (const ext of ['rtf', 'eml', 'tsv', 'html', 'xml']) {
+    for (const ext of ['rtf', 'eml', 'tsv', 'xml']) {
       expect(isSupportedUploadExt(ext)).toBe(false)
     }
   })

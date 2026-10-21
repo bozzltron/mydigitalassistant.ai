@@ -817,15 +817,23 @@ async def _available_file_names(store: MemoryStore, user_id: str) -> str:
 
 # Extensions with no extractor, where the bytes on disk are already the content
 # the model should read. Everything else goes through `extract_file_content` —
-# html/xml/eml are text but their extractors strip markup or parse the message;
-# reading those raw would hand the model `<h1>Title</h1>` or MIME boundaries.
+# xml/eml are text but their extractors strip markup or parse the message;
+# reading those raw would hand the model tags or MIME boundaries.
 PLAIN_TEXT_EXTS = frozenset({"txt", "md", "log", "yaml", "yml"})
 
-# What `read_file` hands the model raw. `.ics` is included even though it has an
-# extractor: the extractor summarises the calendar (and caps at five events) for
-# memory, but a summary cannot be edited back into a calendar, so the model needs
-# the raw document to inspect or repair one. See docs/FILES.md.
-READ_RAW_EXTS = PLAIN_TEXT_EXTS | {"ics"}
+# What `read_file` hands the model raw. These are the formats a **summary cannot
+# be edited back into**:
+#
+# - `.ics` — the extractor summarises the calendar (and caps at five events) for
+#   memory, but that summary is not a calendar.
+# - `.html` — the extractor strips every tag, so the model gets a run of text
+#   ("Morning Brief :root{--bg:#FCFAF6…") with no structure. `write_file` can
+#   create html, so a file the model cannot see as source is a file it cannot
+#   use as a template; a live turn asked to rewrite one wrote that stripped text
+#   back inside a `<p>`. Read the source, like `.md`.
+#
+# See docs/FILES.md.
+READ_RAW_EXTS = PLAIN_TEXT_EXTS | {"ics", "html", "htm"}
 
 # Formats that are binary documents on disk. `read_file` *extracts* them to text,
 # but the bytes are not that text, so a find-and-replace can never match: the
@@ -890,14 +898,15 @@ def _clip_line(line: str, limit: int = MAX_MATCH_LINE_CHARS) -> str:
 async def _read_file_text(file_path: str, ext: str) -> tuple[str | None, str | None]:
     """Return ``(text, error)`` for a sandbox file, extracting when needed.
 
-    Formats in ``READ_RAW_EXTS`` (plain text, plus ``.ics``) are read directly.
-    Everything else goes through ``extract_file_content``, the same path upload
-    uses — the model must read a document the way upload understood it, not as
-    raw bytes. Reading a PDF as UTF-8 was the bug: a 6.7 MB press kit extracted
-    to 9,213 clean characters at upload and returned binary noise (or nothing) on
-    read. The same rule covers html/xml/eml, which are text but whose extractors
-    strip markup or parse the message. ``.ics`` is the exception — read raw so a
-    calendar can be inspected and edited (see ``READ_RAW_EXTS``).
+    Formats in ``READ_RAW_EXTS`` (plain text, plus ``.ics``/``.html``) are read
+    directly. Everything else goes through ``extract_file_content``, the same
+    path upload uses — the model must read a document the way upload understood
+    it, not as raw bytes. Reading a PDF as UTF-8 was the bug: a 6.7 MB press kit
+    extracted to 9,213 clean characters at upload and returned binary noise (or
+    nothing) on read. The same rule covers xml/eml, which are text but whose
+    extractors strip markup or parse the message. ``.ics`` and ``.html`` are the
+    exceptions — formats the model can *write*, so a summary it cannot edit back
+    is useless to it (see ``READ_RAW_EXTS``).
 
     ``extract_file_content`` extracts from the bytes it is given, not from the
     path, so the bytes are read here and handed over.

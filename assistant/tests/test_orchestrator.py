@@ -121,8 +121,16 @@ async def test_router_wants_search_forces_search_despite_reasoner_heuristic(stor
     assert spy.queries, "router wants_search=true must search when memory is empty"
 
 
-async def test_router_wants_search_does_not_override_memory(store):
-    """The force applies only with empty memory; a stored answer still wins."""
+async def test_router_wants_search_overrides_sufficient_memory(store):
+    """Relevant memory no longer outranks the router's judged need for current info.
+
+    This test used to assert the opposite. `assess_memory_sufficiency` counts a
+    relevant frame as sufficient whether or not it is current, so a period-scoped
+    question ("NASA's image of the day") was answered from a previous day's
+    episode with no search. Measured in `experiments/temporal_search_gate/`:
+    with sufficient memory, the old gate searched for 0/10 period-scoped
+    questions; the router's judgement alone searches 9/10, and 0/10 stable ones.
+    """
     add_embedding_cluster("standing", "desks")
     llm = SearchWantedStub()
     llm.set_extraction_result(slots=[], associations=[])
@@ -150,7 +158,10 @@ async def test_router_wants_search_does_not_override_memory(store):
     request = ChatRequest(user_id=user.id, message="Are standing desks worth it?")
     await orchestrator.chat(request)
 
-    assert spy.queries == [], "sufficient memory must not be overridden by the router"
+    assert spy.queries, (
+        "a recommendation question needs current information even when a stored "
+        "answer exists — the router judged it, and memory relevance is not currency"
+    )
 
 
 async def test_stored_facts_injected_into_system_prompt(store):

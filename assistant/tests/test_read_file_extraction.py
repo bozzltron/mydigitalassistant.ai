@@ -271,25 +271,27 @@ class TestContainerFormatsReadEndToEnd:
         assert "xmlns" not in content
 
 
-class TestTextFormatsWithExtractorsAreExtracted:
-    """`html`/`xml` are text but have extractors that add real value.
+class TestTextFormatsWithExtractorsAreReadRaw:
+    """`xml` is text with an extractor that adds real value; `ics`/`html` are not.
 
-    Reading them raw would hand the model `<h1>Title</h1>` or XML. The rule is
-    "extract whenever an extractor exists" — with one exception, `ics`: its
-    extractor summarises the calendar (and caps at five events), which cannot be
-    edited back into a calendar, so `read_file` returns the raw document. See
-    `READ_RAW_EXTS` in `tool_executor`.
+    The rule is "extract whenever an extractor exists" — except for the formats
+    whose extractor output **cannot be edited back into the document**: the ICS
+    summary, and HTML with every tag stripped. A model asked to rewrite an HTML
+    template was handed its stripped text ("Morning Brief :root{--bg:…") and
+    wrote that back inside a `<p>`, so `read_file` returns the source instead.
+    See `READ_RAW_EXTS` in `tool_executor`.
     """
 
     @pytest.mark.asyncio
-    async def test_html_is_stripped_of_markup(self, store):
+    async def test_html_is_read_raw_so_it_can_be_used_as_a_template(self, store):
+        """Regression: the stripped read made a written format unreadable."""
         from assistant.backend.pipeline import filesystem
 
         filesystem.SANDBOX_ROOT.mkdir(parents=True, exist_ok=True)
         (filesystem.SANDBOX_ROOT / "phase2_note.txt").write_bytes(
             b"<html><body><h1>Title</h1><p>Some <b>bold</b> prose.</p></body></html>"
         )
-        # Rename so the extension routes it to the HTML extractor.
+        # Rename so the extension routes it to the HTML path.
         src = filesystem.SANDBOX_ROOT / "phase2_note.txt"
         dst = filesystem.SANDBOX_ROOT / "phase2_page.html"
         src.rename(dst)
@@ -301,8 +303,9 @@ class TestTextFormatsWithExtractorsAreExtracted:
             )
             assert result.success
             content = result.data["content"]
-            assert "Some bold prose." in content
-            assert "<h1>" not in content and "<b>" not in content
+            # The markup is what the model needs to reproduce the document.
+            assert "<h1>Title</h1>" in content
+            assert "<b>bold</b>" in content
         finally:
             dst.unlink(missing_ok=True)
 

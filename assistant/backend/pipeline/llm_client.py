@@ -833,12 +833,23 @@ proceed, and do not ask what it should contain first: make the file, then offer 
 adjust it. Ask a question only if you genuinely cannot proceed without an answer."""
 
 
+_TIME_VALIDITY_RULE = """
+**Time and memory.** Memory facts are stamped with the date they were observed
+("as of YYYY-MM-DD"). A claim about something that changes on a period — today's
+image, a price, a score, the weather, a schedule, "the latest" anything — is only
+valid for the date it was observed. When the period the user is asking about does
+not cover that date, say what you have *with* its date and get the current value
+instead of presenting the old one as current. Stable facts (a birth date, a
+definition, a preference) do not expire; do not hedge them with dates."""
+
+
 def build_system_prompt(
     memory_context: str,
     task_type: str,    # "functional" | "introspective"
     planinstructions: str = "",
     self_context: str = "",
     current_datetime: str | None = None,
+    include_time_rule: bool = True,
 ) -> str:
     """Build a system prompt that injects structured memory context.
 
@@ -854,6 +865,9 @@ def build_system_prompt(
     always included when available so responses stay consistent with them.
     current_datetime: the current date/time line. ``None`` computes it (the
     production default); a string pins it for tests; ``""`` omits the line.
+    include_time_rule: the "time and memory" paragraph. On in production;
+    ``False`` exists for `experiments/temporal_validity*`, which measured the
+    rule's effect against a prompt without it.
     """
     if self_context:
         persona = f"""You are a personal cognitive assistant with a structured memory system.
@@ -872,6 +886,8 @@ questions briefly in plain prose; reserve lists, headers, and tables for
 answers that genuinely need them."""
 
     parts: list[str] = [persona, _TOOL_CONTRACT]
+    if include_time_rule:
+        parts.append(_TIME_VALIDITY_RULE)
     if task_type == "introspective":
         parts.append("""
 For this query, the user is asking about YOUR memory or knowledge. You must:

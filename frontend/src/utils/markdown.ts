@@ -18,6 +18,17 @@
  */
 import DOMPurify from 'dompurify'
 import { marked } from 'marked'
+import { imageSrc } from './media'
+
+/** Escape a value for a double-quoted attribute. DOMPurify sanitizes after this,
+ *  but the markup has to be well-formed before it gets there. */
+function escapeAttr(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+}
 
 marked.use({
   renderer: {
@@ -25,6 +36,16 @@ marked.use({
       const href = token.href
       const title = token.title ? ` title="${token.title}"` : ''
       return `<a href="${href}"${title} target="_blank" rel="noopener">${token.text}</a>`
+    },
+    image(token) {
+      // Route through the backend proxy. A model-authored `![](https://…)` used
+      // to render as a direct hotlink, making the browser contact the image host
+      // — exactly the IP leak `/image-proxy` exists to prevent for thumbnails.
+      // Non-http(s) sources (data:) pass through unchanged.
+      const src = escapeAttr(imageSrc(token.href))
+      const alt = escapeAttr(token.text || '')
+      const title = token.title ? ` title="${escapeAttr(token.title)}"` : ''
+      return `<img src="${src}" alt="${alt}"${title}>`
     },
   },
 })

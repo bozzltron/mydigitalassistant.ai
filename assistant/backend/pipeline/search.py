@@ -18,6 +18,7 @@ import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
+from html import unescape
 from urllib.parse import urlsplit, urlunsplit
 
 import httpx
@@ -214,6 +215,32 @@ def _youtube_id(url: str) -> str | None:
     return None
 
 
+def clean_image_url(value: object) -> str | None:
+    """A URL that is worth fetching, or ``None``.
+
+    Two real defects found in Brave's source metadata, both of which shipped a
+    dead image to the UI and a 400 from ``/image-proxy``:
+
+    - **Entities are not decoded.** A result's image arrived as
+      ``...?w=1024&amp;w=gi&amp;k=20``, which is not the URL the host serves.
+    - **A page URL can be glued onto an image URL.** One source returned
+      ``https://www.imaios.comhttps://cdn1.imaios.com/i/images/...`` — a broken
+      ``og:image`` on the page itself. Two schemes in one URL is never valid, so
+      it is rejected here rather than fetched and failed later.
+
+    Relative paths are returned unchanged: SearXNG emits them and ``_absolute``
+    resolves them against its own host.
+    """
+    if not isinstance(value, str):
+        return None
+    url = unescape(value).strip()
+    if not url:
+        return None
+    if url.count("://") > 1:
+        return None
+    return url
+
+
 def _thumb_urls(item: dict) -> tuple[str | None, str | None]:
     """(thumbnail, full_image) URLs from a result item.
 
@@ -223,18 +250,18 @@ def _thumb_urls(item: dict) -> tuple[str | None, str | None]:
     """
     thumb = item.get("thumbnail")
     if isinstance(thumb, str):
-        return thumb, thumb
+        return clean_image_url(thumb), clean_image_url(thumb)
     if isinstance(thumb, dict):
         src = thumb.get("src") or thumb.get("original")
         original = thumb.get("original") or thumb.get("src")
-        return (str(src) if src else None, str(original) if original else None)
+        return clean_image_url(src), clean_image_url(original)
     image = item.get("image")
     if isinstance(image, str):
-        return image, image
+        return clean_image_url(image), clean_image_url(image)
     if isinstance(image, dict):
         src = image.get("src") or image.get("original")
         original = image.get("original") or image.get("src")
-        return (str(src) if src else None, str(original) if original else None)
+        return clean_image_url(src), clean_image_url(original)
     return None, None
 
 

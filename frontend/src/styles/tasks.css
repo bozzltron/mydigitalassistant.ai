@@ -161,11 +161,10 @@
 
 /* Detail */
 .task-detail {
-  /* The preview pane, so it gets the room: 26rem squeezed the prompt editor to
-     roughly 40 characters a line. The cap keeps the list usable on a narrow window
-     — the page has no breakpoint, so this is what stops the pane from winning. */
-  width: 34rem;
-  max-width: 55vw;
+  /* Half the page, matching the Files viewer (`.file-viewer-panel`): the prompt
+     editor and a run's summary are the content here, and 34rem/55vw left them
+     cramped while the list sat half empty. Stacks below the list under 768px. */
+  width: 50%;
   flex-shrink: 0;
   border-left: 1px solid var(--border);
   background: var(--surface);
@@ -322,4 +321,28 @@
   font-size: 0.9rem;
   line-height: 1.3;
   margin: var(--space-md) 0 var(--space-xs);
+}
+
+/* A run's summary is markdown and can carry an image; the pane is half the page,
+   so a large one would widen it. Same rule as the Files preview. */
+.task-last-run-body img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: var(--space-sm) 0;
+  border-radius: var(--radius-md);
+}
+
+/* Narrow window: the detail stacks under the list, full width, half height. */
+@media (max-width: 768px) {
+  .tasks-content {
+    flex-direction: column;
+  }
+
+  .task-detail {
+    width: 100%;
+    border-left: none;
+    border-top: 1px solid var(--border);
+    max-height: 50vh;
+  }
 }

@@ -228,6 +228,28 @@ Measured (`assistant/experiments/image_quality/`): web-result previews are alway
 ~200px; ~76% of web results carry a distinct full image at 1200–2048px; only ~9%
 of full images are hotlink-blocked. Brave image thumbnails are 500px and reliable.
 
+**Inline images are chosen by the model.** After the search results, the prompt
+carries up to six candidates (`_format_image_candidates`) with their page titles,
+and the rule: at most two, placed where they illustrate the point, using only
+those URLs. The model has **not seen** the images, so its caption must be the
+candidate's title — never a description of the picture. A live turn labelled
+NASA's stock Apollo photo "An Anticrepuscular Rainbow Fan" because it trusted the
+page's stale `og:image`; the caption rule turns that into an honest
+"Image of the Day - NASA" instead of a confident wrong description.
+
+Two defects are cleaned before a candidate is offered, both measured live
+(`clean_image_url`): HTML entities are decoded (`&amp;` in a query string 400s),
+and a joined URL is rejected — a page whose broken `og:image` is its own URL glued
+onto an absolute one (`https://www.imaios.comhttps://cdn1.imaios.com/x.png`).
+Logo/default-card filenames are filtered as site furniture. The UI enforces the
+same set: `enforceImageSources` drops an inline image whose URL the turn's search
+did not return, so the prompt's "only these URLs" is a rule, not a request.
+
+**Known limit:** a candidate can still *be* the wrong picture — `og:image` is
+chosen for social sharing and is sometimes stale or site chrome. Nothing here can
+verify that an image depicts what the candidate title claims; the remote hero
+(`getHeroMedia`) and this inline path share that exposure.
+
 **Brave image API limits (read before raising `count` or the per-turn call count):**
 
 - **Quota is shared with web search.** The image endpoint is part of the Search
