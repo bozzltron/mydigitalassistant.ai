@@ -6,6 +6,7 @@ Provides event serialization and the streaming response generator.
 import asyncio
 import json
 import logging
+import time
 from collections.abc import AsyncGenerator
 from dataclasses import asdict, is_dataclass
 from enum import Enum
@@ -413,6 +414,7 @@ async def stream_tool_loop(
             turn,
             loop_model,
         )
+        round_start = time.monotonic()
 
         response = await llm_client.chat(
             messages=chat_messages,
@@ -458,6 +460,21 @@ async def stream_tool_loop(
                 num_predict=num_predict,
             )
             max_prompt_tokens = max(max_prompt_tokens, response.prompt_eval_count)
+
+        # The per-round cost, which until now existed only in Ollama's own server
+        # log. `prompt_tokens` is the measured prefill — it dominates a round
+        # (measured 383 tok/s prefill vs 37 tok/s decode), and it is the number a
+        # slow turn has to be explained by. See docs/CONTEXT_THROUGHPUT.md.
+        logger.info(
+            "tool_loop_round: turn=%d round_ms=%d prompt_tokens=%d gen_tokens=%d "
+            "tool_calls=%d done_reason=%s",
+            turn,
+            int((time.monotonic() - round_start) * 1000),
+            response.prompt_eval_count,
+            response.eval_count,
+            len(response.tool_calls or []),
+            response.done_reason or "-",
+        )
 
         last_content = response.content or ""
 

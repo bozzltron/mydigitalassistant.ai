@@ -22,6 +22,66 @@ import pytest
 from assistant.backend.pipeline.orchestrator import Orchestrator
 
 
+class TestToolLoopRoundTiming:
+    """The per-round cost must be visible at INFO, not only in Ollama's log.
+
+    A 508s scheduled turn was diagnosable only from llama-server's own log
+    (`prompt eval time`, `eval time`, `graphs reused`). Prefill dominates a round
+    — measured 383 tok/s prefill against 37 tok/s decode — so `prompt_tokens` per
+    round is the number a slow turn has to be explained by, and it belongs in the
+    app's log where the rest of the timings are.
+    """
+
+    async def test_logs_round_cost_with_measured_token_counts(self, caplog, tmp_path):
+        from assistant.backend.pipeline.llm_client import ChatResponse
+        from assistant.backend.pipeline.streaming import stream_tool_loop
+        from assistant.backend.pipeline.tool_executor import init_store
+
+        init_store(str(tmp_path / "rounds.db"))
+
+        class StubLLM:
+            tools_model = "test-model"
+
+            def __init__(self, responses):
+                self.responses = list(responses)
+
+            async def chat(self, messages, **kwargs):
+                return self.responses.pop(0)
+
+            def context_window(self, model=None):
+                return 16384
+
+        llm = StubLLM(
+            [
+                ChatResponse(
+                    content="done",
+                    model="m",
+                    done=True,
+                    prompt_eval_count=15227,
+                    eval_count=42,
+                    done_reason="stop",
+                )
+            ]
+        )
+        caplog.set_level(logging.INFO, logger="assistant.backend.pipeline.streaming")
+
+        async for _ in stream_tool_loop(
+            llm,
+            messages=[{"role": "user", "content": "hi"}],
+            tools=[],
+            model="test-model",
+            user_id="1",
+            session_id="s-rounds",
+            max_turns=2,
+        ):
+            pass
+
+        line = caplog.text
+        assert "tool_loop_round:" in line
+        for field in ("turn=1", "prompt_tokens=15227", "gen_tokens=42", "round_ms="):
+            assert field in line, f"{field} missing from the round line: {line}"
+
+
 class TestTurnTimingFormat:
     """The consolidated per-turn line, via `_log_turn_timings`."""
 
