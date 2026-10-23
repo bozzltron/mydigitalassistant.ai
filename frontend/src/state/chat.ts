@@ -85,9 +85,16 @@ export function initChat(): void {
   }
 }
 
+// The tail restored into the UI on reload. A conversation here is long-lived —
+// the largest in the live brain is 800+ messages — and the model's own window is
+// six messages, so the UI is the only place the earlier thread exists for the
+// reader. At 50, a 244-message conversation rendered its last fifth and the rest
+// looked lost. The API returns whatever the session has up to the limit.
+const RESTORE_LIMIT = 200
+
 export async function loadConversationMessages(sessionIdParam: string, userId: number): Promise<void> {
   try {
-    const data = await getSessionMessages(sessionIdParam, userId, 50)
+    const data = await getSessionMessages(sessionIdParam, userId, RESTORE_LIMIT)
     const loadedMessages: ChatMessage[] = data.map((m: SessionMessage, index: number) => {
       const mm = m as SessionMessage & {
         task_type?: string
