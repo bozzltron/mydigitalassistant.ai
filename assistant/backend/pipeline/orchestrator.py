@@ -152,6 +152,28 @@ def _format_image_candidates(
     )
 
 
+# The pre-generation search already ran for this turn, and the model has no other
+# way to know it: the results appear in the prompt with no statement of when or
+# why they are there. A live briefing searched the same query three times (once
+# here, twice from the tool loop); the duplicates pushed its tool-loop prompt
+# from 9k to 15k tokens — 91% of the window, one result dropped mid-turn.
+_SEARCH_ALREADY_RUN = (
+    "\n\nThese results were fetched for this turn, moments ago. Do not run a web "
+    "search for the same subject again — use what is here. If they do not answer "
+    "the question, say what is missing, or search a *different* query."
+)
+
+
+def _search_results_block(results: list[SearchResult]) -> str:
+    """The search section of the prompt, and the statement that it already ran.
+
+    The model cannot otherwise tell when these results were fetched, and a live
+    briefing re-ran the same query twice from the tool loop because of it.
+    """
+    text = "\n".join(_format_search_result(r) for r in results)
+    return f"\n\n**Search Results:**\n{text}{_SEARCH_ALREADY_RUN}"
+
+
 def _citations_from_search(
     search_results: list[SearchResult], extraction: "ExtractionResult | None"
 ) -> list[str]:
@@ -1764,10 +1786,7 @@ class Orchestrator:
 
             if search_results:
                 display_results = search_results[: settings.max_search_results_in_prompt]
-                search_text = "\n".join(
-                    _format_search_result(r) for r in display_results
-                )
-                system_prompt += f"\n\n**Search Results:**\n{search_text}"
+                system_prompt += _search_results_block(display_results)
                 # The model places imagery itself, from the candidates this
                 # search returned; the UI no longer picks a hero behind its back.
                 image_block = _format_image_candidates(display_results, search_info)

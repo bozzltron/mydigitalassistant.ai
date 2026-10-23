@@ -121,6 +121,33 @@ async def test_router_wants_search_forces_search_despite_reasoner_heuristic(stor
     assert spy.queries, "router wants_search=true must search when memory is empty"
 
 
+def test_search_results_block_says_the_search_already_ran():
+    """The pre-generation search must state that it already happened.
+
+    A live briefing ran the same query three times — once before generation, twice
+    from the tool loop — because the prompt showed the results with no statement
+    of when they were fetched. The duplicates took the tool-loop prompt from 9k
+    to 15k tokens (91% of the window, one result dropped).
+    """
+    from assistant.backend.pipeline.orchestrator import _search_results_block
+    from assistant.backend.pipeline.search import SearchResult
+
+    block = _search_results_block(
+        [
+            SearchResult(
+                title="Standing desks",
+                url="https://example.com/desks",
+                snippet="Worth it with a treadmill.",
+                engine="test",
+            )
+        ]
+    )
+    assert "**Search Results:**" in block
+    assert "Standing desks" in block
+    assert "Do not run a web search for the same subject" in block
+    assert "search a *different* query" in block
+
+
 async def test_router_wants_search_overrides_sufficient_memory(store):
     """Relevant memory no longer outranks the router's judged need for current info.
 
