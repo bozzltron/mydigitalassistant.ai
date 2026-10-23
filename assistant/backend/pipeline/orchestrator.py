@@ -1700,7 +1700,21 @@ class Orchestrator:
             if not query:
                 # No concrete external target: searching the raw instruction finds
                 # "how to search", not the subject. Skip rather than search noise.
-                logger.info("Search skipped: no concrete external target")
+                #
+                # For a standing task that is a *failure*, not an optimisation: the
+                # task exists to check for new information, and it now runs with
+                # none. It was logged at INFO, which is how "search is more
+                # restricted in tasks than in chat" stays invisible — the task
+                # script is not a question, so the distiller declines it more often
+                # than it declines a chat message.
+                if request.force_search:
+                    logger.warning(
+                        "Search forced but no query could be derived from the task "
+                        "script (session=%s); the run has no fresh results",
+                        request.session_id,
+                    )
+                else:
+                    logger.info("Search skipped: no concrete external target")
                 plan.search_needed = False
             else:
                 logger.info("Reasoner triggered search for: %s", query[:80])

@@ -788,6 +788,68 @@ async def test_stream_tool_loop_still_judges_completion_after_the_first_nudge(
     assert events and '"type": "finalize"' in events[-1]
 
 
+async def test_a_failed_write_is_not_a_performed_action(tmp_path):
+    """A refused write must trigger the retry nudge.
+
+    `write_file` on an existing path fails with "File exists: … (use overwrite=True)".
+    The completion check judged by tool *name*, so the attempt counted as the action,
+    the model was never nudged, and the turn ended reporting a failure it could have
+    fixed by calling the same tool with `overwrite=True` — the overwrite failure that
+    has been costing scheduled runs.
+    """
+    from assistant.backend.pipeline.filesystem import get_sandbox_root
+    from assistant.backend.pipeline.llm_client import ChatResponse, ToolCall
+    from assistant.backend.pipeline.streaming import stream_tool_loop
+    from assistant.backend.pipeline.tool_executor import init_store
+
+    init_store(str(tmp_path / "failed-write.db"))
+    target = get_sandbox_root() / "failed_write_probe.txt"
+    target.write_text("old", encoding="utf-8")
+
+    class StubLLM:
+        tools_model = "test-model"
+
+        def __init__(self):
+            self.calls = []
+
+        async def chat(self, messages, **kwargs):
+            self.calls.append(list(messages))
+            if len(self.calls) == 1:
+                # No overwrite flag: this call fails.
+                return ChatResponse(
+                    content="",
+                    model="m",
+                    done=True,
+                    tool_calls=[
+                        ToolCall(
+                            name="write_file",
+                            arguments={"path": "failed_write_probe.txt", "content": "new"},
+                        )
+                    ],
+                )
+            return ChatResponse(content="Could not update it.", model="m", done=True)
+
+        def context_window(self, model=None):
+            return 16384
+
+    llm = StubLLM()
+    events = [
+        ev
+        async for ev in stream_tool_loop(
+            llm,
+            [{"role": "user", "content": "Overwrite failed_write_probe.txt with new content"}],
+            [],
+            expects_action=True,
+            action_kind="change",
+        )
+    ]
+
+    contents = [getattr(m, "content", "") or "" for call in llm.calls for m in call]
+    assert any("the tools you called did not perform it" in c for c in contents), contents
+    assert events and '"type": "finalize"' in events[-1]
+    target.unlink(missing_ok=True)
+
+
 async def test_stream_tool_loop_nudges_when_the_calls_did_not_do_it(tmp_path, monkeypatch):
     """The live failure: a tool ran (read_file) but the action was not performed.
 

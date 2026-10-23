@@ -257,6 +257,7 @@ async def _maybe_nudge(
     already_nudged: bool,
     completion_nudged: bool,
     tool_calls_made: list[str],
+    successful_tool_calls: list[str],
 ) -> str | None:
     """The nudge note for this turn, or ``None``.
 
@@ -283,12 +284,15 @@ async def _maybe_nudge(
 
     # A tool ran — but did it do the job? A turn can call a *different* tool (a read)
     # and still claim the write, measured live. Judge the calls structurally: a request
-    # scoped to a change or a lookup is not performed by a read.
+    # scoped to a change or a lookup is not performed by a read — and **a call that
+    # failed did nothing**. `tool_calls_made` records attempts (`write_file` exists,
+    # `overwrite=True`), so judging by that let a refused overwrite pass as performed
+    # and the model was never nudged to retry it.
     if completion_nudged:
         return None
     from assistant.backend.pipeline.decision import action_performed
 
-    if not action_performed(tool_calls_made, action_kind):
+    if not action_performed(successful_tool_calls, action_kind):
         logger.info("Action nudge: the tool calls did not perform the action")
         return _COMPLETION_NUDGE
     return None
@@ -370,6 +374,9 @@ async def stream_tool_loop(
     action_nudged = False
     completion_nudged = False
     tool_calls_made: list[str] = []
+    # Names of calls that actually succeeded. The completion check runs on these,
+    # not on attempts: a refused write is not a performed action.
+    successful_tool_calls: list[str] = []
 
     last_content = ""
     # One grant of grace rounds per turn, spent by whichever site reaches the ceiling with
@@ -388,7 +395,7 @@ async def stream_tool_loop(
             return False
         from assistant.backend.pipeline.decision import action_performed
 
-        return not action_performed(tool_calls_made, action_kind)
+        return not action_performed(successful_tool_calls, action_kind)
 
     while True:
         if turn >= max_turns:
@@ -524,6 +531,9 @@ async def stream_tool_loop(
                     else f"failed: {getattr(result, 'error', '')}",
                 )
 
+                if getattr(result, "success", True):
+                    successful_tool_calls.append(tool_name)
+
                 # Yield tool result event
                 yield serialize_event(
                     ToolResultEvent(
@@ -596,6 +606,7 @@ async def stream_tool_loop(
                 already_nudged=action_nudged,
                 completion_nudged=completion_nudged,
                 tool_calls_made=tool_calls_made,
+                successful_tool_calls=successful_tool_calls,
             )
             if nudge:
                 action_nudged = True
