@@ -88,6 +88,115 @@ def grade(answer: str, gold: list[str]) -> dict:
     }
 
 
+LIMITS = (5, 12)
+
+
+async def run_limits(store: MemoryStore, client: OllamaClient) -> int:
+    """Round 2: does a wider episode window recover the answer?
+
+    For each question the retrieval is run once per limit, and the retrieved text
+    is checked for the gold token before generation — `fact_in_context` separates
+    "retrieval never found it" from "the model ignored it".
+    """
+    retriever = Retriever(store=store, llm_client=client)
+    episodes = await store.get_episodes_for_session(SESSION, user_id=USER_ID, limit=7)
+    history = [ChatMessage(role=e.role, content=e.content or "") for e in episodes[:-1]]
+
+    rows: list[dict] = []
+    original = settings.retrieval_episode_limit
+    try:
+        for question, gold, group in QUESTIONS:
+            for limit in LIMITS:
+                settings.retrieval_episode_limit = limit
+                context = await retriever.retrieve(
+                    question, user_id=USER_ID, session_id=SESSION
+                )
+                memory_text = format_memory_context(context)
+                fact_in_context = any(norm(g) in norm(memory_text) for g in gold)
+                n_past = len(context.past_conversations)
+                for replicate in range(1, REPLICATES + 1):
+                    system_prompt = build_system_prompt(
+                        memory_text, task_type="functional"
+                    )
+                    response = await client.chat(
+                        [
+                            ChatMessage(role="system", content=system_prompt),
+                            *history,
+                            ChatMessage(role="user", content=question),
+                        ],
+                        model=client.chat_model,
+                        temperature=0.7,
+                        think=False,
+                    )
+                    answer = (response.content or "").strip()
+                    row = {
+                        "question": question,
+                        "group": group,
+                        "limit": limit,
+                        "replicate": replicate,
+                        "n_past": n_past,
+                        "fact_in_context": fact_in_context,
+                        **grade(answer, gold),
+                        "prompt_tokens": response.prompt_eval_count,
+                        "answer": answer,
+                    }
+                    rows.append(row)
+                    print(
+                        f"  [limit={limit} r{replicate}] {group:7} "
+                        f"ctx={fact_in_context} past={n_past} found={row['found']} "
+                        f"tokens={row['prompt_tokens']} :: {question[:40]}"
+                    )
+    finally:
+        settings.retrieval_episode_limit = original
+
+    def rate(limit: int, group: str | None = None, field: str = "found") -> float:
+        subset = [
+            r
+            for r in rows
+            if r["limit"] == limit and (group is None or r["group"] == group)
+        ]
+        return round(sum(r[field] for r in subset) / len(subset), 3) if subset else 0.0
+
+    stats = {
+        "recall": {
+            str(limit): {
+                "all": rate(limit),
+                "summary_q": rate(limit, "summary"),
+                "episode_q": rate(limit, "episode"),
+            }
+            for limit in LIMITS
+        },
+        "fact_in_context": {
+            str(limit): rate(limit, field="fact_in_context") for limit in LIMITS
+        },
+        "declines": {str(limit): rate(limit, field="declined") for limit in LIMITS},
+        "prompt_tokens": {
+            str(limit): round(
+                sum(r["prompt_tokens"] for r in rows if r["limit"] == limit)
+                / max(1, sum(1 for r in rows if r["limit"] == limit)),
+                0,
+            )
+            for limit in LIMITS
+        },
+        "history_messages": len(history),
+    }
+    payload = {
+        "started": datetime.now(UTC).isoformat(),
+        "session": SESSION,
+        "model": client.chat_model,
+        "replicates": REPLICATES,
+        "limits": LIMITS,
+        "summary": stats,
+        "rows": rows,
+    }
+    out = HERE / "result_limit.json"
+    out.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    print("\n=== SUMMARY ===")
+    print(json.dumps(stats, indent=2))
+    print(f"\nwrote {out}")
+    return 0
+
+
 async def main() -> int:
     store = MemoryStore(settings.database_path)
     client = OllamaClient(
@@ -204,5 +313,23 @@ async def main() -> int:
     return 0
 
 
+async def _dispatch() -> int:
+    import sys
+
+    store = MemoryStore(settings.database_path)
+    client = OllamaClient(
+        base_url=settings.ollama_url,
+        chat_model=settings.chat_model,
+        utility_model=settings.utility_model,
+        embedding_model=settings.embedding_model,
+    )
+    try:
+        if "--limits" in sys.argv:
+            return await run_limits(store, client)
+        return await main()
+    finally:
+        await client.close()
+
+
 if __name__ == "__main__":
-    raise SystemExit(asyncio.run(main()))
+    raise SystemExit(asyncio.run(_dispatch()))

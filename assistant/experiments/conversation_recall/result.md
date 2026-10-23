@@ -79,3 +79,21 @@ dropping the summary questions below 1.0.
 - The two "summary" questions were answered from a 509-char summary; a longer
   summary might have changed them, but they were already at 1.0, so there is no
   headroom to measure.
+
+## Correction (after round 2)
+
+Two of this run's gold facts were wrong, and the conclusion drawn from them does
+not survive.
+
+1. **"Why Not" release date.** I scored `Oct 1` from the first exchange. The date
+   genuinely moved: episode 2026-10-18 says *"Your 'Why Not' single releases in 4
+   days (October 22)"*. The model answered **October 22 — correctly**. My gold was
+   stale, and the "found=False" for that question is a harness error, not a
+   failure.
+2. **Instagram followers.** The model answered **292**, and I read that as
+   retrieval ranking the wrong turns. It is not: 292 is a **stale slot on the
+   `mozworth` frame**, and the correct 296 lives on two *different* frames that
+   retrieval did not return. See `result_limit.md` for the slot table.
+
+Corrected: episode-question recall is **0.667** (2 of 3), overall **0.80** (4 of
+5), not 0.333 / 0.60. The failures are memory hygiene, not a lost conversation.

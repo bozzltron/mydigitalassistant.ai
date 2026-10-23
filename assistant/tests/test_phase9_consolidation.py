@@ -62,6 +62,107 @@ async def test_consolidation_merges_normalized_duplicates(store):
     assert survivor_slots["year"] == "2026"
 
 
+async def test_cap_applies_the_top_n_instead_of_nothing(store):
+    """Regression: a plan larger than the cap applied zero merges, forever.
+
+    Measured live: 285 clusters, 106 merges planned, cap 10, **0 applied** on
+    every six-hour run — because the plan re-computed identically and the cap
+    discarded it whole. The circuit breaker bounds work per run; it must not
+    disable the mechanism.
+    """
+    pairs = [
+        ("Gold Rush & The Silver", "gold rush and the silver"),
+        ("Paper Dream & Co", "paper dream and co"),
+    ]
+    for a, b in pairs:
+        await store.create_frame(a, "entity")
+        await store.create_frame(b, "entity")
+
+    first = await run_consolidation(str(store.db_path), dry_run=False, max_merges=1)
+    assert first.capped is True, "a plan over the cap must be reported as capped"
+    assert first.applied_merges == 1, f"expected one merge, got {first.applied_merges}"
+
+    # The second pair survives the first run, and the next run makes progress.
+    remaining = [
+        name
+        for name in (pairs[0][1], pairs[1][1])
+        if await store.get_frame_by_name(name) is not None
+    ]
+    assert len(remaining) == 1, f"expected exactly one pair left, saw {remaining}"
+
+    second = await run_consolidation(str(store.db_path), dry_run=False, max_merges=1)
+    assert second.applied_merges == 1, "the remainder must re-plan, not be lost"
+
+
+async def test_merge_keeps_the_observation_date_not_the_merge_time(store):
+    """A moved slot keeps when the fact was observed.
+
+    The prompt renders `updated_at` as "as of", and the belief ladder uses it as
+    the recency tiebreak. Restamping a merge with now makes an old fact read as
+    fresh and hands the ladder a fabricated "newer".
+    """
+    from assistant.backend.memory.consolidate import PlannedMerge, _apply_merge
+
+    survivor = await store.create_frame("obs date survivor", "entity")
+    loser = await store.create_frame("obs date loser", "entity")
+    await store.upsert_slot(
+        survivor.id, "followers", "296", observed_at="2026-09-14 17:35:00"
+    )
+    await store.upsert_slot(
+        loser.id, "followers", "296", observed_at="2026-08-28 14:18:00"
+    )
+
+    await _apply_merge(
+        store,
+        str(store.db_path),
+        PlannedMerge(
+            survivor_id=survivor.id,
+            survivor_name=survivor.name,
+            loser_id=loser.id,
+            loser_name=loser.name,
+        ),
+    )
+
+    slot = await store.get_slot(survivor.id, "followers")
+    assert slot.value == "296"
+    assert slot.updated_at.startswith("2026-09-14"), slot.updated_at
+
+
+async def test_merge_conflict_resolves_by_the_ladder_and_keeps_its_date(store):
+    """The real case: a stale 292 on one frame, the newer 296 on another.
+
+    Higher source reliability wins, and the winning slot carries the date it was
+    observed rather than the merge time.
+    """
+    from assistant.backend.memory.consolidate import PlannedMerge, _apply_merge
+
+    survivor = await store.create_frame("follower conflict survivor", "entity")
+    loser = await store.create_frame("follower conflict loser", "entity")
+    await store.upsert_slot(
+        survivor.id, "follower_count_insta", "292",
+        source_reliability=0.5, observed_at="2026-08-28 14:18:00",
+    )
+    await store.upsert_slot(
+        loser.id, "follower_count_insta", "296",
+        source_reliability=0.9, observed_at="2026-10-12 18:21:00",
+    )
+
+    await _apply_merge(
+        store,
+        str(store.db_path),
+        PlannedMerge(
+            survivor_id=survivor.id,
+            survivor_name=survivor.name,
+            loser_id=loser.id,
+            loser_name=loser.name,
+        ),
+    )
+
+    slot = await store.get_slot(survivor.id, "follower_count_insta")
+    assert slot.value == "296", "the more reliable, newer value must win"
+    assert slot.updated_at.startswith("2026-10-12"), slot.updated_at
+
+
 async def test_merged_name_resolves_via_alias(store):
     await _seed_fragmented_album(store)
     await run_consolidation(str(store.db_path), dry_run=False)

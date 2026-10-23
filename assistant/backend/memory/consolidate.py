@@ -90,6 +90,8 @@ class ConsolidationReport:
         ]
         if self.clusters_dropped:
             parts.append(f"{self.clusters_dropped} clusters dropped (rerun)")
+        if self.capped:
+            parts.append("plan capped, remainder next run")
         return ", ".join(parts)
 
 
@@ -242,9 +244,10 @@ async def run_consolidation(
             within settings.consolidation_name_distance — this catches variants
             normalized names cannot ("mountain_in_the_wolf" vs
             "the mountain and the wolf").
-        max_merges: Circuit breaker for unattended runs. When the planned
-            merge count exceeds this, nothing is written (dry-run semantics)
-            so a clustering bug can never mass-merge the brain overnight.
+        max_merges: Circuit breaker for unattended runs: at most this many
+            merges are applied per run, so a clustering bug can never
+            mass-merge the brain overnight. The remainder re-plans next run
+            (the report's ``capped`` flag says the plan was truncated).
 
     Returns:
         ConsolidationReport describing what would happen / happened.
@@ -442,18 +445,23 @@ async def run_consolidation(
     if dry_run:
         return report
 
-    # Circuit breaker: unattended runs must never mass-merge the brain.
+    # Circuit breaker: unattended runs must never mass-merge the brain. It bounds
+    # the *work per run*, not whether work happens.
+    #
+    # It used to write nothing whenever the plan exceeded the cap — and since the
+    # plan then re-computed identically, a fragmented brain never merged again.
+    # Measured live: 285 clusters, 106 planned, cap 10, **0 applied**, every six
+    # hours, indefinitely. Applying the first N keeps the safety property (bounded
+    # work) without turning the mechanism off.
     if max_merges is not None and len(report.planned_merges) > max_merges:
         logger.warning(
-            "Consolidation capped: %d merges planned exceeds max_merges=%d; "
-            "writing nothing (associations already strengthened). Run "
-            "`assistant db consolidate` to review the plan manually.",
+            "Consolidation capped: %d merges planned; applying the first %d, "
+            "the remainder re-plans next run",
             len(report.planned_merges),
             max_merges,
         )
-        report.planned_merges = []
+        report.planned_merges = report.planned_merges[:max_merges]
         report.capped = True
-        return report
 
     for merge in report.planned_merges:
         try:
@@ -484,11 +492,12 @@ async def _apply_merge(
         #    all behave exactly like a normal re-statement of the fact.
         slot_rows = await db.execute_fetchall(
             "SELECT key, value, source_type, source_url, source_reliability, "
-            "source_episode_id FROM slots WHERE frame_id = ?",
+            "source_episode_id, updated_at FROM slots WHERE frame_id = ?",
             (merge.loser_id,),
         )
         moved_slots = 0
-        for key, value, source_type, source_url, source_reliability, episode_id in slot_rows:
+        for (key, value, source_type, source_url, source_reliability, episode_id,
+             observed_at) in slot_rows:
             await store.upsert_slot(
                 frame_id=merge.survivor_id,
                 key=key,
@@ -497,6 +506,10 @@ async def _apply_merge(
                 source_type=source_type,
                 source_url=source_url,
                 source_reliability=source_reliability,
+                # The fact was observed when the loser recorded it, not now. The
+                # prompt renders this as "as of", so restamping corrupts the one
+                # date the reader has.
+                observed_at=observed_at,
             )
             moved_slots += 1
 

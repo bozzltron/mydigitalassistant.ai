@@ -672,7 +672,12 @@ conversation list with one-off threads.
 **Merge is ad hoc; only the *check* is periodic.** Nothing emits an event when a
 duplicate frame appears, so the scheduler has to *look*. Every `CONSOLIDATION_INTERVAL_HOURS`
 it computes a read-only plan (`dry_run=True`) and, only if the plan found merges,
-applies them (capped at `CONSOLIDATION_MAX_MERGES_PER_RUN`). So the interval is a
+applies them — **the first `CONSOLIDATION_MAX_MERGES_PER_RUN`, with the remainder
+re-planned next run**. That cap used to write nothing when the plan exceeded it,
+and since the plan re-computed identically, a fragmented brain never merged at all
+(measured live: 285 clusters, 106 planned, cap 10, **0 applied**, every six hours).
+A merge also carries each slot's observation date (`observed_at` → `updated_at`),
+so `as of` stays true and the ladder's recency tiebreak is not handed the merge time. So the interval is a
 **look cadence**, not a merge cadence — a household with no duplicates merges nothing,
 forever, no matter how often it checks. Truly event-driven merge would need the
 duplicate check on the write path, which costs an embedding + clustering pass per

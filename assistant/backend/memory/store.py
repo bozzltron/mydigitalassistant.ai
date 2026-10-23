@@ -1363,7 +1363,16 @@ class MemoryStore:
         source_type: str | None = None,
         source_url: str | None = None,
         source_reliability: float | None = None,
+        observed_at: str | None = None,
     ) -> tuple[Slot, Conflict | None]:
+        """Insert or revise a slot.
+
+        ``observed_at`` is when the fact was observed, when that is not now. It
+        exists for merges: moving a slot from a duplicate frame must not restamp
+        it with the merge time, or the prompt's ``as of`` date becomes a lie and
+        the belief ladder's recency tiebreak is fed a fabricated "newer". Normal
+        writes leave it ``None`` and get ``datetime('now')``.
+        """
         _reject_file_content_slot(key)
         if not key or not str(key).strip():
             # A slot with no key is an object with no identity: nothing can look it
@@ -1399,8 +1408,9 @@ class MemoryStore:
                     "INSERT INTO slots "
                     "(frame_id, key, value, confidence, essential, priority, "
                     "source_type, source_url, source_reliability, source_episode_id, "
-                    "last_strengthened_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))",
+                    "last_strengthened_at, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), "
+                    "COALESCE(?, datetime('now')))",
                     (
                         frame_id,
                         key,
@@ -1412,6 +1422,7 @@ class MemoryStore:
                         source_url,
                         eff_rel,
                         source_episode_id,
+                        observed_at,
                     ),
                 )
                 slot_id = cursor.lastrowid
@@ -1446,10 +1457,14 @@ class MemoryStore:
                 new_conf = bump_confidence(existing_confidence)
                 await db.execute(
                     "UPDATE slots "
-                    "SET confidence = ?, essential = ?, updated_at = datetime('now'), "
+                    "SET confidence = ?, essential = ?, "
+                    # A merge moves an older observation onto a newer one: keep the
+                    # later date rather than stamping the merge time.
+                    "updated_at = CASE WHEN ? IS NULL THEN datetime('now') "
+                    "ELSE MAX(updated_at, ?) END, "
                     "last_strengthened_at = datetime('now') "
                     "WHERE id = ?",
-                    (new_conf, existing_essential, slot_id),
+                    (new_conf, existing_essential, observed_at, observed_at, slot_id),
                 )
                 await db.execute(
                     """
@@ -1504,10 +1519,11 @@ class MemoryStore:
                         "UPDATE slots "
                         "SET value = ?, confidence = ?, essential = ?, source_episode_id = ?, "
                         "source_type = ?, source_url = ?, source_reliability = ?, "
-                        "updated_at = datetime('now'), last_strengthened_at = datetime('now') "
+                        "updated_at = COALESCE(?, datetime('now')), "
+                        "last_strengthened_at = datetime('now') "
                         "WHERE id = ?",
                         (value, initial_confidence(), existing_essential, source_episode_id,
-                         source_type, source_url, source_reliability, slot_id),
+                         source_type, source_url, source_reliability, observed_at, slot_id),
                     )
                     await db.execute(
                         """
