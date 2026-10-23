@@ -165,6 +165,19 @@ class TestObservationDateRendering:
         formatted = format_memory_context(self._ctx(slot))
         assert "as of 2026-09-05" in formatted
 
+    def test_a_forgotten_slot_is_not_rendered(self):
+        """`forget_slot` sets priority 0; the prompt must honour it.
+
+        It did not, so "forget" removed nothing the model could see — the slot was
+        still rendered while the row sat at priority 0.
+        """
+        slot = Slot(
+            id=1, frame_id=1, key="title", value="Mars Volta Returns To El Paso",
+            priority=0.0,
+        )
+        formatted = format_memory_context(self._ctx(slot))
+        assert "Mars Volta" not in formatted
+
     def test_a_fact_without_a_timestamp_renders_no_date(self):
         slot = Slot(id=1, frame_id=1, key="price_usd", value="412.00")
         formatted = format_memory_context(self._ctx(slot))

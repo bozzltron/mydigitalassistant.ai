@@ -129,6 +129,12 @@ def _frame_block(
     file_safe_name = ""
     profile_json = ""
     for slot in rf.slots:
+        # A forgotten slot (priority 0) is not shown. `forget_slot` soft-deletes by
+        # setting priority, and the prompt used to render it anyway — so "forget"
+        # removed nothing the model could see. The row stays for export, history
+        # and consolidation.
+        if slot.priority <= 0:
+            continue
         if is_file_frame:
             # Content snapshots are truncated on-disk hints. Full content lives
             # in the sandbox and is read via read_file — never prefill it, or the
@@ -249,6 +255,8 @@ def format_memory_context(
             for rf in summary_frames[: settings.max_frames_in_prompt]:
                 block = [f"\n### {rf.frame.name} [relevance: {rf.relevance:.2f}]"]
                 for slot in rf.slots:
+                    if slot.priority <= 0:
+                        continue  # forgotten: see the note in `_frame_block`
                     source_note = ""
                     if slot.source_url:
                         if "//" in slot.source_url:
