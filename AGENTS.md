@@ -265,8 +265,13 @@ Result quality is guarded in three layers:
 Dead code is a liability. Unused imports, dead helper functions, and commented-out
 snippets make the codebase harder to reason about and increase the risk of breaking
 something that still matters. Before shipping a change:
-- Use `ruff check --select=F401,F811` (or `ruff check` in general) to surface unused
-  imports and variables.
+- Use `ruff check` to surface unused imports and variables — the configured
+  selection already includes `F` (so `F401`/`F811`/`F841`), `RUF100` and `RUF059`.
+  **Do not use `--select=` for this audit**: it *replaces* the project's selection,
+  and dropping `E` makes every `# noqa: E402`/`E501` look dead. That mistake
+  reported 27 "unused directives", all of which suppressed real findings — two
+  attempts to remove them each broke the lint gate. Use `--extend-select` if you
+  want a rule the config does not enable.
 - Before removing any function or class, verify it has zero callers across the entire
   codebase — including tests. If in doubt, add a test proving it can be removed rather
   than deleting blind.
