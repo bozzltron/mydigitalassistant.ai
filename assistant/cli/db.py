@@ -115,6 +115,16 @@ async def export_db(export_path: Path | None = None):
     import gzip
     from datetime import UTC, datetime
 
+    # This writes a plaintext SQL dump with `sqlite3.connect`, which cannot read a
+    # SQLCipher database: with DB_KEY set the command fails with "file is not a
+    # database", which reads like corruption. Point at the supported path instead.
+    if settings.db_key:
+        console.print(
+            "✗ The brain is encrypted, so a plaintext SQL dump cannot read it.\n"
+            "  Use [cyan]assistant db export-portable[/cyan] — the supported backup."
+        )
+        return False
+
     db_path = Path(settings.database_path)
     if not db_path.exists():
         console.print("✗ No database found")
@@ -139,6 +149,24 @@ async def export_db(export_path: Path | None = None):
     return True
 
 
+def is_inside_sandbox(path: str | Path) -> bool:
+    """Whether a destination would land in the agent's writable file sandbox.
+
+    The sandbox is where the file tools operate: the agent can list, read and
+    **delete** anything in it. A brain export is the protection artifact — the
+    thing you restore from when a write goes wrong — so it must not live somewhere
+    the agent can remove. Measured: the first verified export was written to
+    `/app/data/brain-exports/`, readable and deletable by `delete_file`.
+    """
+    from assistant.backend.pipeline.filesystem import SANDBOX_ROOT
+
+    try:
+        Path(path).resolve().relative_to(SANDBOX_ROOT)
+        return True
+    except ValueError:
+        return False
+
+
 async def export_portable(export_path: Path | None = None):
     """Export the brain as a portable, self-contained `.assistant-brain` file.
 
@@ -158,6 +186,16 @@ async def export_portable(export_path: Path | None = None):
 
     timestamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     export_path = Path(export_path) if export_path else Path(f"brain-{timestamp}.assistant-brain")
+
+    if is_inside_sandbox(export_path):
+        from assistant.backend.pipeline.filesystem import SANDBOX_ROOT
+
+        console.print(
+            f"✗ Refusing to write the export inside the agent's sandbox "
+            f"([yellow]{SANDBOX_ROOT}[/yellow]): the file tools can delete it. "
+            "Use a path outside it, e.g. /app/brain/exports."
+        )
+        return False
 
     console.print(f"Exporting portable brain [cyan]{db_path}[/cyan] → [green]{export_path}[/green]")
     try:

@@ -142,13 +142,13 @@ def test_a_scheduled_run_is_not_offered_the_task_tool():
     assert [t["function"]["name"] for t in chat] == ["web_search", "run_scheduled_task"]
 
 
-def test_search_results_block_says_the_search_already_ran():
-    """The pre-generation search must state that it already happened.
+def test_search_results_block_carries_the_results():
+    """The search section renders every result, and nothing unmeasured.
 
-    A live briefing ran the same query three times — once before generation, twice
-    from the tool loop — because the prompt showed the results with no statement
-    of when they were fetched. The duplicates took the tool-loop prompt from 9k
-    to 15k tokens (91% of the window, one result dropped).
+    An instruction telling the model not to re-search was tried here and removed
+    after it measured as a no-op: the same task ran two duplicate searches with it
+    and two without. Do not add prompt text back without a measurement — see the
+    docstring on `_search_results_block`.
     """
     from assistant.backend.pipeline.orchestrator import _search_results_block
     from assistant.backend.pipeline.search import SearchResult
@@ -165,8 +165,7 @@ def test_search_results_block_says_the_search_already_ran():
     )
     assert "**Search Results:**" in block
     assert "Standing desks" in block
-    assert "Do not run a web search for the same subject" in block
-    assert "search a *different* query" in block
+    assert "https://example.com/desks" in block
 
 
 async def test_router_wants_search_overrides_sufficient_memory(store):

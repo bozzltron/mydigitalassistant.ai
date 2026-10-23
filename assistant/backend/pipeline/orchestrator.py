@@ -152,26 +152,19 @@ def _format_image_candidates(
     )
 
 
-# The pre-generation search already ran for this turn, and the model has no other
-# way to know it: the results appear in the prompt with no statement of when or
-# why they are there. A live briefing searched the same query three times (once
-# here, twice from the tool loop); the duplicates pushed its tool-loop prompt
-# from 9k to 15k tokens — 91% of the window, one result dropped mid-turn.
-_SEARCH_ALREADY_RUN = (
-    "\n\nThese results were fetched for this turn, moments ago. Do not run a web "
-    "search for the same subject again — use what is here. If they do not answer "
-    "the question, say what is missing, or search a *different* query."
-)
-
-
 def _search_results_block(results: list[SearchResult]) -> str:
-    """The search section of the prompt, and the statement that it already ran.
+    """The search section of the prompt.
 
-    The model cannot otherwise tell when these results were fetched, and a live
-    briefing re-ran the same query twice from the tool loop because of it.
+    An instruction telling the model "these were fetched moments ago, do not
+    search again" was tried here and **removed after measurement**: with it in
+    place a live briefing still ran the same query twice from the tool loop
+    (`experiments/conversation_recall/`, round 2), and without it the same task
+    also ran two. It changed nothing, so it is not carried as prompt weight. The
+    duplicate search is real and still open; the remaining candidate is a
+    turn-scoped cache, not another sentence.
     """
     text = "\n".join(_format_search_result(r) for r in results)
-    return f"\n\n**Search Results:**\n{text}{_SEARCH_ALREADY_RUN}"
+    return f"\n\n**Search Results:**\n{text}"
 
 
 def _citations_from_search(

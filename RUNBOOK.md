@@ -299,13 +299,15 @@ irreplaceable, and most memory bugs destroy silently.
 an experiment that opens the brain — take a portable export and prove it restores:
 
 ```bash
-# 1. Export (merged snapshot, WAL included; encrypted with DB_KEY)
+# 1. Export (merged snapshot, WAL included; encrypted with DB_KEY).
+#    NOT under /app/data — that is the agent's sandbox, where delete_file works.
+#    /app/brain is the brain volume; copy the file off the machine afterwards.
 docker compose exec assistant python -m assistant.cli.app \
-  db export-portable -o /app/data/brain-exports/brain-YYYY-MM-DD.assistant-brain
+  db export-portable -o /app/brain/exports/brain-YYYY-MM-DD.assistant-brain
 
 # 2. Prove it restores, without touching the live brain
 docker compose exec assistant python -m assistant.cli.app \
-  db restore-portable /app/data/brain-exports/brain-YYYY-MM-DD.assistant-brain \
+  db restore-portable /app/brain/exports/brain-YYYY-MM-DD.assistant-brain \
   --new-db /tmp/verify-brain.db
 
 # 3. Compare table counts (frames, slots, associations, episodes,
@@ -318,6 +320,10 @@ Rules:
 
 - **An export is not a backup until it has been restored.** A file that has never
   been read back is a hope.
+- **Never put an export inside `/app/data`.** That is the agent's sandbox: it can
+  list, read and `delete_file` anything there, including the backup you would
+  restore from. `db export-portable` refuses such a path; `/app/brain/exports` is
+  the default home, and the file should then be copied off the machine.
 - **Experiments open a copy, never the live DB**, and mount the live volume
   read-only (`-v <volume>:/brain:ro`). The collection-recalled harnesses do this;
   `experiments/preflight.py` enforces it where the mounts are available.
