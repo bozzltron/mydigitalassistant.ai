@@ -724,6 +724,32 @@ class FinalizeArgs(BaseModel):
 # Builtin tools registry – returns LLM-ready tool definitions
 # ---------------------------------------------------------------------------
 
+SCHEDULED_SESSION_PREFIX = "scheduled-"
+
+# Tools that cannot work inside a scheduled run. `run_scheduled_task` is refused
+# there ("a task cannot start a task" — the scheduler's firing path has no
+# timeout, so a task naming itself would nest whole runs), so offering it costs a
+# round trip that can only fail. Measured on the ai_news_briefing task: two rounds
+# of ~1.9s each spent calling it and being refused.
+_SCHEDULED_RUN_EXCLUDED = frozenset({"run_scheduled_task"})
+
+
+def is_scheduled_run(session_id: str | None) -> bool:
+    """Whether this turn is a scheduled task's own run.
+
+    One definition, used by both the executor's guard and the tool list, so the
+    rule and the offer cannot disagree.
+    """
+    return bool(session_id) and str(session_id).startswith(SCHEDULED_SESSION_PREFIX)
+
+
+def filter_tools_for_session(tools: list[dict], session_id: str | None) -> list[dict]:
+    """Drop tools that cannot work in this session, so the model is not tempted."""
+    if not is_scheduled_run(session_id):
+        return tools
+    return [t for t in tools if t["function"]["name"] not in _SCHEDULED_RUN_EXCLUDED]
+
+
 def builtin_tools(
     search_tool=None,
     store: MemoryStore | None | None = None,

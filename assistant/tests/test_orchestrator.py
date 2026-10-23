@@ -121,6 +121,27 @@ async def test_router_wants_search_forces_search_despite_reasoner_heuristic(stor
     assert spy.queries, "router wants_search=true must search when memory is empty"
 
 
+def test_a_scheduled_run_is_not_offered_the_task_tool():
+    """The schema and the guard must agree.
+
+    `run_scheduled_task` refuses to run inside a scheduled run, so offering it
+    costs a round that can only fail — measured on ai_news_briefing: two rounds
+    spent calling it and being refused. Chat keeps it: "run my briefing now" works.
+    """
+    from assistant.backend.pipeline.tools import filter_tools_for_session
+
+    tools = [
+        {"function": {"name": "web_search"}},
+        {"function": {"name": "run_scheduled_task"}},
+    ]
+
+    scheduled = filter_tools_for_session(tools, "scheduled-ai_news_briefing-2026_10_23")
+    assert [t["function"]["name"] for t in scheduled] == ["web_search"]
+
+    chat = filter_tools_for_session(tools, "conv_44b57eff9f51")
+    assert [t["function"]["name"] for t in chat] == ["web_search", "run_scheduled_task"]
+
+
 def test_search_results_block_says_the_search_already_ran():
     """The pre-generation search must state that it already happened.
 

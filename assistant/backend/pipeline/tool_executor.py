@@ -2240,7 +2240,9 @@ async def execute_run_scheduled_task(args: dict, user_id: str, session_id: str =
         # Measured reachable: a run-4 smoke trial called this tool from inside the
         # `ship_tracker` task. The chat-side "run my briefing now" route is unaffected —
         # it does not arrive here, and its session id is not a scheduled one.
-        if session_id.startswith("scheduled-"):
+        from assistant.backend.pipeline.tools import is_scheduled_run
+
+        if is_scheduled_run(session_id):
             return ToolResult(
                 success=False,
                 error=(

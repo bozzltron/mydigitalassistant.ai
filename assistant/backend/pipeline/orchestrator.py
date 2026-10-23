@@ -49,7 +49,7 @@ from assistant.backend.pipeline.search import (
     search_info_payload,
 )
 from assistant.backend.pipeline.task_router import TaskType, route
-from assistant.backend.pipeline.tools import builtin_tools
+from assistant.backend.pipeline.tools import builtin_tools, filter_tools_for_session
 from assistant.backend.pipeline.user_content import CONTENT_SLOT_KEY
 
 if TYPE_CHECKING:  # avoids the circular import the lazy imports below also dodge
@@ -2028,6 +2028,9 @@ class Orchestrator:
                 llm_client=self.llm_client,
                 embed_fn=self.embed_fn(),
             )
+            # A scheduled run is not offered the tool that would run a task: it is
+            # refused inside one, so the schema would only invite a wasted round.
+            tools = filter_tools_for_session(tools, session_id)
             tool_names = [t["function"]["name"] for t in tools]
             tool_schema_chars = len(json.dumps(tools))
             logger.info("DEBUG: Available tools for streaming: %s", tool_names)
