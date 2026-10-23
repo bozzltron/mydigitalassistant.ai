@@ -99,6 +99,37 @@ def _types_compatible(a: str, b: str) -> bool:
     return a == b or a == _TYPE_WILDCARD or b == _TYPE_WILDCARD
 
 
+# Frames that are never merge candidates.
+#
+# Merging one tombstones it, and the loser's name disappears from the brain. These
+# are identity-bearing or system-managed, so "two names for one thing" does not
+# apply: there is exactly one user, one assistant name, one summary per session,
+# one file per upload, one run per day, one task per name.
+#
+# Measured on a brain copy (2026-10-23): the plan merged `mozworth <- user_identity`
+# and `mozworth <- calendar`. Both shared a slot value with the band, because the
+# extractor had cross-written them — `user_identity.full_name = "mozworth"` and
+# `mozworth.full_name = "Michael Bosworth"` — and Pass 2 read that as identity.
+_RESERVED_FRAME_NAMES = frozenset(
+    {"user_identity", "identity_name", "scheduler_heartbeat"}
+)
+_RESERVED_FRAME_PREFIXES = (
+    "conversation_summary_",
+    "file_",
+    "daily_run_",
+    "alert_",
+)
+_RESERVED_FRAME_TYPES = frozenset({"scheduled_task", "alert"})
+
+
+def _is_merge_candidate(name: str, type_: str) -> bool:
+    if type_ in _RESERVED_FRAME_TYPES:
+        return False
+    if name in _RESERVED_FRAME_NAMES:
+        return False
+    return not name.startswith(_RESERVED_FRAME_PREFIXES)
+
+
 def _prefix_tokens(name: str, width: int = 4) -> set[str]:
     """Token prefixes — cheap stemming so physics≈physicists, indie≈indie."""
     return {
@@ -283,6 +314,7 @@ async def run_consolidation(
                 "norm": normalize_frame_name(r[1]),
             }
             for r in rows
+            if _is_merge_candidate(r[1], r[2])
         ]
         report.scanned_frames = len(frames)
 
@@ -304,6 +336,13 @@ async def run_consolidation(
     # Pass 2: shared identifying slot values (e.g. two frames both holding
     # title="The Mountain & The Wolf" are the same album however the extractor
     # named them). Strongest duplicate evidence available.
+    #
+    # `name`/`full_name` are deliberately NOT in this set. The extractor writes a
+    # mentioned name onto any frame that mentions it, so a shared value there is
+    # evidence of *co-mention*, not of identity: a person and their band, a band
+    # and its calendar, an artist and an "artist" stub all end up holding the same
+    # name. `title` and `url` belong to a document and cannot be shared by
+    # accident.
     async with open_checked_db(db_path) as db:
         await db.execute("PRAGMA busy_timeout = 15000")
         ident_rows = await db.execute_fetchall(
@@ -316,7 +355,7 @@ async def run_consolidation(
                 AND s1.frame_id < s2.frame_id
             JOIN frames f1 ON f1.id = s1.frame_id
             JOIN frames f2 ON f2.id = s2.frame_id
-            WHERE lower(s1.key) IN ('title', 'name', 'full_name', 'url')
+            WHERE lower(s1.key) IN ('title', 'url')
               AND f1.deleted_at IS NULL AND f2.deleted_at IS NULL
               AND f1.owner_user_id IS f2.owner_user_id
               AND f1.type != ? AND f2.type != ?
@@ -445,33 +484,27 @@ async def run_consolidation(
     if dry_run:
         return report
 
-    # Circuit breaker: unattended runs must never mass-merge the brain.
+    # Circuit breaker: at most `max_merges` per run, the remainder re-planned next
+    # run. It bounds the *work*, and the candidate rules are what make the plan
+    # trustworthy:
     #
-    # This writes nothing when the plan exceeds the cap, and that is deliberate.
-    # It was briefly changed to apply the first N, on the reasoning that a
-    # bounded slice is better than a permanent no-op — 285 clusters, 106 planned,
-    # 0 applied, every six hours. Measured on a brain copy before shipping, the
-    # slice was:
+    # - reserved frames are not candidates at all (`_is_merge_candidate`);
+    # - a shared `name`/`full_name` is not identity evidence (Pass 2).
     #
-    #     mozworth <- user_identity      (the user's identity frame, tombstoned)
-    #     mozworth <- calendar
-    #     mozworth <- artist / band / artist_name / artist_identity
-    #
-    # Applying a slice of an unsafe plan is still unsafe. Enabling progress here
-    # requires fixing the candidate rules first — Pass 2 unions two frames that
-    # share a `name`/`full_name` slot value, which is how a person and their band
-    # became one frame. Until then this must stay all-or-nothing.
+    # Both were added after a brain-copy run planned `mozworth <- user_identity`
+    # and `mozworth <- calendar`. With them in place the same brain plans 70 merges
+    # with **0 reserved frames and no mozworth cluster**, so applying a bounded
+    # slice is safe. Do not relax either rule to make a plan "smaller" — that is
+    # how the identity frame gets tombstoned.
     if max_merges is not None and len(report.planned_merges) > max_merges:
         logger.warning(
-            "Consolidation capped: %d merges planned exceeds max_merges=%d; "
-            "writing nothing (the plan is not trusted — see the cap note in "
-            "consolidate.py). Run `assistant db consolidate` to review it.",
+            "Consolidation capped: %d merges planned; applying the first %d, "
+            "the remainder re-plans next run",
             len(report.planned_merges),
             max_merges,
         )
-        report.planned_merges = []
+        report.planned_merges = report.planned_merges[:max_merges]
         report.capped = True
-        return report
 
     for merge in report.planned_merges:
         try:

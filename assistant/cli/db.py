@@ -321,13 +321,34 @@ async def consolidate_db(execute: bool = False):
             keep_alive=settings.ollama_keep_alive,
         )
 
-        async def _embed(text: str) -> list[float]:
+        async def _embed(text):
+            """Single string or batch, matching Orchestrator.embed_fn.
+
+            Consolidation batches frame names for the frames that have no stored
+            vector; a single-string-only callable made that batch raise, so the
+            missing vectors were never filled and Pass 3 silently skipped them.
+            """
             resp = await client.embed(text)
+            if isinstance(text, list):
+                return [r.embedding for r in resp]
             return resp.embedding
 
         return _embed
 
     try:
+        # The scheduler snapshots before applying; this path did not. A manual
+        # `--execute` is exactly where a large batch is most tempting, so it gets
+        # the same protection.
+        if execute:
+            from datetime import UTC, datetime
+
+            from assistant.backend.memory.backup import create_encrypted_backup
+
+            stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+            dest = Path(db_path).parent / f"assistant-pre-consolidate-{stamp}.db"
+            await create_encrypted_backup(dest, db_path=db_path)
+            console.print(f"✓ Snapshot before merging: [green]{dest}[/green]")
+
         try:
             embed_fn = _make_embed_fn()
             await embed_fn("consolidation probe")
@@ -337,8 +358,15 @@ async def consolidate_db(execute: bool = False):
                 f"[yellow]Embedding model unreachable ({e}) — "
                 "normalized-name matching only.[/yellow]"
             )
+        # The same bound the unattended scheduler uses. Without it, `--execute`
+        # applied the whole plan (70 merges on the live brain) in one go — the
+        # circuit breaker protected the automatic path and not the manual one,
+        # which is where a large batch is most tempting.
         report = await run_consolidation(
-            db_path, dry_run=not execute, embed_fn=embed_fn
+            db_path,
+            dry_run=not execute,
+            embed_fn=embed_fn,
+            max_merges=settings.consolidation_max_merges_per_run if execute else None,
         )
         if report.planned_merges:
             table = Table(title="Duplicate frame merges")

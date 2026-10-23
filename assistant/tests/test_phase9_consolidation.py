@@ -62,14 +62,12 @@ async def test_consolidation_merges_normalized_duplicates(store):
     assert survivor_slots["year"] == "2026"
 
 
-async def test_a_plan_over_the_cap_writes_nothing(store):
-    """The cap is all-or-nothing on purpose, and must stay that way.
+async def test_cap_applies_the_top_n_and_the_next_run_continues(store):
+    """A plan larger than the cap applies the cap, then makes progress again.
 
-    It was briefly changed to apply the first N. Measured on a brain copy, the
-    first ten merges included `mozworth <- user_identity` and
-    `mozworth <- calendar` — it would have tombstoned the user's identity frame.
-    A bounded slice of an unsafe plan is still unsafe; the candidate rules are
-    what has to change first.
+    The cap bounds work per run; the candidate rules are what make the plan safe
+    (reserved frames excluded, shared names not identity). Measured live after
+    those rules: 70 planned, 0 reserved frames, no mozworth cluster.
     """
     pairs = [
         ("Gold Rush & The Silver", "gold rush and the silver"),
@@ -79,12 +77,61 @@ async def test_a_plan_over_the_cap_writes_nothing(store):
         await store.create_frame(a, "entity")
         await store.create_frame(b, "entity")
 
-    report = await run_consolidation(str(store.db_path), dry_run=False, max_merges=1)
-    assert report.capped is True
-    assert report.applied_merges == 0, "an over-cap plan must apply nothing"
-    # Both duplicates are still live; nothing was half-applied.
-    for _, loser in pairs:
-        assert await store.get_frame_by_name(loser) is not None
+    first = await run_consolidation(str(store.db_path), dry_run=False, max_merges=1)
+    assert first.capped is True
+    assert first.applied_merges == 1, f"expected one merge, got {first.applied_merges}"
+
+    remaining = [
+        name
+        for name in (pairs[0][1], pairs[1][1])
+        if await store.get_frame_by_name(name) is not None
+    ]
+    assert len(remaining) == 1, f"expected exactly one pair left, saw {remaining}"
+
+    second = await run_consolidation(str(store.db_path), dry_run=False, max_merges=1)
+    assert second.applied_merges == 1, "the remainder must re-plan, not be lost"
+
+
+async def test_reserved_identity_frames_are_never_merge_candidates(store):
+    """The user's identity frame must never be a merge loser.
+
+    Measured on a brain copy: `user_identity` and `mozworth` shared
+    `full_name = 'mozworth'` — the extractor had cross-written the band's name
+    into the user's identity — so Pass 2 unioned them and the plan tombstoned the
+    user's own name.
+    """
+    identity = await store.create_frame("user_identity", "entity")
+    band = await store.create_frame("mozworth", "concept")
+    await store.upsert_slot(identity.id, "full_name", "mozworth")
+    await store.upsert_slot(band.id, "full_name", "mozworth")
+
+    report = await run_consolidation(str(store.db_path), dry_run=True)
+
+    assert report.planned_merges == [], report.planned_merges
+
+
+async def test_a_shared_name_slot_is_not_identity_evidence(store):
+    """A shared `name`/`full_name` value proves co-mention, not sameness."""
+    artist = await store.create_frame("artist", "entity")
+    band = await store.create_frame("mozworth", "concept")
+    await store.upsert_slot(artist.id, "name", "mozworth")
+    await store.upsert_slot(band.id, "name", "mozworth")
+
+    report = await run_consolidation(str(store.db_path), dry_run=True)
+
+    assert report.planned_merges == [], report.planned_merges
+
+
+async def test_a_shared_title_still_merges(store):
+    """`title` and `url` belong to a document, so sharing one is identity."""
+    a = await store.create_frame("album_one", "entity")
+    b = await store.create_frame("album_two", "entity")
+    await store.upsert_slot(a.id, "title", "The Mountain & The Wolf")
+    await store.upsert_slot(b.id, "title", "The Mountain & The Wolf")
+
+    report = await run_consolidation(str(store.db_path), dry_run=True)
+
+    assert report.planned_merges, "a shared title must still merge the frames"
 
 
 async def test_merge_keeps_the_observation_date_not_the_merge_time(store):

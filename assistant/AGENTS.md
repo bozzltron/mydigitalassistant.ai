@@ -672,17 +672,25 @@ conversation list with one-off threads.
 **Merge is ad hoc; only the *check* is periodic.** Nothing emits an event when a
 duplicate frame appears, so the scheduler has to *look*. Every `CONSOLIDATION_INTERVAL_HOURS`
 it computes a read-only plan (`dry_run=True`) and, only if the plan found merges,
-applies them (capped at `CONSOLIDATION_MAX_MERGES_PER_RUN`).
+applies them — the first `CONSOLIDATION_MAX_MERGES_PER_RUN`, remainder next run.
+The same bound applies to `assistant db consolidate --execute`; the manual path
+used to apply the whole plan.
 
-**The cap is all-or-nothing, and that is deliberate.** When the plan exceeds it,
-nothing is written. It looks like a bug — 285 clusters, 106 planned, cap 10, **0
-applied, every six hours** — and it was briefly "fixed" to apply the first N.
-Measured on a brain copy (2026-10-23), the first ten merges included
-`mozworth <- user_identity` and `mozworth <- calendar`: it would have tombstoned
-the user's identity frame and folded the calendar into the band. A bounded slice
-of an unsafe plan is still unsafe. **The candidate rules must be fixed before
-progress is enabled** — Pass 2 unions two frames sharing a `name`/`full_name` slot
-value, which is how a person and their band became one frame.
+**Two rules keep the plan safe**, both added after a brain-copy run planned
+`mozworth <- user_identity` and `mozworth <- calendar`:
+
+- **Reserved frames are never candidates.** `user_identity`, `identity_name`,
+  `scheduler_heartbeat`, `conversation_summary_*`, `file_*`, `daily_run_*`,
+  `alert_*`, and the `scheduled_task` / `alert` types. Merging one tombstones it,
+  and the loser's name disappears from the brain.
+- **A shared `name`/`full_name` is not identity evidence.** Pass 2 uses only
+  `title`/`url`. The extractor writes a mentioned name onto any frame that
+  mentions it, so a person, their band, an "artist" stub and a calendar all end
+  up holding the same name — which is exactly how the identity frame was about
+  to be merged into the band.
+
+With both rules the same brain plans 70 merges with **0 reserved frames and no
+mozworth cluster**. Do not relax either rule to make a plan smaller.
 
 A merge carries each slot's observation date (`observed_at` → `updated_at`), so
 `as of` stays true and the ladder's recency tiebreak is not handed the merge time. So the interval is a
