@@ -1,0 +1,359 @@
+{
+  "started": "2026-10-23T11:29:37.297834+00:00",
+  "session": "conv_f8df1353725c",
+  "model": "qwen3.5:9b",
+  "replicates": 3,
+  "summary": {
+    "recall": {
+      "baseline": 0.6,
+      "summary": 0.6,
+      "baseline_summary_q": 1.0,
+      "summary_summary_q": 1.0,
+      "baseline_episode_q": 0.333,
+      "summary_episode_q": 0.333
+    },
+    "declines": {
+      "baseline": 0.0,
+      "summary": 0.067
+    },
+    "prompt_tokens": {
+      "baseline": 6151.0,
+      "summary": 6259.0
+    },
+    "summary_chars": 509,
+    "summary_already_retrieved": true,
+    "history_messages": 6
+  },
+  "rows": [
+    {
+      "question": "What total profit did we calculate for the Gold Rush vinyl?",
+      "group": "summary",
+      "condition": "baseline",
+      "replicate": 1,
+      "found": true,
+      "declined": false,
+      "summary_in_retrieved_context": true,
+      "prompt_tokens": 3646,
+      "answer": "At $20 per record, the total profit on 200 sellable records is **$1,008**. This breaks down to about **$5.04** profit per record after covering production costs of roughly **$14.96** each."
+    },
+    {
+      "question": "What total profit did we calculate for the Gold Rush vinyl?",
+      "group": "summary",
+      "condition": "summary",
+      "replicate": 1,
+      "found": true,
+      "declined": false,
+      "summary_in_retrieved_context": true,
+      "prompt_tokens": 3754,
+      "answer": "The total profit calculated for the Gold Rush vinyl was **$1,008** on 200 sellable units at a $20 retail price."
+    },
+    {
+      "question": "What total profit did we calculate for the Gold Rush vinyl?",
+      "group": "summary",
+      "condition": "baseline",
+      "replicate": 2,
+      "found": true,
+      "declined": false,
+      "summary_in_retrieved_context": true,
+      "prompt_tokens": 3646,
+      "answer": "We calculated a total profit of **$1,008** on 200 sellable records at a $20 retail price. That\u2019s about $5.04 profit per record after covering production costs. Solid returns without pricing too high for fans! \ud83c\udfb8"
+    },
+    {
+      "question": "What total profit did we calculate for the Gold Rush vinyl?",
+      "group": "summary",
+      "condition": "summary",
+      "replicate": 2,
+      "found": true,
+      "declined": false,
+      "summary_in_retrieved_context": true,
+      "prompt_tokens": 3754,
+      "answer": "The calculated total profit for the Gold Rush vinyl run was **$1,008** on 200 sellable units at a retail price of $20."
+    },
+    {
+      "question": "What total profit did we calculate for the Gold Rush vinyl?",
+      "group": "summary",
+      "condition": "baseline",
+      "replicate": 3,
+      "found": true,
+      "declined": false,
+      "summary_in_retrieved_context": true,
+      "prompt_tokens": 3646,
+      "answer": "At a retail price of $20 per record, the total profit calculated for the Gold Rush vinyl run of 200 sellable units is **$1,008**. This results in approximately **$5.04** profit per record."
+    },
+    {
+      "question": "What total profit did we calculate for the Gold Rush vinyl?",
+      "group": "summary",
+      "condition": "summary",
+      "replicate": 3,
+      "found": true,
+      "declined": false,
+      "summary_in_retrieved_context": true,
+      "prompt_tokens": 3754,
+      "answer": "The team calculated a total profit of **$1,008** on 200 sellable units at a $20 retail price. This was based on excluding test pressings from the production run."
+    },
+    {
+      "question": "Which platforms did we prioritise for Mozworth's outreach?",
+      "group": "summary",
+      "condition": "baseline",
+      "replicate": 1,
+      "found": true,
+      "declined": false,
+      "summary_in_retrieved_context": true,
+      "prompt_tokens": 4782,
+      "answer": "Based on our previous strategy and the nature of Mozworth as an indie rock band, here is how those platforms rank by potential audience reach and impact for you:\n\n**High Impact / Large Reach (Priority 1)**\n*   **SubmitFinder:** Massive network (20k+ stations, 7k+ blogs). Best for casting a wide net quickly.\n*   **Under the Radar Magazine:** Major indie alternative blog; high credibility in your genre.\n*   **Zig-Zag FM & Volumo:** Established music discovery platforms with built-in audiences.\n\n**Targeted / Niche Impact (Priority 2)**\n*   **Inside Radio:** Good for industry connections, though specific audience size varies by outlet.\n*   **Reddit r/Music:** Strong community engagement; great for direct fan interaction and networking.\n\n**Exploratory / Lower Immediate Priority (Priority 3)**\n*   **Worldwide FM, Radio Meu H, Listen Radioverse, Colter Carson's JFH View:** These look like smaller or specialized outlets. Worth checking their submission guidelines, but likely have smaller audiences than the top tier.\n\nDo you want me to draft specific pitch emails for the Priority 1 list first?"
+    },
+    {
+      "question": "Which platforms did we prioritise for Mozworth's outreach?",
+      "group": "summary",
+      "condition": "summary",
+      "replicate": 1,
+      "found": true,
+      "declined": false,
+      "summary_in_retrieved_context": true,
+      "prompt_tokens": 4890,
+      "answer": "Based on the previous discussion, we prioritized **SubmitFinder** and **Under the Radar Magazine** as high-impact platforms. We also considered other music-focused channels like **Zig-Zag FM** and **Volumo**. These were selected based on their general audience impact rather than specific data metrics, focusing on their reach within the indie/alternative music scene.\n\nWould you like to dive deeper into the specifics of these platforms or explore additional options? \ud83c\udfb8"
+    },
+    {
+      "question": "Which platforms did we prioritise for Mozworth's outreach?",
+      "group": "summary",
+      "condition": "baseline",
+      "replicate": 2,
+      "found": true,
+      "declined": false,
+      "summary_in_retrieved_context": true,
+      "prompt_tokens": 4782,
+      "answer": "Based on the previous discussion, the **high-impact** platforms we prioritized for Mozworth's outreach are:\n\n*   **SubmitFinder:** Because it connects to 20,000+ radio stations and thousands of blogs/podcasts.\n*   **Under the Radar Magazine:** As a major indie alternative blog with significant reach.\n*   **Zig-Zag FM & Volumo:** For their focus on music discovery and radio.\n\nWe did not have specific audience size metrics for all the smaller sites (like Worldwide FM or Reddit) at that time, so those were noted but not ranked against the top tier yet. Do you want me to look up current follower counts for the lower-ranked ones now? \ud83c\udfb8"
+    },
+    {
+      "question": "Which platforms did we prioritise for Mozworth's outreach?",
+      "group": "summary",
+      "condition": "summary",
+      "replicate": 2,
+      "found": true,
+      "declined": false,
+      "summary_in_retrieved_context": true,
+      "prompt_tokens": 4890,
+      "answer": "We prioritized **SubmitFinder** and **Under the Radar Magazine** as high-impact platforms due to their large reach (20,000+ radio stations/blogs on SubmitFinder) and status as a major indie alternative blog. We also included other relevant channels like **Zig-Zag FM**, **Volumo**, and **Inside Radio** based on general audience impact rather than specific data metrics."
+    },
+    {
+      "question": "Which platforms did we prioritise for Mozworth's outreach?",
+      "group": "summary",
+      "condition": "baseline",
+      "replicate": 3,
+      "found": true,
+      "declined": false,
+      "summary_in_retrieved_context": true,
+      "prompt_tokens": 4782,
+      "answer": "Based on the previous conversation summary, we prioritized **high-impact platforms** such as:\n\n*   **SubmitFinder** (20,000+ radio stations, 7,000+ blogs)\n*   **Under the Radar Magazine** (Major indie alternative blog)\n*   **Zig-Zag FM** and **Volumo** (Music-focused discovery platforms)\n\nThese were selected alongside other channels like Inside Radio for their general audience impact. We did not have specific audience size metrics for every single platform in our memory, but these were the ones highlighted as top priorities for Mozworth's outreach strategy."
+    },
+    {
+      "question": "Which platforms did we prioritise for Mozworth's outreach?",
+      "group": "summary",
+      "condition": "summary",
+      "replicate": 3,
+      "found": true,
+      "declined": false,
+      "summary_in_retrieved_context": true,
+      "prompt_tokens": 4890,
+      "answer": "We prioritized high-impact platforms with broad reach and strong indie music focus: SubmitFinder (20,000+ radio stations, 7,000+ blogs), Under the Radar Magazine, Zig-Zag FM, Volumo, and Inside Radio. These were selected for their audience size, industry relevance, and ability to amplify Mozworth's indie alt reach."
+    },
+    {
+      "question": "How many Instagram followers does Mozworth have?",
+      "group": "episode",
+      "condition": "baseline",
+      "replicate": 1,
+      "found": false,
+      "declined": false,
+      "summary_in_retrieved_context": false,
+      "prompt_tokens": 9419,
+      "answer": "Mozworth has 172 Instagram followers as of August 28, 2026. Their handle is @mozworthmusic."
+    },
+    {
+      "question": "How many Instagram followers does Mozworth have?",
+      "group": "episode",
+      "condition": "summary",
+      "replicate": 1,
+      "found": false,
+      "declined": false,
+      "summary_in_retrieved_context": false,
+      "prompt_tokens": 9527,
+      "answer": "Mozworth has approximately 172 to 292 Instagram followers, with recent growth noted. Exact numbers may vary slightly depending on the specific source."
+    },
+    {
+      "question": "How many Instagram followers does Mozworth have?",
+      "group": "episode",
+      "condition": "baseline",
+      "replicate": 2,
+      "found": false,
+      "declined": false,
+      "summary_in_retrieved_context": false,
+      "prompt_tokens": 9419,
+      "answer": "Mozworth has 172 followers on Instagram, according to the latest data. They also have a presence on Bluesky. Would you like more details about any of these platforms or help with outreach strategies? \ud83c\udfb8"
+    },
+    {
+      "question": "How many Instagram followers does Mozworth have?",
+      "group": "episode",
+      "condition": "summary",
+      "replicate": 2,
+      "found": false,
+      "declined": false,
+      "summary_in_retrieved_context": false,
+      "prompt_tokens": 9527,
+      "answer": "Mozworth has 292 followers on Instagram."
+    },
+    {
+      "question": "How many Instagram followers does Mozworth have?",
+      "group": "episode",
+      "condition": "baseline",
+      "replicate": 3,
+      "found": false,
+      "declined": false,
+      "summary_in_retrieved_context": false,
+      "prompt_tokens": 9419,
+      "answer": "Mozworth has 292 Instagram followers (as of August 2026). They also have 172 followers on another platform tracked at the time, though specific platform names varied in my records. Their social presence is still growing! \ud83d\udcc8"
+    },
+    {
+      "question": "How many Instagram followers does Mozworth have?",
+      "group": "episode",
+      "condition": "summary",
+      "replicate": 3,
+      "found": false,
+      "declined": false,
+      "summary_in_retrieved_context": false,
+      "prompt_tokens": 9527,
+      "answer": "Mozworth has 292 followers on Instagram (as of August 2026). They also have a Facebook page with 120 likes."
+    },
+    {
+      "question": "How did we split the email broadcast segments?",
+      "group": "episode",
+      "condition": "baseline",
+      "replicate": 1,
+      "found": true,
+      "declined": false,
+      "summary_in_retrieved_context": false,
+      "prompt_tokens": 8065,
+      "answer": "We split the email broadcast segments into three groups: non-Austin radio and blogs, Austin-based radio and blogs, and Iowa blast. This allows for targeted messaging to different audiences based on location and interest. Would you like more details on how to customize the content for each segment? \ud83d\udce7"
+    },
+    {
+      "question": "How did we split the email broadcast segments?",
+      "group": "episode",
+      "condition": "summary",
+      "replicate": 1,
+      "found": true,
+      "declined": false,
+      "summary_in_retrieved_context": false,
+      "prompt_tokens": 8173,
+      "answer": "We split the email broadcast segments into three groups:\n\n1.  **Non-Austin radio and blogs** (for global or non-local outreach)\n2.  **Austin-based radio and blogs** (targeting our local scene in Austin, Texas)\n3.  **Iowa blast** (specifically targeting fans or contacts from Iowa, likely reflecting your origin there).\n\nThis segmentation allows for tailored messaging based on geographic relevance and audience reach."
+    },
+    {
+      "question": "How did we split the email broadcast segments?",
+      "group": "episode",
+      "condition": "baseline",
+      "replicate": 2,
+      "found": true,
+      "declined": false,
+      "summary_in_retrieved_context": false,
+      "prompt_tokens": 8065,
+      "answer": "Based on the memory state, the email broadcast segments are:\n\n1.  **non-austin-radio-and-blogs** (Relevance: 0.50)\n2.  **austin-based-radio-and-blogs** (Relevance: 0.50)\n3.  **iowa-blast** (Confidence: 0.50, as of 2026-09-16)\n\nThese segments are used for mailerlite email broadcasts and relate to the \"why not\" song subject."
+    },
+    {
+      "question": "How did we split the email broadcast segments?",
+      "group": "episode",
+      "condition": "summary",
+      "replicate": 2,
+      "found": true,
+      "declined": false,
+      "summary_in_retrieved_context": false,
+      "prompt_tokens": 8173,
+      "answer": "The email broadcast segments were divided based on geographic location and specific exclusions for venues:\n\n- **non-austin-radio-and-blogs**: Includes contacts outside Austin, Texas.\n- **austin-based-radio-and-blogs**: Targets radio stations and blogs specifically located in Austin.\n- **iowa-blast**: A specialized segment for contacts in Iowa.\n\nThis segmentation allows for tailored messaging, ensuring that venues receive different communications than general industry contacts, while also accounting for regional focus like the Iowa connection."
+    },
+    {
+      "question": "How did we split the email broadcast segments?",
+      "group": "episode",
+      "condition": "baseline",
+      "replicate": 3,
+      "found": true,
+      "declined": false,
+      "summary_in_retrieved_context": false,
+      "prompt_tokens": 8065,
+      "answer": "We split the email broadcast into three main segments as of September 16, 2026:\n\n1. **non-austin-radio-and-blogs**: This segment includes radio stations and blogs that are not based in Austin.\n2. **austin-based-radio-and-blogs**: This segment specifically targets radio stations and blogs located in Austin.\n3. **iowa-blast**: This segment appears to target an audience interested in Iowa-related content or connections.\n\nThese segments were designed to tailor the email broadcasts to different audiences, ensuring more targeted and relevant messaging for each group. Let me know if you need further details on how these segments were utilized or if you have any specific questions about them!"
+    },
+    {
+      "question": "How did we split the email broadcast segments?",
+      "group": "episode",
+      "condition": "summary",
+      "replicate": 3,
+      "found": true,
+      "declined": false,
+      "summary_in_retrieved_context": false,
+      "prompt_tokens": 8173,
+      "answer": "We split the email broadcast into three main segments:\n\n1.  **Non-Austin radio and blogs:** This segment includes contacts outside of Austin, such as those in Iowa and other locations.\n2.  **Austin-based radio and blogs:** This segment targets contacts specifically located in Austin, Texas.\n3.  **Iowa blast:** This segment is tailored for contacts in Iowa.\n\nThese segments allow for more targeted and personalized outreach, ensuring that each group receives content relevant to their specific interests and locations. Would you like me to help draft the email content for any of these segments? \ud83d\udce7"
+    },
+    {
+      "question": "What release date did we set for \"Why Not\"?",
+      "group": "episode",
+      "condition": "baseline",
+      "replicate": 1,
+      "found": false,
+      "declined": false,
+      "summary_in_retrieved_context": false,
+      "prompt_tokens": 4842,
+      "answer": "The final release date for the \"Why Not\" single is set for **October 22, 2026**."
+    },
+    {
+      "question": "What release date did we set for \"Why Not\"?",
+      "group": "episode",
+      "condition": "summary",
+      "replicate": 1,
+      "found": false,
+      "declined": false,
+      "summary_in_retrieved_context": false,
+      "prompt_tokens": 4950,
+      "answer": "The release date for \"Why Not\" is **October 22, 2026**."
+    },
+    {
+      "question": "What release date did we set for \"Why Not\"?",
+      "group": "episode",
+      "condition": "baseline",
+      "replicate": 2,
+      "found": false,
+      "declined": false,
+      "summary_in_retrieved_context": false,
+      "prompt_tokens": 4842,
+      "answer": "The release date set for the album and single **\"Why Not\"** is **October 22, 2026**. The lead single was scheduled to drop earlier in September 2024 (though this appears to be a legacy data point conflicting with the main timeline where both are Oct 22, 2026). The final release date locked in for the project is October 22, 2026."
+    },
+    {
+      "question": "What release date did we set for \"Why Not\"?",
+      "group": "episode",
+      "condition": "summary",
+      "replicate": 2,
+      "found": false,
+      "declined": false,
+      "summary_in_retrieved_context": false,
+      "prompt_tokens": 4950,
+      "answer": "The release date set for \"Why Not\" is **October 22, 2026**."
+    },
+    {
+      "question": "What release date did we set for \"Why Not\"?",
+      "group": "episode",
+      "condition": "baseline",
+      "replicate": 3,
+      "found": false,
+      "declined": false,
+      "summary_in_retrieved_context": false,
+      "prompt_tokens": 4842,
+      "answer": "The final release date for the album \"Why Not\" is set for **October 22, 2026**."
+    },
+    {
+      "question": "What release date did we set for \"Why Not\"?",
+      "group": "episode",
+      "condition": "summary",
+      "replicate": 3,
+      "found": false,
+      "declined": true,
+      "summary_in_retrieved_context": false,
+      "prompt_tokens": 4950,
+      "answer": "The planned release date for the single \"Why Not\" is **October 22, 2026**.\n\nRegarding the ranking of your leads by audience size and impact: I don't have specific traffic or listener data for each platform in my current memory. However, based on general industry metrics for these types of outlets:\n\n*   **High Impact:** SubmitFinder (connects to thousands of stations/blogs) and Under the Radar Magazine (major indie blog).\n*   **Medium/Targeted Impact:** Zig-Zag FM, Volumo, and Inside Radio (niche but relevant audiences).\n*   **Community/Niche Impact:** Reddit r/Music, Colter Carson's JFH View, and the smaller radio feeds (highly targeted potential).\n\nWould you like me to search for specific audience size estimates for any of these?"
+    }
+  ]
+}
