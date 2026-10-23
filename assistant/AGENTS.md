@@ -672,12 +672,20 @@ conversation list with one-off threads.
 **Merge is ad hoc; only the *check* is periodic.** Nothing emits an event when a
 duplicate frame appears, so the scheduler has to *look*. Every `CONSOLIDATION_INTERVAL_HOURS`
 it computes a read-only plan (`dry_run=True`) and, only if the plan found merges,
-applies them — **the first `CONSOLIDATION_MAX_MERGES_PER_RUN`, with the remainder
-re-planned next run**. That cap used to write nothing when the plan exceeded it,
-and since the plan re-computed identically, a fragmented brain never merged at all
-(measured live: 285 clusters, 106 planned, cap 10, **0 applied**, every six hours).
-A merge also carries each slot's observation date (`observed_at` → `updated_at`),
-so `as of` stays true and the ladder's recency tiebreak is not handed the merge time. So the interval is a
+applies them (capped at `CONSOLIDATION_MAX_MERGES_PER_RUN`).
+
+**The cap is all-or-nothing, and that is deliberate.** When the plan exceeds it,
+nothing is written. It looks like a bug — 285 clusters, 106 planned, cap 10, **0
+applied, every six hours** — and it was briefly "fixed" to apply the first N.
+Measured on a brain copy (2026-10-23), the first ten merges included
+`mozworth <- user_identity` and `mozworth <- calendar`: it would have tombstoned
+the user's identity frame and folded the calendar into the band. A bounded slice
+of an unsafe plan is still unsafe. **The candidate rules must be fixed before
+progress is enabled** — Pass 2 unions two frames sharing a `name`/`full_name` slot
+value, which is how a person and their band became one frame.
+
+A merge carries each slot's observation date (`observed_at` → `updated_at`), so
+`as of` stays true and the ladder's recency tiebreak is not handed the merge time. So the interval is a
 **look cadence**, not a merge cadence — a household with no duplicates merges nothing,
 forever, no matter how often it checks. Truly event-driven merge would need the
 duplicate check on the write path, which costs an embedding + clustering pass per

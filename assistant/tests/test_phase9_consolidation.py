@@ -62,13 +62,14 @@ async def test_consolidation_merges_normalized_duplicates(store):
     assert survivor_slots["year"] == "2026"
 
 
-async def test_cap_applies_the_top_n_instead_of_nothing(store):
-    """Regression: a plan larger than the cap applied zero merges, forever.
+async def test_a_plan_over_the_cap_writes_nothing(store):
+    """The cap is all-or-nothing on purpose, and must stay that way.
 
-    Measured live: 285 clusters, 106 merges planned, cap 10, **0 applied** on
-    every six-hour run — because the plan re-computed identically and the cap
-    discarded it whole. The circuit breaker bounds work per run; it must not
-    disable the mechanism.
+    It was briefly changed to apply the first N. Measured on a brain copy, the
+    first ten merges included `mozworth <- user_identity` and
+    `mozworth <- calendar` — it would have tombstoned the user's identity frame.
+    A bounded slice of an unsafe plan is still unsafe; the candidate rules are
+    what has to change first.
     """
     pairs = [
         ("Gold Rush & The Silver", "gold rush and the silver"),
@@ -78,20 +79,12 @@ async def test_cap_applies_the_top_n_instead_of_nothing(store):
         await store.create_frame(a, "entity")
         await store.create_frame(b, "entity")
 
-    first = await run_consolidation(str(store.db_path), dry_run=False, max_merges=1)
-    assert first.capped is True, "a plan over the cap must be reported as capped"
-    assert first.applied_merges == 1, f"expected one merge, got {first.applied_merges}"
-
-    # The second pair survives the first run, and the next run makes progress.
-    remaining = [
-        name
-        for name in (pairs[0][1], pairs[1][1])
-        if await store.get_frame_by_name(name) is not None
-    ]
-    assert len(remaining) == 1, f"expected exactly one pair left, saw {remaining}"
-
-    second = await run_consolidation(str(store.db_path), dry_run=False, max_merges=1)
-    assert second.applied_merges == 1, "the remainder must re-plan, not be lost"
+    report = await run_consolidation(str(store.db_path), dry_run=False, max_merges=1)
+    assert report.capped is True
+    assert report.applied_merges == 0, "an over-cap plan must apply nothing"
+    # Both duplicates are still live; nothing was half-applied.
+    for _, loser in pairs:
+        assert await store.get_frame_by_name(loser) is not None
 
 
 async def test_merge_keeps_the_observation_date_not_the_merge_time(store):

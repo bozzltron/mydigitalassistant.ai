@@ -445,23 +445,33 @@ async def run_consolidation(
     if dry_run:
         return report
 
-    # Circuit breaker: unattended runs must never mass-merge the brain. It bounds
-    # the *work per run*, not whether work happens.
+    # Circuit breaker: unattended runs must never mass-merge the brain.
     #
-    # It used to write nothing whenever the plan exceeded the cap — and since the
-    # plan then re-computed identically, a fragmented brain never merged again.
-    # Measured live: 285 clusters, 106 planned, cap 10, **0 applied**, every six
-    # hours, indefinitely. Applying the first N keeps the safety property (bounded
-    # work) without turning the mechanism off.
+    # This writes nothing when the plan exceeds the cap, and that is deliberate.
+    # It was briefly changed to apply the first N, on the reasoning that a
+    # bounded slice is better than a permanent no-op — 285 clusters, 106 planned,
+    # 0 applied, every six hours. Measured on a brain copy before shipping, the
+    # slice was:
+    #
+    #     mozworth <- user_identity      (the user's identity frame, tombstoned)
+    #     mozworth <- calendar
+    #     mozworth <- artist / band / artist_name / artist_identity
+    #
+    # Applying a slice of an unsafe plan is still unsafe. Enabling progress here
+    # requires fixing the candidate rules first — Pass 2 unions two frames that
+    # share a `name`/`full_name` slot value, which is how a person and their band
+    # became one frame. Until then this must stay all-or-nothing.
     if max_merges is not None and len(report.planned_merges) > max_merges:
         logger.warning(
-            "Consolidation capped: %d merges planned; applying the first %d, "
-            "the remainder re-plans next run",
+            "Consolidation capped: %d merges planned exceeds max_merges=%d; "
+            "writing nothing (the plan is not trusted — see the cap note in "
+            "consolidate.py). Run `assistant db consolidate` to review it.",
             len(report.planned_merges),
             max_merges,
         )
-        report.planned_merges = report.planned_merges[:max_merges]
+        report.planned_merges = []
         report.capped = True
+        return report
 
     for merge in report.planned_merges:
         try:
