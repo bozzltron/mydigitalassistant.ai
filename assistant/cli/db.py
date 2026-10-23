@@ -139,6 +139,82 @@ async def export_db(export_path: Path | None = None):
     return True
 
 
+async def export_portable(export_path: Path | None = None):
+    """Export the brain as a portable, self-contained `.assistant-brain` file.
+
+    This is the protection step before any major memory work: a merged snapshot
+    (write-ahead log included), encrypted with DB_KEY, renameable and restorable
+    on any instance with the same key. `restore-portable --new-db` proves it is
+    restorable without touching the live brain.
+    """
+    from datetime import UTC, datetime
+
+    from assistant.backend.memory.backup import export_portable_brain
+
+    db_path = Path(settings.database_path)
+    if not db_path.exists():
+        console.print("✗ No database found")
+        return False
+
+    timestamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+    export_path = Path(export_path) if export_path else Path(f"brain-{timestamp}.assistant-brain")
+
+    console.print(f"Exporting portable brain [cyan]{db_path}[/cyan] → [green]{export_path}[/green]")
+    try:
+        result = await export_portable_brain(export_path, db_path=str(db_path))
+    except Exception as exc:
+        console.print(f"✗ Portable export failed: [red]{exc}[/red]")
+        return False
+
+    console.print("✓ Portable brain exported")
+    table = Table(show_header=False)
+    table.add_row("Path", str(result["path"]))
+    table.add_row("Version", str(result["version"]))
+    table.add_row("Key id", str(result["key_id"]))
+    table.add_row("Frames", f"{result['frame_count']:,}")
+    table.add_row("Slots", f"{result['slot_count']:,}")
+    table.add_row("Associations", f"{result['association_count']:,}")
+    table.add_row("Size", f"{result['file_size_bytes']:,} bytes")
+    console.print(table)
+    console.print(
+        "Verify it before trusting it: "
+        f"[cyan]assistant db restore-portable {export_path} --new-db /tmp/verify-brain.db[/cyan]"
+    )
+    return True
+
+
+async def restore_portable(
+    src_path: Path,
+    new_db_path: Path | None = None,
+):
+    """Restore a portable brain, or prove one is restorable into a scratch DB.
+
+    With `--new-db`, the live brain is not touched: the file is restored to that
+    path only. Without it, the current database is replaced (a
+    `.pre-portable-restore` copy is made first).
+    """
+    from assistant.backend.memory.backup import restore_portable_brain
+
+    src_path = Path(src_path)
+    if not src_path.exists():
+        console.print(f"✗ Portable brain not found: [red]{src_path}[/red]")
+        return False
+
+    target = Path(new_db_path) if new_db_path else Path(settings.database_path)
+    console.print(f"Restoring [cyan]{src_path}[/cyan] → [green]{target}[/green]")
+    try:
+        result = await restore_portable_brain(src_path, db_path=str(target))
+    except Exception as exc:
+        console.print(f"✗ Restore failed: [red]{exc}[/red]")
+        return False
+
+    console.print(f"✓ Restored to [green]{target}[/green]")
+    for key in ("frame_count", "slot_count", "association_count"):
+        if key in result:
+            console.print(f"  {key}: {result[key]:,}")
+    return True
+
+
 async def import_db(export_path: Path, new_db_path: Path | None = None):
     """Import SQL dump into a new (optionally encrypted) database.
 
@@ -376,6 +452,13 @@ async def main(
         success = await backup_db()
     elif command == "export":
         success = await export_db(export_path)
+    elif command == "export-portable":
+        success = await export_portable(export_path)
+    elif command == "restore-portable":
+        if not import_path:
+            console.print("[red]restore-portable requires a file path[/red]")
+            return False
+        success = await restore_portable(import_path, new_db_path)
     elif command == "import":
         if not import_path:
             console.print("[red]--import <file> is required[/red]")

@@ -660,6 +660,35 @@ def cmd_db_consolidate(args: argparse.Namespace, client: BackendClient) -> None:
     asyncio.run(db_main("consolidate", execute=args.execute))
 
 
+def cmd_db_export_portable(args: argparse.Namespace, client: BackendClient) -> None:
+    """Export the brain as a portable .assistant-brain file (protection step)."""
+    from pathlib import Path
+
+    from assistant.cli.db import main as db_main
+
+    asyncio.run(
+        db_main(
+            "export-portable",
+            export_path=Path(args.output) if args.output else None,
+        )
+    )
+
+
+def cmd_db_restore_portable(args: argparse.Namespace, client: BackendClient) -> None:
+    """Restore a portable brain, or prove one restores into a scratch database."""
+    from pathlib import Path
+
+    from assistant.cli.db import main as db_main
+
+    asyncio.run(
+        db_main(
+            "restore-portable",
+            import_path=Path(args.file),
+            new_db_path=Path(args.new_db) if args.new_db else None,
+        )
+    )
+
+
 def cmd_db_embed_episodes(args: argparse.Namespace, client: BackendClient) -> None:
     """Backfill episode embeddings for semantic conversation recall."""
     from assistant.cli.db import main as db_main
@@ -972,6 +1001,26 @@ def main() -> None:
         "--execute", action="store_true", help="Apply the planned merges"
     )
     p_db_consolidate.set_defaults(func=cmd_db_consolidate)
+
+    p_db_export_portable = db_sub.add_parser(
+        "export-portable",
+        help="Export the brain as a portable .assistant-brain file (protection step)",
+    )
+    p_db_export_portable.add_argument(
+        "-o", "--output", help="Output path (default: ./brain-<timestamp>.assistant-brain)"
+    )
+    p_db_export_portable.set_defaults(func=cmd_db_export_portable)
+
+    p_db_restore_portable = db_sub.add_parser(
+        "restore-portable",
+        help="Restore a portable brain (destructive) or verify it with --new-db",
+    )
+    p_db_restore_portable.add_argument("file", help="Portable brain file to restore")
+    p_db_restore_portable.add_argument(
+        "--new-db",
+        help="Restore to this path instead of the live brain (verification)",
+    )
+    p_db_restore_portable.set_defaults(func=cmd_db_restore_portable)
 
     p_db_embed_eps = db_sub.add_parser(
         "embed-episodes",

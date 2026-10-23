@@ -290,6 +290,51 @@ model behaviour across three rounds, which is where the line stopped.
 
 ---
 
+## 11. Brain Protection — Before Any Major Memory Work
+
+A brain is the user's accumulated world model. Treat it as production data: it is
+irreplaceable, and most memory bugs destroy silently.
+
+**Before any work that writes to memory** — consolidation, migration, re-embedding,
+an experiment that opens the brain — take a portable export and prove it restores:
+
+```bash
+# 1. Export (merged snapshot, WAL included; encrypted with DB_KEY)
+docker compose exec assistant python -m assistant.cli.app \
+  db export-portable -o /app/data/brain-exports/brain-YYYY-MM-DD.assistant-brain
+
+# 2. Prove it restores, without touching the live brain
+docker compose exec assistant python -m assistant.cli.app \
+  db restore-portable /app/data/brain-exports/brain-YYYY-MM-DD.assistant-brain \
+  --new-db /tmp/verify-brain.db
+
+# 3. Compare table counts (frames, slots, associations, episodes,
+#    episode_embeddings, slot_history) between /tmp/verify-brain.db and the live DB.
+#    They must match exactly. If they do not, the export reflects a different
+#    moment than the comparison — take both from one snapshot, do not accept "close".
+```
+
+Rules:
+
+- **An export is not a backup until it has been restored.** A file that has never
+  been read back is a hope.
+- **Experiments open a copy, never the live DB**, and mount the live volume
+  read-only (`-v <volume>:/brain:ro`). The collection-recalled harnesses do this;
+  `experiments/preflight.py` enforces it where the mounts are available.
+- **Counts match or the verification failed.** The first restore check here
+  differed by 3 frames and 2 episodes because the live brain kept writing between
+  the export and the check. That is a moving source, not a corrupt file — and it
+  is why the comparison must come from one snapshot.
+- Consolidation still takes its own snapshot before applying (see the scheduler),
+  but that is a second line of defence, not the first.
+
+**Latest verified export:** `~/Documents/Agent/Production/brain-exports/`
+(`brain-2026-10-23.assistant-brain`, 298 MB, sha256 `4828b2bf…`) — restored and
+matched on every table: 5,681 frames, 10,241 slots, 5,806 associations, 5,314
+episodes, 5,316 embeddings.
+
+---
+
 ## Critical Path Regression Tests (Run Before Any Merge)
 
 ```bash
