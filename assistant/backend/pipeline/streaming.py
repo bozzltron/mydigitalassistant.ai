@@ -21,6 +21,21 @@ DROPPED_TOOL_RESULT = (
     "run the tool again if you still need it]"
 )
 
+# Tools whose success changes what a later read would return. The repeat ledger
+# below is cleared when one of these lands, so a read after a write re-runs:
+# serving a cached read would hand the model the pre-write state.
+_STATE_CHANGING_TOOLS = frozenset({
+    "write_file",
+    "append_file",
+    "edit_file",
+    "delete_file",
+    "rename_file",
+    "upsert_slot",
+    "upsert_association",
+    "mark_essential",
+    "run_scheduled_task",
+})
+
 
 class ToolLoopEvent:
     """Event types for the tool loop streaming."""
@@ -378,6 +393,15 @@ async def stream_tool_loop(
     # not on attempts: a refused write is not a performed action.
     successful_tool_calls: list[str] = []
 
+    # A model that re-issues a call it already made is not making progress, it is
+    # spinning — and on the 27B every round of that costs minutes of prefill. This
+    # ledger remembers successful, read-shaped calls by (tool, canonical args) so a
+    # repeat is answered from the transcript instead of executed again. Only
+    # successes are remembered: a failed call stays retryable, which is how the
+    # model recovers from a bad path. Measured trigger: a live Max turn searched
+    # the same two queries in consecutive rounds (2026-10-24).
+    repeat_ledger: dict[str, dict] = {}
+
     last_content = ""
     # One grant of grace rounds per turn, spent by whichever site reaches the ceiling with
     # an unperformed action. This variable *is* the loop's termination argument, and it is
@@ -498,6 +522,50 @@ async def stream_tool_loop(
                 raw_args = call.arguments or {}
                 tool_calls_made.append(_summarize_call(tool_name, raw_args))
 
+                # Same tool, same arguments, already succeeded this turn: the
+                # result is already in the transcript, so running it again buys
+                # nothing and costs a round of prefill. Answer from the ledger and
+                # tell the model what happened rather than deciding for it.
+                signature = f"{tool_name}:{json.dumps(raw_args, sort_keys=True, default=str)}"
+                repeat = repeat_ledger.get(signature)
+                if repeat is not None and tool_name not in _STATE_CHANGING_TOOLS:
+                    repeat["count"] += 1
+                    # Exact comparison, not a length test: the aggregate cap
+                    # replaces the content with this marker, and a short result
+                    # is legitimately shorter than the marker itself.
+                    still_visible = repeat["message"].content != DROPPED_TOOL_RESULT
+                    where = (
+                        "it is earlier in this conversation and still visible"
+                        if still_visible
+                        else "it has since been dropped to fit the context budget"
+                    )
+                    note = (
+                        f"[already called] You made this exact call earlier in this "
+                        f"turn ({_summarize_call(tool_name, raw_args)}), and {where}. "
+                        "It was not run again. Use that result, change the arguments, "
+                        "or answer with what you have."
+                    )
+                    if repeat["count"] >= 3:
+                        note += (
+                            " This is the third identical call in this turn; issuing it "
+                            "again will only return this note."
+                        )
+                    logger.info(
+                        "tool call: %s -> duplicate (#%d), not re-run",
+                        _summarize_call(tool_name, raw_args),
+                        repeat["count"],
+                    )
+                    yield serialize_event(
+                        ToolResultEvent(
+                            tool_name=tool_name, success=True, data={"duplicate": True}
+                        )
+                    )
+                    note_message = ChatMessage(role="tool", content=note, name=tool_name)
+                    tool_result_messages.append(note_message)
+                    chat_messages.append(note_message)
+                    tool_result_chars += len(note)
+                    continue
+
                 # A search the model runs as a tool is a real search, and until
                 # this stage existed it was invisible while it ran: the user saw
                 # the model's prose claim a search with nothing behind it in the
@@ -533,6 +601,9 @@ async def stream_tool_loop(
 
                 if getattr(result, "success", True):
                     successful_tool_calls.append(tool_name)
+                    if tool_name in _STATE_CHANGING_TOOLS:
+                        # The world moved: a read cached before this may be stale.
+                        repeat_ledger.clear()
 
                 # Yield tool result event
                 yield serialize_event(
@@ -597,6 +668,16 @@ async def stream_tool_loop(
                 tool_result_messages.append(result_message)
                 chat_messages.append(result_message)
                 peak_tool_result_chars = max(peak_tool_result_chars, tool_result_chars)
+
+                # Remember a successful read-shaped call, so a repeat can be
+                # answered from the transcript. The message object is kept (not
+                # its text) because the aggregate cap may later collapse it —
+                # `still_visible` above reads the live content.
+                if (
+                    getattr(result, "success", True)
+                    and tool_name not in _STATE_CHANGING_TOOLS
+                ):
+                    repeat_ledger[signature] = {"message": result_message, "count": 1}
         else:
             # No tool calls. If the request needed an action and the turn did not
             # perform it, hand the model its own message back once (see _maybe_nudge).

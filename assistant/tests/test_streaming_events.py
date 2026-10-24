@@ -565,6 +565,11 @@ async def test_stream_tool_loop_collapses_older_results_when_the_budget_is_spent
     filesystem.SANDBOX_ROOT.mkdir(parents=True, exist_ok=True)
     big = filesystem.SANDBOX_ROOT / "collapse_big.txt"
     big.write_text("\n".join(f"line {i}" for i in range(5000)), encoding="utf-8")
+    # A second, *different* file: two reads of the same path are now answered from
+    # the repeat ledger and never reach the aggregate cap, which is what this test
+    # is about.
+    big2 = filesystem.SANDBOX_ROOT / "collapse_big2.txt"
+    big2.write_text("\n".join(f"other {i}" for i in range(5000)), encoding="utf-8")
 
     class StubLLM:
         def __init__(self, responses):
@@ -579,15 +584,19 @@ async def test_stream_tool_loop_collapses_older_results_when_the_budget_is_spent
         def context_window(self, model=None):
             return 16384
 
-    def read_call():
+    def read_call(path):
         return ChatResponse(
             content="",
             model="m",
             done=True,
-            tool_calls=[ToolCall(name="read_file", arguments={"path": "collapse_big.txt"})],
+            tool_calls=[ToolCall(name="read_file", arguments={"path": path})],
         )
 
-    llm = StubLLM([read_call(), read_call(), ChatResponse(content="done", model="m", done=True)])
+    llm = StubLLM([
+        read_call("collapse_big.txt"),
+        read_call("collapse_big2.txt"),
+        ChatResponse(content="done", model="m", done=True),
+    ])
 
     # Allowance 4,000 chars: one large read fits, two do not.
     token = set_turn_budget(
@@ -608,6 +617,7 @@ async def test_stream_tool_loop_collapses_older_results_when_the_budget_is_spent
     finally:
         reset_turn_budget(token)
         big.unlink(missing_ok=True)
+        big2.unlink(missing_ok=True)
 
     finalize = [
         json.loads(ev.replace("data: ", "").strip())

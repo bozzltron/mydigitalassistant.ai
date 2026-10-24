@@ -126,6 +126,29 @@ wording, which this project rejects; the trigger is structural (no tool call) an
 judgement is the model's. Both judgements are best-effort: a missing decision model
 returns "unknown" and nothing nudges.
 
+### A repeated call is not progress
+
+The loop keeps a **per-turn ledger** of successful, read-shaped calls keyed by
+`(tool, arguments)`. A repeat is answered from the transcript with a note — "you
+made this exact call earlier, here is what happened" — instead of executed again.
+On the 27B a round costs minutes of prefill, and the second search returns what the
+first one did; a live Max turn searched the same two queries in consecutive rounds
+(2026-10-24). The trigger is **structural** (same tool, same arguments, already
+succeeded), not a judgement about wording.
+
+Three rules keep it honest:
+
+- **Only successes are remembered.** A failed call stays retryable, which is how the
+  model recovers from a bad path. A refusal is not a completed call, here either.
+- **A state-changing call clears the ledger** (`write_file`, `upsert_slot`, …), so a
+  read after a write re-runs and sees the write rather than the pre-write state.
+- **The note tells the truth about the transcript.** If the aggregate cap has since
+  collapsed the earlier result to the drop marker, the note says so instead of
+  pointing at a result that is no longer there.
+
+The duplicate is surfaced on the wire as a `tool_result` with `{"duplicate": true}`,
+and logged as `tool call: … -> duplicate (#N), not re-run`.
+
 ### Known characteristic: the answer arrives whole, not token by token
 
 `/chat/stream` streams *events* — `stage` progress, then `finalize` with the
