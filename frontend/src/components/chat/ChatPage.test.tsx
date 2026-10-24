@@ -145,4 +145,26 @@ describe('ChatPage chat wiring', () => {
     expect(message).toBe('read this please')
     expect(attached).toEqual([])
   })
+
+  it('shows Max as pressed when it was already on', () => {
+    // Regression: the button toggled an `active` class that no stylesheet defined,
+    // and its state died on reload, so it read as broken. Both are pinned here.
+    localStorage.setItem('max_intelligence', 'on')
+    render(() => <ChatPage conversation={null} />)
+
+    const button = screen.getByRole('button', { name: 'Toggle max intelligence' })
+    expect(button).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('remembers Max across a reload', () => {
+    render(() => <ChatPage conversation={null} />)
+
+    const button = screen.getByRole('button', { name: 'Toggle max intelligence' })
+    expect(button).toHaveAttribute('aria-pressed', 'false')
+
+    fireEvent.click(button)
+
+    expect(button).toHaveAttribute('aria-pressed', 'true')
+    expect(localStorage.getItem('max_intelligence')).toBe('on')
+  })
 })

@@ -148,8 +148,8 @@ class TestUpdate:
         assert resumed["enabled"] is True
         assert resumed["next_run"], "resuming schedules the next tick, not the missed one"
 
-    def test_only_prompt_and_enabled_are_writable(self, client):
-        """The write surface is two fields, and the contract says so out loud."""
+    def test_only_prompt_enabled_and_max_are_writable(self, client):
+        """The write surface is three fields, and the contract says so out loud."""
         created = client.post("/tasks/create", json={"name": "briefing", "prompt": "x"}).json()
         for body in (
             {"name": "renamed"},
@@ -160,6 +160,23 @@ class TestUpdate:
             assert r.status_code == 422, body
 
         assert client.patch(f"/tasks/{created['id']}", json={}).status_code == 422
+
+    def test_max_is_a_per_task_choice_and_survives_other_edits(self, client):
+        """A task may run on the MAX tier; the choice is stored and reported."""
+        created = client.post("/tasks/create", json={"name": "briefing", "prompt": "x"}).json()
+        assert created["use_max"] is False, "new tasks start on the standard tier"
+
+        on = client.patch(f"/tasks/{created['id']}", json={"use_max": True})
+        assert on.status_code == 200
+        assert on.json()["use_max"] is True
+
+        # A prompt edit rewrites the row whole; it must not drop the model choice.
+        edited = client.patch(f"/tasks/{created['id']}", json={"prompt": "y"}).json()
+        assert edited["use_max"] is True
+        assert client.get("/tasks/list").json()[0]["use_max"] is True
+
+        off = client.patch(f"/tasks/{created['id']}", json={"use_max": False})
+        assert off.json()["use_max"] is False
 
     def test_a_blank_prompt_is_refused(self, client):
         created = client.post("/tasks/create", json={"name": "briefing", "prompt": "x"}).json()

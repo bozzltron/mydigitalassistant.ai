@@ -98,8 +98,8 @@ One turn's stages and the role each uses: **`docs/PIPELINE.md`**.
 
 | Role | Model | Size | keep_alive | num_ctx |
 |------|-------|------|------------|---------|
-| Chat | `qwen3.5:9b` | 6.6GB | `-1` (warm) | 16384 |
-| Tools | `qwen3.5:9b` | — shares chat | `-1` | shares chat (16384) |
+| Chat | `qwen3.5:9b` | 6.6GB | `-1` (warm) | 32768 |
+| Tools | `qwen3.5:9b` | — shares chat | `-1` | shares chat (32768) |
 | Utility | `qwen3.5:4b` | 3.4GB | `-1` (warm) | 4096 |
 | Embedding | `qwen3-embedding:0.6b` | 0.6GB | `-1` (warm) | — |
 | Max | `qwen3.8:27b` | 17GB | `10m` (on-demand) | 16384 |
@@ -135,10 +135,12 @@ Rationale highlights:
 
 - **9b as both chat and tools** — one brain, shared hot KV cache, tool loop stays
   warm and fast. Because they are the same loaded runner they share one context
-  window: `CHAT_NUM_CTX` (16384), not the smaller `TOOLS_NUM_CTX`, which applies
+  window: `CHAT_NUM_CTX` (32768), not the smaller `TOOLS_NUM_CTX`, which applies
   only to a *distinct* tools model. The tool loop sends the system prompt + every
   tool schema + history — the largest prompt in the system — so 8192 left no room
-  to generate and the turn finalized empty (incident 2026-10-01).
+  to generate and the turn finalized empty (incident 2026-10-01); 16384 still
+  dropped a search result on a three-subject lookup (2026-10-24), which is why the
+  default is now 32768.
 - **4b utility** — cheap extraction/routing fallback that never slows the hot path.
 - **27b max, 9b math (Oct 2026)** — the 27B is now the on-demand escalation tier
   only; the math/compute role runs the Q4 candidate (equal accuracy to the 27B on

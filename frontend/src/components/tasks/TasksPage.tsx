@@ -85,6 +85,21 @@ export default function TasksPage() {
     })
   }
 
+  /**
+   * Model tier for this task.
+   *
+   * This is the one place the MAX model is cheap: a scheduled run waits on nobody,
+   * so the big model can do the work there even when a live chat turn would not
+   * escalate. It is a state action like pause/resume, not part of the prompt edit.
+   */
+  const toggleMax = (task: Task) => {
+    void attempt(async () => {
+      const updated = await updateTask(task.id, { use_max: !task.use_max })
+      replace(updated)
+      debug('[tasks] max', updated.name, updated.use_max ? 'on' : 'off')
+    })
+  }
+
   const remove = (task: Task) => {
     if (!window.confirm(`Delete “${task.name}”? Its past runs stay in memory.`)) return
     void attempt(async () => {
@@ -229,6 +244,7 @@ export default function TasksPage() {
                 onSavePrompt={savePrompt}
                 onRunNow={() => runNow(task())}
                 onToggle={() => toggle(task())}
+                onToggleMax={() => toggleMax(task())}
                 onDelete={() => remove(task())}
               />
             )}

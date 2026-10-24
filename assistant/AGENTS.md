@@ -61,7 +61,11 @@ largest prompt in the system and the one that overflows first. At
 `CHAT_NUM_CTX=8192` a live turn reached 8169 prompt tokens, generated 23, and was
 cut off — `llama-server` logged `n_tokens = 8191, truncated = 1`, Ollama returned
 `done_reason="length"`, and the loop finalized empty (the old
-`"I'm not sure how to respond."`). `CHAT_NUM_CTX` is now 16384.
+`"I'm not sure how to respond."`). `CHAT_NUM_CTX` is now **32768**: at 16384 a
+three-subject lookup used 81% of the window and dropped one of its search results;
+at 32768 the same shape held 85% more tool-result content with nothing dropped and
+a 52% peak (measured 2026-10-24, `docs/CONTEXT_THROUGHPUT.md` §3). The 9B's KV at
+32k is ~1 GB.
 
 **A tool result must not fill the window.** The window is shared with the fixed
 cost (system prompt + every tool schema + history) and the answer, so a single
@@ -309,10 +313,10 @@ via the model rather than fixed response templates.
 ### Scheduled tasks are memory
 Scheduled tasks, their outputs, and the fact that a daily run occurred are all first-class
 memory objects — frames, slots, associations, episodes. There are no scheduler-only hidden
-columns. A task is a `scheduled_task` frame whose `prompt`, `frequency`, `enabled`, `next_run`,
-and `last_run` are slots. Each morning's run is an `event` frame associated with the tasks that
-ran and their output episodes. The user can ask "What did my briefing find?" because the
-answer is ordinary memory.
+columns. A task is a `scheduled_task` frame whose `prompt`, `frequency`, `enabled`,
+`use_max`, `next_run`, and `last_run` are slots. Each morning's run is an `event` frame
+associated with the tasks that ran and their output episodes. The user can ask "What did
+my briefing find?" because the answer is ordinary memory.
 
 ### Clean ship
 Dead code is a liability. Unused imports, dead helper functions, and commented-out
@@ -564,7 +568,9 @@ the assessment criteria, memory budget, and re-evaluation process.
 - **Chat is the only interface.** "Add an AI briefing to my mornings" → task stored;
   "stop doing X" → removed; "run my briefing now" → immediate execution.
 - **Tasks are memory.** Each task is a `scheduled_task` frame with slots for `prompt`,
-  `frequency` (`daily`/`once`), `enabled`, `next_run`, `last_run`, and `description`.
+  `frequency` (`daily`/`once`), `enabled`, `use_max`, `next_run`, `last_run`, and
+  `description`. `use_max` is the per-task model tier: a scheduled run waits on nobody,
+  so the MAX model can do that work even when a live chat turn would not escalate.
   No hidden scheduler-only columns.
 - **Execution uses the full cognitive loop — the same `_run_turn` as chat.**
   When a task fires, the scheduler calls `orchestrator.run_scheduled_task(prompt, …)`,

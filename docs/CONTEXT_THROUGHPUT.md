@@ -51,17 +51,26 @@ Resolved in one place — `OllamaClient._num_ctx_for` (`llm_client.py`):
 
 | Role | Default model | `num_ctx` | Residency |
 |---|---|---|---|
-| Chat | `qwen3.5:9b` | 16,384 | warm (`-1`) |
-| Tools | `qwen3.5:9b` (**shares chat**) | 16,384 (the chat window) | warm |
+| Chat | `qwen3.5:9b` | 32,768 | warm (`-1`) |
+| Tools | `qwen3.5:9b` (**shares chat**) | 32,768 (the chat window) | warm |
 | Utility | `qwen3.5:4b` | 4,096 | warm |
 | Embedding | `qwen3-embedding:0.6b` | — | warm |
 | Max | empty → chat | 16,384 | on-demand `10m` |
 | Math | empty → off | 16,384 | on-demand `10m` |
 
 Because `tools_model == chat_model`, **one runner and one window serve the whole
-turn**: tool calls and the final answer share the 16,384 that the tool loop
+turn**: tool calls and the final answer share the 32,768 that the tool loop
 overflows first. `tools_num_ctx` applies only to a *distinct* tools model; do not
 reintroduce per-call-site `num_ctx` branches.
+
+**Why 32k and not 16k (measured 2026-10-24).** The same three-subject lookup was
+run at both windows on the live stack. At 16,384 the turn peaked at 81% of the
+window and the aggregate budget dropped one result (`tool_result_chars=17,573`,
+`tool_results_dropped=1`). At 32,768 the same shape held `tool_result_chars=32,568`
+— 85% more content — with `tool_results_dropped=0` and a 52% peak. Turn time was
+106.6s vs 137.9s, but the 32k run also took an extra nudge round, so that
+difference is not attributable to the window alone. The 9B's KV buffer at 32k is
+1,024 MiB (34/34 layers on GPU); the earlier delta measurement was +0.61 GB.
 
 ## 4. Prompt composition — the fixed cost
 
@@ -143,6 +152,10 @@ reserved answer         4,096   (25%)  think_num_predict_cap
 ------------------------------
 content allowance      ~4,844   (30%)  what a read/search/listing may use
 ```
+
+At 32,768 the same fixed cost leaves **~21,200** tokens of content allowance
+(`32,768 − 7,444 − 4,096`), about 4.4× the 16k figure. That is what the measured
+three-subject run used: 32,568 tool-result chars with nothing dropped.
 
 The allowance is **derived**, not a fraction: `window − fixed cost − reserved
 answer`. It shrinks as history or the tool set grows, and grows when they are

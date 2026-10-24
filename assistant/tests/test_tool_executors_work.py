@@ -49,8 +49,8 @@ def wired(store, monkeypatch):
             self.calls: list[tuple] = []
             self.llm_client = object()
 
-        async def run_scheduled_task(self, prompt, user_id, task_name):
-            self.calls.append((prompt, user_id, task_name))
+        async def run_scheduled_task(self, prompt, user_id, task_name, use_max=False):
+            self.calls.append((prompt, user_id, task_name, use_max))
             return f"ran {task_name}"
 
     orch = FakeOrchestrator()
@@ -152,7 +152,26 @@ class TestRunScheduledTask:
         )
 
         assert result.success is True, result.error
-        assert wired.calls == [("summarize AI news", user.id, "daily briefing")]
+        assert wired.calls == [("summarize AI news", user.id, "daily briefing", False)]
+
+    @pytest.mark.asyncio
+    async def test_run_now_uses_the_tasks_max_choice(self, store, wired):
+        """The tool path honours `use_max`, not only the scheduler and the API."""
+        user = await store.create_user("alice")
+        task_id = await store.upsert_scheduled_task(
+            name="briefing",
+            description="d",
+            schedule_cron="daily",
+            prompt="p",
+            owner_user_id=user.id,
+        )
+        await store.upsert_scheduled_task_slot(task_id, "use_max", "true")
+
+        await te.execute_run_scheduled_task(
+            {"task_name": "briefing"}, user_id=str(user.id)
+        )
+
+        assert wired.calls[-1][3] is True
 
     @pytest.mark.asyncio
     async def test_run_now_records_last_run(self, store, wired):

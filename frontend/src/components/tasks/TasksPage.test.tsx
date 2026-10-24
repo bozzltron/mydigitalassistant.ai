@@ -23,6 +23,7 @@ function task(over: Partial<Task> = {}): Task {
     schedule_cron: 'daily',
     prompt: 'summarise AI news',
     enabled: true,
+    use_max: false,
     last_run: null,
     next_run: '2026-10-16T09:00:00+00:00',
     last_result_summary: null,
@@ -57,8 +58,9 @@ describe('TasksPage', () => {
   })
 
   it('edits only the prompt, and sends only the prompt', async () => {
-    // The write surface is two fields with two meanings; this pins that an edit
-    // cannot quietly grow a third. The server forbids extras too (`extra="forbid"`).
+    // The write surface is three fields with three meanings; this pins that an edit
+    // cannot quietly carry the state fields too. The server forbids extras
+    // (`extra="forbid"`).
     vi.mocked(getTasks).mockResolvedValue([task()])
     vi.mocked(updateTask).mockResolvedValue(task({ prompt: 'new prompt' }))
     render(() => <TasksPage />)
@@ -82,6 +84,22 @@ describe('TasksPage', () => {
 
     await waitFor(() => expect(updateTask).toHaveBeenCalledWith(1, { enabled: false }))
     expect(await screen.findByRole('button', { name: 'Resume' })).toBeInTheDocument()
+  })
+
+  it('lets the user pick Max for a task, sending only use_max', async () => {
+    // A scheduled run is the cheap place for the big model: nobody waits on the
+    // daily tick. The page may flip it, and the payload stays one field.
+    vi.mocked(getTasks).mockResolvedValue([task()])
+    vi.mocked(updateTask).mockResolvedValue(task({ use_max: true }))
+    render(() => <TasksPage />)
+
+    fireEvent.click(await screen.findByText('briefing'))
+    fireEvent.click(await screen.findByRole('button', { name: 'Max' }))
+
+    await waitFor(() => expect(updateTask).toHaveBeenCalledWith(1, { use_max: true }))
+    const button = await screen.findByRole('button', { name: 'Max' })
+    expect(button).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByText('Model')).toBeInTheDocument()
   })
 
   it('creates a task and shows it without a reload', async () => {

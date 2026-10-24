@@ -2748,13 +2748,15 @@ class MemoryStore:
                 key, value = slot.key, slot.value
                 if key in (
                     "description", "frequency", "prompt", "enabled",
-                    "next_run", "last_run", "last_result_summary",
+                    "next_run", "last_run", "last_result_summary", "use_max",
                 ):
                     task[key] = value
                 if key == "frequency":
                     task["schedule_cron"] = value  # slot key != column name
                 if key == "enabled":
                     task["enabled"] = 1 if value == "true" else 0
+                if key == "use_max":
+                    task["use_max"] = 1 if value == "true" else 0
                 if key == "task_name":
                     # The name the user gave it. The frame's own `name` may be an
                     # owner-scoped handle (`morning__u2`) when the plain name was taken

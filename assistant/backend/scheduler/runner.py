@@ -198,11 +198,17 @@ async def execute_and_record_task(
     date_str = datetime.now(UTC).strftime("%Y_%m_%d")
     session_id = f"scheduled-{task_name}-{date_str}"
 
+    # Per-task model choice. A task may run on the MAX tier; the slot is the
+    # authoritative store, like every other task field.
+    use_max_slot = await store.get_slot(task_frame_id, "use_max")
+    use_max = bool(use_max_slot and use_max_slot.value == "true")
+
     try:
         result = await orchestrator.run_scheduled_task(
             prompt=task_prompt,
             user_id=owner_user_id,
             task_name=task_name,
+            use_max=use_max,
         )
 
         agent_alert_title, agent_alert_message, clean_text = _extract_agent_alert(

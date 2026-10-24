@@ -4,13 +4,14 @@ import { renderMarkdown } from '../../utils/markdown'
 import { formatStamp } from '../../utils/taskLib'
 
 /**
- * One task's detail: its identity read-only, its prompt editable, and a pause/resume
- * button.
+ * One task's detail: its identity read-only, its prompt editable, and its state
+ * actions (pause/resume, Max).
  *
  * `enabled` is a **button**, not a checkbox, because it is a state *action* — "stop
- * this running" — rather than a field of the edit. `name`, `frequency` and
- * `description` are plain text rather than disabled inputs, so the page does not imply
- * an edit it does not offer: chat owns those.
+ * this running" — rather than a field of the edit. `use_max` is a state action in the
+ * same sense: it picks which model the next run uses without changing what the run
+ * does. `name`, `frequency` and `description` are plain text rather than disabled
+ * inputs, so the page does not imply an edit it does not offer: chat owns those.
  */
 export function TaskForm(props: {
   task: Task
@@ -19,6 +20,7 @@ export function TaskForm(props: {
   onSavePrompt: (prompt: string) => void
   onRunNow: () => void
   onToggle: () => void
+  onToggleMax: () => void
   onDelete: () => void
 }) {
   // The initial value only; the effect below owns every subsequent seed, because
@@ -78,6 +80,8 @@ export function TaskForm(props: {
         <dd>{props.task.schedule_cron === 'once' ? 'Once' : 'Daily'}</dd>
         <dt>State</dt>
         <dd>{props.task.enabled ? 'Enabled' : 'Paused'}</dd>
+        <dt>Model</dt>
+        <dd>{props.task.use_max ? 'Max' : 'Standard'}</dd>
         <dt>Last run</dt>
         <dd>{props.task.last_run ? formatStamp(props.task.last_run) : 'never'}</dd>
         <dt>Next run</dt>
@@ -118,6 +122,21 @@ export function TaskForm(props: {
           onClick={() => props.onToggle()}
         >
           {props.task.enabled ? 'Pause' : 'Resume'}
+        </button>
+        <button
+          type="button"
+          class="topbar-btn"
+          classList={{ 'is-active': props.task.use_max }}
+          title={
+            props.task.use_max
+              ? 'Max is on — this task runs on the 27B model'
+              : 'Max is off — click to run this task on the 27B model'
+          }
+          aria-pressed={props.task.use_max}
+          disabled={props.busy || props.running}
+          onClick={() => props.onToggleMax()}
+        >
+          Max
         </button>
         <button
           type="button"

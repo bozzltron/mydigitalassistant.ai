@@ -2050,6 +2050,9 @@ class ScheduledTaskResponse(BaseModel):
     schedule_cron: str
     prompt: str
     enabled: bool
+    # Run this task on the MAX tier. A task is where a bigger model costs nothing:
+    # nobody is waiting on the daily tick, so a 27B run at 09:00 is free.
+    use_max: bool = False
     last_run: str | None
     next_run: str | None
     last_result_summary: str | None
@@ -2066,6 +2069,7 @@ def _task_response(t: dict) -> ScheduledTaskResponse:
         schedule_cron=t.get("schedule_cron", ""),
         prompt=t.get("prompt", ""),
         enabled=bool(t["enabled"]),
+        use_max=bool(t.get("use_max", 0)),
         last_run=t.get("last_run"),
         next_run=t.get("next_run"),
         last_result_summary=t.get("last_result_summary"),
@@ -2103,7 +2107,8 @@ class ScheduledTaskCreate(BaseModel):
 
 
 class ScheduledTaskPatch(BaseModel):
-    """What the page may change: the prompt (an edit) and `enabled` (a state action).
+    """What the page may change: the prompt (an edit), `enabled` (a state action)
+    and `use_max` (which model the run uses).
 
     Nothing else is writable from the UI — `name` is the task's identity and
     `frequency` is a scheduling decision, and both stay conversational. `extra` is
@@ -2114,11 +2119,12 @@ class ScheduledTaskPatch(BaseModel):
 
     prompt: str | None = None
     enabled: bool | None = None
+    use_max: bool | None = None
 
     @model_validator(mode="after")
     def _at_least_one_field(self) -> "ScheduledTaskPatch":
-        if self.prompt is None and self.enabled is None:
-            raise ValueError("provide prompt or enabled")
+        if self.prompt is None and self.enabled is None and self.use_max is None:
+            raise ValueError("provide prompt, enabled or use_max")
         return self
 
 
@@ -2189,7 +2195,7 @@ async def update_task(
     user_id: int,
     store: MemoryStore = _Depends(get_store),
 ):
-    """Change a task's prompt, or pause/resume it.
+    """Change a task's prompt, pause/resume it, or pick its model tier.
 
     `upsert_scheduled_task` writes a task whole, so this reads the row and re-writes it
     with the change applied — the same read-then-write chat does, and safe because the
@@ -2201,6 +2207,7 @@ async def update_task(
     if not prompt:
         raise HTTPException(status_code=422, detail="prompt must not be empty")
     enabled = bool(task["enabled"]) if body.enabled is None else body.enabled
+    use_max = bool(task.get("use_max", 0)) if body.use_max is None else body.use_max
 
     await store.upsert_scheduled_task(
         name=task["name"],
@@ -2209,6 +2216,11 @@ async def update_task(
         prompt=prompt,
         enabled=enabled,
         owner_user_id=user_id,
+    )
+    # `use_max` has no frame column: the task's authoritative store is its slots, the
+    # same place `prompt` and `enabled` live.
+    await store.upsert_scheduled_task_slot(
+        task_id, "use_max", "true" if use_max else "false"
     )
     return _task_response(await _owned_task(store, task_id, user_id))
 

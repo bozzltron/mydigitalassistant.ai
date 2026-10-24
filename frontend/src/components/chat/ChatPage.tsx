@@ -16,6 +16,7 @@ import { speakReplacing, startDictation, endDictation, isVoiceModeActive, voice 
 import { settings, updateSetting } from '../../state/settings'
 import { refreshFileList } from '../../state/files'
 import { initQueue } from '../../state/messageQueue'
+import { readMaxMode, writeMaxMode } from '../../state/maxMode'
 import type {
   SearchInfo,
   AttachedFile,
@@ -35,7 +36,7 @@ export default function ChatPage(props: {
 }) {
   const [messagesContainerRef, setMessagesContainerRef] = createSignal<HTMLDivElement | null>(null)
   const [dictation, setDictation] = createSignal<{ text: string; seq: number }>({ text: '', seq: 0 })
-  const [maxIntelligence, setMaxIntelligence] = createSignal(false)
+  const [maxIntelligence, setMaxIntelligence] = createSignal(readMaxMode())
   const [pendingSearchConsent, setPendingSearchConsent] = createSignal<{
     message: string
     attachedFiles: AttachedFile[] | undefined
@@ -413,7 +414,11 @@ export default function ChatPage(props: {
             dictatedText={dictation().text}
             dictatedSeq={dictation().seq}
             maxEnabled={maxIntelligence()}
-            onToggleMax={() => setMaxIntelligence((v) => !v)}
+            onToggleMax={() => {
+              const next = !maxIntelligence()
+              setMaxIntelligence(next)
+              writeMaxMode(next)
+            }}
           />
         </div>
       </div>

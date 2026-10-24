@@ -71,9 +71,16 @@
 
 /* A toggle that is on (e.g. the trace panel): the same accent affordance the
    alerts button uses, rather than inventing a new active look. */
+.topbar-btn.is-active,
 .topbar-btn--icon.is-active {
   border-color: var(--accent2);
   color: var(--accent2);
+}
+
+.topbar-btn.is-active:hover {
+  background: var(--accent2);
+  border-color: var(--accent2);
+  color: var(--bg);
 }
 
 /* Something is waiting: mint, not red. These are things to talk about, not
@@ -479,6 +486,15 @@ select {
 .btn-icon:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* Max-intelligence toggle. There was no rule for `.max-btn` anywhere — the
+   component toggled an `active` class that nothing styled, so pressing it changed
+   nothing on screen and read as broken. The accent fill is the whole feedback. */
+.max-btn.active,
+.max-btn.active:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--bg);
 }
 
 /* ==========================================================================

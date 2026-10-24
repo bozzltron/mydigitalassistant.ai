@@ -73,7 +73,10 @@ class Settings(BaseSettings):
     # (live incident 2026-10-01, llama-server n_tokens=8191 truncated=1).
     # 16384 gives the tool loop real generation headroom. Raise further for
     # very long conversations; the 9B model itself supports far more.
-    chat_num_ctx: int = 16384
+    # 16384 still dropped 1 of 3 search results on a three-subject lookup
+    # (2026-10-24: tool_results_dropped=1, 81% peak), so the default is 32768.
+    # Measured cost at 32k: +0.61 GB of KV cache on the 9B.
+    chat_num_ctx: int = 32768
     utility_num_ctx: int = 4096
 
     backend_host: str = "127.0.0.1"
@@ -141,7 +144,7 @@ class Settings(BaseSettings):
     # model (the default), they share one loaded runner and therefore one context
     # window — the chat_num_ctx — so the tool loop gets the larger chat window
     # rather than a smaller, overflow-prone one.
-    tools_num_ctx: int = 16384
+    tools_num_ctx: int = 32768
     tools_keep_alive: str = "-1"
 
     # Tool-loop length. The cap is a *runaway guard*, not a task budget: the model
@@ -151,8 +154,13 @@ class Settings(BaseSettings):
     # from overflowing the window, so the cost of a higher cap is latency only —
     # and the user asked to trade that for value. Deep tasks (the reasoner's
     # `think` / `max_intelligence` escalation) get the deeper ceiling.
-    max_tool_rounds: int = 6
-    max_tool_rounds_deep: int = 12
+    #
+    # 6 was measured too tight: a three-subject lookup hit it with six tool calls
+    # still in progress (`tool_loop_exit: reason=exhausted turns=6 tool_calls=6`,
+    # 2026-10-24) and answered from what it had. A cap the work reliably reaches is
+    # a budget, not a guard.
+    max_tool_rounds: int = 10
+    max_tool_rounds_deep: int = 16
 
     # Max-intelligence escalation tier (Phase 6 M6). The largest local model the
     # host can serve well (qwen3.8:27b on a 48GB Mac). Loaded on demand with a

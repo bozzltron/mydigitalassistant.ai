@@ -1172,7 +1172,10 @@ class Orchestrator:
                 for t in tasks:
                     if t["name"] == task_name:
                         result = await self.run_scheduled_task(
-                            t["prompt"], request.user_id, t["name"]
+                            t["prompt"],
+                            request.user_id,
+                            t["name"],
+                            use_max=bool(t.get("use_max", 0)),
                         )
                         now_str = datetime.now(UTC).isoformat()
                         summary = result[:2000] if result else ""
@@ -1376,7 +1379,7 @@ class Orchestrator:
         )
 
     async def run_scheduled_task(
-        self, prompt: str, user_id: int, task_name: str
+        self, prompt: str, user_id: int, task_name: str, use_max: bool = False
     ) -> str:
         """Execute a scheduled task through the single cognitive loop.
 
@@ -1407,6 +1410,9 @@ class Orchestrator:
             # this the loop's Brave sensitivity gate would replace the task's
             # output with a "do you want to proceed?" prompt nobody will see.
             search_consent=True,
+            # A task is where the MAX tier costs nothing: nobody is waiting on the
+            # daily tick, so the biggest model the user has can do the work.
+            max_intelligence=use_max,
         )
         response = await self.chat(request)
         return response.response

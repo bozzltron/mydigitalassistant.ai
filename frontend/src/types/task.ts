@@ -2,9 +2,10 @@
  * A scheduled task, as `/tasks` reports it (`assistant/backend/main.py`).
  *
  * A task is memory: a `scheduled_task` frame whose slots are the authoritative store.
- * This page is a view over it, and it writes exactly **two** of these fields —
- * `prompt` (an edit) and `enabled` (a state action). Everything else is chat's to set,
- * which is why the page shows them as text rather than as disabled inputs.
+ * This page is a view over it, and it writes exactly **three** of these fields —
+ * `prompt` (an edit), `enabled` (a state action) and `use_max` (which model the run
+ * uses). Everything else is chat's to set, which is why the page shows them as text
+ * rather than as disabled inputs.
  */
 export interface Task {
   id: number
@@ -15,6 +16,11 @@ export interface Task {
   /** The script the run executes — the one field the page edits. */
   prompt: string
   enabled: boolean
+  /**
+   * Run this task on the MAX tier. A scheduled run is where escalation costs
+   * nothing: nobody is waiting on the daily tick, so the 27B can do the work.
+   */
+  use_max: boolean
   last_run: string | null
   next_run: string | null
   last_result_summary: string | null
@@ -26,6 +32,7 @@ export interface Task {
 export interface TaskChange {
   prompt?: string
   enabled?: boolean
+  use_max?: boolean
 }
 
 /**

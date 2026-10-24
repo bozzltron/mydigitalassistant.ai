@@ -617,10 +617,10 @@ export async function createTask(name: string, prompt: string): Promise<Task> {
 }
 
 /**
- * Change a task's prompt, or pause/resume it.
+ * Change a task's prompt, pause/resume it, or pick its model tier.
  *
- * The server accepts exactly these two fields (`extra="forbid"`), so a typo here is a
- * 422 rather than a silently ignored change.
+ * The server accepts exactly these three fields (`extra="forbid"`), so a typo here is
+ * a 422 rather than a silently ignored change.
  */
 export async function updateTask(id: number, change: TaskChange): Promise<Task> {
   return api<Task>(`/tasks/${id}?user_id=${actingUser()}`, {

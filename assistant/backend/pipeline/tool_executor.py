@@ -2278,7 +2278,10 @@ async def execute_run_scheduled_task(args: dict, user_id: str, session_id: str =
             )
 
         result = await _orchestrator.run_scheduled_task(
-            match["prompt"], int(user_id), match["name"]
+            match["prompt"],
+            int(user_id),
+            match["name"],
+            use_max=bool(match.get("use_max", 0)),
         )
 
         # Record the run so `last_run` and the task's result summary are truthful.

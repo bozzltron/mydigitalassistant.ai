@@ -596,6 +596,58 @@ async def test_execute_task_creates_agent_alert(env):
     assert "Switch 2 restocks went out" in tasks[0]["last_result_summary"]
 
 
+async def test_run_scheduled_task_can_use_max(env):
+    """A task may run on the MAX tier; the request carries the escalation flag.
+
+    A scheduled run is the one place escalation is free: nobody is waiting on the
+    daily tick. The flag has to reach the ChatRequest, or `_select_generation` never
+    sees it and the run quietly stays on the chat model.
+    """
+    orch, _llm, _store, user_id = env
+    seen: dict = {}
+
+    class _Reply:
+        """The non-streaming adapter's shape; `run_scheduled_task` reads `.response`."""
+
+        response = "ok"
+
+    async def fake_chat(request: ChatRequest) -> _Reply:
+        seen["request"] = request
+        return _Reply()
+
+    orch.chat = fake_chat
+    await orch.run_scheduled_task("do it", user_id, "briefing", use_max=True)
+    assert seen["request"].max_intelligence is True
+
+    await orch.run_scheduled_task("do it", user_id, "briefing")
+    assert seen["request"].max_intelligence is False
+
+
+async def test_execute_task_passes_its_max_choice(env):
+    """The runner reads `use_max` from the task's slots and forwards it."""
+    from assistant.backend.scheduler.runner import execute_and_record_task
+
+    orch, _llm, store, user_id = env
+    fid = await store.upsert_scheduled_task(
+        name="deep", description="", schedule_cron="daily",
+        prompt="Look deep", owner_user_id=user_id,
+    )
+    await store.upsert_scheduled_task_slot(fid, "use_max", "true")
+
+    seen: dict = {}
+
+    async def fake_run(prompt, user_id, task_name, use_max=False):
+        seen["use_max"] = use_max
+        return "done"
+
+    orch.run_scheduled_task = fake_run
+    ok, _result = await execute_and_record_task(
+        store, orch, fid, "deep", "Look deep", user_id
+    )
+    assert ok
+    assert seen["use_max"] is True
+
+
 async def test_chat_run_now_disables_once_task(env):
     """A 'once' task must be disabled after run_now fires."""
     orch, llm, store, user_id = env
@@ -611,6 +663,26 @@ async def test_chat_run_now_disables_once_task(env):
     assert len(tasks) == 1
     assert tasks[0]["enabled"] == 0, "once task must be disabled after run_now"
     assert tasks[0]["last_run"] is not None
+
+
+async def test_chat_run_now_uses_the_tasks_max_choice(env):
+    """A chat-triggered run honours the task's own model tier."""
+    orch, llm, store, user_id = env
+    fid = await store.upsert_scheduled_task(
+        name="briefing", description="", schedule_cron="daily",
+        prompt="Do it", owner_user_id=user_id,
+    )
+    await store.upsert_scheduled_task_slot(fid, "use_max", "true")
+    llm.intent_reply = {"intent": "run_now", "name": "briefing"}
+    seen: dict = {}
+
+    async def fake_run(prompt, user_id, task_name, use_max=False):
+        seen["use_max"] = use_max
+        return "done"
+
+    orch.run_scheduled_task = fake_run
+    await orch.chat(ChatRequest(user_id=user_id, message="run my briefing now"))
+    assert seen["use_max"] is True
 
 
 async def test_chat_delete_task(env):

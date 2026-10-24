@@ -183,7 +183,13 @@ export default function InputBar(props: InputBarProps) {
           type="button"
           class="max-btn btn-icon"
           id="max-btn"
-          title="Max intelligence (27B model)"
+          title={
+            props.maxEnabled
+              ? "Max intelligence is on — this message runs on the 27B model"
+              : "Max intelligence is off — click to run this message on the 27B model"
+          }
+          aria-label="Toggle max intelligence"
+          aria-pressed={props.maxEnabled}
           onClick={() => props.onToggleMax?.()}
           classList={{
             active: props.maxEnabled,
