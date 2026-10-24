@@ -42,7 +42,7 @@ services:
       - TOOLS_KEEP_ALIVE=${TOOLS_KEEP_ALIVE:--1}
       - CHAT_NUM_CTX=${CHAT_NUM_CTX:-32768}
       - MAX_MODEL=${MAX_MODEL:-}
-      - MAX_NUM_CTX=${MAX_NUM_CTX:-16384}
+      - MAX_NUM_CTX=${MAX_NUM_CTX:-32768}
       - MAX_KEEP_ALIVE=${MAX_KEEP_ALIVE:-10m}
       # Binds inside the container only. Exposure is controlled by port
       # publishing: the assistant service publishes NO ports; Caddy is the

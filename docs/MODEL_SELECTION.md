@@ -102,7 +102,7 @@ One turn's stages and the role each uses: **`docs/PIPELINE.md`**.
 | Tools | `qwen3.5:9b` | — shares chat | `-1` | shares chat (32768) |
 | Utility | `qwen3.5:4b` | 3.4GB | `-1` (warm) | 4096 |
 | Embedding | `qwen3-embedding:0.6b` | 0.6GB | `-1` (warm) | — |
-| Max | `qwen3.8:27b` | 17GB | `10m` (on-demand) | 16384 |
+| Max | `qwen3.8:27b` | 17GB | `10m` (on-demand) | 32768 |
 | Math | `qwen3.5:4b` (the warm utility runner) | — shares utility | `-1` (warm) | 4096 |
 | Coder | (empty → chat) | — | — | — |
 | Decision | `tev1:0.8b` (**required**) + `nimble` (opt-in) | 0.8 GB (+ 9.5 GB) | `10m` (on-demand) | — |

@@ -167,7 +167,11 @@ class Settings(BaseSettings):
     # short keep_alive — never resident next to the warm chat/utility/embedding
     # set. Empty = escalation falls back to thinking-mode on the chat model.
     max_model: str = ""
-    max_num_ctx: int = 16384
+    # The Max tier needs the room most: a live Max task and a Max chat turn both
+    # collapsed 4 tool results at 16,384 (2026-10-24, 74% and 86% peak). KV is
+    # 1,024 MiB at 16k and ~2,048 MiB at 32k (66/66 layers still offloaded), so
+    # this costs ~1 GB — cheaper than the results it was dropping.
+    max_num_ctx: int = 32768
     max_keep_alive: str = "10m"
 
     # Local decision model (ollama's /v1/systemone) for typed judgements. The

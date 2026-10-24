@@ -59,7 +59,7 @@ services:
       # keep_alive — never resident next to the warm set. Empty = fall back to
       # thinking-mode on the chat model.
       - MAX_MODEL=${MAX_MODEL:-}
-      - MAX_NUM_CTX=${MAX_NUM_CTX:-16384}
+      - MAX_NUM_CTX=${MAX_NUM_CTX:-32768}
       - MAX_KEEP_ALIVE=${MAX_KEEP_ALIVE:-10m}
       # Binds inside the container only. Exposure is controlled by port
       # publishing: the assistant service publishes NO ports; Caddy is the

@@ -55,7 +55,7 @@ Resolved in one place — `OllamaClient._num_ctx_for` (`llm_client.py`):
 | Tools | `qwen3.5:9b` (**shares chat**) | 32,768 (the chat window) | warm |
 | Utility | `qwen3.5:4b` | 4,096 | warm |
 | Embedding | `qwen3-embedding:0.6b` | — | warm |
-| Max | empty → chat | 16,384 | on-demand `10m` |
+| Max | empty → chat | 32,768 | on-demand `10m` |
 | Math | empty → off | 16,384 | on-demand `10m` |
 
 Because `tools_model == chat_model`, **one runner and one window serve the whole
@@ -71,6 +71,13 @@ window and the aggregate budget dropped one result (`tool_result_chars=17,573`,
 106.6s vs 137.9s, but the 32k run also took an extra nudge round, so that
 difference is not attributable to the window alone. The 9B's KV buffer at 32k is
 1,024 MiB (34/34 layers on GPU); the earlier delta measurement was +0.61 GB.
+
+**The Max tier got the same treatment, from the same failure shape.** While
+`MAX_NUM_CTX` was still 16,384, a live Max task (`big_idea`: 27,471 tool-result
+chars, 74% peak) and a Max chat turn (18,833 chars, 86% peak) each collapsed **4**
+tool results. The 27B's KV is 1,024 MiB at 16k and ~2,048 MiB at 32k with 66/66
+layers still offloaded, so `MAX_NUM_CTX` is now 32,768 — the tier that needs the
+most room was the one with the least.
 
 ## 4. Prompt composition — the fixed cost
 
