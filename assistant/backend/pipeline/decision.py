@@ -254,10 +254,16 @@ def _log_decision(
     an unexplained retry has no way to tell why.
     """
     p = _probability(answer, positive_key)
+    # For `needs_action` the positive key *is* the kind, and it was the one thing the
+    # line did not say: "needs_action=True (p=0.541)" could not be told apart from a
+    # request to write a file or a request to search the web, and those have opposite
+    # consequences when the model then searches successfully and is nudged anyway.
+    kind = f" kind={positive_key}" if positive_key in ("change", "lookup") else ""
     logger.info(
-        "decision %s=%s (p=%s, model=%s)",
+        "decision %s=%s%s (p=%s, model=%s)",
         name,
         decided,
+        kind,
         round(p, 3) if p is not None else None,
         model,
     )

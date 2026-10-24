@@ -121,3 +121,21 @@ def test_log_decision_reads_the_positive_key(caplog):
         )
     assert "decision needs_action=True" in caplog.text
     assert "p=0.62" in caplog.text
+
+
+def test_log_decision_names_the_action_kind(caplog):
+    """The kind decides what counts as performed, so it belongs in the line.
+
+    "needs_action=True (p=0.541)" could not be told apart from a request to write a
+    file or one to search the web; a misjudged *change* makes the loop nudge after a
+    successful search, which is an extra round and a bigger prompt.
+    """
+    with caplog.at_level(logging.INFO, logger="assistant.backend.pipeline.decision"):
+        decision._log_decision(
+            "needs_action",
+            "tev1:0.8b",
+            {"choice": "lookup", "probabilities": {"change": 0.41, "lookup": 0.54}},
+            True,
+            positive_key="lookup",
+        )
+    assert "kind=lookup" in caplog.text
