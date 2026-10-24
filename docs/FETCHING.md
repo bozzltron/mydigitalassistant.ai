@@ -26,6 +26,18 @@ per-path rules.
   `User-agent: AssistantBot` would not bind us.
 - **Absent or unreadable robots.txt = allow.** It is an opt-out; its absence is not
   a prohibition.
+- **Cached per host, with a TTL.** robots.txt is one document per site, but it was
+  fetched once per *URL*: a `follow_links` crawl or a task reading three articles
+  from one host downloaded the same file four times, each with a 5s timeout on the
+  turn's critical path. `ROBOTS_CACHE_TTL_SECONDS` (10 minutes) caches the parsed
+  document, keyed by `(scheme, host)`. It caches the **document, never a verdict**,
+  so a path rule still applies per path — `/private/` can be disallowed while
+  `/article` is allowed, from one cached copy. A site with no robots.txt is cached
+  as "no rules" too, so it also pays one request rather than one per page.
+- **A refusal is reported, and reported to the user.** The tool result names the
+  URL, says the site disallows automated access, and tells the model to tell the
+  user and offer the link — the user's browser is not bound by robots.txt, and a
+  silent nothing looks like the agent "searched less" with no reason.
 - **Regression:** the old check was a substring match — `"disallow: /"` is a
   substring of `"disallow: /private/"`, so any site with a single path-specific rule
   was treated as *fully* disallowed. That is why the agent was "often blocked by

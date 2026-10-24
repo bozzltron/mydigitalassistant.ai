@@ -9,10 +9,12 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 import urllib.parse
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from html.parser import HTMLParser
+from urllib.robotparser import RobotFileParser
 
 import httpx
 from pydantic import BaseModel, Field
@@ -43,6 +45,21 @@ FETCH_USER_AGENT = "Mozilla/5.0 (compatible; AssistantBot/1.0)"
 # it must be told our product token explicitly -- otherwise a site that writes
 # `User-agent: AssistantBot` would not bind us.
 ROBOTS_USER_AGENT = "AssistantBot"
+
+# robots.txt is one document per site, but it was fetched once per URL: a
+# `follow_links` crawl or a task reading three articles from one host downloaded
+# the same file four times, each with a 5s timeout on its critical path. Cached
+# per (scheme, host) with a TTL. The *parser* is cached, never the allow/deny
+# answer, so a path rule still applies per path — `/private/` can be disallowed
+# while `/article` is allowed, in one cached document.
+ROBOTS_CACHE_TTL_SECONDS = 600.0
+# (scheme, netloc) -> (expires_at, parser or None for "absent/unreadable = allow")
+_robots_cache: dict[tuple[str, str], tuple[float, RobotFileParser | None]] = {}
+
+
+def clear_robots_cache() -> None:
+    """Drop the cached robots.txt documents. For tests, and for a forced re-read."""
+    _robots_cache.clear()
 
 
 class _HTMLTextExtractor(HTMLParser):
@@ -256,7 +273,15 @@ async def _fetch_page(url: str) -> tuple[str, str, str | None]:
             headers={"User-Agent": FETCH_USER_AGENT},
         ) as client:
             if not await _check_robots_txt(client, url, ROBOTS_USER_AGENT):
-                return "", "", f"Error: {url} is blocked by robots.txt"
+                # Say what happened *and what to do about it*: the user asked for
+                # this page, so they are owed the URL and the reason, not a silent
+                # nothing. The browser is not bound by robots.txt — theirs is.
+                return "", "", (
+                    f"Error: {url} is blocked by robots.txt — the site disallows "
+                    "automated access to this path. Tell the user which URL was "
+                    "blocked and that they can open it themselves; do not claim "
+                    "to have read it."
+                )
 
             async with safe_stream(client, url) as r:
                 content_type = r.headers.get("content-type", "")
@@ -328,17 +353,27 @@ async def _check_robots_txt(
     Defaults to allow when robots.txt is absent or unreadable: robots.txt is an
     opt-out, and its absence is not a prohibition.
     """
-    from urllib.robotparser import RobotFileParser
-
     try:
         parsed = urllib.parse.urlparse(url)
-        robots_url = f"{parsed.scheme}://{parsed.netloc}/robots.txt"
-        r = await client.get(robots_url, timeout=5.0)
-        if r.status_code != 200:
-            return True  # no robots.txt = allow
-        parser = RobotFileParser()
-        parser.parse(r.text.splitlines())
-        allowed = parser.can_fetch(user_agent, url)
+        key = (parsed.scheme, parsed.netloc)
+        now = time.monotonic()
+
+        cached = _robots_cache.get(key)
+        if cached is not None and now < cached[0]:
+            parser = cached[1]
+        else:
+            robots_url = f"{parsed.scheme}://{parsed.netloc}/robots.txt"
+            r = await client.get(robots_url, timeout=5.0)
+            if r.status_code != 200:
+                # No robots.txt = allow. Cached as "no rules", so a site that has
+                # none does not pay a 5s request per page either.
+                _robots_cache[key] = (now + ROBOTS_CACHE_TTL_SECONDS, None)
+                return True
+            parser = RobotFileParser()
+            parser.parse(r.text.splitlines())
+            _robots_cache[key] = (now + ROBOTS_CACHE_TTL_SECONDS, parser)
+
+        allowed = parser.can_fetch(user_agent, url) if parser is not None else True
         if not allowed:
             # The model sees "blocked by robots.txt" in the tool result, but the
             # log saw nothing — so a task whose pages were refused looked like it

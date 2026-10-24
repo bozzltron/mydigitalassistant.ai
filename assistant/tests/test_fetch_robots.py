@@ -14,7 +14,16 @@ from assistant.backend.pipeline.tools import (
     FETCH_USER_AGENT,
     ROBOTS_USER_AGENT,
     _check_robots_txt,
+    clear_robots_cache,
 )
+
+
+@pytest.fixture(autouse=True)
+def _empty_robots_cache():
+    """Each test starts with no cached documents, and leaves none behind."""
+    clear_robots_cache()
+    yield
+    clear_robots_cache()
 
 
 class _FakeResponse:
@@ -31,6 +40,18 @@ class _FakeClient:
         return self._response
 
 
+class _CountingClient(_FakeClient):
+    """A fake client that records what it was asked for."""
+
+    def __init__(self, response: _FakeResponse) -> None:
+        super().__init__(response)
+        self.calls: list[str] = []
+
+    async def get(self, url, timeout=None):
+        self.calls.append(url)
+        return await super().get(url, timeout)
+
+
 async def _allowed(robots: str, url: str, ua: str = ROBOTS_USER_AGENT) -> bool:
     return await _check_robots_txt(_FakeClient(_FakeResponse(200, robots)), url, ua)
 
@@ -40,6 +61,48 @@ async def test_a_path_rule_does_not_disallow_the_whole_site():
     robots = "User-agent: *\nDisallow: /private/\nAllow: /\n"
     assert await _allowed(robots, "https://site.example/page") is True
     assert await _allowed(robots, "https://site.example/private/x") is False
+
+
+@pytest.mark.asyncio
+async def test_robots_is_fetched_once_per_host():
+    """One document per site, not one per URL.
+
+    A `follow_links` crawl or a task reading several articles from one host paid a
+    5s robots.txt request per page, on the turn's critical path.
+    """
+    client = _CountingClient(_FakeResponse(200, "User-agent: *\nDisallow: /private/\n"))
+    assert await _check_robots_txt(client, "https://site.example/a", ROBOTS_USER_AGENT)
+    assert await _check_robots_txt(client, "https://site.example/b", ROBOTS_USER_AGENT)
+    assert len(client.calls) == 1, client.calls
+
+
+@pytest.mark.asyncio
+async def test_the_cached_document_still_applies_per_path():
+    """The cache holds the document, not a verdict — a disallowed path does not
+    block the host."""
+    client = _CountingClient(_FakeResponse(200, "User-agent: *\nDisallow: /private/\n"))
+    assert not await _check_robots_txt(
+        client, "https://site.example/private/x", ROBOTS_USER_AGENT
+    )
+    assert await _check_robots_txt(client, "https://site.example/article", ROBOTS_USER_AGENT)
+    assert len(client.calls) == 1, client.calls
+
+
+@pytest.mark.asyncio
+async def test_the_cache_expires(monkeypatch):
+    """Past the TTL the document is re-read, so a changed robots.txt is noticed."""
+    from assistant.backend.pipeline import tools as tools_module
+
+    clock = {"now": 1000.0}
+    monkeypatch.setattr(tools_module.time, "monotonic", lambda: clock["now"])
+
+    client = _CountingClient(_FakeResponse(200, "User-agent: *\nDisallow: /\n"))
+    await _check_robots_txt(client, "https://site.example/a", ROBOTS_USER_AGENT)
+    assert len(client.calls) == 1
+
+    clock["now"] += tools_module.ROBOTS_CACHE_TTL_SECONDS + 1
+    await _check_robots_txt(client, "https://site.example/b", ROBOTS_USER_AGENT)
+    assert len(client.calls) == 2, client.calls
 
 
 @pytest.mark.asyncio
