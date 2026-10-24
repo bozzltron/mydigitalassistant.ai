@@ -43,6 +43,25 @@ async def test_a_path_rule_does_not_disallow_the_whole_site():
 
 
 @pytest.mark.asyncio
+async def test_a_refusal_is_logged_with_the_url_and_the_token(caplog):
+    """A blocked fetch must leave a trace.
+
+    The tool result says "blocked by robots.txt" to the model, and the log said
+    nothing — so an agent that fetched less in a task than in chat left no evidence
+    of the reason.
+    """
+    import logging
+
+    caplog.set_level(logging.INFO, logger="assistant.backend.pipeline.tools")
+    allowed = await _allowed(
+        "User-agent: *\nDisallow: /\n", "https://blocked.example/page"
+    )
+    assert allowed is False
+    assert "robots.txt disallows https://blocked.example/page" in caplog.text
+    assert ROBOTS_USER_AGENT in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_a_blanket_disallow_blocks():
     assert (
         await _allowed("User-agent: *\nDisallow: /\n", "https://site.example/")

@@ -338,7 +338,14 @@ async def _check_robots_txt(
             return True  # no robots.txt = allow
         parser = RobotFileParser()
         parser.parse(r.text.splitlines())
-        return parser.can_fetch(user_agent, url)
+        allowed = parser.can_fetch(user_agent, url)
+        if not allowed:
+            # The model sees "blocked by robots.txt" in the tool result, but the
+            # log saw nothing — so a task whose pages were refused looked like it
+            # "searched less" with no evidence of why. Name the URL and the token
+            # the rule bound.
+            logger.info("robots.txt disallows %s for %s", url, user_agent)
+        return allowed
     except Exception:
         return True  # on error, allow
 
