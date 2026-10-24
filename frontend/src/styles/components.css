@@ -488,15 +488,6 @@ select {
   cursor: not-allowed;
 }
 
-/* Max-intelligence toggle. There was no rule for `.max-btn` anywhere — the
-   component toggled an `active` class that nothing styled, so pressing it changed
-   nothing on screen and read as broken. The accent fill is the whole feedback. */
-.max-btn.active,
-.max-btn.active:hover:not(:disabled) {
-  background: var(--accent);
-  color: var(--bg);
-}
-
 /* ==========================================================================
    TRASH CAN (trashed conversations, opened from TopBar)
    Moved out of a <style> block in TrashCan.tsx. The five undefined custom

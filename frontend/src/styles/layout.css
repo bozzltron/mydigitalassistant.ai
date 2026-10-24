@@ -175,6 +175,33 @@
   color: #fff;
 }
 
+/* Max-intelligence toggle. It sits between the mic and Send, so it takes the
+   same footprint: `.btn-icon` alone is only the glyph, which rendered as a
+   shrunken button beside two padded ones. Same chrome as `#mic-btn` — and the
+   accent fill is the only state feedback, since the `active` class it toggles
+   had no rule at all and the button read as broken. */
+#max-btn {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 0 0.75rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+#max-btn:hover {
+  background: var(--border);
+}
+
+#max-btn.active,
+#max-btn.active:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg);
+}
+
 #send-btn {
   background: var(--accent);
   border: none;
