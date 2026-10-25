@@ -257,3 +257,28 @@ async def test_read_only_tool_does_not_retry_a_permanent_error(monkeypatch):
 
     assert not result.success
     assert len(calls) == 1
+
+
+async def test_retry_log_names_the_exception_class_when_the_message_is_empty(caplog):
+    """Regression: `failed (attempt 1/3): ; retrying` named nothing.
+
+    The live logs had 13 of these on a 27B turn and one `Streaming generation
+    failed:` with no text at all — an exception whose `str()` is empty told us
+    neither the class nor the cause. `%r` puts the class name back.
+    """
+    import logging
+
+    caplog.set_level(logging.WARNING)
+
+    class SilentTransportError(httpx.TransportError):
+        """A transport blip with no message, as httpx raises them."""
+
+    async def boom():
+        raise SilentTransportError("")
+
+    with pytest.raises(SilentTransportError):
+        await retry_transient(boom, attempts=2, base_delay=0)
+
+    logged = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+    assert logged, "the retry did not log"
+    assert any("SilentTransportError" in line for line in logged), logged

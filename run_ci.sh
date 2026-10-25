@@ -16,7 +16,14 @@ echo ""
 echo "=== Running FRONTEND gate: lint, tests, production build ==="
 # The repo's build.outDir (assistant/backend/static) is wiped by emptyOutDir
 # at build time, so CI builds to a temp dir and discards it.
-docker compose run --rm --no-deps -w /app/frontend solid-dev \
+# The backend source is mounted read-only because `uploadFormats.test.ts` reads
+# `SUPPORTED_UPLOAD_EXTS` from `assistant/backend/pipeline/files.py` — the
+# cross-tree contract test cannot see the repo without it, and on the host it
+# resolves via the normal layout. Without this mount the gate fails on a test
+# that is doing its job.
+docker compose run --rm --no-deps \
+  -v "$(pwd)/assistant/backend/pipeline:/app/assistant/backend/pipeline:ro" \
+  -w /app/frontend solid-dev \
   sh -c "npm run lint && npm run test && npx vite build --outDir /tmp/frontend-dist-check && rm -rf /tmp/frontend-dist-check"
 
 echo ""

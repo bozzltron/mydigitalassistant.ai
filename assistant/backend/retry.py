@@ -96,7 +96,7 @@ async def retry_transient(
             delay = min(base_delay * (2 ** (attempt - 1)), max_delay)
             delay *= random.uniform(0.8, 1.2)
             logger.warning(
-                "%s failed (attempt %d/%d): %s; retrying in %.2fs",
+                "%s failed (attempt %d/%d): %r; retrying in %.2fs",
                 label,
                 attempt,
                 attempts,

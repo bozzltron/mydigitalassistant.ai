@@ -2146,7 +2146,12 @@ class Orchestrator:
                 async for event in _stream_and_capture():
                     yield event
             except Exception as e:
-                logger.error("Streaming generation failed: %s", e)
+                # `%r`, not `%s`: an exception with an empty message (a transport
+                # blip, a 500 with no body) logged nothing at all, which is how a
+                # failure became undiagnosable. The class name is the minimum.
+                logger.error(
+                    "Streaming generation failed: %r (session=%s)", e, session_id
+                )
                 final_answer = _GENERATION_FAILURE_MESSAGE
                 yield _finalize_event(final_answer)
             finally:
@@ -2208,7 +2213,12 @@ class Orchestrator:
                         yield f"data: {json.dumps(event)}\n\n"
                         break
             except Exception as e:
-                logger.error("Streaming generation failed: %s", e)
+                # `%r`, not `%s`: an exception with an empty message (a transport
+                # blip, a 500 with no body) logged nothing at all, which is how a
+                # failure became undiagnosable. The class name is the minimum.
+                logger.error(
+                    "Streaming generation failed: %r (session=%s)", e, session_id
+                )
                 final_answer = _GENERATION_FAILURE_MESSAGE
                 yield _finalize_event(final_answer)
 

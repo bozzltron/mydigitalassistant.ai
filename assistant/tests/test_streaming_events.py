@@ -1293,3 +1293,155 @@ async def test_stream_tool_loop_terminates_when_the_model_never_stops_acting(tmp
     # One round, one granted grace round, then the wrap-up call. Bounded, not a spin.
     assert llm.calls == 4, f"loop did not terminate as bounded: {llm.calls} LLM calls"
     assert events and '"type": "finalize"' in events[-1]
+
+
+async def test_precall_guard_collapses_before_the_prompt_overflows(
+    tmp_path, monkeypatch, caplog
+):
+    """Regression: an over-window tool round became an HTTP 500, not an answer.
+
+    Live cause (2026-10-24/25, 3 in 23 attempts): the prompt was measured at
+    30,840 / 32,768 tokens, the next round appended tool results, Ollama truncated
+    the prompt from the front, and the qwen3.8 renderer rejected the transcript
+    because the user turn was gone (`no user query found in messages`).
+
+    The append-time allowance cannot catch that — it estimates in chars at a
+    generous 4/token. The guard must use the measured prompt and run before the
+    call, collapsing the oldest results to the marker.
+    """
+    import logging
+
+    from assistant.backend.pipeline.llm_client import ChatResponse, ToolCall
+    from assistant.backend.pipeline.streaming import DROPPED_TOOL_RESULT, stream_tool_loop
+    from assistant.backend.pipeline.tool_executor import ToolResult, init_store
+
+    # Before the loop runs: caplog's level is applied at emit time, so a later
+    # set_level() cannot recover records already filtered out.
+    caplog.set_level(logging.INFO)
+
+    init_store(str(tmp_path / "stream.db"))
+
+    class StubLLM:
+        def __init__(self):
+            self.tools_model = "test-model"
+            self.calls = []
+            self.responses = [
+                ChatResponse(
+                    content="", model="m", done=True,
+                    prompt_eval_count=30_000,
+                    tool_calls=[ToolCall(name="read_file", arguments={"path": "big.txt"})],
+                ),
+                ChatResponse(content="done", model="m", done=True, prompt_eval_count=20_000),
+            ]
+
+        async def chat(self, messages, **kwargs):
+            self.calls.append(list(messages))
+            return self.responses.pop(0)
+
+        def context_window(self, model=None):
+            return 32768
+
+    async def fake_execute(name, args, user_id=None, session_id=""):
+        return ToolResult(success=True, data={"blob": "x" * 30_000})
+
+    monkeypatch.setattr(
+        "assistant.backend.pipeline.tool_executor.execute_tool", fake_execute
+    )
+
+    llm = StubLLM()
+    events = [
+        ev
+        async for ev in stream_tool_loop(
+            llm,
+            messages=[{"role": "user", "content": "read it"}],
+            tools=[],
+            model="test-model",
+            user_id="1",
+            session_id="s-1",
+        )
+    ]
+
+    # The second call was made with the oldest result collapsed, not over the window.
+    second = llm.calls[1]
+    assert any(m.role == "tool" and m.content == DROPPED_TOOL_RESULT for m in second)
+    assert any(m.role == "user" for m in second), "the user turn must survive"
+
+    finalize = [
+        json.loads(ev.replace("data: ", "").strip())
+        for ev in events
+        if '"type": "finalize"' in ev
+    ][-1]
+    assert finalize["tool_results_dropped"] >= 1
+
+    # The guard is observable: a drop the user did not ask for must be traceable.
+    assert any(
+        "tool_loop_precall_collapse" in r.getMessage() for r in caplog.records
+    ), [r.getMessage() for r in caplog.records]
+
+
+async def test_precall_guard_compacts_when_collapsing_is_not_enough(
+    tmp_path, monkeypatch, caplog
+):
+    """If the prompt is *already* past the window, drop history for that call.
+
+    Collapsing results cannot help when the measurement alone exceeds the window;
+    sending it anyway is a guaranteed Ollama 500. The compacted call keeps the
+    system prompt and the user turn only.
+    """
+    from assistant.backend.pipeline.llm_client import ChatResponse, ToolCall
+    from assistant.backend.pipeline.streaming import stream_tool_loop
+    from assistant.backend.pipeline.tool_executor import ToolResult, init_store
+
+    init_store(str(tmp_path / "stream.db"))
+
+    class StubLLM:
+        def __init__(self):
+            self.tools_model = "test-model"
+            self.calls = []
+            self.responses = [
+                ChatResponse(
+                    content="", model="m", done=True,
+                    prompt_eval_count=32_000,
+                    tool_calls=[ToolCall(name="read_file", arguments={"path": "big.txt"})],
+                ),
+                ChatResponse(content="done", model="m", done=True, prompt_eval_count=900),
+            ]
+
+        async def chat(self, messages, **kwargs):
+            self.calls.append(list(messages))
+            return self.responses.pop(0)
+
+        def context_window(self, model=None):
+            return 32768
+
+    async def fake_execute(name, args, user_id=None, session_id=""):
+        return ToolResult(success=True, data={"blob": "x" * 1000})
+
+    monkeypatch.setattr(
+        "assistant.backend.pipeline.tool_executor.execute_tool", fake_execute
+    )
+
+    llm = StubLLM()
+    async for _ in stream_tool_loop(
+        llm,
+        messages=[
+            {"role": "system", "content": "sys"},
+            {"role": "assistant", "content": "old answer"},
+            {"role": "user", "content": "read it"},
+        ],
+        tools=[],
+        model="test-model",
+        user_id="1",
+        session_id="s-1",
+    ):
+        pass
+
+    second = llm.calls[1]
+    assert [m.role for m in second] == ["system", "user"]
+
+    import logging
+
+    caplog.set_level(logging.WARNING)
+    assert any(
+        "tool_loop_precall_compact" in r.getMessage() for r in caplog.records
+    ), [r.getMessage() for r in caplog.records]

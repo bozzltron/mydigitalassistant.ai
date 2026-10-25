@@ -161,9 +161,11 @@ docker run -it --rm -v $(pwd):/app -w /app assistant ruff check .
 docker run -it --rm -v $(pwd):/app -v assistant-test-data:/app/data -w /app -e DATABASE_PATH=/app/data/assistant-test.db assistant pytest assistant/tests/ --timeout=120
 
 # Frontend
-docker run -it --rm -v $(pwd)/frontend:/app -w /app assistant npm run lint
-docker run -it --rm -v $(pwd)/frontend:/app -w /app assistant npm run typecheck
-docker run -it --rm -v $(pwd)/frontend:/app -w /app assistant npm run test
+# `-v $(pwd)/assistant:/assistant` backs the cross-tree contract test
+# (`uploadFormats.test.ts` reads SUPPORTED_UPLOAD_EXTS from the backend source).
+docker run -it --rm -v $(pwd)/frontend:/app -v $(pwd)/assistant:/assistant:ro -w /app assistant npm run lint
+docker run -it --rm -v $(pwd)/frontend:/app -v $(pwd)/assistant:/assistant:ro -w /app assistant npm run typecheck
+docker run -it --rm -v $(pwd)/frontend:/app -v $(pwd)/assistant:/assistant:ro -w /app assistant npm run test
 ```
 
 `npm run check` runs lint + typecheck + tests in one pass. The typecheck gate is

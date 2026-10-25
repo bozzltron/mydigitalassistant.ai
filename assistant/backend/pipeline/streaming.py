@@ -345,7 +345,11 @@ async def stream_tool_loop(
     be the search the model actually used rather than only the pre-generation one.
     """
     from assistant.backend.config import settings
-    from assistant.backend.pipeline.context_budget import content_char_limit
+    from assistant.backend.pipeline.context_budget import (
+        MIN_GENERATION_TOKENS,
+        PROJECTION_CHARS_PER_TOKEN,
+        content_char_limit,
+    )
     from assistant.backend.pipeline.llm_client import (
         EMPTY_GENERATION_FALLBACK,
         ChatMessage,
@@ -403,6 +407,12 @@ async def stream_tool_loop(
     repeat_ledger: dict[str, dict] = {}
 
     last_content = ""
+    # The last measured prompt size and the characters appended since that call.
+    # `prompt_eval_count` is the only true token count available; the char
+    # allowance is an estimate, and it is checked when a result is appended rather
+    # than before the next request. The pre-call guard below uses these.
+    last_prompt_tokens = 0
+    chars_since_call = 0
     # One grant of grace rounds per turn, spent by whichever site reaches the ceiling with
     # an unperformed action. This variable *is* the loop's termination argument, and it is
     # deliberately local: `while True` above is bounded because the ceiling breaks unless
@@ -421,6 +431,72 @@ async def stream_tool_loop(
 
         return not action_performed(successful_tool_calls, action_kind)
 
+    def _collapse_for_the_next_call() -> None:
+        """Make room *before* the next call, not after the overflow.
+
+        Ollama truncates an over-window prompt from the front, and the qwen3.8
+        renderer rejects a transcript whose user turn was dropped — HTTP 500,
+        "no user query found in messages" (measured 2026-10-24/25: 3 in 23
+        attempts). The append-time allowance cannot prevent it: it estimates in
+        chars at 4/token and it is spent before the call that overflows. This
+        projects from the last **measured** prompt and collapses the oldest tool
+        results to the existing marker until the call fits.
+
+        If even every result collapsed is too big, the prompt was already past
+        the window; dropping history for this one call is a worse answer but not
+        a failed turn.
+        """
+        nonlocal last_prompt_tokens, chars_since_call, tool_result_chars
+        nonlocal tool_results_dropped
+        if not last_prompt_tokens or not context_window:
+            return
+
+        def projected() -> int:
+            return last_prompt_tokens + -(-chars_since_call // PROJECTION_CHARS_PER_TOKEN)
+
+        if projected() + MIN_GENERATION_TOKENS <= context_window:
+            return
+
+        collapsed = 0
+        freed = 0
+        for old in tool_result_messages:
+            if projected() + MIN_GENERATION_TOKENS <= context_window:
+                break
+            if old.content == DROPPED_TOOL_RESULT:
+                continue
+            delta = len(old.content) - len(DROPPED_TOOL_RESULT)
+            old.content = DROPPED_TOOL_RESULT
+            tool_result_chars = max(0, tool_result_chars - delta)
+            chars_since_call = max(0, chars_since_call - delta)
+            tool_results_dropped += 1
+            collapsed += 1
+            freed += delta
+
+        if collapsed:
+            logger.info(
+                "tool_loop_precall_collapse: projected=%d window=%d collapsed=%d "
+                "chars_freed=%d",
+                projected(),
+                context_window,
+                collapsed,
+                freed,
+            )
+
+        if projected() + MIN_GENERATION_TOKENS > context_window:
+            logger.warning(
+                "tool_loop_precall_compact: projected=%d window=%d — history dropped "
+                "for this call instead of sending an over-window prompt",
+                projected(),
+                context_window,
+            )
+            from assistant.backend.pipeline.llm_client import compact_messages
+
+            chat_messages[:] = compact_messages(chat_messages)
+            tool_result_messages.clear()
+            tool_result_chars = 0
+            chars_since_call = 0
+            last_prompt_tokens = 0
+
     while True:
         if turn >= max_turns:
             if grace_rounds_left <= 0 or not _ceiling_needs_an_acting_round():
@@ -433,6 +509,7 @@ async def stream_tool_loop(
             completion_nudged = True
             chat_messages.append(ChatMessage(role="assistant", content=last_content))
             chat_messages.append(ChatMessage(role="user", content=_COMPLETION_NUDGE))
+            chars_since_call += len(last_content) + len(_COMPLETION_NUDGE)
             yield serialize_event(
                 StageEvent(stage="acting", detail="making sure that was done")
             )
@@ -447,6 +524,9 @@ async def stream_tool_loop(
         )
         round_start = time.monotonic()
 
+        # Make room before the request, not after it. See the helper's note.
+        _collapse_for_the_next_call()
+
         response = await llm_client.chat(
             messages=chat_messages,
             tools=tools,
@@ -457,6 +537,8 @@ async def stream_tool_loop(
             num_predict=num_predict,
         )
         max_prompt_tokens = max(max_prompt_tokens, response.prompt_eval_count)
+        last_prompt_tokens = response.prompt_eval_count or 0
+        chars_since_call = 0
 
         # An empty generation with no tool call means the model emitted nothing:
         # on this stack that is almost always context exhaustion. The prompt —
@@ -491,6 +573,10 @@ async def stream_tool_loop(
                 num_predict=num_predict,
             )
             max_prompt_tokens = max(max_prompt_tokens, response.prompt_eval_count)
+            # The retry sent a different (compacted) list, so the previous
+            # measurement no longer describes what we hold.
+            last_prompt_tokens = response.prompt_eval_count or 0
+            chars_since_call = 0
 
         # The per-round cost, which until now existed only in Ollama's own server
         # log. `prompt_tokens` is the measured prefill — it dominates a round
@@ -564,6 +650,7 @@ async def stream_tool_loop(
                     tool_result_messages.append(note_message)
                     chat_messages.append(note_message)
                     tool_result_chars += len(note)
+                    chars_since_call += len(note)
                     continue
 
                 # A search the model runs as a tool is a real search, and until
@@ -662,6 +749,7 @@ async def stream_tool_loop(
                             old.content = DROPPED_TOOL_RESULT
                             tool_results_dropped += 1
                 tool_result_chars += len(formatted_result)
+                chars_since_call += len(formatted_result)
                 result_message = ChatMessage(
                     role="tool", content=formatted_result, name=tool_name
                 )
@@ -710,6 +798,7 @@ async def stream_tool_loop(
                     ChatMessage(role="assistant", content=response.content or "")
                 )
                 chat_messages.append(ChatMessage(role="user", content=nudge))
+                chars_since_call += len(response.content or "") + len(nudge)
                 continue
             # No tool calls = direct answer
             logger.info(
@@ -741,21 +830,22 @@ async def stream_tool_loop(
     # neutral message is a last resort if even the wrap-up call fails).
     answer = None
     try:
+        wrap_prompt = ChatMessage(
+            role="user",
+            content=(
+                "You have used all your available tool-call turns "
+                "without producing a final answer. Wrap up for the "
+                "user now in plain language: state what you were able "
+                "to do, what blocked you (including any tool errors), "
+                "and what you need from them next. Do not describe "
+                "the tool loop internals or repeat raw tool data."
+            ),
+        )
+        chat_messages.append(wrap_prompt)
+        chars_since_call += len(wrap_prompt.content)
+        _collapse_for_the_next_call()
         wrap_up = await llm_client.chat(
-            messages=[
-                *chat_messages,
-                ChatMessage(
-                    role="user",
-                    content=(
-                        "You have used all your available tool-call turns "
-                        "without producing a final answer. Wrap up for the "
-                        "user now in plain language: state what you were able "
-                        "to do, what blocked you (including any tool errors), "
-                        "and what you need from them next. Do not describe "
-                        "the tool loop internals or repeat raw tool data."
-                    ),
-                ),
-            ],
+            messages=chat_messages,
             tools=tools,
             tool_choice="none",
             model=loop_model,

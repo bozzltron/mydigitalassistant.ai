@@ -164,6 +164,20 @@ At 32,768 the same fixed cost leaves **~21,200** tokens of content allowance
 (`32,768 − 7,444 − 4,096`), about 4.4× the 16k figure. That is what the measured
 three-subject run used: 32,568 tool-result chars with nothing dropped.
 
+**The allowance is optimistic, so the loop no longer trusts it alone.** It converts
+chars at 4/token, but live 32k turns measure **2.96–3.1 chars/token** (94,623 chars →
+30,887 tokens; 82,744 → 27,944), and it is spent when a result is appended — before
+the call that overflows. In 3 of 23 attempts (2026-10-24/25) the next round crossed
+the window, Ollama truncated the prompt from the front, the qwen3.8 renderer then
+found no user turn and returned **HTTP 500** (`no user query found in messages`).
+
+The loop now projects the next prompt from the **last measured `prompt_eval_count`**
+plus the chars appended since, at 3 chars/token, and collapses the oldest tool results
+to the marker until `projected + 1,024 ≤ window` — before the request. If even every
+result collapsed is too big, it drops history for that call (`compact_messages`)
+rather than sending a prompt that is guaranteed to fail. Both events log:
+`tool_loop_precall_collapse:` and `tool_loop_precall_compact:`.
+
 The allowance is **derived**, not a fraction: `window − fixed cost − reserved
 answer`. It shrinks as history or the tool set grows, and grows when they are
 small. The fixed cost is measured per turn and logged as `context_fixed`. The

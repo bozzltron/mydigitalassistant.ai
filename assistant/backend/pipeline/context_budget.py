@@ -24,6 +24,19 @@ from dataclasses import dataclass
 
 CHARS_PER_TOKEN = 4
 
+# The projection constant, and why it differs from the allowance's 4: the
+# allowance sizes a result, where being generous is a little extra context; the
+# pre-call guard must never be generous, because the failure it prevents is a
+# hard 500. Measured on live 32k turns (2026-10-24/25): 94,623 chars →
+# 30,887 tokens, and 82,744 → 27,944 — i.e. 2.96–3.1 chars/token, not 4.
+PROJECTION_CHARS_PER_TOKEN = 3
+
+# The pre-call guard's hard floor. `RESERVED_OUTPUT_TOKENS` (4096) is the quality
+# target the content allowance already enforces; demanding it here would collapse
+# context to preserve headroom no turn uses. The guard exists to stop the prompt
+# itself crossing the window, which is what makes Ollama truncate the user turn.
+MIN_GENERATION_TOKENS = 1024
+
 # Room for the model's answer. Matches ``think_num_predict_cap`` so a thinking
 # model can reason and still answer, and makes the derived allowance no larger
 # than the fraction it replaces in the common case.
