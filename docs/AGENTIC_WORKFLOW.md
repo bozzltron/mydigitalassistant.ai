@@ -38,6 +38,7 @@ scripts/
   agents-link.sh                  # rebuilds the vendor symlinks
 .cursor/agents  -> ../.agents/agents   (symlink, generated)
 .claude/agents  -> ../.agents/agents   (symlink, generated)
+.opencode/agents -> ../.agents/agents  (symlink, generated)
 .claude/CLAUDE.md -> @AGENTS.md        (generated)
 ```
 
@@ -122,6 +123,57 @@ scripts/log-snapshot.sh --since 7d --out .agents/runs/<run-id>/logs
 
 One finding per run: a run that fixes three things cannot tell you which one worked.
 
+## OpenCode support
+
+The architecture does not change for OpenCode; four details do. OpenCode is the
+harness this repo is developed in, so these are the ones we exercise every day.
+
+| Piece | OpenCode path | Notes |
+|---|---|---|
+| Instructions | `AGENTS.md` | read natively; no `CLAUDE.md` needed |
+| Agents | `.opencode/agents/<name>.md` | **the spec's `.agents/agents/` is not discovered** — `agents-link.sh` adds the symlink |
+| Skills | `.opencode/skills/<id>/SKILL.md` | `.agents/skills` is a **project compatibility source**, discovered as-is — no link needed (confirmed: both runbooks appear in the skill list) |
+| Models | `provider/model#variant` | already the form in the agent files (`opencode-go/...`) |
+| Subagent mode | `mode: subagent` | without it a new agent defaults to `primary` |
+| Read-only enforcement | `permissions` (`action`/`resource`/`effect`) | **enforced**, unlike advice: read-only agents can edit only `.agents/runs/**` |
+| Hooks / telemetry | plugins | OpenCode has no `hooks.json`; measurement stays verifier-based |
+
+### Adjustments the spec needs
+
+The org spec was written for Cursor. These are the deltas, in order of how much
+they matter:
+
+1. **The vendor table gains a third column.** The spec lists Cursor and
+   Claude Code; add OpenCode with the paths above. `.agents/` remains the source of
+   truth, and `scripts/agents-link.sh` now creates three links instead of two.
+2. **Agent frontmatter gains two fields.** `mode: subagent` and `permissions` are
+   OpenCode-specific; other tools ignore them. The spec's "Can edit code? No"
+   column becomes enforceable rather than advisory — the planner, observer,
+   reviewer and verifier can write only their handoff files.
+3. **Hooks become plugins.** The spec's Phase-2 telemetry (`scripts/agent-hooks/` +
+   `.cursor/hooks.json`) has no OpenCode equivalent; use a plugin subscribing to
+   events, or keep the verifier's log as the measurement. Given the spec's own
+   note that the vendor's hooks were unreliable, the log-first route is the safe
+   one.
+4. **Invocation wording.** "Use the tester subagent on run `<id>`" is Cursor
+   phrasing. In OpenCode you mention the agent (`@tester`) or ask the primary
+   agent; skills load by ID, or explicitly with `@ship-feature` / `@self-improve`.
+   The handoff files make the runbook vendor-independent regardless.
+
+Everything else — R1–R8, the five agents, the gates, the log format, the registry
+route — is unchanged.
+
+### What is OpenCode-specific, and what is not
+
+Keep this line clean when the files move to a shared registry:
+
+- **Portable:** the markdown bodies (Inputs / Process / Output / Rules), the two
+  `SKILL.md` files, `.agents/runs/log.jsonl`, `scripts/log-snapshot.sh`, the
+  `AGENTS.md` rules.
+- **Per-harness:** `model:` IDs, `mode:`, `permissions:`, and the symlink path.
+  If a second harness needs different model IDs, give it its own thin config that
+  points at the same bodies rather than forking the agents.
+
 ## Measurement
 
 One measure to start: the verifier's verdict and score per run, one line in
@@ -149,8 +201,7 @@ lives in `.agents/evals/` when there is something stable to regress against.
 | R1 | Agent runs a specific model, does one task | `.agents/agents/*.md` — YAML `model:` + one job |
 | R2 | Agents hand off to one another | runbooks chain them through handoff files |
 | R3 | Run one agent, or chain | every agent reads/writes the run dir; works alone |
-| R4 | Local or cloud | OpenCode locally; the same files are read by Cursor/Claude via symlinks |
-| R5 | Stoppable and startable | state is in `.agents/runs/<run-id>/`; skip-if-exists |
+| R4 | Local or cloud | OpenCode locally; the same files are read by Cursor/Claude via symlinks || R5 | Stoppable and startable | state is in `.agents/runs/<run-id>/`; skip-if-exists |
 | R6 | Measured efficacy | `spec-verifier` → `verification.md` + `log.jsonl` |
 | R7 | No vendor lock-in | `.agents/` + `AGENTS.md` + `scripts/`; vendor folders are symlinks |
 | R8 | Shareable with owners | move `.agents/agents/` into a registry repo with `CODEOWNERS`; link back with `scripts/agents-link.sh` |

@@ -2,6 +2,14 @@
 name: reviewer
 description: Reviews a diff for correctness, project conventions and risk, and writes blocking versus non-blocking findings. Use after the tests pass, before verification.
 model: "opencode-go/deepseek-v4-pro"
+mode: subagent
+permissions:
+  - action: edit
+    resource: "*"
+    effect: deny
+  - action: edit
+    resource: ".agents/runs/**"
+    effect: allow
 ---
 
 You are the reviewer. You read the diff; you do not change it.

@@ -85,7 +85,7 @@ it works.
 - `/.agents/` — the agentic dev workflow: subagents (`agents/`), runbooks
   (`skills/ship-feature`, `skills/self-improve`), and the run log. Read
   `docs/AGENTIC_WORKFLOW.md` before changing it. Vendor folders (`.cursor/`,
-  `.claude/`) are generated symlinks — edit `.agents/` and re-run
+  `.claude/`, `.opencode/`) are generated symlinks — edit `.agents/` and re-run
   `scripts/agents-link.sh`.
 
 ## Security constraints (HARD RULES — violate these and the project's purpose is broken)

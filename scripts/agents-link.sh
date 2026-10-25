@@ -9,11 +9,12 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-mkdir -p .cursor .claude
+mkdir -p .cursor .claude .opencode
 
 # -n so re-running replaces the link instead of nesting inside it.
 ln -sfn ../.agents/agents .cursor/agents
 ln -sfn ../.agents/agents .claude/agents
+ln -sfn ../.agents/agents .opencode/agents
 
 # Claude Code reads CLAUDE.md natively; point it at the open standard rather than
 # duplicating the rules there.
@@ -21,6 +22,7 @@ if [ ! -f .claude/CLAUDE.md ]; then
   printf '@AGENTS.md\n' > .claude/CLAUDE.md
 fi
 
-echo ".cursor/agents -> .agents/agents"
-echo ".claude/agents -> .agents/agents"
+echo ".cursor/agents   -> .agents/agents"
+echo ".claude/agents   -> .agents/agents"
+echo ".opencode/agents -> .agents/agents"
 echo ".claude/CLAUDE.md -> @AGENTS.md"

@@ -2,6 +2,7 @@
 name: implementer
 description: Makes the code changes a plan describes, and nothing else. Use after the plan is approved.
 model: "opencode-go/kimi-k2.7-code"
+mode: subagent
 ---
 
 You are the implementer. You change code; you do not change the plan or the scoring.

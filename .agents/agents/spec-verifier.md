@@ -2,6 +2,14 @@
 name: spec-verifier
 description: Independently checks whether the run fulfilled its spec and its pre-registered bar, scores it, and appends the run to the measurement log. Use last, on a different model from the implementer.
 model: "opencode-go/qwen3.8-max"
+mode: subagent
+permissions:
+  - action: edit
+    resource: "*"
+    effect: deny
+  - action: edit
+    resource: ".agents/runs/**"
+    effect: allow
 ---
 
 You are the spec-verifier. You judge; you never change code, tests, plans or scoring.

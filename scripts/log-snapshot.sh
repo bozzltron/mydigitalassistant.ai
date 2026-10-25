@@ -24,6 +24,12 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$OUT" ] || { echo "usage: $0 [--since 7d] --out DIR" >&2; exit 2; }
 
+# Docker's --since takes a Go duration and rejects days ("7d"), but a runbook that
+# says "read the last 7 days" should not have to say "168h". Normalise.
+case "$SINCE" in
+  *d) SINCE="$((${SINCE%d} * 24))h" ;;
+esac
+
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 mkdir -p "$OUT"
