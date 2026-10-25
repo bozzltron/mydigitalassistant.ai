@@ -210,7 +210,8 @@ docker compose exec assistant python -m assistant.scripts.verify_security
 
 Guide for contributors (and agents): [`RUNBOOK.md`](RUNBOOK.md). Design
 principles and conventions: [`AGENTS.md`](AGENTS.md) and
-[`assistant/AGENTS.md`](assistant/AGENTS.md).
+[`assistant/AGENTS.md`](assistant/AGENTS.md). Agent runbooks and model
+assignment: [`docs/AGENTIC_WORKFLOW.md`](docs/AGENTIC_WORKFLOW.md).
 
 ## Documentation
 
@@ -222,6 +223,7 @@ principles and conventions: [`AGENTS.md`](AGENTS.md) and
 - [`docs/FILES.md`](docs/FILES.md) — file sandbox and document handling
 - [`docs/CONVERSATION_MODE_FLOW.md`](docs/CONVERSATION_MODE_FLOW.md) — voice mode
 - [`docs/DEPLOYMENT_MODES.md`](docs/DEPLOYMENT_MODES.md) — dev vs prod compose
+- [`docs/AGENTIC_WORKFLOW.md`](docs/AGENTIC_WORKFLOW.md) — agent runbooks (`ship-feature`, `self-improve`) and per-agent models
 
 ## What this alpha is not
 

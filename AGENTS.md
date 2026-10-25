@@ -82,6 +82,11 @@ it works.
 - `/plans/` — **transient** working plans, one per active task (see `RUNBOOK.md`).
   Plans are deleted when their work ships; they are not kept as history. Git
   history is the archive.
+- `/.agents/` — the agentic dev workflow: subagents (`agents/`), runbooks
+  (`skills/ship-feature`, `skills/self-improve`), and the run log. Read
+  `docs/AGENTIC_WORKFLOW.md` before changing it. Vendor folders (`.cursor/`,
+  `.claude/`) are generated symlinks — edit `.agents/` and re-run
+  `scripts/agents-link.sh`.
 
 ## Security constraints (HARD RULES — violate these and the project's purpose is broken)
 - All LLM inference via local Ollama on 127.0.0.1:11434.
@@ -330,6 +335,34 @@ The agent must confirm before performing actions that could expose sensitive inf
 - **Data locality**: All LLM inference runs locally via Ollama (127.0.0.1). No data leaves the machine unless the user explicitly opts into Brave Search.
 - **No telemetry**: Zero analytics, tracking, or phone-home code. The agent's memory stays in the local SQLite database.
 - **User consent for external calls**: Any network request beyond localhost (Ollama, SearXNG, Brave) requires explicit user action or configuration.
+
+## Agentic workflow — two runbooks
+
+Feature work and self-improvement use the same five handoff steps; the only
+difference is where the run starts. `RUNBOOK.md` stays the human run book; these
+are the agent runbooks that automate its shape.
+
+- **`ship-feature`** — spec → `plan.md` → code → tests → review → verification.
+- **`self-improve`** — **docker logs (dev *and* prod)** → `findings.md` → a human
+  picks one → `plan.md` → … → deploy + soak → `measurement.md` → verification.
+
+Rules that hold in both:
+
+- A human approves the plan and merges. Agents never approve their own work.
+- **No agent edits** `spec-verifier.md`, `.agents/evals/` or `.agents/runs/log.jsonl`.
+  An agent that can move its own score will.
+- The planner pre-registers the metric, the bar and the falsification condition; the
+  verifier checks that bar against a fresh measurement, and a missing measurement is
+  `PARTIAL`, never `PASS`. `RUNBOOK.md` §10 still decides when to stop.
+- One finding per self-improve run. A run that fixes three things cannot tell you
+  which one worked.
+- `.agents/runs/<run-id>/` is transient (git-ignored); `log.jsonl` is committed.
+
+Model assignment lives in `docs/AGENTIC_WORKFLOW.md`: observer and tester on fast
+models, implementer on the coding model, planner and verifier on the strongest — and
+the reviewer **and verifier are a different family from the implementer**, because a
+second opinion from the same model is a formality. The agent harness (OpenCode) is
+dev tooling; the **assistant's** runtime inference is still local Ollama only.
 
 ## Commit messages
 - Conventional commits: `feat:`, `fix:`, `test:`, `docs:`, `refactor:`.

@@ -102,3 +102,9 @@ data/
 # runtime, and Vite cannot empty a directory outside its own root.
 assistant/backend/static/assets/
 assistant/backend/static/index.html
+
+# ----- Agent runs -----
+# A run directory is working state, like /plans/. The measurement log is the
+# durable record and stays tracked; the handoffs and log snapshots do not.
+.agents/runs/*
+!.agents/runs/log.jsonl
