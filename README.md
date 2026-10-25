@@ -63,6 +63,15 @@ docker compose exec assistant python -m assistant.scripts.verify_security
 ## Requirements
 
 - Docker and Docker Compose
+- **Docker Desktop with 8 GB of memory** (Settings → Resources → Memory).
+  Ollama runs on the **host**, not in a container, so the Docker VM's memory is
+  memory the models cannot use — and Docker Desktop's 16 GB default is more than
+  this stack needs. The assistant's containers use ~0.6 GB steady and a
+  `docker build` peaks ~2–3 GB. On the 48 GB reference box, 16 GB starved the
+  models: loading the 27B left 283 MB free and 31.9 GB of swap in use. 8 GB is the
+  working figure; if you build images while another project's ~5 GB stack is in the
+  same VM, stop that stack for the build or raise the limit to 10 GB. A change here
+  restarts the VM, and every container with it.
 - Ollama running on the **host** (not in a container), with these models pulled:
 
   ```bash
@@ -95,8 +104,18 @@ docker compose exec assistant python -m assistant.scripts.verify_security
   # (or `export` them before starting it).
   ```
 
-  `4` = the warm set (chat/tools, utility, embedding) plus one on-demand tier.
-  See `docs/MODEL_SELECTION.md` for the measured eviction.
+  `4` = the warm set (chat/tools, utility, embedding, decision) plus one on-demand
+  tier. The cap defaults to 3, and a fourth model evicts a warm one, so it is
+  already the smallest number that keeps the warm set intact.
+
+  **A fifth slot does not buy coexistence on a 48 GB host.** Measured 2026-10-24
+  with Docker capped at 8 GB and the cap raised to 5: after a normal turn all four
+  warm models were resident, and the very next Max turn left **only the 27B** —
+  the memory wasn't there, so Ollama evicted them regardless of the slot budget.
+  If you do have the headroom (≥64 GB, or a host without a 6.5 GB editor and a
+  Supabase stack running), 5 keeps the 27B next to the warm set. Otherwise budget
+  the chat model's reload (~20–30 s) after a Max turn. See
+  `docs/MODEL_SELECTION.md` for the measurements.
 
 ## First run
 

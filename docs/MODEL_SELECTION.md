@@ -46,10 +46,18 @@ Count **weights** (Ollama `ollama list` size) + a small KV overhead. On 48GB:
   28GB is comfortable; a second concurrent 30B would push ~46GB and is not safe.
 - Keep-alive is the residency control: warm roles get `-1`/long, on-demand tiers
   get `10m` so they evict themselves and never squat next to the warm set.
-- **OLLAMA_MAX_LOADED_MODELS=4** on the host caps concurrent resident models.
+- **Docker's share comes off the top.** The Docker Desktop VM is a fixed
+  allocation, and Ollama runs on the host, so the budget is host RAM *minus* the
+  VM. On the reference box that is 48 − 8 = **~40 GB** once Docker is capped at
+  8 GB (README → Requirements). At Docker's 16 GB default the arithmetic still
+  "fit" and the machine thrashed anyway: 283 MB free, 31.9 GB of swap, and the 9B
+  evicted on every Max turn (measured 2026-10-24).
+- **OLLAMA_MAX_LOADED_MODELS=4** on the reference host: the four-model warm set,
+  plus one on-demand tier. A fifth slot was measured and does not keep the 27B and
+  the warm set resident together on 48 GB (see the note below).
 
 Current (Sept 2026) warm set ≈ 10.6GB (6.6 + 3.4 + 0.6); peak with the on-demand
-27B ≈ 28GB. Fits 48GB.
+27B ≈ 28GB. Fits 48GB with Docker capped at 8 GB.
 
 ## Latency budget (per role)
 
@@ -125,11 +133,18 @@ capability: **`nimble`** (the *completion* nudge — see "Considered and not ado
 **`qwen3.8:27b`** (MAX escalation). Empty them and the corresponding feature degrades
 cleanly rather than failing.
 
-> **The binding constraint is `OLLAMA_MAX_LOADED_MODELS`, not RAM.** It defaults to
-> **3**, and the warm set fills it. A fourth model *evicts a warm one* — measured while
-> probing the extraction council: running `sorc/q4:4b` alone evicted `qwen3.5:4b`, and
-> the next turn pays its reload. Host RAM (48 GB on the reference box) is not the limit;
-> the cap is. Raise it deliberately if a new role must coexist with the warm set.
+> **The slot cap decides *which* model evicts; RAM decides whether the next one
+> fits.** It defaults to **3**, and the warm set fills it. A fourth model *evicts a
+> warm one* — measured while probing the extraction council: running `sorc/q4:4b`
+> alone evicted `qwen3.5:4b`, and the next turn pays its reload. On the reference
+> box the cap is **4** (the four-model warm set, plus one on-demand tier).
+>
+> **Raising it to 5 was tried and did not help** (2026-10-24, Docker capped at
+> 8 GB): after a normal turn all four warm models were resident, and the next Max
+> turn left **only the 27B**. The eviction was driven by memory, not slots —
+> 48 GB minus 8 GB Docker minus desktop apps leaves no room for 32 GB of models.
+> Raise the cap only alongside memory you have actually freed, and measure the
+> `/api/ps` result rather than trusting the slot count.
 
 Rationale highlights:
 
