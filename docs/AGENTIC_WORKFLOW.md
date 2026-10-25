@@ -25,6 +25,7 @@ AGENTS.md                         # team rules every agent follows
     implementer.md
     tester.md
     reviewer.md
+    design-guardian.md
     spec-verifier.md
   skills/
     ship-feature/SKILL.md         # spec → plan → code → tests → review → verify
@@ -57,6 +58,7 @@ tool's IDs (or `ollama/...` for a fully local loop) without touching the runbook
 | **implementer** | Plan → code | `opencode-go/kimi-k2.7-code` | strong coding | purpose-built code model; the bulk of the tokens |
 | **tester** | Criteria → tests + report | `opencode-go/claude-haiku-5-5` | fast/mid | writing tests against a plan needs mid-tier judgement, not deep reasoning |
 | **reviewer** | Diff → blocking findings | `opencode-go/deepseek-v4-pro` | mid | **different family from the implementer**, cheap (0.66/1.98), strong on code |
+| **design-guardian** | Product pass → principles upheld | `opencode-go/gemini-4-argon` | strong, product judgement | owns the principles checklist; a fourth family, so the design pass is not the reviewer's opinion twice |
 | **spec-verifier** | Spec + bar → verdict + score | `opencode-go/qwen3.8-max` | strong judge | **different family from the implementer**; the verifier is the measurement, so it gets the strongest available judge |
 
 Two rules the model table encodes:
@@ -97,8 +99,9 @@ ID and the runbook skips steps whose output already exists.
 ### ship-feature
 
 ```
-plan.md → implementation.md → test-report.md → review.md → verification.md
-         ↑ human approves the plan                    ↑ human merges
+plan.md → implementation.md → test-report.md → review.md → principles.md
+         ↑ human approves the plan                                  → verification.md
+                                                          ↑ human merges
 ```
 
 `PARTIAL` or `FAIL` sends the gaps back to the implementer up to twice; then a human
@@ -107,17 +110,21 @@ takes over with `verification.md`.
 ### self-improve
 
 ```
-logs/ → findings.md → (human picks) → plan.md → (human approves) → code + tests
-      → review.md → deploy + soak → measurement.md → verification.md
+live logs → findings.md → (human picks) → plan.md → (human approves) → code + tests
+          → review.md → principles.md → deploy + soak → measurement.md → verification.md
 ```
 
-It starts from the **dev and prod docker logs**, not from an idea. `observer` turns
-them into evidence, a human picks one candidate, and the rest is the feature path —
-except the verifier scores the plan's pre-registered bar against a fresh
+It starts from the **live dev and prod docker logs**, not from an idea. `observer`
+turns them into evidence, a human picks one candidate, and the rest is the feature
+path — except the verifier scores the plan's pre-registered bar against a fresh
 `measurement.md`, not the implementer's story.
 
 ```bash
-# what the observer reads
+# what the observer reads (both stacks)
+docker compose logs --no-color --since 7d assistant
+docker compose -f docker-compose.prod.yml logs --no-color --since 7d assistant
+
+# optional: freeze the evidence when a before/after must not move
 scripts/log-snapshot.sh --since 7d --out .agents/runs/<run-id>/logs
 ```
 
@@ -174,6 +181,23 @@ Keep this line clean when the files move to a shared registry:
   If a second harness needs different model IDs, give it its own thin config that
   points at the same bodies rather than forking the agents.
 
+## Gates
+
+Agents do not carry their own copy of the test commands — they call
+`scripts/agent-gates.sh`, the one place that knows them:
+
+| mode | runs |
+|---|---|
+| `--scoped <paths> [--frontend]` | `ruff check .`, the named pytest files (`--timeout=20`), optional `npm run check` |
+| `--full` | `./run_ci.sh` — dead-code check, frontend lint/tests/build, critical-path tests, full suite in **plain and encrypted** DB modes — plus `assistant/scripts/verify_security` |
+
+`run_ci.sh` is the pre-commit gate from `RUNBOOK.md`; scoped mode exists because the
+full suite is a four-minute gate, not an inner loop. When a gate changes, it changes
+in `RUNBOOK.md` and in this script **in the same commit** — that is what stops an
+agent from running yesterday's commands. The script also encodes two host quirks: the
+suite hangs at `--timeout=120` here (use 20), and the named test volume keeps tests
+off the repo's `data/` and is ~4x faster.
+
 ## Measurement
 
 One measure to start: the verifier's verdict and score per run, one line in
@@ -215,6 +239,10 @@ lives in `.agents/evals/` when there is something stable to regress against.
   restores it and compares table counts first (`RUNBOOK.md` §11).
 - **Both environments or it isn't verified.** Dev 8443 and prod 8444 are separate
   images and databases; rebuild both before claiming a live change.
+- **A product pass gets a design pass.** `design-guardian` runs on every feature and
+  self-improve run, after the reviewer. It owns the principles checklist and reports
+  a gap when a principle has no test or lint enforcing it — the principles are
+  human-owned, so it proposes checks rather than editing them.
 - **Runs are transient, the log is not.** Never commit `.agents/runs/<id>/`; never
   lose `log.jsonl`.
 

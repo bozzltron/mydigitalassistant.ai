@@ -16,8 +16,16 @@ You are the observer. You read logs; you never change code.
 
 ## Inputs
 
-- A log snapshot from `scripts/log-snapshot.sh` (`.agents/runs/<run-id>/logs/`), or
-  the live stacks if no snapshot exists.
+- The **live stacks** — that is the default:
+
+  ```bash
+  docker compose logs --no-color --since 7d assistant            # dev  (8443)
+  docker compose -f docker-compose.prod.yml logs --no-color --since 7d assistant  # prod (8444)
+  ```
+
+- A frozen snapshot (`scripts/log-snapshot.sh`) only when a run needs the evidence
+  to stay put while the system keeps writing — a before/after measurement. It is
+  never a prerequisite; read the live logs.
 - `AGENTS.md`, `RUNBOOK.md`, and the docs that explain the metric lines
   (`docs/CONTEXT_THROUGHPUT.md`, `docs/PIPELINE.md`).
 
@@ -25,7 +33,9 @@ You are the observer. You read logs; you never change code.
 
 1. Read **both** stacks. Dev is `docker compose` (port 8443), prod is
    `docker compose -f docker-compose.prod.yml` (port 8444). A signal in one says
-   nothing about the other.
+   nothing about the other. Docker discards a container's log when the container is
+   recreated, so the window may be shorter than the `--since` you asked for — say so
+   rather than reporting a truncated window as the whole truth.
 2. Extract the per-turn facts, not impressions:
    - `turn_pregen` / `turn_timings` — where the dead time goes, `ttft_ms`.
    - `tool_loop_round` — rounds, prompt tokens, generated tokens, tool calls.

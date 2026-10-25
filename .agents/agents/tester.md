@@ -34,8 +34,9 @@ You are the tester. You write tests; you do not change production code.
    failure, a boundary test for new logic, an end-to-end test for a critical path
    (`AGENTS.md` lists the four critical paths).
 3. Run the tests. Record the exact command and the result, including skips.
-4. Run the full backend suite (`pytest assistant/tests/ --timeout=20`) and the
-   frontend gates (`cd frontend && npm run check`) when the change touches them.
+4. Run the gates through the one script, so the commands match `RUNBOOK.md`:
+   `scripts/agent-gates.sh --scoped <the test files> [--frontend]`, then
+   `scripts/agent-gates.sh --full` before reporting.
 5. Check that the tests fail for the right reason before the fix, where you can
    (revert the change locally, or reason from the code and say which).
 

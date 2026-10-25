@@ -342,15 +342,22 @@ Feature work and self-improvement use the same five handoff steps; the only
 difference is where the run starts. `RUNBOOK.md` stays the human run book; these
 are the agent runbooks that automate its shape.
 
-- **`ship-feature`** — spec → `plan.md` → code → tests → review → verification.
-- **`self-improve`** — **docker logs (dev *and* prod)** → `findings.md` → a human
-  picks one → `plan.md` → … → deploy + soak → `measurement.md` → verification.
+- **`ship-feature`** — spec → `plan.md` → code → tests → review →
+  `principles.md` → verification.
+- **`self-improve`** — **live docker logs (dev *and* prod)** → `findings.md` → a
+  human picks one → `plan.md` → … → deploy + soak → `measurement.md` → verification.
 
 Rules that hold in both:
 
 - A human approves the plan and merges. Agents never approve their own work.
 - **No agent edits** `spec-verifier.md`, `.agents/evals/` or `.agents/runs/log.jsonl`.
   An agent that can move its own score will.
+- **`design-guardian` owns the design principles** and checks every product pass
+  against them, after the reviewer. It reports a principle with no test or lint
+  enforcing it; the principles themselves stay human-owned.
+- **Gates live in `scripts/agent-gates.sh`**, not in each agent. `--scoped` for the
+  inner loop, `--full` for `run_ci.sh` + the security check. Change a gate in
+  `RUNBOOK.md` and the script in the same commit.
 - The planner pre-registers the metric, the bar and the falsification condition; the
   verifier checks that bar against a fresh measurement, and a missing measurement is
   `PARTIAL`, never `PASS`. `RUNBOOK.md` §10 still decides when to stop.

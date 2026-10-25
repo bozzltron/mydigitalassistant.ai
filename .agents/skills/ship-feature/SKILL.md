@@ -5,7 +5,7 @@ description: Plan, implement, test, review and verify a feature from a spec. Use
 
 # ship-feature@v1
 
-Chains the five core agents through handoff files, so any step can run alone and the
+Chains the core agents through handoff files, so any step can run alone and the
 run can stop and resume at the last file written. A human approves the plan and
 merges the result; no agent grades its own work.
 
@@ -17,10 +17,15 @@ merges the result; no agent grades its own work.
 4. **tester** → tests + `test-report.md`.
 5. **reviewer** → `review.md`. A blocking verdict goes back to the implementer
    **once**, then re-run steps 4–5.
-6. **spec-verifier** → `verification.md` + one line in `.agents/runs/log.jsonl`.
-7. **PARTIAL or FAIL** → send the listed gaps to the implementer, then re-run steps
-   4–6. **Maximum two retries**, then stop and hand `verification.md` to the human.
-8. **PASS** → run the full gates (below), then commit with the trailers:
+6. **design-guardian** → `principles.md`. It owns the design principles and checks
+   every product pass against them. A **violated** verdict blocks; send the blocking
+   items back to the implementer once, then re-run steps 4–6. Advisory findings do
+   not block.
+7. **spec-verifier** → `verification.md` + one line in `.agents/runs/log.jsonl`. It
+   reads `principles.md` as well as the spec, the diff and the tests.
+8. **PARTIAL or FAIL** → send the listed gaps to the implementer, then re-run steps
+   4–7. **Maximum two retries**, then stop and hand `verification.md` to the human.
+9. **PASS** → run the full gates, then commit with the trailers:
 
    ```
    Runbook: ship-feature@v1
@@ -30,12 +35,13 @@ merges the result; no agent grades its own work.
 ## Gates (from RUNBOOK.md — non-negotiable)
 
 ```bash
-docker run --rm -v $(pwd):/app -w /app assistant ruff check .
-docker run --rm -v $(pwd):/app -v assistant-test-data:/app/data -w /app \
-  -e DATABASE_PATH=/app/data/assistant-test.db \
-  assistant pytest assistant/tests/ --timeout=20
-cd frontend && npm run check
+scripts/agent-gates.sh --full
 ```
+
+That runs `./run_ci.sh` (dead-code check, frontend lint + tests + build, the
+critical-path tests, and the full suite in **plain and encrypted** DB modes) plus
+`assistant/scripts/verify_security`. For the inner loop, use
+`scripts/agent-gates.sh --scoped <test files> [--frontend]`.
 
 Rebuild **both** environments before claiming a live change works — dev on 8443
 (`docker compose up -d --build`), prod on 8444
@@ -48,5 +54,5 @@ and a source change does not reach a running container until it is rebuilt.
 - A change that writes to memory must follow `RUNBOOK.md` §11 first (portable export,
   restored and compared).
 - If two consecutive rounds miss their pre-registered bar, stop — `RUNBOOK.md` §10.
-- The verifier, the evals and the log format are human-owned. Agents propose; a human
-  edits.
+- The verifier, the evals, the design principles and the log format are human-owned.
+  Agents propose; a human edits.
