@@ -21,11 +21,15 @@ merges the result; no agent grades its own work.
    every product pass against them. A **violated** verdict blocks; send the blocking
    items back to the implementer once, then re-run steps 4–6. Advisory findings do
    not block.
-7. **spec-verifier** → `verification.md` + one line in `.agents/runs/log.jsonl`. It
-   reads `principles.md` as well as the spec, the diff and the tests.
-8. **PARTIAL or FAIL** → send the listed gaps to the implementer, then re-run steps
-   4–7. **Maximum two retries**, then stop and hand `verification.md` to the human.
-9. **PASS** → run the full gates, then commit with the trailers:
+7. **doc-gardener** → `docs-audit.md`, scoped to the docs the change touched. A
+   claim the change made false **blocks**; cleanup proposals are advisory, and it
+   never deletes.
+8. **spec-verifier** → `verification.md` + one line in `.agents/runs/log.jsonl`. It
+   reads `principles.md` and `docs-audit.md` as well as the spec, the diff and the
+   tests.
+9. **PARTIAL or FAIL** → send the listed gaps to the implementer, then re-run steps
+   4–8. **Maximum two retries**, then stop and hand `verification.md` to the human.
+10. **PASS** → run the full gates, then commit with the trailers:
 
    ```
    Runbook: ship-feature@v1

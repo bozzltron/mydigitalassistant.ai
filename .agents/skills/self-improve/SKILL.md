@@ -41,12 +41,16 @@ whether the change felt good.
 11. **observer (after)** → `measurement.md`: the **same** metrics, the **same**
     method, over the soak window. Before and after, side by side, plus the
     confounders that were in play (concurrent turns, model eviction, a rebuild).
-12. **spec-verifier** → `verification.md` + one line in `.agents/runs/log.jsonl`.
+12. **doc-gardener** → `docs-audit.md`, scoped to the docs that describe the
+    behaviour this run changed. A doc the change made false blocks; cleanup
+    proposals are advisory.
+13. **spec-verifier** → `verification.md` + one line in `.agents/runs/log.jsonl`.
     It checks the bar from step 5, not the story from step 6, and reads
-    `principles.md` and `measurement.md`. A missing measurement is `PARTIAL`.
-13. **PARTIAL or FAIL** → gaps to the implementer, re-run 7–12. **Two retries
+    `principles.md`, `docs-audit.md` and `measurement.md`. A missing measurement is
+    `PARTIAL`.
+14. **PARTIAL or FAIL** → gaps to the implementer, re-run 7–13. **Two retries
     maximum**, then a human takes over with `verification.md`.
-14. **PASS** → run `scripts/agent-gates.sh --full`, then commit with the trailers:
+15. **PASS** → run `scripts/agent-gates.sh --full`, then commit with the trailers:
 
     ```
     Runbook: self-improve@v1

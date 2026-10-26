@@ -54,6 +54,9 @@ A plan is a **workspace**, not a home. It is where reasoning happens *before* th
 reasoning has a durable address. Deleting one loses nothing **iff the transfer
 already happened**, so the gate is a check, not an intention.
 
+The `doc-gardener` agent audits this gate (content rehomed? transient doc still
+cited as truth?). It proposes deletions; a human applies them.
+
 ### 4.1 Three homes, by what the information *is*
 
 | The information | Its home |

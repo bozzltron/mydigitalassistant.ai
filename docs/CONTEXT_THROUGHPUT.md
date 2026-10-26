@@ -56,7 +56,7 @@ Resolved in one place — `OllamaClient._num_ctx_for` (`llm_client.py`):
 | Utility | `qwen3.5:4b` | 4,096 | warm |
 | Embedding | `qwen3-embedding:0.6b` | — | warm |
 | Max | empty → chat | 32,768 | on-demand `10m` |
-| Math | empty → off | 16,384 | on-demand `10m` |
+| Math | empty → off | 4,096 | on-demand `10m` |
 
 Because `tools_model == chat_model`, **one runner and one window serve the whole
 turn**: tool calls and the final answer share the 32,768 that the tool loop

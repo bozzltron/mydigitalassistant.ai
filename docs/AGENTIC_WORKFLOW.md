@@ -26,6 +26,7 @@ AGENTS.md                         # team rules every agent follows
     tester.md
     reviewer.md
     design-guardian.md
+    doc-gardener.md
     spec-verifier.md
   skills/
     ship-feature/SKILL.md         # spec → plan → code → tests → review → verify
@@ -59,6 +60,7 @@ tool's IDs (or `ollama/...` for a fully local loop) without touching the runbook
 | **tester** | Criteria → tests + report | `opencode-go/claude-haiku-5-5` | fast/mid | writing tests against a plan needs mid-tier judgement, not deep reasoning |
 | **reviewer** | Diff → blocking findings | `opencode-go/deepseek-v4-pro` | mid | **different family from the implementer**, cheap (0.66/1.98), strong on code |
 | **design-guardian** | Product pass → principles upheld | `opencode-go/gemini-4-argon` | strong, product judgement | owns the principles checklist; a fourth family, so the design pass is not the reviewer's opinion twice |
+| **doc-gardener** | Docs corpus → drift + cleanup audit | `opencode-go/glm-5.3` | mid, large reading | owns the docs lifecycle; a fifth family, and it proposes rather than deletes |
 | **spec-verifier** | Spec + bar → verdict + score | `opencode-go/qwen3.8-max` | strong judge | **different family from the implementer**; the verifier is the measurement, so it gets the strongest available judge |
 
 Two rules the model table encodes:
@@ -100,7 +102,7 @@ ID and the runbook skips steps whose output already exists.
 
 ```
 plan.md → implementation.md → test-report.md → review.md → principles.md
-         ↑ human approves the plan                                  → verification.md
+         ↑ human approves the plan                  → docs-audit.md → verification.md
                                                           ↑ human merges
 ```
 
@@ -111,7 +113,8 @@ takes over with `verification.md`.
 
 ```
 live logs → findings.md → (human picks) → plan.md → (human approves) → code + tests
-          → review.md → principles.md → deploy + soak → measurement.md → verification.md
+          → review.md → principles.md → deploy + soak → measurement.md
+          → docs-audit.md → verification.md
 ```
 
 It starts from the **live dev and prod docker logs**, not from an idea. `observer`
@@ -239,10 +242,12 @@ lives in `.agents/evals/` when there is something stable to regress against.
   restores it and compares table counts first (`RUNBOOK.md` §11).
 - **Both environments or it isn't verified.** Dev 8443 and prod 8444 are separate
   images and databases; rebuild both before claiming a live change.
-- **A product pass gets a design pass.** `design-guardian` runs on every feature and
-  self-improve run, after the reviewer. It owns the principles checklist and reports
-  a gap when a principle has no test or lint enforcing it — the principles are
-  human-owned, so it proposes checks rather than editing them.
+- **A product pass gets a design pass and a docs pass.** `design-guardian` runs on
+  every feature and self-improve run, after the reviewer; it owns the principles
+  checklist and reports a gap when a principle has no test or lint enforcing it.
+  `doc-gardener` runs after it, scoped to the docs the change touched: a claim the
+  change made false blocks, cleanup proposals do not. Both propose; the principles
+  and the normative docs stay human-owned.
 - **Runs are transient, the log is not.** Never commit `.agents/runs/<id>/`; never
   lose `log.jsonl`.
 

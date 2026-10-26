@@ -23,7 +23,10 @@ RUNS_DIR = ROOT / ".agents" / "runs"
 MODEL_RE = re.compile(r"^[a-z0-9][a-z0-9-]*/[A-Za-z0-9._:-]+$")
 
 # Agents that must not edit project files; they write their handoff file only.
-READ_ONLY = {"observer", "planner", "reviewer", "design-guardian", "spec-verifier"}
+READ_ONLY = {
+    "observer", "planner", "reviewer", "design-guardian",
+    "doc-gardener", "spec-verifier",
+}
 
 REQUIRED = {"name", "description", "model", "mode"}
 
@@ -61,6 +64,7 @@ def test_the_judges_run_a_different_model_from_the_implementer():
     assert found["reviewer"]["model"] != implementer
     assert found["spec-verifier"]["model"] != implementer
     assert found["design-guardian"]["model"] != implementer
+    assert found["doc-gardener"]["model"] != implementer
 
 
 def test_read_only_agents_cannot_edit_the_project():

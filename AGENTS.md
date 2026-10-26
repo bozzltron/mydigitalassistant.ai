@@ -357,6 +357,10 @@ Rules that hold in both:
 - **`design-guardian` owns the design principles** and checks every product pass
   against them, after the reviewer. It reports a principle with no test or lint
   enforcing it; the principles themselves stay human-owned.
+- **`doc-gardener` owns the docs lifecycle** and audits the docs a pass touched:
+  claims the code has falsified, temporary docs whose content was never rehomed,
+  and one fact living in two places. It **proposes**; a human deletes or rewrites,
+  and the normative docs (`AGENTS.md`, `RUNBOOK.md`) are never edited by an agent.
 - **Gates live in `scripts/agent-gates.sh`**, not in each agent. `--scoped` for the
   inner loop, `--full` for `run_ci.sh` + the security check. Change a gate in
   `RUNBOOK.md` and the script in the same commit.
