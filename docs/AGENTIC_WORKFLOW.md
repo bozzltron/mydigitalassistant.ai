@@ -137,6 +137,72 @@ scripts/log-snapshot.sh --since 7d --out .agents/runs/<run-id>/logs
 
 One finding per run: a run that fixes three things cannot tell you which one worked.
 
+## The ledger — how a finding becomes work
+
+Every run has `.agents/runs/<run-id>/ledger.md`. It is created at step 1, it is append-only,
+and it is the **only** place a finding may live. A finding that exists only as prose is a
+finding nobody can prove was acted on: si01's "log the measured chars/token ratio" gap was
+never picked up by si02, while si02's CLI finding was fixed only because it happened to land
+inside the same diff.
+
+### The row
+
+```
+| id   | src      | sev | claim                          | where         | falsifier                        | disposition | closed   |
+|------|----------|-----|--------------------------------|---------------|----------------------------------|-------------|----------|
+| r-01 | reviewer | S2  | guard reads only the last measured prompt | loop.py:212 | wrong if `test_over_window_shape` passes | open        |          |
+```
+
+- **`id`** — a source prefix, so no dispatcher is needed to allocate numbers: `r-` reviewer,
+  `t-` tester, `o-` observer, `d-` design-guardian, `g-` doc-gardener, `v-` verifier.
+- **`claim`** — the defect in one sentence. The defect, not a recommendation.
+- **`where`** — `file:line`, a test name, or a log line.
+- **`falsifier`** — "wrong if ⟨check⟩": a test name, a log line, a doc line.
+- **`disposition`** — `fix <commit>` · `reject <result>` · `defer → B-<n>`.
+- **`closed`** — the agent that confirmed the disposition. Empty until then.
+
+### Rules
+
+**L1 — Rows only.** No agent reports a defect in prose anywhere. `principles.md`,
+`docs-audit.md` and `test-report.md` keep their verdicts and their non-finding sections; their
+findings are ledger rows.
+
+**L2 — The writer dispositions; it never closes.** The implementer sets `disposition` and
+stops. The agent that opened the row closes it once the disposition checks out; the verifier
+closes any row whose opener is no longer in the run. Writes stay single-threaded, judgement
+stays distributed, and nobody grades their own work.
+
+**L3 — Every row carries a falsifier.** A row you cannot attach a check to is a
+**preference**: write `preference` in that cell. A preference may not be S1 or S2, and the
+writer may reject it without argument — which is the point: it costs nobody a loop.
+
+**L4 — Severity belongs to the opener.** The writer may not change it. A mis-set severity is
+a finding of its own, opened by the verifier.
+
+**L5 — Duplicates merge; contradictions escalate.** Two rows with the same `where` and the
+same claim merge into one, `src` becoming `reviewer+tester`, keeping the stricter severity.
+Two agents that *disagree* are not the writer's call: that is a question for the human, with
+both falsifiers attached. Artifacts have tiebreaks; opinions do not.
+
+**L6 — Priority is computed, not negotiated.** Drain S1 → S4, then by source reliability:
+verifier > reviewer > tester > observer. Deterministic, so findings never compete for
+attention on rhetorical force.
+
+**L7 — One reopen.** A row may be reopened once. A second reopen means the disposition was
+wrong: stop and hand the ledger to the human. Do not loop.
+
+### Severity
+
+| sev | class | may the writer defer? |
+|---|---|---|
+| **S1** | correctness, data loss, privacy/security, a test that passes wrongly | **no** — human only |
+| **S2** | stability, a broken invariant | no — fix or escalate |
+| **S3** | speed: hot-path cost, avoidable latency | yes, with a reason |
+| **S4** | docs, dead code, cleanup | yes, with a reason |
+
+Deferred rows move to `.agents/backlog.md` carrying the run id that raised them, and the
+register is read at step 2 of `self-improve` before the logs.
+
 ## OpenCode support
 
 The architecture does not change for OpenCode; four details do. OpenCode is the

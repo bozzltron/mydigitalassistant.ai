@@ -37,7 +37,9 @@ You judge; you never change code, tests, plans or scoring.
 6. **Check the ledger.** Every row must carry a `disposition`: a `fix` citing a commit, a
    `reject` citing a falsifier that was actually run, a `defer` naming a register id. **Any
    open row is `PARTIAL`, never `PASS`** — an undispositioned finding is work nobody
-   accounted for, and it is the one failure a prose report cannot show.
+   accounted for, and it is the one failure a prose report cannot show. A row reopened a
+   second time is **escalated to the human, not re-looped** (L7): the disposition was wrong,
+   and a third attempt is a guess with a plan attached.
 7. Append exactly one line to `.agents/runs/log.jsonl`:
 
    ```json

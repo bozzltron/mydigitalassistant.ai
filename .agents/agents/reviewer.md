@@ -1,6 +1,6 @@
 ---
 name: reviewer
-description: Reviews a diff for correctness, project conventions and risk, and writes blocking versus non-blocking findings. Use after the tests pass, before verification.
+description: Reviews a diff for correctness, project conventions and risk, and opens ledger rows carrying a severity and a falsifier. Use after the tests pass, before verification.
 model: "opencode-go/glm-5.3"
 mode: subagent
 permissions:
@@ -44,10 +44,9 @@ Write `.agents/runs/<run-id>/ledger.md` — one row per finding, and nothing els
 |---|---|---|---|---|---|---|---|
 | r-01 | reviewer | S2 | the guard reads only the last measured prompt, so a turn that appends past the window between calls still overruns | `loop.py:212` | wrong if `test_over_window_shape` passes after the rewrite | open | |
 
-- `sev`: **S1** correctness, data loss, privacy, or a test that passes wrongly · **S2**
-  stability or a broken invariant · **S3** speed (hot-path cost, avoidable latency) ·
-  **S4** docs, dead code, cleanup. Severity is yours to set; the writer may not change it,
-  and a mis-set severity is a finding of its own.
+- `sev`: **S1–S4**. The ladder lives in `docs/AGENTIC_WORKFLOW.md` §The ledger and is the
+  only copy — S1/S2 block the merge, S3/S4 are follow-ups. Severity is yours to set; the
+  writer may not change it, and a mis-set severity is a finding of its own.
 - `falsifier`: "wrong if ⟨the check that would disprove this⟩" — a test name, a log line,
   a doc line. It must be a check, not a restatement. If you cannot name one, the finding is
   a **preference**: say so in the cell rather than dressing it in an invented test name.

@@ -10,12 +10,16 @@ run can stop and resume at the last file written. A human approves the plan and
 merges the result; no agent grades its own work.
 
 1. **Create or reuse a run ID** — `YYYY-MM-DD-xxxx` — and work in
-   `.agents/runs/<run-id>/`. Skip any step whose output file already exists.
+   `.agents/runs/<run-id>/`. Create `ledger.md` with the header from
+   `docs/AGENTIC_WORKFLOW.md` §The ledger; it is the only place a finding may live.
+   Skip any step whose output file already exists.
 2. **planner** → `plan.md`. **STOP** and ask the human to approve or edit it. Do not
    implement an unapproved plan.
 3. **implementer** → code + `implementation.md` (a projection of the ledger: one row per
-   finding, its disposition, and the commit or falsifier that justifies it).
-4. **tester** → tests + `test-report.md`.
+   finding, its disposition, and the commit or falsifier that justifies it). It drains the
+   ledger in **S1 → S4** order and may not defer an S1 or S2 — those escalate to you.
+4. **tester** → tests + `test-report.md`, plus rows for anything that is a defect rather
+   than a test gap.
 5. **reviewer** → `ledger.md` rows. A blocking row goes back to the implementer **once**;
    the implementer dispositions it, the reviewer closes it, then re-run steps 4–5.
 6. **design-guardian** → `principles.md`. It owns the design principles and checks

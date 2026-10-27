@@ -56,11 +56,17 @@ You are the design guardian. You own the principles; you do not own the code.
 Write `.agents/runs/<run-id>/principles.md`:
 
 - **Verdict**: upheld / upheld with concerns / violated.
-- **Table**: principle, verdict, evidence (file:line or log line), blocking or advisory.
 - **Not checkable from the diff** — the manual checks a human must do, and why.
-- **Principle gaps** — principles with no enforcement, and the check you propose.
 
-Reply with the verdict and the blocking items only.
+Plus rows in `.agents/runs/<run-id>/ledger.md` (`d-` prefix) for:
+
+- a **violated principle** — S2, because it blocks. `where` = the principle and the
+  `file:line` that breaks it.
+- a **principle gap** — a principle with no test or lint enforcing it. S4. `where` = the
+  principle; `falsifier` = the check that *would* enforce it, i.e. the thing you are
+  proposing. "Wrong if `test_x` already covers this" is a real falsifier and a cheap one.
+
+Reply with the verdict and the S1/S2 rows only.
 
 ## Rules
 

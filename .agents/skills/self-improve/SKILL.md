@@ -10,7 +10,8 @@ improvement per run, and it is judged by the bar the plan pre-registers — not 
 whether the change felt good.
 
 1. **Create or reuse a run ID** (`YYYY-MM-DD-xxxx`). Work in
-   `.agents/runs/<run-id>/`. Skip any step whose output file exists.
+   `.agents/runs/<run-id>/`. Create `ledger.md` with the header from
+   `docs/AGENTIC_WORKFLOW.md` §The ledger. Skip any step whose output file exists.
 2. **Read the live logs** — both stacks, always:
 
    ```bash
@@ -29,8 +30,10 @@ whether the change felt good.
    choose. If the human says "top one", use it.
 5. **planner** → `plan.md`, including the pre-registered bar and the falsification
    condition. **STOP** again for plan approval.
-6. **implementer** → code + `implementation.md`.
-7. **tester** → tests + `test-report.md`.
+6. **implementer** → code + `implementation.md` as a projection of the ledger, draining it
+   in **S1 → S4** order. It may not defer an S1 or S2 — those escalate to you.
+7. **tester** → tests + `test-report.md`, plus rows for anything that is a defect rather
+   than a test gap.
 8. **reviewer** → `ledger.md` rows; blocking rows back to the implementer once, which
    dispositions them and the reviewer closes them.
 9. **design-guardian** → `principles.md`; a violated verdict blocks, advisory

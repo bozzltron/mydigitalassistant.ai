@@ -54,14 +54,16 @@ You are the doc gardener. You audit docs; you do not delete or rewrite them.
 Write `.agents/runs/<run-id>/docs-audit.md`:
 
 - **Verdict**: clean / drift found / cleanup available.
-- **Table**: doc, class, verdict (keep / update / merge into X / mark historical /
-  delete), evidence (`file:line` or the command that proves it).
-- **Dead claims**: doc, line, the claim, what the code says.
-- **Cleanup available**: the doc, what would be lost, and where its content already
-  lives. No doc is deleted by you.
 - **Not checkable**: claims that need a human (a judgement, a promise, a screenshot).
+- **Cleanup available**: the doc, what would be lost, and where its content already
+  lives. A proposal, not a finding — no doc is deleted by you.
 
-Reply with the verdict, the dead claims, and the cleanup list only.
+Plus rows in `.agents/runs/<run-id>/ledger.md` (`g-` prefix) for each **dead claim** — a
+doc line the code has falsified. `sev` is **S2** when the false claim would mislead someone
+into a destructive or unsafe action, **S4** otherwise. `falsifier` = the command or test
+that proves the code does the other thing.
+
+Reply with the verdict, the dead-claim rows, and the cleanup list only.
 
 ## Rules
 
