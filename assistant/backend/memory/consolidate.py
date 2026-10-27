@@ -164,14 +164,21 @@ _ASPECT_WORDS = {"structure", "engineer", "session", "news"}
 # sit at exactly 1/2.
 _OVERLAP_MIN = 0.6
 
-
 def _pick_survivor(cluster: list[dict]) -> dict:
-    """Highest confidence; then a specific name over a generic one; then age."""
+    """Least generic; then most evidence; then highest confidence; then age.
+
+    Evidence before confidence on purpose: a hollow frame with high confidence
+    used to absorb a richer one and keep the generic name (live plan 2026-10-26:
+    ``world_news`` with 0 slots absorbing ``bbc_news``). The merged *content*
+    survives either way — the survivor's *name* is what retrieval and the user
+    then see, so the richer frame should carry it.
+    """
     return sorted(
         cluster,
         key=lambda f: (
-            -f["confidence"],
             f["norm"] in _GENERIC_NAMES,
+            -len(f.get("slots") or {}),
+            -f["confidence"],
             f["created_at"],
             f["id"],
         ),
@@ -318,6 +325,18 @@ async def run_consolidation(
         ]
         report.scanned_frames = len(frames)
 
+        # Slot evidence for the lexical passes. One query for the whole brain
+        # (~10k rows) rather than per candidate; the passes below need it to tell
+        # a duplicate from an aspect of the same name.
+        slot_rows = await db.execute_fetchall(
+            "SELECT frame_id, key, value FROM slots"
+        )
+        slots_by_frame: dict[int, dict[str, str]] = {}
+        for frame_id, key, value in slot_rows:
+            slots_by_frame.setdefault(frame_id, {})[key] = value
+        for frame in frames:
+            frame["slots"] = slots_by_frame.get(frame["id"], {})
+
     uf = _UnionFind([f["id"] for f in frames])
     by_id = {f["id"]: f for f in frames}
 
@@ -333,16 +352,17 @@ async def run_consolidation(
                 uf.union(rep, frame["id"])
             by_norm[key] = frame["id"]
 
-    # Pass 2: shared identifying slot values (e.g. two frames both holding
-    # title="The Mountain & The Wolf" are the same album however the extractor
-    # named them). Strongest duplicate evidence available.
+    # Pass 2: a shared URL. Strongest duplicate evidence available.
     #
-    # `name`/`full_name` are deliberately NOT in this set. The extractor writes a
+    # `name`/`full_name` are deliberately NOT in this set: the extractor writes a
     # mentioned name onto any frame that mentions it, so a shared value there is
-    # evidence of *co-mention*, not of identity: a person and their band, a band
-    # and its calendar, an artist and an "artist" stub all end up holding the same
-    # name. `title` and `url` belong to a document and cannot be shared by
-    # accident.
+    # evidence of *co-mention*, not identity.
+    #
+    # `title` was in this set and is **not** identity either (measured
+    # 2026-10-26): a song and its album, a film and its sequel, a person and
+    # their release all share a title, and it merged 9 distinct pairs on the
+    # live brain (`jurassic_park`/`jurassic_park_1`, `why_not`/`single_release`).
+    # A URL addresses one document; a title names a work that can have parts.
     async with open_checked_db(db_path) as db:
         await db.execute("PRAGMA busy_timeout = 15000")
         ident_rows = await db.execute_fetchall(
@@ -355,7 +375,7 @@ async def run_consolidation(
                 AND s1.frame_id < s2.frame_id
             JOIN frames f1 ON f1.id = s1.frame_id
             JOIN frames f2 ON f2.id = s2.frame_id
-            WHERE lower(s1.key) IN ('title', 'url')
+            WHERE lower(s1.key) = 'url'
               AND f1.deleted_at IS NULL AND f2.deleted_at IS NULL
               AND f1.owner_user_id IS f2.owner_user_id
               AND f1.type != ? AND f2.type != ?
@@ -401,7 +421,8 @@ async def run_consolidation(
             fa, ea = reps[ra], embeddings.get(ra)
             if ea is None:
                 continue
-            ta = set(normalize_frame_name(fa["name"]).split())
+            ta_list = normalize_frame_name(fa["name"]).split()
+            ta = set(ta_list)
             for rb in rep_ids[i + 1:]:
                 fb, eb = reps[rb], embeddings.get(rb)
                 if eb is None:
@@ -410,11 +431,22 @@ async def run_consolidation(
                     continue  # owner isolation (NULL == NULL compares equal)
                 if not _types_compatible(fa["type"], fb["type"]):
                     continue
-                tb = set(normalize_frame_name(fb["name"]).split())
+                tb_list = normalize_frame_name(fb["name"]).split()
+                tb = set(tb_list)
                 generic_pair = (
                     fa["norm"] in _GENERIC_NAMES or fb["norm"] in _GENERIC_NAMES
                 )
                 if not generic_pair and _jaccard(ta, tb) < _OVERLAP_MIN:
+                    continue
+                # A subset is not identity: {los, angeles} is a prefix of
+                # {los, angeles, rams}, and the live plan proved that no
+                # structural signal separates a city from a team, a topic
+                # from a publisher, or a person from a podcast (2026-10-26:
+                # shared `location` was both evidence for a true match and a
+                # false one). Only an identical token *multiset* — word order
+                # and stop words — is safe without semantics: a set would let
+                # `llama 3.3` (tokens 3,3) equal `llama 3`.
+                if sorted(ta_list) != sorted(tb_list):
                     continue
                 pairs.append((_cosine_distance(ea, eb), ra, rb))
         pairs.sort()
@@ -436,17 +468,21 @@ async def run_consolidation(
             ea = embeddings.get(ra)
             if ea is None:
                 continue
-            ta = set(normalize_frame_name(fa["name"]).split())
+            ta_list = normalize_frame_name(fa["name"]).split()
+            ta = set(ta_list)
             for rb in rep_ids[i + 1:]:
                 fb = reps[rb]
                 if fa["owner"] != fb["owner"]:
                     continue
                 if not _types_compatible(fa["type"], fb["type"]):
                     continue
-                tb = set(normalize_frame_name(fb["name"]).split())
+                tb_list = normalize_frame_name(fb["name"]).split()
+                tb = set(tb_list)
                 if _jaccard(ta, tb) < _OVERLAP_MIN:
                     continue
                 if (ta ^ tb) & _ASPECT_WORDS:
+                    continue
+                if sorted(ta_list) != sorted(tb_list):
                     continue
                 eb = embeddings.get(rb)
                 if eb is None:

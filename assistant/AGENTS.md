@@ -709,21 +709,33 @@ applies them — the first `CONSOLIDATION_MAX_MERGES_PER_RUN`, remainder next ru
 The same bound applies to `assistant db consolidate --execute`; the manual path
 used to apply the whole plan.
 
-**Two rules keep the plan safe**, both added after a brain-copy run planned
-`mozworth <- user_identity` and `mozworth <- calendar`:
+**Four rules keep the plan safe**, added after a brain-copy run planned
+`mozworth <- user_identity` and `mozworth <- calendar`, and a second that
+planned 50+ distinct entities (2026-10-26):
 
 - **Reserved frames are never candidates.** `user_identity`, `identity_name`,
   `scheduler_heartbeat`, `conversation_summary_*`, `file_*`, `daily_run_*`,
   `alert_*`, and the `scheduled_task` / `alert` types. Merging one tombstones it,
   and the loser's name disappears from the brain.
-- **A shared `name`/`full_name` is not identity evidence.** Pass 2 uses only
-  `title`/`url`. The extractor writes a mentioned name onto any frame that
-  mentions it, so a person, their band, an "artist" stub and a calendar all end
-  up holding the same name — which is exactly how the identity frame was about
-  to be merged into the band.
+- **A shared `name`/`full_name` is not identity evidence.** The extractor writes
+  a mentioned name onto any frame that mentions it, so a person, their band, an
+  "artist" stub and a calendar all end up holding the same name — which is
+  exactly how the identity frame was about to be merged into the band.
+- **A shared `title` is not identity evidence either.** A song and its album, a
+  film and its sequel, a person and their release share a title; using it merged
+  `jurassic_park`/`jurassic_park_1` and `why_not`/`single_release`. Pass 2 uses a
+  shared **`url`** only — a URL addresses one document.
+- **A name subset is not identity.** `{los, angeles}` is a prefix of
+  `{los, angeles, rams}`, and no slot key separates the true pairs from the
+  false ones (shared `location` is evidence both ways). A lexical merge requires
+  an **identical token multiset** (word order and stop words only); everything
+  else waits for a semantic judgement, not a bigger denylist.
 
-With both rules the same brain plans 70 merges with **0 reserved frames and no
-mozworth cluster**. Do not relax either rule to make a plan smaller.
+With the rules the same brain plans 20 merges, all true duplicates, with **0
+reserved frames and no mozworth cluster** (2026-10-26 brain copy). Do not relax
+a rule to make a plan smaller — and note the scheduler now **applies** the
+capped subset (10) instead of skipping when the plan exceeds the cap; before
+that, 74 > 10 deadlocked every run and the backlog grew 273 → 277 clusters.
 
 A merge carries each slot's observation date (`observed_at` → `updated_at`), so
 `as of` stays true and the ladder's recency tiebreak is not handed the merge time. So the interval is a

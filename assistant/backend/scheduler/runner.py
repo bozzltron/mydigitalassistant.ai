@@ -433,23 +433,28 @@ async def _run_consolidation(
     from assistant.backend.memory.consolidate import run_consolidation
 
     try:
-        plan = await run_consolidation(
-            store.db_path, dry_run=True, embed_fn=orchestrator.embed_fn()
-        )
         max_merges = settings.consolidation_max_merges_per_run
+        # Pass the cap at PLAN time. Planning everything and then skipping when
+        # the plan exceeds the cap deadlocked the pass: 74 merges > cap 10, five
+        # consecutive runs applied nothing, and the backlog grew (273 -> 277
+        # clusters). `capped` means "bounded subset", not "failed".
+        plan = await run_consolidation(
+            store.db_path,
+            dry_run=True,
+            embed_fn=orchestrator.embed_fn(),
+            max_merges=max_merges,
+        )
 
         if not plan.planned_merges:
             logger.debug("Consolidation: no merges to apply")
             return
 
-        if plan.capped or len(plan.planned_merges) > max_merges:
-            logger.warning(
-                "Consolidation skipped (%d merges > cap %d): %s",
+        if plan.capped:
+            logger.info(
+                "Consolidation: applying the first %d merges this run (cap %d)",
                 len(plan.planned_merges),
                 max_merges,
-                plan.summary(),
             )
-            return
 
         # Snapshot before mutating, but only once per backup interval: if a fresh
         # snapshot already exists, this merge is already protected and the guard
