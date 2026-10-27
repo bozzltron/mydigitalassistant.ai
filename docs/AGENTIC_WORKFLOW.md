@@ -27,6 +27,7 @@ AGENTS.md                         # team rules every agent follows
     reviewer.md
     design-guardian.md
     doc-gardener.md
+    memory-architect.md
     spec-verifier.md
   skills/
     ship-feature/SKILL.md         # spec → plan → code → tests → review → verify
@@ -61,6 +62,7 @@ tool's IDs (or `ollama/...` for a fully local loop) without touching the runbook
 | **reviewer** | Diff → blocking findings | `opencode-go/glm-5.3` | mid | **different family from the implementer** (DeepSeek); strong on code, and it reads one diff per run, so its price is not the driver |
 | **design-guardian** | Product pass → principles upheld | `opencode-go/gemini-4-argon` | strong, product judgement | owns the principles checklist; a fourth family, so the design pass is not the reviewer's opinion twice |
 | **doc-gardener** | Docs corpus → drift + cleanup audit | `opencode-go/glm-5.3` | mid, large reading | owns the docs lifecycle; a fifth family, and it proposes rather than deletes |
+| **memory-architect** | Memory system → holistic health audit | `opencode-go/kimi-k3.1-pro` | strongest reasoning | **ad hoc only**; deep, occasional, and the one audit whose subject is the product itself |
 | **spec-verifier** | Spec + bar → verdict + score | `opencode-go/qwen3.8-max` | strong judge | **different family from the implementer**; the verifier is the measurement, so it gets the strongest available judge |
 
 Two rules the model table encodes:
@@ -185,6 +187,23 @@ Keep this line clean when the files move to a shared registry:
 - **Per-harness:** `model:` IDs, `mode:`, `permissions:`, and the symlink path.
   If a second harness needs different model IDs, give it its own thin config that
   points at the same bodies rather than forking the agents.
+
+## Ad hoc audits (not runbook steps)
+
+Two agents are deliberately **not** on a runbook's mandatory path, because their
+value is depth and their cost is a full read:
+
+- **`memory-architect`** — the health of the cognitive memory system: schema and
+  invariants, write and read paths, data hygiene, lifecycle, fleet integration,
+  and the HCI question of what the user can inspect, correct and undo. Run it
+  alone, or before/after a change that touches memory. Read-only; it never
+  consolidates, migrates or rewrites.
+- **`doc-gardener` full corpus** — the whole 144-file audit. The **scoped** pass
+  stays in both runbooks (the docs a change touched); the full audit is its own
+  run.
+
+Both write to `.agents/runs/<run-id>/` like any other agent; a one-step run still
+gets a run ID, so the audit is reproducible and citeable.
 
 ## Gates
 
