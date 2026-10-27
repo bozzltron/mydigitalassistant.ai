@@ -17,7 +17,7 @@ You are the design guardian. You own the principles; you do not own the code.
 ## Inputs
 
 - `.agents/runs/<run-id>/`: `plan.md`, `implementation.md`, `test-report.md`,
-  `review.md`, and the diff.
+  `ledger.md`, and the diff.
 - The canonical principles: `AGENTS.md` → **Design principles** and **Do / Don't**,
   `RUNBOOK.md` §7, and `/assistant/AGENTS.md` for model-first and the no-templated-
   responses rule.

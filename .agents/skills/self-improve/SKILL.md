@@ -31,7 +31,8 @@ whether the change felt good.
    condition. **STOP** again for plan approval.
 6. **implementer** → code + `implementation.md`.
 7. **tester** → tests + `test-report.md`.
-8. **reviewer** → `review.md`; blocking issues back to the implementer once.
+8. **reviewer** → `ledger.md` rows; blocking rows back to the implementer once, which
+   dispositions them and the reviewer closes them.
 9. **design-guardian** → `principles.md`; a violated verdict blocks, advisory
    findings do not. This is a product pass like any other.
 10. **Deploy and soak.** Rebuild **both** environments, then let the system run for
@@ -46,8 +47,8 @@ whether the change felt good.
     proposals are advisory.
 13. **spec-verifier** → `verification.md` + one line in `.agents/runs/log.jsonl`.
     It checks the bar from step 5, not the story from step 6, and reads
-    `principles.md`, `docs-audit.md` and `measurement.md`. A missing measurement is
-    `PARTIAL`.
+    `principles.md`, `docs-audit.md`, `measurement.md` and every row in `ledger.md`. A
+    missing measurement is `PARTIAL`; an open row is `PARTIAL`.
 14. **PARTIAL or FAIL** → gaps to the implementer, re-run 7–13. **Two retries
     maximum**, then a human takes over with `verification.md`.
 15. **PASS** → run `scripts/agent-gates.sh --full`, then commit with the trailers:

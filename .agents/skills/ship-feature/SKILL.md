@@ -13,10 +13,11 @@ merges the result; no agent grades its own work.
    `.agents/runs/<run-id>/`. Skip any step whose output file already exists.
 2. **planner** → `plan.md`. **STOP** and ask the human to approve or edit it. Do not
    implement an unapproved plan.
-3. **implementer** → code + `implementation.md`.
+3. **implementer** → code + `implementation.md` (a projection of the ledger: one row per
+   finding, its disposition, and the commit or falsifier that justifies it).
 4. **tester** → tests + `test-report.md`.
-5. **reviewer** → `review.md`. A blocking verdict goes back to the implementer
-   **once**, then re-run steps 4–5.
+5. **reviewer** → `ledger.md` rows. A blocking row goes back to the implementer **once**;
+   the implementer dispositions it, the reviewer closes it, then re-run steps 4–5.
 6. **design-guardian** → `principles.md`. It owns the design principles and checks
    every product pass against them. A **violated** verdict blocks; send the blocking
    items back to the implementer once, then re-run steps 4–6. Advisory findings do
@@ -25,8 +26,8 @@ merges the result; no agent grades its own work.
    claim the change made false **blocks**; cleanup proposals are advisory, and it
    never deletes.
 8. **spec-verifier** → `verification.md` + one line in `.agents/runs/log.jsonl`. It
-   reads `principles.md` and `docs-audit.md` as well as the spec, the diff and the
-   tests.
+   reads `principles.md` and `docs-audit.md` as well as the spec, the diff, the tests and
+   every row in `ledger.md`. **An open row is `PARTIAL`.**
 9. **PARTIAL or FAIL** → send the listed gaps to the implementer, then re-run steps
    4–8. **Maximum two retries**, then stop and hand `verification.md` to the human.
 10. **PASS** → run the full gates, then commit with the trailers:

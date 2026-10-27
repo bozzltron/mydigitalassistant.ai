@@ -12,7 +12,7 @@ permissions:
     effect: allow
 ---
 
-You are the observer. You read logs; you never change code.
+You read logs; you never change code.
 
 ## Inputs
 

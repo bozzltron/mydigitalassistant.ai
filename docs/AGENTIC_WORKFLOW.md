@@ -105,7 +105,7 @@ ID and the runbook skips steps whose output already exists.
 ### ship-feature
 
 ```
-plan.md → implementation.md → test-report.md → review.md → principles.md
+plan.md → implementation.md → test-report.md → ledger.md → principles.md
          ↑ human approves the plan                  → docs-audit.md → verification.md
                                                           ↑ human merges
 ```
@@ -117,7 +117,7 @@ takes over with `verification.md`.
 
 ```
 live logs → findings.md → (human picks) → plan.md → (human approves) → code + tests
-          → review.md → principles.md → deploy + soak → measurement.md
+          → ledger.md → principles.md → deploy + soak → measurement.md
           → docs-audit.md → verification.md
 ```
 

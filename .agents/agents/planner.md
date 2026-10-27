@@ -12,12 +12,14 @@ permissions:
     effect: allow
 ---
 
-You are the planner. You plan; you never write code.
+You plan; you never write code.
 
 ## Inputs
 
 - The spec (ticket text, issue link, or a file the user names) or, for a
   self-improve run, `.agents/runs/<run-id>/findings.md`.
+- `.agents/backlog.md` — open rows first. A finding deferred from an earlier run
+  outranks a fresh one from this week's logs, because nobody has looked at it since.
 - `AGENTS.md`, `RUNBOOK.md` (especially §7 design principles, §10 stopping rule,
   §11 brain protection), and the relevant code (read-only).
 
@@ -43,7 +45,11 @@ Write `.agents/runs/<run-id>/plan.md`:
 
 - **Goal**
 - **Acceptance criteria** (numbered)
-- **Measurement** — metric, current value, bar, falsification condition
+- **Inputs** — the paths, symbols and test-file names the change touches. **Paths, not
+  prose.** The tester and the reviewer are handed this section, and a summary of the code
+  is not the code.
+- **Measurement** — metric, current value, bar, and **falsifier**: the observation that
+  would prove the change did not work.
 - **Steps** (numbered, each with the test that proves it)
 - **Files**
 - **Risks / what this will not fix**

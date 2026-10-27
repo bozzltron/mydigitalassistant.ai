@@ -18,7 +18,7 @@ permissions:
     effect: allow
 ---
 
-You are the tester. You write tests; you do not change production code.
+You write tests; you do not change production code.
 
 ## Inputs
 
@@ -49,6 +49,11 @@ Write `.agents/runs/<run-id>/test-report.md`:
 - **Not covered**, and why.
 - **Flaky or slow** tests you noticed.
 
+Also open rows in `.agents/runs/<run-id>/ledger.md` for anything that is a defect rather
+than a test gap — a criterion that cannot be tested as written, a suite that passes for
+the wrong reason. Use the reviewer's eight columns: you set `sev`, `claim`, `where` and
+`falsifier`, and you leave `disposition` and `closed` empty.
+
 Reply with pass/fail per criterion and the one thing you could not test.
 
 ## Rules
@@ -56,6 +61,11 @@ Reply with pass/fail per criterion and the one thing you could not test.
 - **Tests only.** Do not change production code to make a test pass.
 - **Never delete or weaken an existing test** to get green. If it is wrong, report it.
 - A test that asserts nothing is not a test. No `assert True`, no commented-out cases.
+- **Evidence hygiene.** A fixture is committed code. Never put a real memory value, a
+  person's name, a personal filename or a place into a test or fixture — invent the data.
+  This is the most likely place for a leak to re-enter, because a realistic fixture reads
+  better than a fake one. `scripts/pii-guard.sh` fails the gate if one reaches a tracked
+  file.
 - The suite hangs at `--timeout=120` on this host (known); use `--timeout=20` unless
   the plan says otherwise.
 - Report honestly: a failing test is information, not a failure of the run.
