@@ -62,7 +62,7 @@ tool's IDs (or `ollama/...` for a fully local loop) without touching the runbook
 | **reviewer** | Diff → blocking findings | `opencode-go/glm-5.3` | mid | **different family from the implementer** (DeepSeek); strong on code, and it reads one diff per run, so its price is not the driver |
 | **design-guardian** | Product pass → principles upheld | `opencode-go/gemini-4-argon` | strong, product judgement | owns the principles checklist; a fourth family, so the design pass is not the reviewer's opinion twice |
 | **doc-gardener** | Docs corpus → drift + cleanup audit | `opencode-go/glm-5.3` | mid, large reading | owns the docs lifecycle; a fifth family, and it proposes rather than deletes |
-| **memory-architect** | Memory system → holistic health audit | `opencode-go/kimi-k3.1-pro` | strongest reasoning | **ad hoc only**; deep, occasional, and the one audit whose subject is the product itself |
+| **memory-architect** | Memory code → hygiene + performance findings and patches | `opencode-go/kimi-k3.1-pro` | strongest reasoning | **ad hoc only**; deep, occasional, and the one review whose subject is the product's core code |
 | **spec-verifier** | Spec + bar → verdict + score | `opencode-go/qwen3.8-max` | strong judge | **different family from the implementer**; the verifier is the measurement, so it gets the strongest available judge |
 
 Two rules the model table encodes:
@@ -193,11 +193,12 @@ Keep this line clean when the files move to a shared registry:
 Two agents are deliberately **not** on a runbook's mandatory path, because their
 value is depth and their cost is a full read:
 
-- **`memory-architect`** — the health of the cognitive memory system: schema and
-  invariants, write and read paths, data hygiene, lifecycle, fleet integration,
-  and the HCI question of what the user can inspect, correct and undo. Run it
-  alone, or before/after a change that touches memory. Read-only; it never
-  consolidates, migrates or rewrites.
+- **`memory-architect`** — the **code** that maintains memory: invariants, write
+  and read paths, consolidation, confidence, retrieval, extraction, summarization,
+  and the hot-path cost of each. It reviews what the code enforces and proposes
+  patches plus the tests that lock them, because a hygiene fix belongs where the
+  next turn inherits it. It never reads the brain — no `/memory/*`, no SQL, no
+  consolidation dry-run on live data; a data question is a finding for the owner.
 - **`doc-gardener` full corpus** — the whole 144-file audit. The **scoped** pass
   stays in both runbooks (the docs a change touched); the full audit is its own
   run.

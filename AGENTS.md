@@ -357,10 +357,11 @@ Rules that hold in both:
 - **`design-guardian` owns the design principles** and checks every product pass
   against them, after the reviewer. It reports a principle with no test or lint
   enforcing it; the principles themselves stay human-owned.
-- **`memory-architect` audits the memory system ad hoc** — schema and invariants,
-  write/read paths, hygiene, fleet integration, and what the user can inspect,
-  correct and undo. Read-only: it never consolidates, re-embeds or migrates; a
-  mutation needs `RUNBOOK.md` §11 and a human.
+- **`memory-architect` reviews the memory code ad hoc** — invariants, write/read
+  paths, consolidation, confidence, retrieval, extraction, summarization, and the
+  hot-path cost of each. It proposes patches and the tests that lock them; it
+  **never reads the brain** (no `/memory/*`, no SQL, no live dry-run). A data
+  question is a finding for the owner, not a query for the agent.
 - **`doc-gardener` owns the docs lifecycle** and audits the docs a pass touched:
   claims the code has falsified, temporary docs whose content was never rehomed,
   and one fact living in two places. It **proposes**; a human deletes or rewrites,
