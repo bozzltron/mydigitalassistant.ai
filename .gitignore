@@ -108,3 +108,8 @@ assistant/backend/static/index.html
 # durable record and stays tracked; the handoffs and log snapshots do not.
 .agents/runs/*
 !.agents/runs/log.jsonl
+
+# ----- Plans -----
+# Plans are working state (RUNBOOK §3-4): they are deleted when the work ships,
+# and git history is the archive. A plan that is not finished stays on disk here.
+plans/

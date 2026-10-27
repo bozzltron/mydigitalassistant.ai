@@ -518,6 +518,10 @@ async def run_consolidation(
             )
 
     if dry_run:
+        # A short-lived caller (the CLI) exits its event loop right after
+        # this; a pooled connection left to the finalizer closes on a dead loop
+        # and prints `Event loop is closed` at exit. Close it here.
+        await store.close()
         return report
 
     # Circuit breaker: at most `max_merges` per run, the remainder re-planned next
@@ -557,6 +561,7 @@ async def run_consolidation(
             )
 
     logger.info("Consolidation complete: %s", report.summary())
+    await store.close()
     return report
 
 

@@ -117,7 +117,10 @@ it works.
   - **Dev and prod are separate Compose projects** (separate images, databases, ports) and run side by side. A source change does not reach either until its image is rebuilt, so rebuild **both** to verify a change: "it still does the old thing" is usually an un-rebuilt environment. After rebuilding, hard-refresh the browser (⌘⇧R) — the SPA holds its JS in memory.
   - The two Caddy ports differ on purpose (dev 8443, prod 8444); working in one says nothing about the other.
 - Run CLI: `./assistant/bin/assistant chat`
-- Run tests: `docker run -it --rm -v $(pwd):/app -v assistant-test-data:/app/data -w /app -e DATABASE_PATH=/app/data/assistant-test.db assistant pytest assistant/tests/ --timeout=120`
+- Run tests: `docker run -it --rm -v $(pwd):/app -v assistant-test-data:/app/data -w /app -e DATABASE_PATH=/app/data/assistant-test.db assistant pytest assistant/tests/ --timeout=20`
+  (20 s, not 120: on this host the suite intermittently hangs at a high per-test
+  ceiling — a sqlcipher close on a dead loop — so a low ceiling fails fast instead
+  of stalling the gate; `scripts/agent-gates.sh` uses the same value.)
 - Run full suite (plain + encrypted): `./run_ci.sh`
 - Run single test mode: `docker compose -f docker-compose.test.yml run --rm test-plain`
 - Lint: `docker run -it --rm -v $(pwd):/app -w /app assistant ruff check .`
@@ -158,7 +161,7 @@ cover *both* modes, which is why it exists.
 ```bash
 # Backend
 docker run -it --rm -v $(pwd):/app -w /app assistant ruff check .
-docker run -it --rm -v $(pwd):/app -v assistant-test-data:/app/data -w /app -e DATABASE_PATH=/app/data/assistant-test.db assistant pytest assistant/tests/ --timeout=120
+docker run -it --rm -v $(pwd):/app -v assistant-test-data:/app/data -w /app -e DATABASE_PATH=/app/data/assistant-test.db assistant pytest assistant/tests/ --timeout=20
 
 # Frontend
 # `-v $(pwd)/assistant:/assistant` backs the cross-tree contract test

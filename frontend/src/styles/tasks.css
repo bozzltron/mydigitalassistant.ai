@@ -1,4 +1,4 @@
-/* Tasks page (plans/2026-10-15-daily-tasks-ui.md). Task-only selectors: the page
+/* Tasks page. Task-only selectors: the page
    reuses the design system's base classes and defines nothing that files.css already
    owns — `designSystem.test.ts` fails a bare class defined in two stylesheets. */
 

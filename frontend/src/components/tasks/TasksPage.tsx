@@ -14,7 +14,7 @@ import { TaskForm } from './TaskForm'
  * is chat's to set, and the server refuses anything else (`extra="forbid"`), so a
  * mistake here is a 422 rather than a silent change.
  *
- * See `plans/2026-10-15-daily-tasks-ui.md`.
+ * See `assistant/AGENTS.md` — scheduled tasks are memory, and the page is a view.
  */
 export default function TasksPage() {
   const [tasks, setTasks] = createSignal<Task[]>([])

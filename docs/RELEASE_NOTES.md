@@ -174,7 +174,7 @@ serving the *built* bundle for two pages in dev.**
   added rather than after.
 - **Not in this release.** The Tasks page's *learning* panel — what a task's runs have been
   writing — is planned and not built. It waits on a measurement
-  (`plans/2026-10-15-daily-tasks-ui.md`, Phase 0): how many runs leave an output episode
+  (the Tasks page, Phase 0; see `assistant/AGENTS.md`): how many runs leave an output episode
   with `frame_ids`, which is what the panel would read. Building the view before measuring
   the trail is the thing that plan exists to avoid.
 

@@ -224,6 +224,7 @@ assignment: [`docs/AGENTIC_WORKFLOW.md`](docs/AGENTIC_WORKFLOW.md).
 - [`docs/CONVERSATION_MODE_FLOW.md`](docs/CONVERSATION_MODE_FLOW.md) — voice mode
 - [`docs/DEPLOYMENT_MODES.md`](docs/DEPLOYMENT_MODES.md) — dev vs prod compose
 - [`docs/AGENTIC_WORKFLOW.md`](docs/AGENTIC_WORKFLOW.md) — agent runbooks (`ship-feature`, `self-improve`) and per-agent models
+- [`docs/audits/memory-health-2026-10-26.md`](docs/audits/memory-health-2026-10-26.md) — point-in-time memory audit (R1–R11)
 
 ## What this alpha is not
 

@@ -122,16 +122,32 @@ async def test_a_shared_name_slot_is_not_identity_evidence(store):
     assert report.planned_merges == [], report.planned_merges
 
 
-async def test_a_shared_title_still_merges(store):
-    """`title` and `url` belong to a document, so sharing one is identity."""
-    a = await store.create_frame("album_one", "entity")
-    b = await store.create_frame("album_two", "entity")
-    await store.upsert_slot(a.id, "title", "The Mountain & The Wolf")
-    await store.upsert_slot(b.id, "title", "The Mountain & The Wolf")
+async def test_a_shared_url_still_merges(store):
+    """A URL addresses one document, so sharing one is identity.
+
+    `title` was in this set too, and was removed (2026-10-26): a song and its
+    album, a film and its sequel, a person and their release share a title.
+    """
+    a = await store.create_frame("album one", "entity")
+    b = await store.create_frame("album two", "entity")
+    await store.upsert_slot(a.id, "url", "https://example.test/mountain")
+    await store.upsert_slot(b.id, "url", "https://example.test/mountain")
 
     report = await run_consolidation(str(store.db_path), dry_run=True)
 
-    assert report.planned_merges, "a shared title must still merge the frames"
+    assert report.planned_merges, "a shared url must still merge the frames"
+
+
+async def test_a_shared_title_is_not_identity_evidence(store):
+    """A shared title is a work and its parts, not one entity."""
+    a = await store.create_frame("why not", "entity")
+    b = await store.create_frame("single release", "entity")
+    await store.upsert_slot(a.id, "title", "Why Not")
+    await store.upsert_slot(b.id, "title", "Why Not")
+
+    report = await run_consolidation(str(store.db_path), dry_run=True)
+
+    assert report.planned_merges == [], report.planned_merges
 
 
 async def test_merge_keeps_the_observation_date_not_the_merge_time(store):
@@ -364,9 +380,10 @@ async def test_merge_redirects_edges_with_provenance_and_max_confidence(store):
     album_b = await store.create_frame("redirect_album_b", "entity")
     mozworth = await store.create_frame("redirect_artist", "entity")
     cover = await store.create_frame("redirect_cover_track", "entity")
-    # Shared non-empty identity value: pass-2 duplicate evidence.
-    await store.upsert_slot(album_a.id, "title", "Redirect Same Album")
-    await store.upsert_slot(album_b.id, "title", "Redirect Same Album")
+    # Shared non-empty identity value: pass-2 evidence. A URL, not a title —
+    # a title is shared by a work and its parts (song/album, film/sequel).
+    await store.upsert_slot(album_a.id, "url", "https://example.test/redirect-album")
+    await store.upsert_slot(album_b.id, "url", "https://example.test/redirect-album")
     await store.upsert_slot(album_b.id, "year", "2026")
     # Loser's high-confidence edge with provenance.
     async with aiosqlite_connect(str(store.db_path)) as db:
