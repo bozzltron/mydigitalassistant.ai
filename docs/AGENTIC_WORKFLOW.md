@@ -154,7 +154,8 @@ inside the same diff.
 ```
 
 - **`id`** — a source prefix, so no dispatcher is needed to allocate numbers: `r-` reviewer,
-  `t-` tester, `o-` observer, `d-` design-guardian, `g-` doc-gardener, `v-` verifier.
+  `i-` implementer, `t-` tester, `o-` observer, `d-` design-guardian, `g-` doc-gardener,
+  `v-` verifier.
 - **`claim`** — the defect in one sentence. The defect, not a recommendation.
 - **`where`** — `file:line`, a test name, or a log line.
 - **`falsifier`** — "wrong if ⟨check⟩": a test name, a log line, a doc line.
