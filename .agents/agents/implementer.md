@@ -1,7 +1,7 @@
 ---
 name: implementer
 description: Makes the code changes a plan describes, and nothing else. Use after the plan is approved.
-model: "opencode-go/kimi-k2.7-code"
+model: "opencode-go/deepseek-v4.1-flash"
 mode: subagent
 ---
 

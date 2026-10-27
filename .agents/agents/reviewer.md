@@ -1,7 +1,7 @@
 ---
 name: reviewer
 description: Reviews a diff for correctness, project conventions and risk, and writes blocking versus non-blocking findings. Use after the tests pass, before verification.
-model: "opencode-go/deepseek-v4-pro"
+model: "opencode-go/glm-5.3"
 mode: subagent
 permissions:
   - action: edit

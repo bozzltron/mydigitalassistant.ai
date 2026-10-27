@@ -56,9 +56,9 @@ tool's IDs (or `ollama/...` for a fully local loop) without touching the runbook
 |---|---|---|---|---|
 | **observer** | Logs → evidence (`findings.md`) | `opencode-go/gpt-6-luna` | fast | 272k context and cheap (0.1/0.5); logs are the biggest input in the pipeline |
 | **planner** | Spec → plan + pre-registered bar | `opencode-go/kimi-k3.1-pro` | strong reasoning | runs once per run, and a bad plan wastes the whole run — the one place to pay for reasoning |
-| **implementer** | Plan → code | `opencode-go/kimi-k2.7-code` | strong coding | purpose-built code model; the bulk of the tokens |
+| **implementer** | Plan → code | `opencode-go/deepseek-v4.1-flash` | fast coding | the **highest-volume role**, so the cheapest capable model: 6× cheaper per token than the code specialist. The user's pick after using it for implementation |
 | **tester** | Criteria → tests + report | `opencode-go/claude-haiku-5-5` | fast/mid | writing tests against a plan needs mid-tier judgement, not deep reasoning |
-| **reviewer** | Diff → blocking findings | `opencode-go/deepseek-v4-pro` | mid | **different family from the implementer**, cheap (0.66/1.98), strong on code |
+| **reviewer** | Diff → blocking findings | `opencode-go/glm-5.3` | mid | **different family from the implementer** (DeepSeek); strong on code, and it reads one diff per run, so its price is not the driver |
 | **design-guardian** | Product pass → principles upheld | `opencode-go/gemini-4-argon` | strong, product judgement | owns the principles checklist; a fourth family, so the design pass is not the reviewer's opinion twice |
 | **doc-gardener** | Docs corpus → drift + cleanup audit | `opencode-go/glm-5.3` | mid, large reading | owns the docs lifecycle; a fifth family, and it proposes rather than deletes |
 | **spec-verifier** | Spec + bar → verdict + score | `opencode-go/qwen3.8-max` | strong judge | **different family from the implementer**; the verifier is the measurement, so it gets the strongest available judge |
@@ -68,8 +68,10 @@ Two rules the model table encodes:
 - **Different, not just stronger.** The reviewer and the verifier are deliberately a
   different family from the implementer. A second opinion from the same model is a
   formality.
-- **Cost follows the work.** The implementer and observer run on the cheap models;
-  the planner and verifier — two calls per run — get the expensive ones.
+- **Cost follows the work.** The implementer, observer and tester run on the cheap
+  models, because they touch the most tokens. The planner, reviewer, guardian and
+  verifier each run once per run, so they get the stronger models — cheapening a
+  gate saves cents and risks the run.
 
 Where the tool supports reasoning variants (`#low`, `#high`, `#max`), the planner and
 verifier are the only two worth raising; the rest should keep the default.
