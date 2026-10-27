@@ -79,9 +79,13 @@ package-dir = { assistant = "assistant" }
 asyncio_mode = "auto"
 # Per-test timeout. A hung test must FAIL with its name, not stall the suite
 # forever: an aiosqlite worker thread deadlocking in sqlcipher during connection
-# teardown did exactly that (see test_phase9_scheduler_consolidation). Generous —
-# the whole suite runs in ~210s and no single test approaches this.
-timeout = 120
+# teardown did exactly that (see test_phase9_scheduler_consolidation).
+# **20s, not 120.** On this host the suite intermittently hangs at a high ceiling,
+# so a low ceiling fails fast instead of stalling the pre-merge gate. AGENTS.md,
+# RUNBOOK.md and scripts/agent-gates.sh all state 20 — this is the value they are
+# describing, and it lives here once so the compose services cannot disagree with
+# them. Raising it re-creates the stall the docs claim was removed.
+timeout = 20
 testpaths = ["tests"]
 pythonpath = ["."]
 markers = [
