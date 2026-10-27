@@ -72,4 +72,9 @@ Reply with the path, the one-line verdict, and the top candidate only.
 - **Never invent a baseline.** "We don't measure this yet" is a valid, useful finding.
 - **Note the confounders.** Concurrent turns, model eviction, a rebuild, or a
   scheduler tick change what a number means; say which were in play.
+- **Evidence hygiene.** Docker logs can carry user content — a turn's text, a frame
+  value, a filename. Quote the log line's *shape* (`tool_loop_exit reason=answered`,
+  `context_fixed chars=…`), never a personal value, and write findings only to
+  `.agents/runs/`, which is gitignored. `scripts/pii-guard.sh` fails the pre-merge gate
+  if a listed value reaches a tracked file.
 - Keep `findings.md` under two pages. A page the planner will not read is wasted.

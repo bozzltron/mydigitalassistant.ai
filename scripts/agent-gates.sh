@@ -33,6 +33,8 @@ done
 [ -n "$MODE" ] || { echo "usage: $0 (--scoped [pytest paths...] [--frontend] | --full)" >&2; exit 2; }
 
 if [ "$MODE" = "full" ]; then
+  echo "== full gates: evidence hygiene =="
+  ./scripts/pii-guard.sh
   echo "== full gates: run_ci.sh =="
   ./run_ci.sh
   echo "== full gates: security =="

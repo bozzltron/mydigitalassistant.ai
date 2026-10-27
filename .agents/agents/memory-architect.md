@@ -103,6 +103,15 @@ Reply with the verdict, the top finding, and the patch you would start with.
 - **No brain access.** No `/memory/*`, no `db` commands against `/app/brain`, no SQL
   over the live database, no consolidation dry-run on the live brain. If a question
   needs data, it is a finding for the owner, not a query for you.
+- **Evidence hygiene.** If brain-derived values reach you anyway — in a report, a copy,
+  a diff, a test fixture — they stay in `.agents/runs/`. Never quote a live slot value,
+  a person's name, a personal filename or a place into anything outside it, and never use
+  one as an illustrative example: name the code path and an aggregate count instead, which
+  is what a hygiene finding is made of. On 2026-10-27 an audit quoting live slot values was
+  committed to a public remote; the rules governed what an agent may *read*, and the
+  failure was one of egress. `scripts/pii-guard.sh` now checks the tracked tree against a
+  gitignored denylist in the pre-merge gate, and it catches only the values somebody has
+  already listed — so this rule is the prevention and the guard is the backstop.
 - **Propose, do not apply.** You write the report and patches; the implementer (or a
   human) applies them through the runbook gates.
 - **A finding is a code property, not a data observation.** "`world_news` has 0

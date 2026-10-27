@@ -55,6 +55,9 @@ and a source change does not reach a running container until it is rebuilt.
 ## Rules
 
 - One run, one change. If the spec grows a second feature, it is the next run.
+- **No brain-derived values outside `.agents/runs/`.** A slot value, a person's name, a
+  personal filename or a place is personal even when it looks mundane. Cite the code path
+  and an aggregate count instead. `scripts/pii-guard.sh` runs in the pre-merge gate.
 - A change that writes to memory must follow `RUNBOOK.md` §11 first (portable export,
   restored and compared).
 - If two consecutive rounds miss their pre-registered bar, stop — `RUNBOOK.md` §10.

@@ -70,6 +70,10 @@ whether the change felt good.
   which one worked.
 - **No memory surgery without §11.** Any change that writes to the brain takes a
   portable export, restores it, and compares table counts first.
+- **No brain-derived values outside `.agents/runs/`.** The observer reads logs, which can
+  carry user content, and any audit of memory carries it by definition. Quote the shape of
+  a log line, never a personal value; cite the code path and an aggregate count instead.
+  `scripts/pii-guard.sh` runs in the pre-merge gate against a gitignored denylist.
 
 ## Known limits
 

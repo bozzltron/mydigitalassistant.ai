@@ -113,3 +113,6 @@ assistant/backend/static/index.html
 # Plans are working state (RUNBOOK §3-4): they are deleted when the work ships,
 # and git history is the archive. A plan that is not finished stays on disk here.
 plans/
+
+# The one list that must never be committed: values pii-guard blocks.
+.agents/pii-denylist.txt
