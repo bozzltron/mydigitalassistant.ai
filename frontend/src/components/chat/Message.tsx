@@ -12,6 +12,13 @@ interface MessageProps {
    * the backend accepted it, so the panel can show inline feedback.
    */
   onCorrect: (msgId: string, text: string) => Promise<boolean> | boolean
+  /**
+   * True for a row that arrived while the user was watching. The owner decides
+   * it once per message id (see MessageList); it is a static flag, not a signal,
+   * because a reactive class would re-apply on unrelated updates and replay the
+   * entrance.
+   */
+  arriving?: boolean
 }
 
 export default function Message(props: MessageProps) {
@@ -125,9 +132,16 @@ export default function Message(props: MessageProps) {
     }
   })
 
+  // Snapshot the entrance flag: it is decided once by the owner when the row is
+  // created, and a reactive class would re-apply on unrelated updates and replay
+  // the slide. Reading it in the class expression is the bug, so the warning is
+  // the point.
+  // eslint-disable-next-line solid/reactivity
+  const arriving = props.arriving === true
+
   return (
     <div
-      class={`msg ${isUser() ? 'msg-user' : 'msg-assistant'}`}
+      class={`msg ${isUser() ? 'msg-user' : 'msg-assistant'}${arriving ? ' msg-arriving' : ''}`}
     >
       <div class="content">
         {/* A throw while rendering one message (bad markdown, a malformed

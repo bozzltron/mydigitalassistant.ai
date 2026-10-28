@@ -318,10 +318,23 @@ export default function ChatPage(props: {
     onCleanup(off);
   });
 
-  // Initialize message queue on mount
-  onMount(() => {
-    initQueue()
-  })
+  // Arrival is decided once per queued id, from this plain Set — not a signal,
+  // and above the session-keyed <Show> that remounts the queue panel. Three
+  // things depend on that placement: reading it only when <For> creates a row
+  // means a dequeue elsewhere cannot re-evaluate it; holding it across the
+  // remount means a conversation switch does not slide surviving rows in again;
+  // and initialising the persisted queue *before* seeding it means restored
+  // rows are already known and do not enter as if they were new.
+  const seenQueued = new Set<string>()
+  initQueue()
+  for (const queued of getQueue()) seenQueued.add(queued.id)
+
+  /** True the first time a queued id renders; false for restores and repeats. */
+  const isQueuedArriving = (id: string): boolean => {
+    if (seenQueued.has(id)) return false
+    seenQueued.add(id)
+    return true
+  }
 
   // Dictation mode (one-shot mic button) - uses original hook
   useVoiceRecording({
@@ -357,7 +370,9 @@ export default function ChatPage(props: {
       <div id="chat-area" class="chat-area">
         <div id="messages" ref={setMessagesContainerRef}>
           {/* Keyed on the session so switching or first-loading a conversation
-              remounts the transcript and replays the enter animation. */}
+              remounts the transcript. That remount is why MessageList seeds its
+              arrival set from the rows already on screen: the thread must appear
+              settled, not enter again. */}
           <Show when={sessionId() ?? '__none__'} keyed>
             {(_sid) => (
               <div class="chat-transcript">
@@ -370,22 +385,32 @@ export default function ChatPage(props: {
                   <div class="queue-panel" id="queue-panel">
                     <div class="queue-panel-content">
                       <For each={getQueue()}>
-                        {(queuedMsg) => (
-                          <div class="msg msg-user msg-queued" id={queuedMsg.id}>
-                            <div class="queued-content">
-                              <span class="queued-text">{queuedMsg.content}</span>
-                            </div>
-                            <button 
-                              class="queued-remove"
-                              onClick={() => handleRemoveQueued(queuedMsg.id)}
-                              title="Remove queued message"
+                        {(queuedMsg) => {
+                          // Decided once, when <For> creates this row. Reading it
+                          // from the class expression would leave the decision
+                          // inside a reactive position, where any later queue
+                          // update could re-evaluate — and drop — the marker.
+                          const arriving = isQueuedArriving(queuedMsg.id)
+                          return (
+                            <div
+                              class={`msg msg-user msg-queued${arriving ? ' msg-arriving' : ''}`}
+                              id={queuedMsg.id}
                             >
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
-                                <path d="M18 6 6 18M6 6l12 12"/>
-                              </svg>
-                            </button>
-                          </div>
-                        )}
+                              <div class="queued-content">
+                                <span class="queued-text">{queuedMsg.content}</span>
+                              </div>
+                              <button
+                                class="queued-remove"
+                                onClick={() => handleRemoveQueued(queuedMsg.id)}
+                                title="Remove queued message"
+                              >
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+                                  <path d="M18 6 6 18M6 6l12 12"/>
+                                </svg>
+                              </button>
+                            </div>
+                          )
+                        }}
                       </For>
                     </div>
                   </div>

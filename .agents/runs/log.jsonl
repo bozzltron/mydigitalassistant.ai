@@ -1,2 +1,4 @@
 {"ts": "2026-10-25T15:33:06Z", "run_id": "2026-10-25-si01", "runbook": "self-improve@v1", "verdict": "PARTIAL", "met": 8, "total": 8, "tests": "passing", "retries": 0, "human_questions": 1}
 {"ts": "2026-10-27T02:38:35Z", "run_id": "2026-10-26-si02", "runbook": "self-improve@v1", "verdict": "PASS", "met": 7, "total": 7, "tests": "passing", "retries": 1, "human_questions": 2}
+{"ts": "2026-10-27T21:35:09Z", "run_id": "2026-10-27-anim", "runbook": "ship-feature@v1", "verdict": "PARTIAL", "met": 5, "total": 8, "tests": "passing", "retries": 0, "human_questions": 5}
+{"ts":"2026-10-28T18:04:03Z","run_id":"2026-10-27-anim","runbook":"ship-feature@v1","verdict":"PASS","met":8,"total":8,"tests":"passing","retries":1,"human_questions":5}

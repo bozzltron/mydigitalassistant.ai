@@ -9,6 +9,36 @@
   color: var(--text);
 }
 
+/* A newly arrived transcript or queued message slides up once, over the house
+   0.2 s and no longer. Deliberately transform-only and with no fill mode:
+   queued rows sit at opacity 0.55, so animating opacity to 1 would erase that,
+   and a transform left in place would make the row a containing block for
+   position: fixed descendants (the image lightbox), which then scrolls with the
+   content. The class is applied once per message id, so an unrelated re-render
+   cannot replay it. */
+.msg-arriving {
+  animation: msgEnter 200ms ease-out;
+}
+
+@keyframes msgEnter {
+  from {
+    transform: translateY(12px);
+  }
+  to {
+    /* `none`, not `translateY(0)`: same containing-block reason as above, and
+       with no fill mode this is the resting state anyway. */
+    transform: none;
+  }
+}
+
+/* Reduced motion is a real branch, not a zero duration: the message is painted
+   straight into its final position. */
+@media (prefers-reduced-motion: reduce) {
+  .msg-arriving {
+    animation: none;
+  }
+}
+
 .msg-user {
   align-self: flex-end;
   background: var(--user-msg);
@@ -361,27 +391,14 @@
   font-style: italic;
 }
 
-/* Transcript wrapper: remounted on conversation change to replay the enter
-   animation (ChatPage keys the transcript on the active session). */
+/* Transcript wrapper. It carries no entrance of its own: arrival is per message
+   (.msg-arriving), so opening a conversation does not animate the whole thread
+   and the two motions never compete. Remounted on conversation change (ChatPage
+   keys it on the active session). */
 .chat-transcript {
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
-  animation: conversationEnter 260ms ease-out both;
-}
-
-@keyframes conversationEnter {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    /* `none`, not `translateY(0)`: with fill-mode `both` a lingering transform
-       would make this element the containing block for position: fixed
-       descendants (the image lightbox), which then scrolls with the content. */
-    transform: none;
-  }
 }
 
 /* Sources footer (split out of the answer text so it renders last, after the

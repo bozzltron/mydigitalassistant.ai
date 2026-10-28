@@ -1,7 +1,10 @@
 import { render, screen, fireEvent } from '@solidjs/testing-library'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { createSignal } from 'solid-js'
+import { createStore } from 'solid-js/store'
 import MessageList from './MessageList'
 import { postChatMessageStream, setSessionId, messages } from '../../state/chat'
+import type { ChatMessage } from '../../types/chat'
 import * as api from '../../services/api'
 
 vi.mock('../../services/api', () => ({
@@ -84,6 +87,93 @@ describe('MessageList streamed bubble', () => {
     expect(document.querySelector('.msg-markdown')?.textContent).toContain('Here is the answer')
     expect(document.querySelector('.learned-indicator summary')?.textContent).toContain('Found from search')
     expect(document.querySelector('.badge-brave')?.textContent).toContain('Searched via Brave')
+  })
+})
+
+describe('MessageList entrance', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    localStorage.clear()
+    setSessionId('session-in-1')
+  })
+
+  const arriving = () => [...document.querySelectorAll<HTMLElement>('.msg-arriving')]
+
+  it('marks the row that arrives while it is on screen, and nothing already there', () => {
+    // Arrival is decided once per id when <For> creates the row. A row already
+    // in the store at mount was read before, so it must appear settled; a row
+    // appended afterwards is the one the user watched arrive.
+    const [list, setList] = createSignal<ChatMessage[]>([
+      { id: 'live-seeded', role: 'assistant', content: 'already on screen' },
+    ])
+    render(() => <MessageList messages={list} />)
+
+    expect(arriving(), 'a row present at mount animated').toHaveLength(0)
+
+    setList((prev) => [...prev, { id: 'live-new', role: 'user', content: 'just typed' }])
+
+    const marked = arriving()
+    expect(marked).toHaveLength(1)
+    expect(marked[0].textContent).toContain('just typed')
+  })
+
+  it('does not animate history rows that load after the mount', () => {
+    // loadConversationMessages resolves after the transcript is on screen, so a
+    // restored thread arrives as a live array update. The `history-` id is what
+    // keeps it still; the mount-time seed alone would animate it.
+    const [list, setList] = createSignal<ChatMessage[]>([])
+    render(() => <MessageList messages={list} />)
+
+    setList([
+      { id: 'history-session-in-1-0', role: 'user', content: 'restored question' },
+      { id: 'history-session-in-1-1', role: 'assistant', content: 'restored answer' },
+    ])
+
+    expect(document.querySelectorAll('.msg'), 'the restored rows did not render').toHaveLength(2)
+    expect(arriving(), 'a restored history row entered as new').toHaveLength(0)
+  })
+
+  it('keeps one node and one marker through deltas, finalize and meta', () => {
+    // Criterion 4 + 5: the streaming bubble is created empty and hidden, appears
+    // on the first token with the marker, and then reconciles in place. Any
+    // reactive re-decision of the class would drop the marker here.
+    const [state, setState] = createStore<{ list: ChatMessage[] }>({ list: [] })
+    render(() => <MessageList messages={() => state.list} />)
+
+    setState('list', [
+      { id: 'streaming-turn-1-assistant', role: 'assistant', content: '', meta: { isStreaming: true } },
+    ])
+    expect(document.querySelector('.msg'), 'the empty placeholder rendered').toBeNull()
+
+    setState('list', 0, 'content', 'First ')
+    const bubble = document.querySelector<HTMLElement>('.msg')
+    expect(bubble, 'the first token did not render a bubble').not.toBeNull()
+    expect(bubble!.classList.contains('msg-arriving')).toBe(true)
+
+    setState('list', 0, 'content', 'First token')
+    setState('list', 0, 'content', 'First token, complete.')
+    expect(document.querySelector('.msg')).toBe(bubble)
+    expect(arriving()).toHaveLength(1)
+
+    setState('list', 0, 'meta', { isStreaming: false, task_type: 'search' })
+    expect(document.querySelector('.msg')).toBe(bubble)
+    expect(bubble!.classList.contains('msg-arriving'), 'finalize re-decided the class').toBe(true)
+  })
+
+  it('does not replay an arrival when the transcript remounts', () => {
+    // ChatPage keys the transcript on the session, so switching conversations
+    // remounts this list. The seed makes a remount show the thread settled
+    // instead of replaying the slide for every row.
+    const [list, setList] = createSignal<ChatMessage[]>([])
+    const view = render(() => <MessageList messages={list} />)
+
+    setList([{ id: 'live-1', role: 'user', content: 'hello' }])
+    expect(arriving()).toHaveLength(1)
+
+    view.unmount()
+    render(() => <MessageList messages={list} />)
+
+    expect(arriving(), 'the remount replayed the entrance').toHaveLength(0)
   })
 })
 

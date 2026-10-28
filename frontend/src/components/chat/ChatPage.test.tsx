@@ -1,11 +1,17 @@
 import { render, screen, fireEvent } from '@solidjs/testing-library'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import ChatPage from './ChatPage'
 import {
   setSessionId,
   setIsStreaming,
   setStreamingMessageId,
 } from '../../state/chat'
+import {
+  clearQueue,
+  enqueue,
+  setProcessing,
+  setQueueState,
+} from '../../state/messageQueue'
 import * as api from '../../services/api'
 
 vi.mock('../../services/api', () => ({
@@ -49,6 +55,98 @@ Object.defineProperty(window, 'SpeechSynthesisUtterance', {
   writable: true,
   configurable: true,
   value: MockSpeechSynthesisUtterance,
+})
+
+describe('ChatPage queue entrance', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    localStorage.clear()
+    clearQueue()
+    setProcessing(false)
+    setSessionId('session-q-1')
+    setIsStreaming(false)
+    setStreamingMessageId(null)
+  })
+
+  // The queue store is module state shared with every other test in this file:
+  // leave it empty so the following describes start clean.
+  afterEach(() => {
+    clearQueue()
+    setProcessing(false)
+  })
+
+  const queuedRows = () => [...document.querySelectorAll<HTMLElement>('.msg-queued')]
+  const marked = () => queuedRows().filter((row) => row.classList.contains('msg-arriving'))
+
+  it('marks a live enqueue and leaves the rows already queued unmarked', () => {
+    // The queue restored from the saved conversation is loaded *before* ChatPage
+    // seeds the arrival set. Seeding first would leave them unseen, and every
+    // restore would slide rows in as if the user had just typed them.
+    setQueueState({
+      queue: [
+        { id: 'saved-1', content: 'queued before the reload', source: 'text', timestamp: 1 },
+        { id: 'saved-2', content: 'and this one too', source: 'text', timestamp: 2 },
+      ],
+    })
+    // Messages leave the queue as they are sent; hold it processing so the rows
+    // stay put long enough to inspect.
+    setProcessing(true)
+
+    render(() => <ChatPage conversation={null} />)
+
+    expect(queuedRows().map((row) => row.id)).toEqual(['saved-1', 'saved-2'])
+    expect(marked(), 'a restored queued row entered as new').toHaveLength(0)
+
+    enqueue({ content: 'typed while it was busy', source: 'text', timestamp: 3 })
+
+    expect(marked()).toHaveLength(1)
+    expect(marked()[0].textContent).toContain('typed while it was busy')
+  })
+
+  it('does not restart the entrance when another queued row is removed', async () => {
+    // Criterion 2: the marker is decided once per id, at row creation. Deriving
+    // it from the queue array would re-evaluate every surviving row on a dequeue.
+    // The removal goes through the row's own control, so the button is covered
+    // too (criterion 7).
+    setProcessing(true)
+    render(() => <ChatPage conversation={null} />)
+
+    const firstId = enqueue({ content: 'first queued', source: 'text', timestamp: 1 })
+    const secondId = enqueue({ content: 'second queued', source: 'text', timestamp: 2 })
+
+    const first = document.getElementById(firstId)
+    const second = document.getElementById(secondId)
+    expect(first?.classList.contains('msg-arriving')).toBe(true)
+    expect(second?.classList.contains('msg-arriving')).toBe(true)
+
+    first!.querySelector<HTMLButtonElement>('.queued-remove')!.click()
+    await Promise.resolve()
+
+    expect(document.getElementById(firstId), 'the removed row is still rendered').toBeNull()
+    const survivor = document.getElementById(secondId)
+    expect(survivor, 'the remaining row was recreated').toBe(second)
+    expect(survivor!.classList.contains('msg-arriving')).toBe(true)
+  })
+
+  it('does not re-mark a row that is still queued when the session switches', async () => {
+    // The panel lives inside the session-keyed <Show>, so switching conversations
+    // remounts it. The set lives above that boundary, which is the only reason a
+    // surviving row does not slide in again.
+    setProcessing(true)
+    render(() => <ChatPage conversation={null} />)
+
+    const id = enqueue({ content: 'still waiting', source: 'text', timestamp: 1 })
+    const before = document.getElementById(id)
+    expect(before?.classList.contains('msg-arriving')).toBe(true)
+
+    setSessionId('session-q-2')
+    await vi.waitFor(() => expect(document.getElementById(id), 'the panel did not remount').not.toBeNull())
+
+    // The premise of this test: the row really was recreated by the session
+    // switch. Without this, a green result could come from no remount at all.
+    expect(document.getElementById(id), 'the row was not recreated by the switch').not.toBe(before)
+    expect(document.getElementById(id)!.classList.contains('msg-arriving')).toBe(false)
+  })
 })
 
 describe('ChatPage chat wiring', () => {
