@@ -48,7 +48,19 @@ if [ "$MODE" = "full" ]; then
   echo "== full gates: security =="
   docker run --rm -v "$ROOT":/app -w /app assistant \
     python -m assistant.scripts.verify_security
-  echo "gates: PASS (full)"
+  # Stamp the tree, not the commit: the gate certifies what is on disk, and the tree
+  # exists before the commit does. `.githooks/pre-push` reads this stamp so an
+  # unverified tree cannot be published. Only a clean tree is certified — otherwise the
+  # stamp would vouch for content that is not what will be committed.
+  if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
+    echo "gates: PASS (full) — tree is dirty, NOT stamped; commit, then re-run to certify"
+    exit 0
+  fi
+  stamps="$(git rev-parse --absolute-git-dir)/gate-stamps"
+  mkdir -p "$stamps"
+  tree="$(git rev-parse HEAD^{tree})"
+  : > "$stamps/$tree"
+  echo "gates: PASS (full) — stamped tree $(echo "$tree" | cut -c1-8) for pre-push"
   exit 0
 fi
 

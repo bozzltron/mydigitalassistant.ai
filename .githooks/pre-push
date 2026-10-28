@@ -1,0 +1,33 @@
+#!/bin/sh
+# The gate runs locally instead of in CI. This refuses to publish a tree the full gate
+# has not certified, so "I forgot to run it" cannot put an unverified commit on main.
+#
+# Certified means `scripts/agent-gates.sh --full` passed on a clean tree; it stamps the
+# TREE hash, not the commit hash, because the gate looks at the tree and the tree exists
+# before the commit does. (Stamping a commit would be unusable: you gate, then commit,
+# and the commit is a new sha.)
+#
+# Escape hatch, deliberately explicit: `git push --no-verify`.
+#
+# Install once per clone: git config core.hooksPath .githooks
+set -u
+
+stamps="$(git rev-parse --absolute-git-dir)/gate-stamps"
+mkdir -p "$stamps"
+fail=0
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+  case "$local_sha" in
+    0000000000000000000000000000000000000000) continue ;;   # branch deletion
+  esac
+  tree="$(git rev-parse --verify --quiet "${local_sha}^{tree}" || true)"
+  [ -n "$tree" ] || continue
+  if [ ! -f "$stamps/$tree" ]; then
+    short="$(git rev-parse --short "$local_sha")"
+    echo "pre-push: refusing $short — this tree has not passed the full gate." >&2
+    echo "          run: scripts/agent-gates.sh --full" >&2
+    echo "          (or bypass once with: git push --no-verify)" >&2
+    fail=1
+  fi
+done
+exit $fail

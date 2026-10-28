@@ -290,6 +290,30 @@ agent from running yesterday's commands. The script also encodes two host quirks
 suite hangs at `--timeout=120` here (use 20), and the named test volume keeps tests
 off the repo's `data/` and is ~4x faster.
 
+### Local gate enforcement — there is no CI
+
+`--full` **stamps the tree it certified**, and `.githooks/pre-push` refuses to publish a
+tree without a stamp, so "I meant to run it" cannot put an unverified commit on `main`.
+Install once per clone:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+It stamps the **tree**, not the commit, because the gate looks at what is on disk and the
+tree exists before the commit does — a commit-keyed stamp could never be current. A dirty
+tree is not stamped: the stamp would vouch for content that is not what gets committed.
+`git push --no-verify` is the escape hatch, and it should be visible in the shell history
+rather than habitual.
+
+A GitHub Actions workflow existed for one day (`eeacecf`, `bc0f0f6`) and was removed. It
+earned its keep first: on its single run it found three host dependencies the local gate
+had been hiding — `ruff` run from the host `PATH`, an `agent-gates.sh` that assumed the
+`assistant` image already existed, and gitignored `.env`/`.env.test` files that a clean
+clone cannot start without. All three are fixed, so what remained was a "did you actually
+run it" guarantee, and the hook provides that locally for zero minutes and no third party.
+The workflow is recoverable from git history if a second developer ever joins.
+
 ## Measurement
 
 One measure to start: the verifier's verdict and score per run, one line in
