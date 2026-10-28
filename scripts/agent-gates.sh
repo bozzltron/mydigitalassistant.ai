@@ -18,6 +18,14 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
+# The gates run inside the built image, and both modes assume the `assistant` tag exists.
+# A fresh machine — and CI — has no such tag, and `docker run … assistant` then fails with
+# "Unable to find image", which reads as a broken gate rather than a missing prerequisite.
+if ! docker image inspect assistant >/dev/null 2>&1; then
+  echo "== building the gate image (first run on this machine) =="
+  docker build -t assistant .
+fi
+
 MODE=""
 PATHS=()
 FRONTEND=0
