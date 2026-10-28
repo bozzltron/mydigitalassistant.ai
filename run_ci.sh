@@ -5,8 +5,16 @@
 
 set -e
 
+# The dead-code check runs in the image, not on the host: `ruff` is not guaranteed to be
+# installed on the machine running this (CI had none, and failed with exit 127), and the
+# image is where the pinned interpreter lives. Build it if this is a fresh checkout.
+if ! docker image inspect assistant >/dev/null 2>&1; then
+  echo "=== Building the gate image (first run on this machine) ==="
+  docker build -t assistant .
+fi
+
 echo "=== Checking for dead code (unused imports/variables) ==="
-ruff check --select=F401,F811 .
+docker run --rm -v "$(pwd)":/app -w /app assistant ruff check --select=F401,F811 .
 
 echo ""
 echo "=== Building frontend dev image (guards against baked-node_modules drift) ==="
