@@ -159,7 +159,13 @@ inside the same diff.
 - **`claim`** — the defect in one sentence. The defect, not a recommendation.
 - **`where`** — `file:line`, a test name, or a log line.
 - **`falsifier`** — "wrong if ⟨check⟩": a test name, a log line, a doc line.
-- **`disposition`** — `fix <commit>` · `reject <result>` · `defer → B-<n>`.
+- **`disposition`** — `fix <commit or test>` · `reject <result>` · `defer → B-<n>` ·
+  `escalate → <reason>`. A writer dispositions *before* the runbook commits, so `fix` may
+  cite the test or file that carries it; the commit sha is appended when it exists. That is
+  why the grammar is "commit **or** test" and not a bare sha — a rule that cannot be
+  followed by the agent it binds is not a rule. `escalate` is what an S2 uses when the fix
+  is outside this run: it is **not** a deferral, it needs a human, and the reason must say
+  who and why.
 - **`closed`** — the agent that confirmed the disposition. Empty until then.
 
 ### Rules
@@ -361,6 +367,13 @@ lives in `.agents/evals/` when there is something stable to regress against.
   `doc-gardener` runs after it, scoped to the docs the change touched: a claim the
   change made false blocks, cleanup proposals do not. Both propose; the principles
   and the normative docs stay human-owned.
+
+- **And the verifier audits all three.** A design or docs pass is worth only what the
+  verifier checks: it fails a run whose `principles.md` has a principle with no verdict or
+  no evidence, whose *violated* principle carries no ledger row, or whose dead doc claim
+  carries no `g-` row. That audit is what lets those two passes become periodic audits
+  rather than run steps — a check nothing audits can be skipped silently, which is exactly
+  what happened to `docs-audit.md` in the two runs before the audit existed.
 - **Runs are transient, the log is not.** Never commit `.agents/runs/<id>/`; never
   lose `log.jsonl`.
 
