@@ -62,7 +62,12 @@ You judge; you never change code, tests, plans or scoring.
    if the run produced one; otherwise read the docs that describe what changed. A dead claim
    that no `g-` row carries is `PARTIAL` and blocks. Cleanup proposals are advisory and do
    not move the verdict.
-9. Append exactly one line to `.agents/runs/log.jsonl`:
+9. Append exactly one line to `.agents/runs/log.jsonl`, including the `gates` object
+   described in `docs/AGENTIC_WORKFLOW.md` §The instrument. You fill `rows`/`hits` from the
+   ledger and set `dispatched` from whether the gate wrote anything at all; the token fields
+   are supplied by whoever dispatched the gates. **A gate that was not dispatched is
+   `dispatched: false`, never `hits: 0`** — an unmeasured gate must not look like a
+   contributing nothing.
 
    ```json
    {"ts":"<ISO8601Z>","run_id":"<id>","runbook":"<ship-feature|self-improve>@v1","verdict":"PASS|PARTIAL|FAIL","met":7,"total":8,"tests":"passing|failing","retries":0,"human_questions":1}

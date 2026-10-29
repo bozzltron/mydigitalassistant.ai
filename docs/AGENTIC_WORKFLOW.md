@@ -322,8 +322,34 @@ The workflow is recoverable from git history if a second developer ever joins.
 
 ## Measurement
 
+### The instrument
+
 One measure to start: the verifier's verdict and score per run, one line in
-`.agents/runs/log.jsonl`.
+`.agents/runs/log.jsonl`, plus a `gates` object so a gate's contribution is comparable run
+to run:
+
+```json
+"gates": {"tester": {"dispatched": true, "msgs": 56, "tok_in": 4606783, "tok_out": 27076,
+                     "rows": 5, "hits": 3}}
+```
+
+- **`dispatched`** — whether the gate actually ran. A gate that was never dispatched is
+  **unmeasured**, never `0 hits`. Without this field the 6-run kill criterion deletes gates
+  nobody invoked, which is how the reviewer would have been retired before its first run.
+- **`rows` / `hits`** — the verifier counts these from the ledger: rows opened, and rows that
+  survived (not rejected). `precision = hits / rows`.
+- **`msgs` / `tok_in` / `tok_out`** — the orchestrator fills these from the harness store,
+  because the verifier has no access to it and only the dispatcher holds the session ids.
+- **Token accounting has a trap.** `tokens.input` is the *uncached* delta; providers that
+  cache put the real prompt cost in `tokens.cache.write`. Summing `input` alone understated
+  the planner by 370× on the first run. Total is
+  `input + cache.read + cache.write + output`.
+- **`human_minutes`** — recorded by the human at verification. Unrecorded means the attention
+  bar is unmeasured, which is `PARTIAL`, not a pass.
+
+Nested harness stores differ by version (legacy `message` vs `session_message`); attribute by
+the `agent` field in the live one, and treat `cost`, which reads 0 on a subscription, as
+unusable — the metrics are token-based for that reason.
 
 ```json
 {"ts":"2026-10-25T14:02:00Z","run_id":"2026-10-25-ab12","runbook":"ship-feature@v1","verdict":"PASS","met":7,"total":8,"tests":"passing","retries":1,"human_questions":1}
