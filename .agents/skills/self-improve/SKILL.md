@@ -30,12 +30,14 @@ whether the change felt good.
    choose. If the human says "top one", use it.
 5. **planner** → `plan.md`, including the pre-registered bar and the falsification
    condition. **STOP** again for plan approval.
-6. **implementer** → code + `implementation.md` as a projection of the ledger, draining it
-   in **S1 → S4** order. It may not defer an S1 or S2 — those escalate to you.
+6. **implementer** → code + `implementation.md` (files changed, decisions, what it did not
+   touch). It fixes what the gates ask for, draining **S1 → S4**, and may not defer an S1 or
+   S2 — those escalate to you. Dispositions are filled once, at step 12b, not here.
 7. **tester** → tests + `test-report.md`, plus rows for anything that is a defect rather
    than a test gap.
-8. **reviewer** → `ledger.md` rows; blocking rows back to the implementer once, which
-   dispositions them and the reviewer closes them.
+8. **reviewer** → `ledger.md` rows; blocking rows back to the implementer once to *fix* —
+   code only, no dispositions — and the reviewer closes them. Dispositions happen once, at
+   step 12b.
 9. **design-guardian** → `principles.md`; a violated verdict blocks, advisory
    findings do not. This is a product pass like any other.
 10. **Deploy and soak.** Rebuild **both** environments, then let the system run for
@@ -48,6 +50,11 @@ whether the change felt good.
 12. **doc-gardener** → `docs-audit.md`, scoped to the docs that describe the
     behaviour this run changed. A doc the change made false blocks; cleanup
     proposals are advisory.
+12b. **disposition pass** — **implementer** fills in every open `disposition` and completes
+    `implementation.md` as the ledger projection. The **only** disposition pass, after the
+    last gate that can open a row. No code changes unless a row demands one, and no deferral
+    of S1 or S2 — those escalate. Two bookkeeping passes are what the first run cost ~3M
+    tokens on.
 13. **spec-verifier** → `verification.md` + one line in `.agents/runs/log.jsonl`.
     It checks the bar from step 5, not the story from step 6, and reads
     `principles.md`, `docs-audit.md`, `measurement.md` and every row in `ledger.md`. A

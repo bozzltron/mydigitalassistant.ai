@@ -15,13 +15,14 @@ merges the result; no agent grades its own work.
    Skip any step whose output file already exists.
 2. **planner** → `plan.md`. **STOP** and ask the human to approve or edit it. Do not
    implement an unapproved plan.
-3. **implementer** → code + `implementation.md` (a projection of the ledger: one row per
-   finding, its disposition, and the commit or falsifier that justifies it). It drains the
-   ledger in **S1 → S4** order and may not defer an S1 or S2 — those escalate to you.
+3. **implementer** → code + `implementation.md` (files changed, decisions, what it did not
+   touch). It fixes what the gates ask for below, in **S1 → S4** order, and may not defer an
+   S1 or S2 — those escalate to you. It does **not** fill in `disposition` yet: the ledger is
+   empty at this point, and one bookkeeping pass after the last gate is cheaper than two.
 4. **tester** → tests + `test-report.md`, plus rows for anything that is a defect rather
    than a test gap.
-5. **reviewer** → `ledger.md` rows. A blocking row goes back to the implementer **once**;
-   the implementer dispositions it, the reviewer closes it, then re-run steps 4–5.
+5. **reviewer** → `ledger.md` rows. A **blocking** row goes back to the implementer **once**
+   to *fix* — code only, no dispositions — and the reviewer closes it; then re-run steps 4–5.
 6. **design-guardian** → `principles.md`. It owns the design principles and checks
    every product pass against them. A **violated** verdict blocks; send the blocking
    items back to the implementer once, then re-run steps 4–6. Advisory findings do
@@ -29,6 +30,11 @@ merges the result; no agent grades its own work.
 7. **doc-gardener** → `docs-audit.md`, scoped to the docs the change touched. A
    claim the change made false **blocks**; cleanup proposals are advisory, and it
    never deletes.
+7b. **disposition pass** — **implementer** fills in every open `disposition`, and completes
+   `implementation.md` as the ledger projection. This is the **only** disposition pass, and
+   it runs after the last gate that can open a row. One bounded pass: no code changes unless
+   a row demands one (then fix it and cite the fix), and no deferral of S1 or S2 — those
+   escalate. Filling the column twice is what the first run cost 3M tokens on.
 8. **spec-verifier** → `verification.md` + one line in `.agents/runs/log.jsonl`. It
    reads `principles.md` and `docs-audit.md` as well as the spec, the diff, the tests and
    every row in `ledger.md`. **An open row is `PARTIAL`.**

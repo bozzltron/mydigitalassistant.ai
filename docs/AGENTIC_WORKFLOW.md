@@ -179,6 +179,12 @@ stops. The agent that opened the row closes it once the disposition checks out; 
 closes any row whose opener is no longer in the run. Writes stay single-threaded, judgement
 stays distributed, and nobody grades their own work.
 
+**Disposition happens once, after the last gate that can open a row.** Fixing and
+bookkeeping are different passes: a fix must land while later gates can still see it, but
+filling in `disposition` is cheapest once, at the end. Doing both twice cost the first run
+~3M tokens — 15% of it — because the runbook drained the ledger at step 5 while two gates
+opened rows at steps 6–7.
+
 **L3 — Every row carries a falsifier.** A row you cannot attach a check to is a
 **preference**: write `preference` in that cell. A preference may not be S1 or S2, and the
 writer may reject it without argument — which is the point: it costs nobody a loop.
