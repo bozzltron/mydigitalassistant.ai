@@ -96,8 +96,48 @@ grep "\.env" .gitignore ../.gitignore
 ls -la .env*
 ```
 
-## Reporting
+## The brain will not open — a key/format mismatch
 
+A database's encryption is decided when the file is **created**, by whether `DB_KEY` was
+set at that moment. It stays that way for the life of the file, and a key cannot be added to
+an existing plaintext brain. Opening a plaintext file with a key set fails like this:
+
+```
+ERROR CORE sqlcipher_page_cipher: hmac check failed for pgno=1
+ERROR CORE sqlite3Codec: error decrypting page 1 data: 1
+```
+
+That is not corruption, and it is not a lost key. The backend now refuses the mismatch at
+startup and names it, rather than surfacing the raw SQLCipher error.
+
+**Which case are you in?** A plain SQLite file begins with the 16 bytes `SQLite format 3`;
+anything else is encrypted. Prod's volume is `mydigitalassistantai_assistant-data`, dev's is
+`mydigitalassistantai-dev_assistant-data`.
+
+```bash
+docker run --rm -v mydigitalassistantai_assistant-data:/b alpine \
+  sh -c 'head -c 16 /b/assistant.db; echo'
+```
+
+- **Plaintext brain, `DB_KEY` set** — unset `DB_KEY` in `.env` to keep using the brain
+  unencrypted, or start from a new encrypted brain. There is no in-place conversion, and the
+  app will not guess.
+- **Encrypted brain, `DB_KEY` unset or wrong** — set `DB_KEY` to the key that created it.
+  `assistant db restore` reports a key-id mismatch before decrypting, which is the way to
+  test a key without touching the live file.
+- **Starting clean**, destroying the brain — only if it holds nothing you need. Back it up
+  first with `assistant db backup`:
+
+  ```bash
+  docker compose -f docker-compose.prod.yml down
+  docker volume rm mydigitalassistantai_assistant-data
+  ```
+
+A requested encryption that cannot be applied now **raises**. It no longer falls back to
+plain SQLite, because a silent fallback writes a brain the configuration believes is
+encrypted.
+
+## Reporting
 This is a hobby project. If you find a security issue:
 
 1. Do not open a public issue if the vulnerability could expose user data.

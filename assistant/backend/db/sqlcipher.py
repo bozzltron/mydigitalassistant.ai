@@ -139,6 +139,70 @@ def _encryption_requested() -> bool:
     return bool(settings.db_key)
 
 
+# A plain SQLite database begins with this 16-byte header. SQLCipher replaces it with a
+# random salt, so the presence of the header is a definitive "this file is not encrypted".
+_SQLITE_HEADER = b"SQLite format 3\x00"
+
+# Paths already checked in this process. The on-disk format cannot change while a process
+# runs, and this sits on the connection path, so the 16-byte read happens once per path.
+_encryption_checked: set[str] = set()
+
+
+def _looks_encrypted(database: str | Path) -> bool | None:
+    """True for an encrypted file, False for plain SQLite, None when undecidable.
+
+    ``None`` means there is nothing to judge: a path that does not exist yet, a file
+    under 16 bytes (SQLCipher writes its salt on first use), or a non-file database.
+    """
+    name = str(database)
+    if name == ":memory:" or name.startswith("file:"):
+        return None
+    path = Path(name)
+    try:
+        if path.stat().st_size < 16:
+            return None
+        with path.open("rb") as handle:
+            header = handle.read(16)
+    except OSError:
+        return None
+    return header != _SQLITE_HEADER
+
+
+def _ensure_encryption_matches(database: str | Path, *, encrypted: bool) -> None:
+    """Refuse to open a brain whose on-disk format disagrees with the configuration.
+
+    Both mismatch directions fail with a message that names the wrong thing: an
+    unencrypted database opened with a key reports ``hmac check failed for pgno=1``, and
+    an encrypted one opened without a key reports ``file is not a database``. Neither
+    says "your key and your database disagree". The first direction is worse than a bad
+    error — if the config says the brain is encrypted and it is not, the user believes
+    their most sensitive data is protected when it is not.
+
+    Deliberately not a warning: there is no correct silent behaviour here. Failing at
+    startup, once, with the reason and the two ways out, is the whole fix.
+    """
+    name = str(database)
+    if name in _encryption_checked or name == ":memory:" or name.startswith("file:"):
+        return
+    state = _looks_encrypted(database)
+    if state is None:
+        return
+    if state and not encrypted:
+        raise RuntimeError(
+            f"The database at {name} is ENCRYPTED, but DB_KEY is not set. "
+            "Set DB_KEY in .env to the key that created it. "
+            "See docs/SECURITY.md §'The brain will not open'."
+        )
+    if not state and encrypted:
+        raise RuntimeError(
+            f"The database at {name} is NOT encrypted, but DB_KEY is set, so SQLCipher "
+            "cannot read it (the raw error is 'hmac check failed for pgno=1'). "
+            "Either unset DB_KEY to keep using this brain unencrypted, or start from an "
+            "encrypted brain. See docs/SECURITY.md §'The brain will not open'."
+        )
+    _encryption_checked.add(name)
+
+
 def connect_plain(database: str | Path, **kwargs: Any) -> Any:
     """Open a plain (unencrypted) SQLite connection."""
     return _sqlite3_connect(str(database), **kwargs)
@@ -159,23 +223,18 @@ def connect_encrypted(database: str | Path, **kwargs: Any) -> Any:
 
 
 def connect(database: str | Path, *, encrypted: bool | None = None, **kwargs: Any) -> Any:
-    """Open a SQLite connection.
+    """Open a SQLite connection in the format the configuration asks for.
 
-    ``encrypted`` defaults to ``True`` when ``DB_KEY`` is set. If ``DB_KEY`` is
-    set but sqlcipher3 is not installed, a warning is logged and a plain
-    connection is returned so the app can still function.
+    ``encrypted`` defaults to ``True`` when ``DB_KEY`` is set. A requested encryption
+    that cannot be applied raises: it never falls back to plain SQLite, because that
+    would write a brain the configuration believes is encrypted.
     """
     if encrypted is None:
         encrypted = _encryption_requested()
 
+    _ensure_encryption_matches(database, encrypted=encrypted)
     if encrypted:
-        try:
-            return connect_encrypted(database, **kwargs)
-        except RuntimeError:
-            _logger.warning(
-                "Encryption requested but sqlcipher3 unavailable; falling back to plain SQLite"
-            )
-
+        return connect_encrypted(database, **kwargs)
     return connect_plain(database, **kwargs)
 
 
@@ -222,14 +281,9 @@ def aiosqlite_connect(
     if encrypted is None:
         encrypted = _encryption_requested()
 
+    _ensure_encryption_matches(database, encrypted=encrypted)
     if encrypted:
-        try:
-            return aiosqlite_connect_encrypted(database, **kwargs)
-        except RuntimeError:
-            _logger.warning(
-                "Encryption requested but sqlcipher3 unavailable; falling back to plain SQLite"
-            )
-
+        return aiosqlite_connect_encrypted(database, **kwargs)
     return aiosqlite_connect_plain(database, **kwargs)
 
 
