@@ -43,6 +43,13 @@ done
 if [ "$MODE" = "full" ]; then
   echo "== full gates: evidence hygiene =="
   ./scripts/pii-guard.sh
+  # The ledger's mechanical rules are a script, not a prompt instruction: a gate that
+  # cannot be skipped is the difference between a rule and a preference. Audits the
+  # newest run that has a ledger, which is the one being committed.
+  if ls .agents/runs/*/ledger.md >/dev/null 2>&1; then
+    echo "== full gates: ledger audit =="
+    ./scripts/ledger-audit.py
+  fi
   echo "== full gates: run_ci.sh =="
   ./run_ci.sh
   echo "== full gates: security =="
