@@ -204,6 +204,12 @@ attention on rhetorical force.
 **L7 — One reopen.** A row may be reopened once. A second reopen means the disposition was
 wrong: stop and hand the ledger to the human. Do not loop.
 
+**A run directory is append-only once `verification.md` exists.** A run is evidence about a
+moment; editing its ledger or report afterwards replaces the record of what was true with the
+record of what became true later, and the gap between those two is usually the finding. When
+something deferred from run 2 is fixed in run 5, the answer goes in the **register row**, not
+back into run 2's files.
+
 ### Severity
 
 | sev | class | may the writer defer? |
@@ -353,6 +359,19 @@ to run:
 - **`human_minutes`** — recorded by the human at verification. Unrecorded means the attention
   bar is unmeasured, which is `PARTIAL`, not a pass.
 
+**What survives a pruned run.** The line also carries the run's durable record, because the
+directory holding the prose is gitignored scaffolding and is deleted:
+
+- **`bar`** and **`falsifier`**, copied from `plan.md` §Measurement. A score without the
+  standard it was judged against is a number with no rubric.
+- **`touched`** — the files changed, so a later reader can find the commit without the plan.
+- **`deferred`** — the register ids this run raised (`["B-16"]`), so closing the loop does
+  not depend on a directory that no longer exists.
+
+With those, the paper trail is three immutable surfaces — this line, the commit (linked by
+its `Run-ID:` trailer), and the register row — and nothing in a run directory is needed after
+verification.
+
 Nested harness stores differ by version (legacy `message` vs `session_message`); attribute by
 the `agent` field in the live one, and treat `cost`, which reads 0 on a subscription, as
 unusable — the metrics are token-based for that reason.
@@ -407,7 +426,9 @@ lives in `.agents/evals/` when there is something stable to regress against.
   rather than run steps — a check nothing audits can be skipped silently, which is exactly
   what happened to `docs-audit.md` in the two runs before the audit existed.
 - **Runs are transient, the log is not.** Never commit `.agents/runs/<id>/`; never
-  lose `log.jsonl`.
+  lose `log.jsonl`. `scripts/runs-prune.sh` (dry run by default) trims raw logs after 7
+  days and whole run directories after 30, keeping the newest five and **never** deleting a
+  run that has no log line — unverified means unfinished, not history.
 
 ## Known limits
 

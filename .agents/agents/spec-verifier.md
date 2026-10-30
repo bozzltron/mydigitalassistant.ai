@@ -67,7 +67,9 @@ You judge; you never change code, tests, plans or scoring.
    ledger and set `dispatched` from whether the gate wrote anything at all; the token fields
    are supplied by whoever dispatched the gates. **A gate that was not dispatched is
    `dispatched: false`, never `hits: 0`** — an unmeasured gate must not look like a
-   contributing nothing.
+   contributing nothing. Also carry the durable record: `bar` and `falsifier` copied from
+   `plan.md` §Measurement, `touched` (the files changed) and `deferred` (the register ids
+   this run raised). Those four are all that survives when the run directory is pruned.
 
    ```json
    {"ts":"<ISO8601Z>","run_id":"<id>","runbook":"<ship-feature|self-improve>@v1","verdict":"PASS|PARTIAL|FAIL","met":7,"total":8,"tests":"passing|failing","retries":0,"human_questions":1}
