@@ -137,6 +137,24 @@ scripts/log-snapshot.sh --since 7d --out .agents/runs/<run-id>/logs
 
 One finding per run: a run that fixes three things cannot tell you which one worked.
 
+## Reporting back — the four-part signal
+
+Every turn **leads** with these four answers, in this order, before any detail. A turn that
+leaves the human to reconstruct them has moved the most expensive work onto the person the
+harness exists to spare.
+
+1. **Progress** — what is now true that was not true before this turn. One or two lines. What
+   was *attempted* is not progress.
+2. **Core issue** — the one thing blocking or in question, stated as a problem. If several,
+   the one that makes the others wait.
+3. **Core solution** — what resolves it, and how it will be shown to be resolved.
+4. **Generalisation** — will this class of problem recur, and what is the cheapest change that
+   would stop it recurring? "No" is a valid answer: a mechanism invented for a one-off is the
+   `RUNBOOK.md` §10 trap.
+
+Detail goes below them. These four lines are what the human reads first; everything after is
+skippable if they trust the summary.
+
 ## The ledger — how a finding becomes work
 
 Every run has `.agents/runs/<run-id>/ledger.md`. It is created at step 1, it is append-only,

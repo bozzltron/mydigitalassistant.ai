@@ -32,8 +32,9 @@ whether the change felt good.
    candidate carries a metric, its current value, and the bar it must clear.
 4. **STOP — the human picks the candidate.** The observer proposes; it does not
    choose. If the human says "top one", use it.
-5. **planner** → `plan.md`, including the pre-registered bar and the falsification
-   condition. **STOP** again for plan approval.
+5. **planner** → `plan.md`, including the pre-registered bar, the falsification condition
+   and its **weakest link**. **STOP** again — put that weakest link to the human as a
+   question before asking for approval. "Looks good" answers a different question.
 6. **implementer** → code + `implementation.md` (files changed, decisions, what it did not
    touch). It fixes what the gates ask for, draining **S1 → S4**, and may not defer an S1 or
    S2 — those escalate to you. Dispositions are filled once, at step 12b, not here.
@@ -74,6 +75,9 @@ whether the change felt good.
 
 ## What this runbook may not do
 
+- **Lead every reply with the four-part signal** — progress, core issue, core solution,
+  generalisation (`docs/AGENTIC_WORKFLOW.md` §Reporting back). The human's attention is the
+  binding constraint, not tokens.
 - **No scoring edits.** `spec-verifier.md`, `.agents/evals/` and the log format are
   human-owned. This is the one rule the spec is emphatic about: an agent that can
   move its own score will.

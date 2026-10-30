@@ -53,6 +53,9 @@ Write `.agents/runs/<run-id>/plan.md`:
 - **Steps** (numbered, each with the test that proves it)
 - **Files**
 - **Risks / what this will not fix**
+- **Weakest link** — the assumption that, if wrong, makes the whole plan wrong, and the one
+  question the human should ask before approving. One sentence each. A plan whose weakest
+  link is "the human will notice if this is wrong" has not found it yet.
 - **Questions for the human**
 
 Reply with the path and the open questions only.

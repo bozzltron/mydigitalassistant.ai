@@ -13,8 +13,10 @@ merges the result; no agent grades its own work.
    `.agents/runs/<run-id>/`. Create `ledger.md` with the header from
    `docs/AGENTIC_WORKFLOW.md` §The ledger; it is the only place a finding may live.
    Skip any step whose output file already exists.
-2. **planner** → `plan.md`. **STOP** and ask the human to approve or edit it. Do not
-   implement an unapproved plan.
+2. **planner** → `plan.md`. **STOP.** Put the plan's **weakest link** to the human as a
+   question — the assumption that, if wrong, makes the plan wrong — then ask them to approve
+   or edit. Do not implement an unapproved plan, and do not treat "looks good" as an answer
+   to the weakest-link question: they are different questions.
 3. **implementer** → code + `implementation.md` (files changed, decisions, what it did not
    touch). It fixes what the gates ask for below, in **S1 → S4** order, and may not defer an
    S1 or S2 — those escalate to you. It does **not** fill in `disposition` yet: the ledger is
@@ -65,6 +67,9 @@ and a source change does not reach a running container until it is rebuilt.
 
 ## Rules
 
+- **Lead every reply with the four-part signal** — progress, core issue, core solution,
+  generalisation (`docs/AGENTIC_WORKFLOW.md` §Reporting back). The human's attention is the
+  binding constraint, not tokens.
 - One run, one change. If the spec grows a second feature, it is the next run.
 - **No brain-derived values outside `.agents/runs/`.** A slot value, a person's name, a
   personal filename or a place is personal even when it looks mundane. Cite the code path
