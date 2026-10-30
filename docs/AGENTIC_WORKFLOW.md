@@ -155,6 +155,34 @@ harness exists to spare.
 Detail goes below them. These four lines are what the human reads first; everything after is
 skippable if they trust the summary.
 
+## The question at each gate
+
+A gate that asks "approve?" invites a rubber stamp. A gate that asks **one question the agent
+cannot answer** uses the human for the only thing they have that the harness doesn't: intent,
+risk appetite, and knowledge of their own world.
+
+One question per gate, never a list. A checklist of questions is skipped; a single question
+at a decision point is answered. The agent answers its own question first, in the artifact,
+so the human is adding knowledge rather than re-deriving the case.
+
+| gate | who asks | the question |
+|---|---|---|
+| **Plan approval** | planner | **weakest link** — the assumption that, if wrong, makes the whole plan wrong |
+| **Candidate pick** (self-improve) | observer | **blind spot** — which candidate this window cannot see, because the failure is invisible in logs |
+| **Verification** | spec-verifier | **overturn** — the single observation that would flip this verdict |
+| **Merge** | the human | **residual** — what you accept by merging that the run did not measure |
+
+### What only the human can answer
+
+These are the questions worth holding in mind; an agent asking any of them is asking you to do
+its job, and an agent *omitting* them is assuming an answer it does not have.
+
+- **Intent** — is this the change I actually wanted, or a plausible neighbour of it?
+- **Noticeability** — would I notice if this were wrong? If not, the bar is measuring the
+  wrong surface.
+- **Private knowledge** — what do I know about how I use this that is not in these logs?
+- **Residual** — what am I willing to accept as still-broken when this merges?
+
 ## The ledger — how a finding becomes work
 
 Every run has `.agents/runs/<run-id>/ledger.md`. It is created at step 1, it is append-only,

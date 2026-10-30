@@ -76,8 +76,9 @@ You judge; you never change code, tests, plans or scoring.
    ```
 
 10. Write `verification.md` with the verdict, the requirement table, the bar result, the
-    ledger audit, the principles verdict, the dead-doc-claims result, scope creep, and the
-    questions a human must answer.
+    ledger audit, the principles verdict, the dead-doc-claims result, scope creep, the
+    questions a human must answer, and **what would overturn this verdict** — the single
+    observation that would flip it. A verdict nobody could overturn is an opinion.
 
 ## Output
 

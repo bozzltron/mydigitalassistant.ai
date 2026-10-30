@@ -61,6 +61,9 @@ Write `.agents/runs/<run-id>/findings.md`:
 - **Candidates** — ranked, each with hypothesis, metric, current value, proposed bar,
   effort, and risk.
 - **Not the problem** — signals that looked suspicious and the data cleared.
+- **Blind spot** — the one candidate this window *cannot* see, because the failure leaves no
+  log line. Say what you would need logged to see it. This is the question the human should
+  answer before picking a candidate, and it is often worth more than the ranked list.
 
 Reply with the path, the one-line verdict, and the top candidate only.
 

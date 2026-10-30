@@ -30,7 +30,8 @@ whether the change felt good.
 3. **observer** → `findings.md`. Evidence first: what is healthy, what is failing,
    and the candidate improvements ranked by frequency × user-visible cost. Each
    candidate carries a metric, its current value, and the bar it must clear.
-4. **STOP — the human picks the candidate.** The observer proposes; it does not
+4. **STOP — the human picks the candidate.** Put the observer's **blind spot** to them as the
+   question before they choose — a failure that leaves no log line outranks a ranked list. The observer proposes; it does not
    choose. If the human says "top one", use it.
 5. **planner** → `plan.md`, including the pre-registered bar, the falsification condition
    and its **weakest link**. **STOP** again — put that weakest link to the human as a
