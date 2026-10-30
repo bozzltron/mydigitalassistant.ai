@@ -102,12 +102,16 @@ def test_matching_encrypted_opens(tmp_path):
 
 
 def test_a_new_database_is_not_judged(tmp_path):
-    """Nothing on disk yet: SQLCipher writes its salt on first use."""
+    """Nothing on disk yet: SQLCipher writes its salt on first use.
+
+    # no-assert-ok: the property is that neither call raises; a raise fails the test.
+    """
     sqlcipher._ensure_encryption_matches(tmp_path / "absent.db", encrypted=True)
     sqlcipher._ensure_encryption_matches(tmp_path / "absent.db", encrypted=False)
 
 
 def test_an_empty_file_is_not_judged(tmp_path):
+    # no-assert-ok: the property is that the call does not raise on a zero-byte file.
     empty = tmp_path / "empty.db"
     empty.touch()
     sqlcipher._ensure_encryption_matches(empty, encrypted=True)

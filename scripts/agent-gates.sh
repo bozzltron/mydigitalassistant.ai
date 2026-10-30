@@ -44,11 +44,17 @@ if [ "$MODE" = "full" ]; then
   echo "== full gates: evidence hygiene =="
   ./scripts/pii-guard.sh
   # The ledger's mechanical rules are a script, not a prompt instruction: a gate that
-  # cannot be skipped is the difference between a rule and a preference. Audits the
-  # newest run that has a ledger, which is the one being committed.
-  if ls .agents/runs/*/ledger.md >/dev/null 2>&1; then
-    echo "== full gates: ledger audit =="
-    ./scripts/ledger-audit.py
+  # cannot be skipped is the difference between a rule and a preference.
+  #
+  # The run is named by the commit's `Run-ID:` trailer, never by "the newest directory":
+  # `.agents/runs/` is gitignored working state, so an abandoned run from last week must
+  # not be able to fail a commit that has nothing to do with it.
+  run_id="$(git log -1 --format=%B 2>/dev/null | sed -n 's/^Run-ID: *//p' | head -1)"
+  if [ -n "$run_id" ]; then
+    echo "== full gates: ledger audit ($run_id) =="
+    ./scripts/ledger-audit.py --run "$run_id"
+  else
+    echo "== full gates: ledger audit — no Run-ID trailer in HEAD, nothing to audit =="
   fi
   echo "== full gates: run_ci.sh =="
   ./run_ci.sh
