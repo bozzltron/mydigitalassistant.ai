@@ -128,8 +128,8 @@ path — except the verifier scores the plan's pre-registered bar against a fres
 
 ```bash
 # what the observer reads (both stacks)
-docker compose logs --no-color --since 7d assistant
-docker compose -f docker-compose.prod.yml logs --no-color --since 7d assistant
+docker compose logs --no-color --since 168h assistant
+docker compose -f docker-compose.prod.yml logs --no-color --since 168h assistant
 
 # optional: freeze the evidence when a before/after must not move
 scripts/log-snapshot.sh --since 7d --out .agents/runs/<run-id>/logs

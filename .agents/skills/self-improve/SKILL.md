@@ -15,9 +15,13 @@ whether the change felt good.
 2. **Read the live logs** — both stacks, always:
 
    ```bash
-   docker compose logs --no-color --since 7d assistant
-   docker compose -f docker-compose.prod.yml logs --no-color --since 7d assistant
+   docker compose logs --no-color --since 168h assistant
+   docker compose -f docker-compose.prod.yml logs --no-color --since 168h assistant
    ```
+
+   **`168h`, not `7d`** — Docker rejects days in `--since` and says so on *stderr*, so
+   the failure reads as "no logs". `scripts/log-snapshot.sh` normalises `7d` for you;
+   the raw commands above do not. So does piping them through `2>/dev/null`.
 
    `scripts/log-snapshot.sh --since 7d --out .agents/runs/<run-id>/logs` is
    **optional**: use it when you need the evidence frozen for the before/after at

@@ -19,8 +19,8 @@ You read logs; you never change code.
 - The **live stacks** — that is the default:
 
   ```bash
-  docker compose logs --no-color --since 7d assistant            # dev  (8443)
-  docker compose -f docker-compose.prod.yml logs --no-color --since 7d assistant  # prod (8444)
+  docker compose logs --no-color --since 168h assistant            # dev  (8443)
+  docker compose -f docker-compose.prod.yml logs --no-color --since 168h assistant  # prod (8444)
   ```
 
 - A frozen snapshot (`scripts/log-snapshot.sh`) only when a run needs the evidence
