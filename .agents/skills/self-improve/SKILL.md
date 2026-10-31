@@ -1,18 +1,31 @@
 ---
 name: self-improve
-description: Read the dev and prod docker logs, learn what is actually failing, and ship one measured improvement through the same path as a feature. Use when asked to improve the system from its own behaviour.
+description: Read the register and the dev and prod docker logs, learn what is actually failing, and ship one measured improvement through the same path as a feature. Use when asked to improve the system from its own behaviour.
 ---
 
 # self-improve@v1
 
-The system is measured by its own logs. This runbook turns those logs into one
-improvement per run, and it is judged by the bar the plan pre-registers — not by
-whether the change felt good.
+The system is measured by its own logs, and the register says what is still owed. This
+runbook turns both into one improvement per run, and it is judged by the bar the plan
+pre-registers — not by whether the change felt good.
+
+Five agents on the path plus the observer as the entry point: observer, planner,
+implementer, tester, reviewer, spec-verifier. The design-principles checklist and the
+scoped docs check are rubric rows in the verifier (step 12), not separate dispatches —
+see `docs/AGENTIC_WORKFLOW.md` §Audits that are not runbook steps.
 
 1. **Create or reuse a run ID** (`YYYY-MM-DD-xxxx`). Work in
    `.agents/runs/<run-id>/`. Create `ledger.md` with the header from
    `docs/AGENTIC_WORKFLOW.md` §The ledger. Skip any step whose output file exists.
-2. **Read the live logs** — both stacks, always:
+2. **Read the register, then the live logs** — the register first, both stacks always:
+
+   ```bash
+   cat .agents/backlog.md      # what is still owed, before what this week's logs show
+   ```
+
+   A deferred finding is the one thing a window of logs cannot tell you: it happened in
+   an earlier run, and if nothing reads it forward it dies there. The register is the
+   first input for that reason, not a tidy-up.
 
    ```bash
    docker compose logs --no-color --since 168h assistant
@@ -25,7 +38,7 @@ whether the change felt good.
 
    `scripts/log-snapshot.sh --since 7d --out .agents/runs/<run-id>/logs` is
    **optional**: use it when you need the evidence frozen for the before/after at
-   step 11, not as a prerequisite. Docker discards a container's log when the
+   step 10, not as a prerequisite. Docker discards a container's log when the
    container is recreated, so a short window is normal — say so.
 3. **observer** → `findings.md`. Evidence first: what is healthy, what is failing,
    and the candidate improvements ranked by frequency × user-visible cost. Each
@@ -38,36 +51,34 @@ whether the change felt good.
    question before asking for approval. "Looks good" answers a different question.
 6. **implementer** → code + `implementation.md` (files changed, decisions, what it did not
    touch). It fixes what the gates ask for, draining **S1 → S4**, and may not defer an S1 or
-   S2 — those escalate to you. Dispositions are filled once, at step 12b, not here.
+   S2 — those escalate to you. Dispositions are filled once, at step 11, not here.
 7. **tester** → tests + `test-report.md`, plus rows for anything that is a defect rather
    than a test gap.
 8. **reviewer** → `ledger.md` rows; blocking rows back to the implementer once to *fix* —
    code only, no dispositions — and the reviewer closes them. Dispositions happen once, at
-   step 12b.
-9. **design-guardian** → `principles.md`; a violated verdict blocks, advisory
-   findings do not. This is a product pass like any other.
-10. **Deploy and soak.** Rebuild **both** environments, then let the system run for
-    the window the plan named (usually enough turns or one scheduler tick). This
-    step is the human's gate — a change measured on the machine that built it has
-    not been measured.
-11. **observer (after)** → `measurement.md`: the **same** metrics, the **same**
-    method, over the soak window. Before and after, side by side, plus the
-    confounders that were in play (concurrent turns, model eviction, a rebuild).
-12. **doc-gardener** → `docs-audit.md`, scoped to the docs that describe the
-    behaviour this run changed. A doc the change made false blocks; cleanup
-    proposals are advisory.
-12b. **disposition pass** — **implementer** fills in every open `disposition` and completes
+   step 11.
+9. **Deploy and soak.** Rebuild **both** environments, then let the system run for the
+   window the plan named (usually enough turns or one scheduler tick). This step is the
+   human's gate — a change measured on the machine that built it has not been measured.
+10. **observer (after)** → `measurement.md`: the **same** metrics, the **same** method,
+    over the soak window. Before and after, side by side, plus the confounders that were
+    in play (concurrent turns, model eviction, a rebuild).
+11. **disposition pass** — **implementer** fills in every open `disposition` and completes
     `implementation.md` as the ledger projection. The **only** disposition pass, after the
     last gate that can open a row. No code changes unless a row demands one, and no deferral
     of S1 or S2 — those escalate. Two bookkeeping passes are what the first run cost ~3M
     tokens on.
-13. **spec-verifier** → `verification.md` + one line in `.agents/runs/log.jsonl`.
-    It checks the bar from step 5, not the story from step 6, and reads
-    `principles.md`, `docs-audit.md`, `measurement.md` and every row in `ledger.md`. A
-    missing measurement is `PARTIAL`; an open row is `PARTIAL`.
-14. **PARTIAL or FAIL** → gaps to the implementer, re-run 7–13. **Two retries
+12. **spec-verifier** → `verification.md` + one line in `.agents/runs/log.jsonl`.
+    It checks the bar from step 5, not the story from step 6, and reads `measurement.md`
+    and every row in `ledger.md`. It also performs the two checks that used to be
+    dispatches: the seven **design principles** (`AGENTS.md` → Design principles; a
+    principle with no test or lint enforcing it is reported as a gap, and a violation no
+    row carries is `PARTIAL`) and the **scoped docs** check (does this diff make any doc
+    claim false? a dead claim no ledger row carries is `PARTIAL`). A missing measurement is
+    `PARTIAL`; an open row is `PARTIAL`.
+13. **PARTIAL or FAIL** → gaps to the implementer, re-run 7–12. **Two retries
     maximum**, then a human takes over with `verification.md`.
-15. **PASS** → run `scripts/agent-gates.sh --full`, then commit with the trailers:
+14. **PASS** → run `scripts/agent-gates.sh --full`, then commit with the trailers:
 
     ```
     Runbook: self-improve@v1

@@ -11,8 +11,13 @@ only.
 > Agents remove toil. Humans keep judgment, approval and ownership.
 
 Concretely: a human approves the plan, answers the verifier's questions, and merges.
-No agent edits `spec-verifier.md`, `.agents/evals/` or the scoring log — an agent
-that can move its own score will.
+
+The scoring surface is write-once. **No agent edits `spec-verifier.md` or `.agents/evals/`,
+and no agent edits a `log.jsonl` line other than the one it appends.** The verifier does
+append its own measurement line — its prompt says so, both runbooks say so, and every run
+in the file proves it — but a line that is written is not then edited, the format is not the
+verifier's to change, and no agent revises the criteria it is scored against. An agent that
+can move its own score will.
 
 ## Layout
 
@@ -31,7 +36,7 @@ AGENTS.md                         # team rules every agent follows
     spec-verifier.md
   skills/
     ship-feature/SKILL.md         # spec → plan → code → tests → review → verify
-    self-improve/SKILL.md         # logs → findings → plan → … → measure
+    self-improve/SKILL.md         # register + logs → findings → plan → … → measure
   runs/
     log.jsonl                     # committed: one line per verified run
     <run-id>/                     # transient: the handoff files
@@ -53,17 +58,17 @@ is the durable record and is committed.
 One agent, one job, one model. Models are OpenCode IDs — swap them for another
 tool's IDs (or `ollama/...` for a fully local loop) without touching the runbooks.
 
-| Agent | One job | Model | Tier | Why this model |
-|---|---|---|---|---|
-| **observer** | Logs → evidence (`findings.md`) | `opencode-go/gpt-6-luna` | fast | 272k context and cheap (0.1/0.5); logs are the biggest input in the pipeline |
-| **planner** | Spec → plan + pre-registered bar | `opencode-go/kimi-k3.1-pro` | strong reasoning | runs once per run, and a bad plan wastes the whole run — the one place to pay for reasoning |
-| **implementer** | Plan → code | `opencode-go/deepseek-v4.1-flash` | fast coding | the **highest-volume role**, so the cheapest capable model: 6× cheaper per token than the code specialist. The user's pick after using it for implementation |
-| **tester** | Criteria → tests + report | `opencode-go/claude-haiku-5-5` | fast/mid | writing tests against a plan needs mid-tier judgement, not deep reasoning |
-| **reviewer** | Diff → blocking findings | `opencode-go/glm-5.3` | mid | **different family from the implementer** (DeepSeek); strong on code, and it reads one diff per run, so its price is not the driver |
-| **design-guardian** | Product pass → principles upheld | `opencode-go/gemini-4-argon` | strong, product judgement | owns the principles checklist; a fourth family, so the design pass is not the reviewer's opinion twice |
-| **doc-gardener** | Docs corpus → drift + cleanup audit | `opencode-go/glm-5.3` | mid, large reading | owns the docs lifecycle; a fifth family, and it proposes rather than deletes |
-| **memory-architect** | Memory code → hygiene + performance findings and patches | `opencode-go/kimi-k3.1-pro` | strongest reasoning | **ad hoc only**; deep, occasional, and the one review whose subject is the product's core code |
-| **spec-verifier** | Spec + bar → verdict + score | `opencode-go/qwen3.8-max` | strong judge | **different family from the implementer**; the verifier is the measurement, so it gets the strongest available judge |
+| Agent | One job | Model | Tier | When | Why this model |
+|---|---|---|---|---|---|
+| **observer** | Logs → evidence (`findings.md`) | `opencode-go/gpt-6-luna` | fast | self-improve entry | 272k context and cheap (0.1/0.5); logs are the biggest input in the pipeline |
+| **planner** | Spec → plan + pre-registered bar | `opencode-go/kimi-k3.1-pro` | strong reasoning | every run | runs once per run, and a bad plan wastes the whole run — the one place to pay for reasoning |
+| **implementer** | Plan → code | `opencode-go/deepseek-v4.1-flash` | fast coding | every run | the **highest-volume role**, so the cheapest capable model: 6× cheaper per token than the code specialist. The user's pick after using it for implementation |
+| **tester** | Criteria → tests + report | `opencode-go/claude-haiku-5-5` | fast/mid | every run | writing tests against a plan needs mid-tier judgement, not deep reasoning |
+| **reviewer** | Diff → blocking findings | `opencode-go/glm-5.3` | mid | every run | **different family from the implementer** (DeepSeek); strong on code, and it reads one diff per run, so its price is not the driver |
+| **spec-verifier** | Spec + bar → verdict + score | `opencode-go/qwen3.8-max` | strong judge | every run | **different family from the implementer**; the verifier is the measurement, so it gets the strongest available judge |
+| **design-guardian** | Principles → enforced, or a gap named | `opencode-go/gemini-4-argon` | strong, product judgement | periodic audit, own run ID | owns the principles checklist; its output is repo-level (unpinned constants, unenforced principles), not per-run |
+| **doc-gardener** | Docs corpus → drift + cleanup audit | `opencode-go/glm-5.3` | mid, large reading | quarterly audit, own run ID | owns the docs lifecycle; a fifth family, and it proposes rather than deletes |
+| **memory-architect** | Memory code → hygiene + performance findings and patches | `opencode-go/kimi-k3.1-pro` | strongest reasoning | ad hoc only | deep, occasional, and the one review whose subject is the product's core code |
 
 Two rules the model table encodes:
 
@@ -77,6 +82,27 @@ Two rules the model table encodes:
 
 Where the tool supports reasoning variants (`#low`, `#high`, `#max`), the planner and
 verifier are the only two worth raising; the rest should keep the default.
+
+### The ratchet — a gate that cannot lose its job will accumulate
+
+A gate nobody judges for contribution becomes an obligation nobody remembers choosing. Two
+rules stop the set growing back:
+
+1. **Every verified run records what each gate contributed.** The verifier writes the
+   `gates` object into `log.jsonl` (§The instrument): `dispatched`, `rows`, `hits` and the
+   token fields. `hits` are rows that survived verification (not rejected), so a gate whose
+   rows are consistently rejected is visible as `precision = hits / rows` rather than as a
+   feeling.
+2. **A gate with `hits: 0` across 6 consecutive dispatched runs is folded into another
+   gate or deleted**, in the next harness run, and the deletion is recorded like any other
+   change. A gate that was not dispatched is `dispatched: false` and is **unmeasured**,
+   never `0 hits` — the two fields exist apart so this rule cannot delete a gate nobody
+   invoked. The reviewer's first real dispatch found two blocking defects, one S1, after
+   six runs in which it had never been called.
+
+The count is mechanical on purpose: nobody has to argue that a gate "felt useful", and a
+gate cannot defend itself with prose. The rule applies to gates on a run path; an audit
+outside the run path (§Audits that are not runbook steps) is judged by its own runs.
 
 ### What "OpenCode models" does and does not change
 
@@ -105,9 +131,8 @@ ID and the runbook skips steps whose output already exists.
 ### ship-feature
 
 ```
-plan.md → implementation.md → test-report.md → ledger.md → principles.md
-         ↑ human approves the plan                  → docs-audit.md → verification.md
-                                                          ↑ human merges
+plan.md → implementation.md → test-report.md → ledger.md → verification.md
+         ↑ human approves the plan                            ↑ human merges
 ```
 
 `PARTIAL` or `FAIL` sends the gaps back to the implementer up to twice; then a human
@@ -116,13 +141,12 @@ takes over with `verification.md`.
 ### self-improve
 
 ```
-live logs → findings.md → (human picks) → plan.md → (human approves) → code + tests
-          → ledger.md → principles.md → deploy + soak → measurement.md
-          → docs-audit.md → verification.md
+register + live logs → findings.md → (human picks) → plan.md → (human approves)
+  → code + tests → ledger.md → deploy + soak → measurement.md → verification.md
 ```
 
-It starts from the **live dev and prod docker logs**, not from an idea. `observer`
-turns them into evidence, a human picks one candidate, and the rest is the feature
+It starts from the **register and the live dev and prod docker logs**, not from an idea.
+`observer` turns them into evidence, a human picks one candidate, and the rest is the feature
 path — except the verifier scores the plan's pre-registered bar against a fresh
 `measurement.md`, not the implementer's story.
 
@@ -319,23 +343,45 @@ Keep this line clean when the files move to a shared registry:
   If a second harness needs different model IDs, give it its own thin config that
   points at the same bodies rather than forking the agents.
 
-## Ad hoc audits (not runbook steps)
+## Audits that are not runbook steps
 
-Two agents are deliberately **not** on a runbook's mandatory path, because their
-value is depth and their cost is a full read:
+Three agents run outside the two runbooks, because their value is depth and their cost is a
+full read. Each is triggered by a condition rather than by anyone remembering it, each gets
+its own run ID, and each writes to `.agents/runs/<run-id>/` like any other agent — so the
+audit is reproducible and citeable even though it is not a step.
 
-- **`memory-architect`** — the **code** that maintains memory: invariants, write
-  and read paths, consolidation, confidence, retrieval, extraction, summarization,
-  and the hot-path cost of each. It reviews what the code enforces and proposes
-  patches plus the tests that lock them, because a hygiene fix belongs where the
-  next turn inherits it. It never reads the brain — no `/memory/*`, no SQL, no
-  consolidation dry-run on live data; a data question is a finding for the owner.
-- **`doc-gardener` full corpus** — the whole 144-file audit. The **scoped** pass
-  stays in both runbooks (the docs a change touched); the full audit is its own
-  run.
+- **`design-guardian` — periodic enforcement audit.** Trigger: quarterly, **or** immediately
+  after a verifier verdict names a principle with no test, lint rule or log line enforcing
+  it — the verifier's own verdict row is the trigger, since a `d-` row is this audit's
+  output. It owns the seven principles in `AGENTS.md` → Design principles, walks them one
+  at a time, and reports a gap where a principle is decoration.
+  Its output is repo-level — unpinned constants, unmeasured precision — which is why it is
+  not a per-run gate: the per-run version recorded 0 blocking findings in 2/2 runs **and had
+  never actually been dispatched**, so there was no evidence it earned a slot. The per-run
+  check now runs inside the verifier, as a rubric row the verdict cannot skip.
+- **`doc-gardener` — quarterly full-corpus audit.** Trigger: quarterly, **or** when a run's
+  scoped docs row finds three or more dead claims at once. It inventories every tracked
+  markdown file, checks claims against the code, and proposes deletions. The **scoped** check
+  also runs inside the verifier on every run (the docs a change touched); the full audit is
+  its own run. It proposes; a human deletes or rewrites, and the normative docs (`AGENTS.md`,
+  `RUNBOOK.md`) are never edited by an agent. In 0/2 runs did it produce `docs-audit.md` as a
+  run step, which is the evidence for demoting it rather than a reason to keep dispatching it.
+- **`memory-architect` — before or after a memory-code change.** Trigger: a diff touching the
+  memory path (frames, slots, associations, confidence, retrieval, extraction, consolidation,
+  summarization), or a scheduled audit of it. It is ad hoc in the sense that no runbook
+  dispatches it — not in the sense that nothing triggers it. Run ID of its own
+  (`YYYY-MM-DD-mha01`). The **code** that maintains memory: invariants, write and
+  read paths, consolidation, confidence, retrieval, extraction, summarization, and the
+  hot-path cost of each. It reviews what the code enforces and proposes patches plus the
+  tests that lock them, because a hygiene fix belongs where the next turn inherits it. It
+  never reads the brain — no `/memory/*`, no SQL, no consolidation dry-run on live data; a
+  data question is a finding for the owner.
 
-Both write to `.agents/runs/<run-id>/` like any other agent; a one-step run still
-gets a run ID, so the audit is reproducible and citeable.
+The move from run step to periodic audit is only honest because the verifier audits both
+checks every run: a principle with no verdict or no evidence is `PARTIAL`, a violation no
+row carries is `PARTIAL`, and a dead doc claim no ledger row carries blocks. A check nothing
+audits can be skipped silently, which is exactly what happened to `docs-audit.md` in the two
+runs before that audit existed.
 
 ## Gates
 
@@ -458,19 +504,16 @@ lives in `.agents/evals/` when there is something stable to regress against.
   restores it and compares table counts first (`RUNBOOK.md` §11).
 - **Both environments or it isn't verified.** Dev 8443 and prod 8444 are separate
   images and databases; rebuild both before claiming a live change.
-- **A product pass gets a design pass and a docs pass.** `design-guardian` runs on
-  every feature and self-improve run, after the reviewer; it owns the principles
-  checklist and reports a gap when a principle has no test or lint enforcing it.
-  `doc-gardener` runs after it, scoped to the docs the change touched: a claim the
-  change made false blocks, cleanup proposals do not. Both propose; the principles
-  and the normative docs stay human-owned.
-
-- **And the verifier audits all three.** A design or docs pass is worth only what the
-  verifier checks: it fails a run whose `principles.md` has a principle with no verdict or
-  no evidence, whose *violated* principle carries no ledger row, or whose dead doc claim
-  carries no `g-` row. That audit is what lets those two passes become periodic audits
-  rather than run steps — a check nothing audits can be skipped silently, which is exactly
-  what happened to `docs-audit.md` in the two runs before the audit existed.
+- **The design pass and the docs pass are verifier rubric rows, not dispatches.**
+  Every run, after the reviewer, the verifier walks the seven principles and asks which
+  test or lint enforces each one — a principle with no verdict or no evidence is
+  `PARTIAL`, and a *violated* principle that no ledger row carries is `PARTIAL`. It then
+  checks whether the diff made any doc claim false; a dead claim no ledger row carries
+  blocks, cleanup proposals do not. Both used to be separate agents (`design-guardian`,
+  `doc-gardener`); those are now periodic audits with a trigger and their own run ID
+  (§Audits that are not runbook steps), because a per-run dispatch with no measurable
+  contribution is a slot nobody can defend. The principles and the normative docs stay
+  human-owned either way.
 - **Runs are transient, the log is not.** Never commit `.agents/runs/<id>/`; never
   lose `log.jsonl`. `scripts/runs-prune.sh` (dry run by default) trims raw logs after 7
   days and whole run directories after 30, keeping the newest five and **never** deleting a

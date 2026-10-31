@@ -9,6 +9,11 @@ Chains the core agents through handoff files, so any step can run alone and the
 run can stop and resume at the last file written. A human approves the plan and
 merges the result; no agent grades its own work.
 
+Five agents on the path: planner, implementer, tester, reviewer, spec-verifier.
+The design-principles checklist and the scoped docs check are rubric rows in the
+verifier (step 7), not separate dispatches — see `docs/AGENTIC_WORKFLOW.md`
+§Audits that are not runbook steps for the two periodic audits that replaced them.
+
 1. **Create or reuse a run ID** — `YYYY-MM-DD-xxxx` — and work in
    `.agents/runs/<run-id>/`. Create `ledger.md` with the header from
    `docs/AGENTIC_WORKFLOW.md` §The ledger; it is the only place a finding may live.
@@ -25,24 +30,21 @@ merges the result; no agent grades its own work.
    than a test gap.
 5. **reviewer** → `ledger.md` rows. A **blocking** row goes back to the implementer **once**
    to *fix* — code only, no dispositions — and the reviewer closes it; then re-run steps 4–5.
-6. **design-guardian** → `principles.md`. It owns the design principles and checks
-   every product pass against them. A **violated** verdict blocks; send the blocking
-   items back to the implementer once, then re-run steps 4–6. Advisory findings do
-   not block.
-7. **doc-gardener** → `docs-audit.md`, scoped to the docs the change touched. A
-   claim the change made false **blocks**; cleanup proposals are advisory, and it
-   never deletes.
-7b. **disposition pass** — **implementer** fills in every open `disposition`, and completes
+6. **disposition pass** — **implementer** fills in every open `disposition`, and completes
    `implementation.md` as the ledger projection. This is the **only** disposition pass, and
    it runs after the last gate that can open a row. One bounded pass: no code changes unless
    a row demands one (then fix it and cite the fix), and no deferral of S1 or S2 — those
    escalate. Filling the column twice is what the first run cost 3M tokens on.
-8. **spec-verifier** → `verification.md` + one line in `.agents/runs/log.jsonl`. It
-   reads `principles.md` and `docs-audit.md` as well as the spec, the diff, the tests and
-   every row in `ledger.md`. **An open row is `PARTIAL`.**
-9. **PARTIAL or FAIL** → send the listed gaps to the implementer, then re-run steps
-   4–8. **Maximum two retries**, then stop and hand `verification.md` to the human.
-10. **PASS** → run the full gates, then commit with the trailers:
+7. **spec-verifier** → `verification.md` + one line in `.agents/runs/log.jsonl`. It
+   reads the spec, the diff, the tests and every row in `ledger.md`, and it performs the
+   two checks that used to be dispatches: the seven **design principles** (`AGENTS.md` →
+   Design principles; a principle with no test or lint enforcing it is reported as a gap,
+   and a violation no row carries is `PARTIAL`) and the **scoped docs** check (does this
+   diff make any doc claim false? a dead claim no ledger row carries is `PARTIAL`).
+   **An open row is `PARTIAL`.**
+8. **PARTIAL or FAIL** → send the listed gaps to the implementer, then re-run steps
+   4–7. **Maximum two retries**, then stop and hand `verification.md` to the human.
+9. **PASS** → run the full gates, then commit with the trailers:
 
    ```
    Runbook: ship-feature@v1

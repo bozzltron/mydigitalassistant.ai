@@ -126,6 +126,117 @@ def test_the_measurement_log_is_valid_jsonl():
         assert entry["verdict"] in {"PASS", "PARTIAL", "FAIL"}
 
 
+# --- the cut, and the ratchet that stops the set growing back -----------------
+#
+# Phase 3 of the agent-set plan demoted design-guardian and doc-gardener from run
+# steps to periodic audits. The demotion is only safe if two things hold, and both
+# are cheap to undo by accident:
+#
+#   1. the runbooks no longer dispatch them (a step left behind quietly re-adds a
+#      gate nobody measures), and
+#   2. each demoted agent still states its trigger, so "periodic" cannot decay into
+#      "never" — which is what actually happened to the docs pass in 0/2 runs.
+#
+# The ratchet itself is a rule in the doc; it has no script behind it yet, so the
+# doc line is the thing worth pinning.
+
+DEMOTED = ("design-guardian", "doc-gardener")
+
+
+def test_the_demoted_audits_are_not_runbook_steps():
+    """Bold names are how a runbook marks a step role; a demoted audit must not be one."""
+    for skill in sorted(SKILLS_DIR.glob("*/SKILL.md")):
+        text = skill.read_text(encoding="utf-8")
+        for name in DEMOTED:
+            assert f"**{name}**" not in text, (
+                f"{skill.parent.name} still dispatches {name} as a step. A run step that no "
+                "per-run measurement covers is the thing Phase 3 removed — put the check in "
+                "the verifier's rubric, or trigger the audit outside the runbook."
+            )
+        # The verifier carries both checks that used to be separate dispatches.
+        assert "**spec-verifier**" in text
+        assert "design principles" in text
+        assert "scoped docs" in text or "doc claim" in text
+
+
+def test_the_demoted_audits_state_a_trigger():
+    """A periodic audit with no trigger is an audit that never runs again."""
+    # memory-architect was already outside the path; it is included because the doc now
+    # claims every out-of-path audit has a condition trigger, and that claim was false for
+    # it (v-03 on 2026-10-31-aset3) — an "ad hoc" agent is one nothing invokes.
+    for name in DEMOTED + ("memory-architect",):
+        text = (AGENTS_DIR / f"{name}.md").read_text(encoding="utf-8")
+        assert "## When you run" in text, (
+            f"{name} has no 'When you run' section: without one, 'periodic' means 'never'"
+        )
+        assert "Trigger:" in text, f"{name} states no trigger condition"
+        assert "run ID" in text, (
+            f"{name} does not say it gets its own run ID, so its output would be "
+            "unciteable and unverifiable"
+        )
+
+
+def test_the_ratchet_is_documented():
+    """The 6-run kill criterion is the mechanism; a mechanism in an agent's head is not."""
+    doc = (ROOT / "docs" / "AGENTIC_WORKFLOW.md").read_text(encoding="utf-8")
+    assert "6 consecutive dispatched runs" in doc, (
+        "the ratchet's kill criterion is missing from docs/AGENTIC_WORKFLOW.md — a gate "
+        "that cannot lose its job will accumulate"
+    )
+    assert "never `0 hits`" in doc, (
+        "the doc must keep the distinction between a gate that was not dispatched and one "
+        "that opened nothing real, or the ratchet deletes gates nobody invoked"
+    )
+
+
+GATE_FIELDS = {"dispatched": bool, "rows": int, "hits": int}
+
+
+def check_gates(entry: dict) -> list[str]:
+    """Return the problems with one log entry's `gates` object."""
+    problems: list[str] = []
+    gates = entry.get("gates")
+    if gates is None:
+        return problems
+    if not isinstance(gates, dict) or not gates:
+        return ["gates must be a non-empty object keyed by agent name"]
+    for name, record in gates.items():
+        if not isinstance(record, dict):
+            problems.append(f"{name}: gate record is {type(record).__name__}, not an object")
+            continue
+        for field, kind in GATE_FIELDS.items():
+            if not isinstance(record.get(field), kind):
+                problems.append(f"{name}: {field} is missing or not {kind.__name__}")
+        if record.get("dispatched") is False and (record.get("rows", 0) or record.get("hits", 0)):
+            problems.append(
+                f"{name}: not dispatched but reports rows or hits — a gate that did not run "
+                "opened nothing, so these numbers describe some other gate"
+            )
+    return problems
+
+
+def test_the_gates_record_carries_what_the_ratchet_needs():
+    """A hits count without `dispatched` cannot tell an idle gate from a useless one."""
+    good = {"gates": {"reviewer": {"dispatched": True, "msgs": 19, "rows": 6, "hits": 2}}}
+    idle = {"gates": {"tester": {"dispatched": False, "rows": 0, "hits": 0}}}
+    assert check_gates(good) == []
+    assert check_gates(idle) == []
+    # The failure this guards: a gate that never ran, scored as if it opened nothing.
+    assert check_gates(
+        {"gates": {"reviewer": {"dispatched": False, "rows": 0, "hits": 2}}}
+    )
+    assert check_gates(
+        {"gates": {"reviewer": {"dispatched": False, "rows": 6, "hits": 0}}}
+    )
+    assert check_gates({"gates": {"reviewer": {"rows": 6, "hits": 2}}})
+    assert check_gates({"gates": {}})
+
+    log = RUNS_DIR / "log.jsonl"
+    for line in log.read_text(encoding="utf-8").splitlines():
+        if line.strip():
+            assert check_gates(json.loads(line)) == []
+
+
 def test_gate_scripts_are_executable():
     for name in ("agent-gates.sh", "agents-link.sh", "log-snapshot.sh"):
         path = ROOT / "scripts" / name

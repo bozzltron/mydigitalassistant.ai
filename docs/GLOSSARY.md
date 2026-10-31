@@ -18,7 +18,7 @@ repo does not have.
 |---|---|---|---|
 | **Run** | One pass of a runbook for one change, identified by a run ID. Working state, not history. | ticket, task | `.agents/runs/<run-id>/` |
 | **Run ID** | `YYYY-MM-DD-xxxx` — date plus a short suffix. Names the run directory and appears in the commit trailer. | run number | `.agents/runs/`, commit trailers |
-| **Runbook** | An ordered procedure that chains agents through handoff files, with human decisions in it. Two exist: `ship-feature` (spec first) and `self-improve` (logs first). | workflow, pipeline | `.agents/skills/*/SKILL.md` |
+| **Runbook** | An ordered procedure that chains agents through handoff files, with human decisions in it. Two exist: `ship-feature` (spec first) and `self-improve` (register, then logs). | workflow, pipeline | `.agents/skills/*/SKILL.md` |
 | **Handoff file** | A file an agent writes so the next agent — or the human — can act without re-reading the conversation. State lives here, which is why a run can stop and resume. | artefact, output | `plan.md`, `implementation.md`, `test-report.md`, `verification.md` |
 | **Ledger** | The append-only table of findings for a run. The only place a finding may live; a finding in prose cannot be proved to have been acted on. | backlog, issues | `.agents/runs/<run-id>/ledger.md`, rules in `docs/AGENTIC_WORKFLOW.md` |
 | **Row** | One finding in the ledger: `id · src · sev · claim · where · falsifier · disposition · closed`. | item, ticket | `ledger.md` |
@@ -37,8 +37,8 @@ repo does not have.
 | **Reviewer** | Reads the **diff** with clean context and opens rows with a severity and a falsifier. Does not read the writer's account of the diff. | code reviewer | `.agents/agents/reviewer.md` |
 | **spec-verifier** | Independently re-derives the requirements from the spec, checks the pre-registered bar against fresh evidence, audits the ledger and appends the one line to the log. The measurement; nobody edits it. | Verifier (org standard) | `.agents/agents/spec-verifier.md` |
 | **Observer** | Reads the live docker logs and turns them into evidence, ranked by frequency × user-visible cost. The entry point of `self-improve`. | monitor | `.agents/agents/observer.md` |
-| **Design guardian** | Checks a product pass against the design principles and reports principles nothing enforces. | design reviewer | `.agents/agents/design-guardian.md` |
-| **Doc gardener** | Audits docs for claims the code has falsified. Proposes; a human deletes or rewrites. | tech writer | `.agents/agents/doc-gardener.md` |
+| **Design guardian** | Audits whether the design principles are actually enforced — unpinned constants, principles with no test or lint. A **periodic** audit with its own run ID; the per-run check is a verifier rubric row. | design reviewer | `.agents/agents/design-guardian.md` |
+| **Doc gardener** | Audits the whole tracked docs corpus for claims the code has falsified. **Quarterly**, own run ID; the per-run scoped check is a verifier rubric row. Proposes; a human deletes or rewrites. | tech writer | `.agents/agents/doc-gardener.md` |
 | **Memory architect** | Reviews the code that maintains memory — invariants, read/write paths, cost. **Never reads the brain.** Ad hoc. | — | `.agents/agents/memory-architect.md` |
 
 ## Product
