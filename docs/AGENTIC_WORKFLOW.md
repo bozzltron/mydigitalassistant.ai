@@ -12,7 +12,7 @@ only.
 
 Concretely: a human approves the plan, answers the verifier's questions, and merges.
 
-The scoring surface is write-once. **No agent edits `spec-verifier.md` or `.agents/evals/`,
+The scoring surface is write-once. **No agent edits `verifier.md` or `.agents/evals/`,
 and no agent edits a `log.jsonl` line other than the one it appends.** The verifier does
 append its own measurement line — its prompt says so, both runbooks say so, and every run
 in the file proves it — but a line that is written is not then edited, the format is not the
@@ -25,15 +25,13 @@ can move its own score will.
 AGENTS.md                         # team rules every agent follows
 .agents/
   agents/                         # source of truth — edit here only
-    observer.md
-    planner.md
-    implementer.md
-    tester.md
-    reviewer.md
-    design-guardian.md
-    doc-gardener.md
-    memory-architect.md
-    spec-verifier.md
+    planner.md                    # run path
+    implementor.md                # run path: code + tests
+    reviewer.md                   # run path
+    verifier.md                   # run path: judge + score
+    design-guardian.md            # audit, own run ID
+    doc-gardener.md               # audit, own run ID
+    memory-architect.md           # audit, own run ID
   skills/
     ship-feature/SKILL.md         # spec → plan → code → tests → review → verify
     self-improve/SKILL.md         # register + logs → findings → plan → … → measure
@@ -60,24 +58,27 @@ tool's IDs (or `ollama/...` for a fully local loop) without touching the runbook
 
 | Agent | One job | Model | Tier | When | Why this model |
 |---|---|---|---|---|---|
-| **observer** | Logs → evidence (`findings.md`) | `opencode-go/gpt-6-luna` | fast | self-improve entry | 272k context and cheap (0.1/0.5); logs are the biggest input in the pipeline |
 | **planner** | Spec → plan + pre-registered bar | `opencode-go/kimi-k3.1-pro` | strong reasoning | every run | runs once per run, and a bad plan wastes the whole run — the one place to pay for reasoning |
-| **implementer** | Plan → code | `opencode-go/deepseek-v4.1-flash` | fast coding | every run | the **highest-volume role**, so the cheapest capable model: 6× cheaper per token than the code specialist. The user's pick after using it for implementation |
-| **tester** | Criteria → tests + report | `opencode-go/claude-haiku-5-5` | fast/mid | every run | writing tests against a plan needs mid-tier judgement, not deep reasoning |
-| **reviewer** | Diff → blocking findings | `opencode-go/glm-5.3` | mid | every run | **different family from the implementer** (DeepSeek); strong on code, and it reads one diff per run, so its price is not the driver |
-| **spec-verifier** | Spec + bar → verdict + score | `opencode-go/qwen3.8-max` | strong judge | every run | **different family from the implementer**; the verifier is the measurement, so it gets the strongest available judge |
+| **implementor** | Plan → code + tests + `implementation.md` | `opencode-go/deepseek-v4.1-flash` | fast coding | every run | the **highest-volume role**, so the cheapest capable model: 6× cheaper per token than the code specialist. The user's pick after using it for implementation |
+| **reviewer** | Diff → blocking findings | `opencode-go/glm-5.3` | mid | every run | **different family from the implementor** (DeepSeek); strong on code, and it reads one diff per run, so its price is not the driver |
+| **verifier** | Spec + bar → verdict + score | `opencode-go/qwen3.8-max` | strong judge | every run | **different family from the implementor**; the verifier is the measurement, so it gets the strongest available judge |
 | **design-guardian** | Principles → enforced, or a gap named | `opencode-go/gemini-4-argon` | strong, product judgement | periodic audit, own run ID | owns the principles checklist; its output is repo-level (unpinned constants, unenforced principles), not per-run |
 | **doc-gardener** | Docs corpus → drift + cleanup audit | `opencode-go/glm-5.3` | mid, large reading | quarterly audit, own run ID | owns the docs lifecycle; a fifth family, and it proposes rather than deletes |
-| **memory-architect** | Memory code → hygiene + performance findings and patches | `opencode-go/kimi-k3.1-pro` | strongest reasoning | ad hoc only | deep, occasional, and the one review whose subject is the product's core code |
+| **memory-architect** | Memory code → hygiene + performance findings and patches | `opencode-go/kimi-k3.1-pro` | strongest reasoning | memory-code change, own run ID | deep, occasional, and the one review whose subject is the product's core code |
+
+Four agents are on the run path, and everything else is an audit with its own trigger
+(§Audits that are not runbook steps). The log reading that used to be an `observer` agent is
+step 3 of `self-improve`: it is a process whose output is a file, not an identity, and a
+separate session for it let the evidence and the plan disagree about what the logs said.
 
 Two rules the model table encodes:
 
 - **Different, not just stronger.** The reviewer and the verifier are deliberately a
-  different family from the implementer. A second opinion from the same model is a
+  different family from the implementor. A second opinion from the same model is a
   formality.
-- **Cost follows the work.** The implementer, observer and tester run on the cheap
-  models, because they touch the most tokens. The planner, reviewer, guardian and
-  verifier each run once per run, so they get the stronger models — cheapening a
+- **Cost follows the work.** The implementor runs on the cheap model, because it touches
+  the most tokens. The planner, reviewer and verifier each run once per run, so they get
+  the stronger models — cheapening a
   gate saves cents and risks the run.
 
 Where the tool supports reasoning variants (`#low`, `#high`, `#max`), the planner and
@@ -116,7 +117,7 @@ Ollama id — the same roles map to `qwen3.8:27b` (planning/verification),
 
 ## Running a runbook
 
-**One agent alone.** Ask for it by name and run ID: "use the tester subagent on run
+**One agent alone.** Ask for it by name and run ID: "use the reviewer subagent on run
 `2026-10-25-ab12`". It reads the existing handoff files and writes its own; it does
 not need the earlier steps to have run in this session.
 
@@ -135,7 +136,7 @@ plan.md → implementation.md → test-report.md → ledger.md → verification.
          ↑ human approves the plan                            ↑ human merges
 ```
 
-`PARTIAL` or `FAIL` sends the gaps back to the implementer up to twice; then a human
+`PARTIAL` or `FAIL` sends the gaps back to the implementor up to twice; then a human
 takes over with `verification.md`.
 
 ### self-improve
@@ -146,12 +147,12 @@ register + live logs → findings.md → (human picks) → plan.md → (human ap
 ```
 
 It starts from the **register and the live dev and prod docker logs**, not from an idea.
-`observer` turns them into evidence, a human picks one candidate, and the rest is the feature
+Step 3 turns them into evidence, a human picks one candidate, and the rest is the feature
 path — except the verifier scores the plan's pre-registered bar against a fresh
-`measurement.md`, not the implementer's story.
+`measurement.md`, not the implementor's story.
 
 ```bash
-# what the observer reads (both stacks)
+# what step 3 reads (both stacks)
 docker compose logs --no-color --since 168h assistant
 docker compose -f docker-compose.prod.yml logs --no-color --since 168h assistant
 
@@ -192,8 +193,8 @@ so the human is adding knowledge rather than re-deriving the case.
 | gate | who asks | the question |
 |---|---|---|
 | **Plan approval** | planner | **weakest link** — the assumption that, if wrong, makes the whole plan wrong |
-| **Candidate pick** (self-improve) | observer | **blind spot** — which candidate this window cannot see, because the failure is invisible in logs |
-| **Verification** | spec-verifier | **overturn** — the single observation that would flip this verdict |
+| **Candidate pick** (self-improve) | step 3 (log reading) | **blind spot** — which candidate this window cannot see, because the failure is invisible in logs |
+| **Verification** | verifier | **overturn** — the single observation that would flip this verdict |
 | **Merge** | the human | **residual** — what you accept by merging that the run did not measure |
 
 ### What only the human can answer
@@ -224,8 +225,10 @@ inside the same diff.
 ```
 
 - **`id`** — a source prefix, so no dispatcher is needed to allocate numbers: `r-` reviewer,
-  `i-` implementer, `t-` tester, `o-` observer, `d-` design-guardian, `g-` doc-gardener,
-  `v-` verifier.
+  `i-` implementor, `r-` reviewer, `v-` verifier, `d-` design-guardian, `g-` doc-gardener.
+  `t-` and `o-` remain valid in ledgers written before the tester and observer were folded
+  in — a historical row keeps the prefix it was written with, and `scripts/ledger-audit.py`
+  still accepts them.
 - **`claim`** — the defect in one sentence. The defect, not a recommendation.
 - **`where`** — `file:line`, a test name, or a log line.
 - **`falsifier`** — "wrong if ⟨check⟩": a test name, a log line, a doc line.
@@ -244,7 +247,7 @@ inside the same diff.
 `docs-audit.md` and `test-report.md` keep their verdicts and their non-finding sections; their
 findings are ledger rows.
 
-**L2 — The writer dispositions; it never closes.** The implementer sets `disposition` and
+**L2 — The writer dispositions; it never closes.** The implementor sets `disposition` and
 stops. The agent that opened the row closes it once the disposition checks out; the verifier
 closes any row whose opener is no longer in the run. Writes stay single-threaded, judgement
 stays distributed, and nobody grades their own work.
@@ -263,12 +266,12 @@ writer may reject it without argument — which is the point: it costs nobody a 
 a finding of its own, opened by the verifier.
 
 **L5 — Duplicates merge; contradictions escalate.** Two rows with the same `where` and the
-same claim merge into one, `src` becoming `reviewer+tester`, keeping the stricter severity.
+same claim merge into one, `src` becoming `reviewer+verifier`, keeping the stricter severity.
 Two agents that *disagree* are not the writer's call: that is a question for the human, with
 both falsifiers attached. Artifacts have tiebreaks; opinions do not.
 
 **L6 — Priority is computed, not negotiated.** Drain S1 → S4, then by source reliability:
-verifier > reviewer > tester > observer. Deterministic, so findings never compete for
+verifier > reviewer > implementor. Deterministic, so findings never compete for
 attention on rhetorical force.
 
 **L7 — One reopen.** A row may be reopened once. A second reopen means the disposition was
@@ -317,15 +320,15 @@ they matter:
    truth, and `scripts/agents-link.sh` now creates three links instead of two.
 2. **Agent frontmatter gains two fields.** `mode: subagent` and `permissions` are
    OpenCode-specific; other tools ignore them. The spec's "Can edit code? No"
-   column becomes enforceable rather than advisory — the planner, observer,
+   column becomes enforceable rather than advisory — the planner,
    reviewer and verifier can write only their handoff files.
 3. **Hooks become plugins.** The spec's Phase-2 telemetry (`scripts/agent-hooks/` +
    `.cursor/hooks.json`) has no OpenCode equivalent; use a plugin subscribing to
    events, or keep the verifier's log as the measurement. Given the spec's own
    note that the vendor's hooks were unreliable, the log-first route is the safe
    one.
-4. **Invocation wording.** "Use the tester subagent on run `<id>`" is Cursor
-   phrasing. In OpenCode you mention the agent (`@tester`) or ask the primary
+4. **Invocation wording.** "Use the reviewer subagent on run `<id>`" is Cursor
+   phrasing. In OpenCode you mention the agent (`@reviewer`) or ask the primary
    agent; skills load by ID, or explicitly with `@ship-feature` / `@self-improve`.
    The handoff files make the runbook vendor-independent regardless.
 
@@ -433,7 +436,7 @@ One measure to start: the verifier's verdict and score per run, one line in
 to run:
 
 ```json
-"gates": {"tester": {"dispatched": true, "msgs": 56, "tok_in": 4606783, "tok_out": 27076,
+"gates": {"reviewer": {"dispatched": true, "msgs": 56, "tok_in": 4606783, "tok_out": 27076,
                      "rows": 5, "hits": 3}}
 ```
 
@@ -491,7 +494,7 @@ lives in `.agents/evals/` when there is something stable to regress against.
 | R2 | Agents hand off to one another | runbooks chain them through handoff files |
 | R3 | Run one agent, or chain | every agent reads/writes the run dir; works alone |
 | R4 | Local or cloud | OpenCode locally; the same files are read by Cursor/Claude via symlinks || R5 | Stoppable and startable | state is in `.agents/runs/<run-id>/`; skip-if-exists |
-| R6 | Measured efficacy | `spec-verifier` → `verification.md` + `log.jsonl` |
+| R6 | Measured efficacy | `verifier` → `verification.md` + `log.jsonl` |
 | R7 | No vendor lock-in | `.agents/` + `AGENTS.md` + `scripts/`; vendor folders are symlinks |
 | R8 | Shareable with owners | move `.agents/agents/` into a registry repo with `CODEOWNERS`; link back with `scripts/agents-link.sh` |
 
@@ -525,6 +528,6 @@ lives in `.agents/evals/` when there is something stable to regress against.
   verifier judges the outcome regardless.
 - Hook-based telemetry is not trusted (the vendor's subagent hooks were unreliable);
   measurement is the verifier's line plus the before/after log snapshot.
-- The observer reads logs, not intent. If a failure is invisible in the logs, that is
+- The log reading in step 3 sees behaviour, not intent. If a failure is invisible in the logs, that is
   the finding: add the log line in its own run first.
 - Same-family reviewer and verifier would weaken both; the table keeps them apart.

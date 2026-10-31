@@ -4,10 +4,9 @@ The vocabulary this repo uses, so a human and an agent mean the same thing by th
 Two families of terms: the **dev harness** (`.agents/`) and the **product** (`assistant/`).
 
 The third column records names the same thing goes by *elsewhere* — including the org standard
-("Engineering Standards: Humans and Agents"), which uses **Implementor** and **Verifier** where
-this repo says **Implementer** and **spec-verifier**. They are listed there so a reader can map
-between the two without anything being renamed. When a term here disagrees with the org copy,
-this file wins: it describes the code.
+("Engineering Standards: Humans and Agents"), which calls the four run-path roles
+**Planner**, **Implementor**, **Reviewer** and **Verifier**. This repo now uses those names
+too, so the two agree. Where they ever diverge, this file wins: it describes the code.
 
 Anything marked *proposed* is not in use yet; it says so rather than describing a practice the
 repo does not have.
@@ -32,14 +31,12 @@ repo does not have.
 | **Register** | Findings deferred out of a run, carrying the run that raised them. Read before the logs at the start of a `self-improve` run. *(Also the harness's word for this; the product's memory store is not a register.)* | backlog | `.agents/backlog.md` |
 | **Evals** | Golden tasks for regression-testing a runbook itself. *Not built yet* — the directory records why. | benchmarks | `.agents/evals/` |
 | **Planner** | Turns a spec into `plan.md` with numbered criteria, inputs, a pre-registered bar and a falsifier. Never writes code. | architect | `.agents/agents/planner.md` |
-| **Implementer** | The single writer: turns an approved plan into code and disposes of ledger rows. Never closes a row, never touches the plan. | Implementor (org standard), builder, coder | `.agents/agents/implementer.md` |
-| **Tester** | Writes and runs the tests that prove the criteria, and opens rows for defects rather than test gaps. | QA | `.agents/agents/tester.md` |
+| **Implementor** | The single writer: turns an approved plan into code **and its tests**, writes `test-report.md`, and disposes of ledger rows. For a bug the failing test is committed before the fix. Never closes a row, never touches the plan. | implementer (old name), builder, coder | `.agents/agents/implementor.md` |
 | **Reviewer** | Reads the **diff** with clean context and opens rows with a severity and a falsifier. Does not read the writer's account of the diff. | code reviewer | `.agents/agents/reviewer.md` |
-| **spec-verifier** | Independently re-derives the requirements from the spec, checks the pre-registered bar against fresh evidence, audits the ledger and appends the one line to the log. The measurement; nobody edits it. | Verifier (org standard) | `.agents/agents/spec-verifier.md` |
-| **Observer** | Reads the live docker logs and turns them into evidence, ranked by frequency × user-visible cost. The entry point of `self-improve`. | monitor | `.agents/agents/observer.md` |
+| **Verifier** | Independently re-derives the requirements from the spec, checks the pre-registered bar against fresh evidence, audits the ledger, reads the test diff for weakened assertions, and appends the one line to the log. Scope is `ticket` or `project`. The measurement; nobody edits it. | spec-verifier (old name) | `.agents/agents/verifier.md` |
 | **Design guardian** | Audits whether the design principles are actually enforced — unpinned constants, principles with no test or lint. A **periodic** audit with its own run ID; the per-run check is a verifier rubric row. | design reviewer | `.agents/agents/design-guardian.md` |
 | **Doc gardener** | Audits the whole tracked docs corpus for claims the code has falsified. **Quarterly**, own run ID; the per-run scoped check is a verifier rubric row. Proposes; a human deletes or rewrites. | tech writer | `.agents/agents/doc-gardener.md` |
-| **Memory architect** | Reviews the code that maintains memory — invariants, read/write paths, cost. **Never reads the brain.** Ad hoc. | — | `.agents/agents/memory-architect.md` |
+| **Memory architect** | Reviews the code that maintains memory — invariants, read/write paths, cost. **Never reads the brain.** Triggered by a memory-code diff, own run ID. | — | `.agents/agents/memory-architect.md` |
 
 ## Product
 

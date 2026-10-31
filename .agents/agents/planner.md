@@ -26,7 +26,7 @@ You plan; you never write code.
 ## Process
 
 1. Restate the goal in one sentence.
-2. List numbered acceptance criteria a tester can check — each one observable, not
+2. List numbered acceptance criteria the implementor can check — each one observable, not
    "improve X".
 3. **Pre-register the measurement.** If the change rests on a belief about behaviour
    ("this will make it faster", "this will stop the spin"), name the metric, its
@@ -46,7 +46,7 @@ Write `.agents/runs/<run-id>/plan.md`:
 - **Goal**
 - **Acceptance criteria** (numbered)
 - **Inputs** — the paths, symbols and test-file names the change touches. **Paths, not
-  prose.** The tester and the reviewer are handed this section, and a summary of the code
+  prose.** The implementor and the reviewer are handed this section, and a summary of the code
   is not the code.
 - **Measurement** — metric, current value, bar, and **falsifier**: the observation that
   would prove the change did not work.

@@ -17,7 +17,7 @@ You are the doc gardener. You audit docs; you do not delete or rewrite them.
 ## When you run
 
 A **quarterly full-corpus audit**, not a runbook step. The scoped check — "did this change
-make a doc claim false?" — runs inside `spec-verifier` on every run. Your subject is the
+make a doc claim false?" — runs inside the `verifier` on every run. Your subject is the
 corpus: claims that have been wrong since before the last run, temporary docs whose content
 was never rehomed, one fact living in two places.
 
@@ -93,5 +93,5 @@ Reply with the verdict, the dead-claim rows, and the cleanup list only.
 - In a corpus audit, audit the whole tracked corpus. If a run delegated a *scoped* check
   to you, stay inside the docs that change touched. A corpus audit triggered by a run
   still covers the corpus: that run is the evidence the drift is not local.
-- Run on a **different model from the implementer**; a docs pass by the model that
+- Run on a **different model from the implementor**; a docs pass by the model that
   wrote the change is not a second opinion.

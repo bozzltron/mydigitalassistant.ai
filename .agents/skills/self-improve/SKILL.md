@@ -9,80 +9,75 @@ The system is measured by its own logs, and the register says what is still owed
 runbook turns both into one improvement per run, and it is judged by the bar the plan
 pre-registers — not by whether the change felt good.
 
-Five agents on the path plus the observer as the entry point: observer, planner,
-implementer, tester, reviewer, spec-verifier. The design-principles checklist and the
-scoped docs check are rubric rows in the verifier (step 12), not separate dispatches —
-see `docs/AGENTIC_WORKFLOW.md` §Audits that are not runbook steps.
+**planner · implementor · reviewer · verifier**, with the log reading as step 3 rather than an
+agent of its own. A separate observer meant the evidence and the plan were written by different
+sessions that could disagree about what the logs said; the reading is a step, and its output is
+a file. The design-principles and scoped-docs checks are verifier rubric rows.
 
-1. **Create or reuse a run ID** (`YYYY-MM-DD-xxxx`). Work in
-   `.agents/runs/<run-id>/`. Create `ledger.md` with the header from
-   `docs/AGENTIC_WORKFLOW.md` §The ledger. Skip any step whose output file exists.
-2. **Read the register, then the live logs** — the register first, both stacks always:
-
-   ```bash
-   cat .agents/backlog.md      # what is still owed, before what this week's logs show
-   ```
-
-   A deferred finding is the one thing a window of logs cannot tell you: it happened in
-   an earlier run, and if nothing reads it forward it dies there. The register is the
-   first input for that reason, not a tidy-up.
+1. **Create or reuse a run ID** (`YYYY-MM-DD-xxxx`). Work in `.agents/runs/<run-id>/`. Create
+   `ledger.md` with the header from `docs/AGENTIC_WORKFLOW.md` §The ledger. Skip any step whose
+   output file exists.
+2. **Read the register first, then both stacks — always.** The register first: a deferred
+   finding is the one thing a window of logs cannot tell you, because it happened in an earlier
+   run, and if nothing reads it forward it dies there.
 
    ```bash
+   cat .agents/backlog.md
    docker compose logs --no-color --since 168h assistant
    docker compose -f docker-compose.prod.yml logs --no-color --since 168h assistant
    ```
 
-   **`168h`, not `7d`** — Docker rejects days in `--since` and says so on *stderr*, so
-   the failure reads as "no logs". `scripts/log-snapshot.sh` normalises `7d` for you;
-   the raw commands above do not. So does piping them through `2>/dev/null`.
-
-   `scripts/log-snapshot.sh --since 7d --out .agents/runs/<run-id>/logs` is
-   **optional**: use it when you need the evidence frozen for the before/after at
-   step 10, not as a prerequisite. Docker discards a container's log when the
-   container is recreated, so a short window is normal — say so.
-3. **observer** → `findings.md`. Evidence first: what is healthy, what is failing,
-   and the candidate improvements ranked by frequency × user-visible cost. Each
-   candidate carries a metric, its current value, and the bar it must clear.
-4. **STOP — the human picks the candidate.** Put the observer's **blind spot** to them as the
-   question before they choose — a failure that leaves no log line outranks a ranked list. The observer proposes; it does not
-   choose. If the human says "top one", use it.
-5. **planner** → `plan.md`, including the pre-registered bar, the falsification condition
-   and its **weakest link**. **STOP** again — put that weakest link to the human as a
+   **`168h`, not `7d`** — Docker rejects days in `--since` and says so on *stderr*, so the
+   failure reads as "no logs". `scripts/log-snapshot.sh` normalises `7d` for you; the raw
+   commands above do not. Dev is 8443, prod is 8444; a signal in one says nothing about the
+   other. Docker discards a container's log when the container is recreated, so the window may
+   be shorter than you asked for — say so rather than reporting a truncated window as the whole
+   truth.
+3. **Turn the logs into evidence** → `findings.md`. Extract the per-turn facts, not impressions:
+   `turn_pregen`/`turn_timings` (where the dead time goes, `ttft_ms`), `tool_loop_round`,
+   `tool_loop_exit`, `context_fixed`/`context_usage`, `tool call:` failures and
+   `duplicate (#N)`, and `Task '…' completed|failed`. Rank by **frequency × user-visible cost**,
+   not novelty, and separate three buckets explicitly — **healthy** (do not "fix" these),
+   **failing** (evidence of user harm) and **candidates** (a hypothesis worth measuring). Each
+   candidate carries the metric that would move, its current value, and what would prove it did
+   not work. **No number without a log line**; never invent a baseline, and say which
+   confounders were in play. Keep it under two pages.
+4. **STOP — the human picks the candidate.** Put the evidence's **blind spot** to them as the
+   question before they choose: the one candidate the window *cannot* see because the failure
+   leaves no log line. A failure that leaves no log line outranks a ranked list. Step 3
+   proposes; it does not choose. If the human says "top one", use it.
+5. **planner** → `plan.md`, including the pre-registered bar, the falsification condition, a
+   risk tier and its **weakest link**. **STOP** again — put that weakest link to the human as a
    question before asking for approval. "Looks good" answers a different question.
-6. **implementer** → code + `implementation.md` (files changed, decisions, what it did not
-   touch). It fixes what the gates ask for, draining **S1 → S4**, and may not defer an S1 or
-   S2 — those escalate to you. Dispositions are filled once, at step 11, not here.
-7. **tester** → tests + `test-report.md`, plus rows for anything that is a defect rather
-   than a test gap.
-8. **reviewer** → `ledger.md` rows; blocking rows back to the implementer once to *fix* —
-   code only, no dispositions — and the reviewer closes them. Dispositions happen once, at
-   step 11.
-9. **Deploy and soak.** Rebuild **both** environments, then let the system run for the
-   window the plan named (usually enough turns or one scheduler tick). This step is the
-   human's gate — a change measured on the machine that built it has not been measured.
-10. **observer (after)** → `measurement.md`: the **same** metrics, the **same** method,
-    over the soak window. Before and after, side by side, plus the confounders that were
-    in play (concurrent turns, model eviction, a rebuild).
-11. **disposition pass** — **implementer** fills in every open `disposition` and completes
-    `implementation.md` as the ledger projection. The **only** disposition pass, after the
-    last gate that can open a row. No code changes unless a row demands one, and no deferral
-    of S1 or S2 — those escalate. Two bookkeeping passes are what the first run cost ~3M
-    tokens on.
-12. **spec-verifier** → `verification.md` + one line in `.agents/runs/log.jsonl`.
-    It checks the bar from step 5, not the story from step 6, and reads `measurement.md`
-    and every row in `ledger.md`. It also performs the two checks that used to be
-    dispatches: the seven **design principles** (`AGENTS.md` → Design principles; a
-    principle with no test or lint enforcing it is reported as a gap, and a violation no
-    row carries is `PARTIAL`) and the **scoped docs** check (does this diff make any doc
-    claim false? a dead claim no ledger row carries is `PARTIAL`). A missing measurement is
-    `PARTIAL`; an open row is `PARTIAL`.
-13. **PARTIAL or FAIL** → gaps to the implementer, re-run 7–12. **Two retries
-    maximum**, then a human takes over with `verification.md`.
-14. **PASS** → run `scripts/agent-gates.sh --full`, then commit with the trailers:
+6. **implementor** → code + tests + `implementation.md` + `test-report.md`. For a bug the
+   failing test comes first and is watched going red before the fix. It drains rows **S1 → S4**
+   and may not defer an S1 or S2 — those escalate. Dispositions are filled once, at step 10.
+7. **reviewer** → `ledger.md` rows, on a different model family from the implementor. Blocking
+   rows back to the implementor once to *fix* — code only, no dispositions — and the reviewer
+   closes them.
+8. **Deploy and soak.** Rebuild **both** environments, then let the system run for the window
+   the plan named (usually enough turns or one scheduler tick). This step is the human's gate —
+   a change measured on the machine that built it has not been measured.
+9. **Measure** → `measurement.md`: the **same** metrics, the **same** method, over the soak
+   window. Before and after side by side, plus the confounders that were in play (concurrent
+   turns, model eviction, a rebuild).
+10. **disposition pass** — **implementor** fills in every open `disposition` and completes
+    `implementation.md` as the ledger projection. The **only** disposition pass, after the last
+    gate that can open a row. No code changes unless a row demands one, and no deferral of S1 or
+    S2 — those escalate.
+11. **verifier** → `verification.md` + one line in `.agents/runs/log.jsonl`. It checks the bar
+    from step 5, not the story from step 6; it reads `measurement.md` and every row in
+    `ledger.md`, walks the seven **design principles**, checks whether this diff made any
+    doc claim false, and reads the test diff for weakened assertions. A missing measurement
+    is `PARTIAL`; an open row is `PARTIAL`.
+12. **PARTIAL or FAIL** → gaps to the implementor, re-run 6–11. **Two retries maximum**, then a
+    human takes over with `verification.md`.
+13. **PASS** → run `scripts/agent-gates.sh --full`, then commit with the trailers:
 
     ```
     Runbook: self-improve@v1
     Run-ID: <run-id>
+    Risk: <tier>
     ```
 
 ## What this runbook may not do
@@ -90,27 +85,26 @@ see `docs/AGENTIC_WORKFLOW.md` §Audits that are not runbook steps.
 - **Lead every reply with the four-part signal** — progress, core issue, core solution,
   generalisation (`docs/AGENTIC_WORKFLOW.md` §Reporting back). The human's attention is the
   binding constraint, not tokens.
-- **No scoring edits.** `spec-verifier.md`, `.agents/evals/` and the log format are
-  human-owned. This is the one rule the spec is emphatic about: an agent that can
-  move its own score will.
-- **No "improvement" without a metric.** If the logs cannot show the effect, the run
-  stops at step 5 and the finding is recorded as unmeasured.
-- **No second mechanism for a known residual.** If the last run showed the problem is
-  model behaviour, `RUNBOOK.md` §10 says stop, not add a layer.
-- **No bundling.** One finding per run. A run that fixes three things cannot tell you
-  which one worked.
-- **No memory surgery without §11.** Any change that writes to the brain takes a
-  portable export, restores it, and compares table counts first.
-- **No brain-derived values outside `.agents/runs/`.** The observer reads logs, which can
-  carry user content, and any audit of memory carries it by definition. Quote the shape of
-  a log line, never a personal value; cite the code path and an aggregate count instead.
+- **No scoring edits.** `verifier.md`, `.agents/evals/` and the log format are human-owned. This
+  is the one rule the spec is emphatic about: an agent that can move its own score will.
+- **No "improvement" without a metric.** If the logs cannot show the effect, the run stops at
+  step 5 and the finding is recorded as unmeasured.
+- **No second mechanism for a known residual.** If the last run showed the problem is model
+  behaviour, `RUNBOOK.md` §10 says stop, not add a layer.
+- **No bundling.** One finding per run. A run that fixes three things cannot tell you which one
+  worked.
+- **No memory surgery without §11.** Any change that writes to the brain takes a portable
+  export, restores it, and compares table counts first.
+- **No brain-derived values outside `.agents/runs/`.** Docker logs carry user content — a
+  turn's text, a frame value, a filename. Quote the line's *shape*
+  (`tool_loop_exit reason=answered`), never a personal value.
   `scripts/pii-guard.sh` runs in the pre-merge gate against a gitignored denylist.
 
 ## Known limits
 
-- Cursor does not enforce step order; the handoff files are what prove which steps
-  ran, and the verifier checks the outcome regardless.
-- Hook-based telemetry is not trusted (the vendor's subagent hooks were unreliable in
-  2026); measurement is the verifier's log line plus the before/after snapshot.
-- The observer reads logs, not intent. If a failure is invisible in the logs, that is
+- The harness does not enforce step order; the handoff files are what prove which steps ran,
+  and the verifier checks the outcome regardless.
+- Hook-based telemetry is not trusted (the vendor's subagent hooks were unreliable in 2026);
+  measurement is the verifier's log line plus the before/after snapshot.
+- The log reading sees behaviour, not intent. If a failure is invisible in the logs, that is
   itself the finding: add the log line first, in its own run.

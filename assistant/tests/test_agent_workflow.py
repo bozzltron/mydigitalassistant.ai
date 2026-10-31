@@ -24,9 +24,13 @@ MODEL_RE = re.compile(r"^[a-z0-9][a-z0-9-]*/[A-Za-z0-9._:-]+$")
 
 # Agents that must not edit project files; they write their handoff file only.
 READ_ONLY = {
-    "observer", "planner", "reviewer", "design-guardian",
-    "doc-gardener", "spec-verifier", "memory-architect",
+    "planner", "reviewer", "verifier",
+    "design-guardian", "doc-gardener", "memory-architect",
 }
+
+# The run path. Everything else is an audit outside it (AGENTIC_WORKFLOW.md
+# §Audits that are not runbook steps) — the distinction the harness exists to keep.
+PATH = ("planner", "implementor", "reviewer", "verifier")
 
 REQUIRED = {"name", "description", "model", "mode"}
 
@@ -44,7 +48,7 @@ def agents() -> dict[str, dict]:
 
 def test_every_agent_declares_its_contract():
     found = agents()
-    assert len(found) >= 6, f"expected the core agents, found {sorted(found)}"
+    assert set(PATH) <= found.keys(), f"missing a path agent: {set(PATH) - found.keys()}"
     for name, meta in found.items():
         missing = REQUIRED - meta.keys()
         assert not missing, f"{name}: missing {sorted(missing)}"
@@ -57,15 +61,36 @@ def test_every_agent_declares_its_contract():
         )
 
 
-def test_the_judges_run_a_different_model_from_the_implementer():
+def test_the_run_path_stays_small():
+    """The path is four agents. A fifth is a decision, not a convenience.
+
+    Every agent added to the path is a dispatch per run, and a gate nobody judges for
+    contribution accumulates (docs/AGENTIC_WORKFLOW.md §The ratchet). If this fails, the
+    change is adding a gate: register it and say what it contributes, or make it an audit
+    with its own trigger instead.
+    """
+    assert len(PATH) == 4, f"the run path is {len(PATH)} agents: {PATH}"
+    found = agents()
+    # Nothing on the path may also be an out-of-path audit, and nothing deleted stays
+    # half-referenced (an agent file whose name no runbook uses is the old drift).
+    for gone in ("implementer", "spec-verifier", "tester", "observer"):
+        assert gone not in found, (
+            f"{gone}.md is back. The roster is {sorted(found)} — {gone} was merged into "
+            "another agent or folded into a runbook step; do not reintroduce the split."
+        )
+
+
+def test_the_judges_run_a_different_model_from_the_implementor():
     """The spec's rule: a second opinion from the same model is a formality."""
     found = agents()
-    implementer = found["implementer"]["model"]
-    assert found["reviewer"]["model"] != implementer
-    assert found["spec-verifier"]["model"] != implementer
-    assert found["design-guardian"]["model"] != implementer
-    assert found["doc-gardener"]["model"] != implementer
-    assert found["memory-architect"]["model"] != implementer
+    implementor = found["implementor"]["model"]
+    for judge in ("reviewer", "verifier"):
+        assert found[judge]["model"] != implementor, (
+            f"{judge} runs the same model family as the implementor ({implementor}); "
+            "same-model review is a formality"
+        )
+    for audit in ("design-guardian", "doc-gardener", "memory-architect"):
+        assert found[audit]["model"] != implementor
 
 
 def test_read_only_agents_cannot_edit_the_project():
@@ -87,17 +112,47 @@ def test_read_only_agents_cannot_edit_the_project():
         assert allow_handoff, f"{name}: cannot write its own handoff file"
 
 
-def test_the_tester_may_edit_tests_but_not_production_code():
-    rules = agents()["tester"].get("permissions") or []
-    assert any(
-        r.get("action") == "edit" and r.get("resource") == "*" and r.get("effect") == "deny"
-        for r in rules
-    ), "tester does not deny edit on '*'"
-    allowed = {
-        r["resource"] for r in rules if r.get("action") == "edit" and r.get("effect") == "allow"
-    }
-    assert "assistant/tests/**" in allowed
-    assert not any("assistant/backend" in resource for resource in allowed)
+def test_the_implementor_writes_the_tests():
+    """The tester was merged into the implementor, and the price is paid in two rules.
+
+    A separate tester could not weaken a test to make production code pass; the
+    implementor can. Nothing restores that guarantee except the ordering rule and the
+    verifier's test-diff audit, so both are pinned here.
+    """
+    text = (AGENTS_DIR / "implementor.md").read_text(encoding="utf-8")
+    assert "`test-report.md`" in text, "the implementor no longer owns the test report"
+    assert "failing test comes first" in text, (
+        "the implementor no longer commits the failing regression test before the fix — "
+        "that ordering is the only reason merging the tester in is safe"
+    )
+    assert "Never weaken" in text, "the never-weaken-a-test rule is gone"
+
+    verifier = (AGENTS_DIR / "verifier.md").read_text(encoding="utf-8")
+    assert "test diff" in verifier, (
+        "the verifier no longer audits the test diff, so a weakened assertion ships"
+    )
+
+
+def test_the_verifier_covers_a_ticket_and_a_whole_split():
+    """Two scopes, or the last ticket's verifier cannot see the whole project.
+
+    A split ships as several runs, each verified alone. Without `project` scope nothing
+    re-reads the original ticket after the last merge, and a requirement dropped between
+    the smaller tickets is dropped silently — which is the failure the split rules exist
+    to prevent (AGENTIC_WORKFLOW.md §Splitting).
+    """
+    text = (AGENTS_DIR / "verifier.md").read_text(encoding="utf-8")
+    for scope in ("`ticket`", "`project`"):
+        assert scope in text, f"the verifier no longer knows the {scope} scope"
+    for artifact in ("verification.md", "project-verification.md"):
+        assert artifact in text, f"the verifier no longer writes {artifact}"
+    # A verdict with no evidence scale collapses back into an opinion.
+    for verdict in ("met", "partial", "not met", "can't verify"):
+        assert verdict in text, f"the verifier no longer grades a requirement {verdict!r}"
+    assert "file:line" in text, (
+        "the verifier no longer demands `file:line` evidence per requirement, so "
+        "'met' becomes the implementor's word"
+    )
 
 
 def test_runbooks_name_agents_that_exist():
@@ -107,7 +162,7 @@ def test_runbooks_name_agents_that_exist():
     for skill in skills:
         text = skill.read_text(encoding="utf-8")
         mentioned = {n for n in found if f"**{n}**" in text}
-        assert len(mentioned) >= 5, (
+        assert len(mentioned) >= 4, (
             f"{skill.parent.name} mentions only {sorted(mentioned)} — a runbook that "
             "skips a role silently drops its gate"
         )
@@ -154,7 +209,7 @@ def test_the_demoted_audits_are_not_runbook_steps():
                 "the verifier's rubric, or trigger the audit outside the runbook."
             )
         # The verifier carries both checks that used to be separate dispatches.
-        assert "**spec-verifier**" in text
+        assert "**verifier**" in text
         assert "design principles" in text
         assert "scoped docs" in text or "doc claim" in text
 

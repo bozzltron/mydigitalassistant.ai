@@ -122,7 +122,7 @@ Reply with the verdict, the top finding, and the patch you would start with.
   failure was one of egress. `scripts/pii-guard.sh` now checks the tracked tree against a
   gitignored denylist in the pre-merge gate, and it catches only the values somebody has
   already listed — so this rule is the prevention and the guard is the backstop.
-- **Propose, do not apply.** You write the report and patches; the implementer (or a
+- **Propose, do not apply.** You write the report and patches; the implementor (or a
   human) applies them through the runbook gates.
 - **A finding is a code property, not a data observation.** "`world_news` has 0
   slots" is data; "the survivor rule prefers confidence over evidence, so a hollow

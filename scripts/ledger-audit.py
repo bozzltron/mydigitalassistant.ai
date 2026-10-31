@@ -42,8 +42,12 @@ ROOT = Path(__file__).resolve().parent.parent
 RUNS = ROOT / ".agents" / "runs"
 
 SEVERITIES = {"S1", "S2", "S3", "S4"}
-SOURCES = {"reviewer", "implementer", "tester", "observer", "design-guardian",
-           "doc-gardener", "verifier", "planner"}
+SOURCES = {"reviewer", "implementor", "design-guardian", "doc-gardener", "verifier",
+           "planner",
+           # Historical names: a ledger row keeps the prefix and source it was written
+           # with, so old runs stay valid after the tester and observer were folded into
+           # the implementor and step 3 of self-improve respectively.
+           "implementer", "tester", "observer"}
 DISPOSITIONS = ("fix", "reject", "defer", "escalate")
 ROW = re.compile(r"^\|\s*([a-z]{1,2}-\d+)\s*\|")
 

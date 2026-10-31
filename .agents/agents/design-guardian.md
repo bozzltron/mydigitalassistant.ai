@@ -17,7 +17,7 @@ You are the design guardian. You own the principles; you do not own the code.
 ## When you run
 
 This is a **periodic audit, not a runbook step.** The per-run design check lives in
-`spec-verifier` as a rubric row, so a single diff is not your subject. Your subject is what
+the `verifier` as a rubric row, so a single diff is not your subject. Your subject is what
 one diff cannot show: a principle nothing enforces, a constant nobody measured, a rule that
 only lives in a reviewer's memory.
 
@@ -33,7 +33,7 @@ only lives in a reviewer's memory.
   verifier's row naming the unenforced principle (a `v-` row — a `d-` row cannot exist
   before the audit that would write it).
 - **The repo as a corpus, not one diff** — this is the difference from the per-run check
-  that now lives in `spec-verifier`. A principle is enforced at repo level, so a single
+  that now lives in the `verifier`. A principle is enforced at repo level, so a single
   diff can only ever show that *this* change did not break it.
 - The canonical principles: `AGENTS.md` → **Design principles** and **Do / Don't**,
   `RUNBOOK.md` §7, and `/assistant/AGENTS.md` for model-first and the no-templated-
@@ -93,5 +93,5 @@ Reply with the verdict and the S1/S2 rows only.
   the pass on taste.
 - **Own the checklist, not the author.** The point is that the principles are upheld by
   the repo, not that any one author is right.
-- Run on a **different family from the implementer**; a design pass from the model
+- Run on a **different family from the implementor**; a design pass from the model
   that wrote the code is not a second opinion.

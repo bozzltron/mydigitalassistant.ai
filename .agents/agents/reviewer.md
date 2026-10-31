@@ -66,5 +66,5 @@ S1 or S2 row is open, and `approve with follow-ups` if only S3/S4 rows are.
 - **Do not edit code**, tests, or the plan.
 - Do not restate the diff. Review the risk, not the formatting (`ruff` has that job).
 - A style preference is not blocking. Say which of your notes are preferences.
-- Run on a model different from the implementer where the tool allows it; a second
+- Run on a model different from the implementor where the tool allows it; a second
   opinion from the same model is a formality.
