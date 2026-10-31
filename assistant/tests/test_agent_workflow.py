@@ -80,17 +80,65 @@ def test_the_run_path_stays_small():
         )
 
 
+def _family(model_id: str) -> str:
+    """`opencode-go/glm-5.3-flash` -> `glm`. The vendor part, not the snapshot.
+
+    The rule is "a second opinion from the same model is a formality", and the unit that
+    makes a second opinion a formality is the *family*. Comparing full ids would pass
+    `glm-5.3` against `glm-5.3-flash`, which shares the same training lineage and the same
+    blind spots — that swap is a price cut, not a second opinion.
+    """
+    name = model_id.split("/", 1)[1]
+    return name.split("-", 1)[0].split(".", 1)[0]
+
+
 def test_the_judges_run_a_different_model_from_the_implementor():
     """The spec's rule: a second opinion from the same model is a formality."""
     found = agents()
     implementor = found["implementor"]["model"]
     for judge in ("reviewer", "verifier"):
-        assert found[judge]["model"] != implementor, (
-            f"{judge} runs the same model family as the implementor ({implementor}); "
-            "same-model review is a formality"
+        assert _family(found[judge]["model"]) != _family(implementor), (
+            f"{judge} runs the {_family(found[judge]['model'])} family, the same as the "
+            f"implementor ({implementor}); same-family review is a formality, not a "
+            "second opinion"
         )
     for audit in ("design-guardian", "doc-gardener", "memory-architect"):
-        assert found[audit]["model"] != implementor
+        assert _family(found[audit]["model"]) != _family(implementor), (
+            f"{audit} shares the implementor's model family"
+        )
+
+
+def test_same_family_is_not_a_second_opinion():
+    """Pin the helper's semantics against the exact regression it exists to catch.
+
+    Without this, `test_the_judges_run_a_different_model_from_the_implementor` could be
+    "fixed" back to a substring compare and still pass, which is how the rule would rot.
+    """
+    assert _family("opencode-go/glm-5.3") == _family("opencode-go/glm-5.3-flash"), (
+        "glm-5.3 and glm-5.3-flash are one family; a model swap within a family is a "
+        "price cut, not a second opinion"
+    )
+    assert _family("opencode-go/deepseek-v4.1-flash") == _family("opencode-go/deepseek-v4-pro")
+    assert _family("opencode-go/qwen3.8-max") == _family("opencode-go/qwen3.8-flash")
+    assert _family("opencode-go/glm-5.3-flash") != _family("opencode-go/qwen3.8-max")
+    assert _family("opencode-go/deepseek-v4.1-flash") != _family("opencode-go/glm-5.3-flash")
+
+
+def test_the_implementor_stays_on_the_validated_model():
+    """The implementor writes ~74% of the tokens for ~10% of the run's cost.
+
+    Swapping it is therefore a quality bet with almost no money in it: the four cheaper
+    catalog models save 0.5-2.0 cents a run, and this one is the model the user validated
+    for implementation (docs/AGENTIC_WORKFLOW.md §Model choice). If this fails, the
+    change is a bet on the highest-volume role — say what measurement it rests on, or put
+    it back.
+    """
+    found = agents()
+    assert found["implementor"]["model"] == "opencode-go/deepseek-v4.1-flash", (
+        "the implementor moved off the validated model "
+        f"({found['implementor']['model']}); it carries ~74% of the run's tokens"
+    )
+
 
 
 def test_read_only_agents_cannot_edit_the_project():

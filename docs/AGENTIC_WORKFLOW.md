@@ -58,10 +58,10 @@ tool's IDs (or `ollama/...` for a fully local loop) without touching the runbook
 
 | Agent | One job | Model | Tier | When | Why this model |
 |---|---|---|---|---|---|
-| **planner** | Spec → plan + pre-registered bar | `opencode-go/kimi-k3.1-pro` | strong reasoning | every run | runs once per run, and a bad plan wastes the whole run — the one place to pay for reasoning |
-| **implementor** | Plan → code + tests + `implementation.md` | `opencode-go/deepseek-v4.1-flash` | fast coding | every run | the **highest-volume role**, so the cheapest capable model: 6× cheaper per token than the code specialist. The user's pick after using it for implementation |
-| **reviewer** | Diff → blocking findings | `opencode-go/glm-5.3` | mid | every run | **different family from the implementor** (DeepSeek); strong on code, and it reads one diff per run, so its price is not the driver |
-| **verifier** | Spec + bar → verdict + score | `opencode-go/qwen3.8-max` | strong judge | every run | **different family from the implementor**; the verifier is the measurement, so it gets the strongest available judge |
+| **planner** | Spec → plan + pre-registered bar | `opencode-go/qwen3.8-max` | strong reasoning | every run | runs once per run, and a bad plan wastes the whole run — so it stays on a strong model, but output is $6/Mtok rather than $10: the planner writes a long `plan.md`, so its cost is output-dominated |
+| **implementor** | Plan → code + tests + `implementation.md` | `opencode-go/deepseek-v4.1-flash` | fast coding | every run | the **highest-volume role** (74% of the tokens, 10% of the cost), so the cheapest capable model — 5th cheapest of 15 candidates at that volume, with the second-cheapest cache read in the fleet. The user's validated pick; **deliberately not changed**, because the cheaper options save 0.5–2¢ a run |
+| **reviewer** | Diff → blocking findings | `opencode-go/glm-5.3-flash` | fast-reading | every run | **different family from the implementor** (DeepSeek); reads **one diff**, which is bounded work, so it is the role most likely to be over-priced per unit of output. Yield is pre-registered and revertible — §Model choice has the bar and the three falsifiers |
+| **verifier** | Spec + bar → verdict + score | `opencode-go/qwen3.8-max` | strong judge | every run | **different family from the implementor**; the verifier produces the score everything else is measured by, and `B-19` already leaves it self-scored — it is the worst place in the roster to save money |
 | **design-guardian** | Principles → enforced, or a gap named | `opencode-go/gemini-4-argon` | strong, product judgement | periodic audit, own run ID | owns the principles checklist; its output is repo-level (unpinned constants, unenforced principles), not per-run |
 | **doc-gardener** | Docs corpus → drift + cleanup audit | `opencode-go/glm-5.3` | mid, large reading | quarterly audit, own run ID | owns the docs lifecycle; a fifth family, and it proposes rather than deletes |
 | **memory-architect** | Memory code → hygiene + performance findings and patches | `opencode-go/kimi-k3.1-pro` | strongest reasoning | memory-code change, own run ID | deep, occasional, and the one review whose subject is the product's core code |
@@ -74,15 +74,50 @@ separate session for it let the evidence and the plan disagree about what the lo
 Two rules the model table encodes:
 
 - **Different, not just stronger.** The reviewer and the verifier are deliberately a
-  different family from the implementor. A second opinion from the same model is a
-  formality.
-- **Cost follows the work.** The implementor runs on the cheap model, because it touches
-  the most tokens. The planner, reviewer and verifier each run once per run, so they get
-  the stronger models — cheapening a
-  gate saves cents and risks the run.
+  different *family* from the implementor. A second opinion from the same model is a
+  formality — and `glm-5.3` vs `glm-5.3-flash` is the same family, so the family is what
+  `test_agent_workflow.py` compares, not the model id.
+- **Cost follows the work, not the role's prestige.** A model should be as strong as the
+  judgement its role demands, and no stronger.
 
 Where the tool supports reasoning variants (`#low`, `#high`, `#max`), the planner and
 verifier are the only two worth raising; the rest should keep the default.
+
+### Model choice — what is measured, what is assumed
+
+Prices come from the live `opencode-go` catalog and are exact. **Token volumes are
+assumptions**, because no run has ever logged the `gates` token fields (`B-18`); the figures
+below assume planner 30k/8k, implementor 250k/60k, reviewer 80k/15k, verifier 100k/20k at 70%
+cache read. Re-derive before quoting them as fact.
+
+| Role | Tokens/run (assumed) | Share of tokens | $/run | Share of cost |
+|---|---|---|---|---|
+| planner | 30k / 8k | 9% | 0.0713 | 22% |
+| implementor | 250k / 60k | **74%** | 0.0478 | **10%** |
+| reviewer | 80k / 15k | 23% | 0.0128 | 4% |
+| verifier | 100k / 20k | 29% | 0.1975 | **60%** |
+| | | | **0.3294** | |
+
+**The implementor does three-quarters of the work for a tenth of the bill.** It is
+`deepseek-v4.1-flash` at $0.15/$0.60 with the second-cheapest cache read in the fleet
+($0.003/Mtok), which is the cost an iterating implementor actually pays. Ranked by cost at
+its own volume it is 5th of 15 catalog models; the four cheaper ones save 0.5–2¢ a run. That
+is why a test pins it: changing it is a quality bet with no money in it.
+
+The reviewer moved `glm-5.3` → `glm-5.3-flash` (**−89%** on that line) on the argument that it
+reads **one diff**, which is bounded work. The planner moved `kimi-k3.1-pro` →
+`qwen3.8-max` (−30%) because a `plan.md` is output-dominated and $6/Mtok beats $10. The
+verifier did not move: it produces the score everything else is measured by.
+
+**The reviewer's yield is pre-registered, not assumed.** `2026-10-31-mdl1` states the bar
+(≥1 blocking row or ≥4 rows on at least one of the next 2 runs) and three falsifiers, any one
+of which reverts it to `glm-5.3`: zero rows across 2 runs; a defect the verifier records that
+no reviewer row covers; or a reviewer row whose falsifier was never run. The baseline it is
+measured against is the `glm-5.3` reviewer's 9 rows on one diff in `2026-10-31-aset3`.
+
+**The larger lever is not the models.** Every agent receives ~1,355 lines of `AGENTS.md` on
+every dispatch. Halving that halves every role's input cost permanently, for any model — it
+is a bigger saving than the whole model table above, and it is `T3`.
 
 ### The ratchet — a gate that cannot lose its job will accumulate
 

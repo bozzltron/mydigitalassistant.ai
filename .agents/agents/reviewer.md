@@ -1,7 +1,7 @@
 ---
 name: reviewer
 description: Reviews a diff for correctness, project conventions and risk, and opens ledger rows carrying a severity and a falsifier. Use after the tests pass, before verification.
-model: "opencode-go/glm-5.3"
+model: "opencode-go/glm-5.3-flash"
 mode: subagent
 permissions:
   - action: edit

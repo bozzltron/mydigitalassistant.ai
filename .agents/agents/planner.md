@@ -1,7 +1,7 @@
 ---
 name: planner
 description: Turns a spec, a ticket or an observation into a concrete plan with acceptance criteria and a pre-registered bar. Use first in any feature or self-improve runbook, or alone to scope work.
-model: "opencode-go/kimi-k3.1-pro"
+model: "opencode-go/qwen3.8-max"
 mode: subagent
 permissions:
   - action: edit
