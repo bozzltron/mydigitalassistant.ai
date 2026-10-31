@@ -90,6 +90,31 @@ def _release_db_connections():
     close_all_connections()
 
 
+@pytest.fixture(autouse=True)
+def _silence_the_decision_model(monkeypatch):
+    """Answer every decision-model question with "unknown", with no network call.
+
+    `decision._ask` posts to `settings.ollama_url/v1/systemone` on every orchestrator
+    turn, waiting up to `settings.decision_timeout` (10 s). When a test container
+    cannot reach the host's Ollama, the socket connects and then never answers, so
+    each turn spends 2 × 10 s in that timeout -- measured 2026-10-31 at 20.16 s per
+    turn, against the suite's 20 s per-test ceiling. Five orchestrator tests failed
+    and read as a code hang; with the timeout unable to bite they are
+    `41 passed in 6.74s`. `scripts/agent-gates.sh --full` was red on that alone.
+
+    "Unknown" is a supported answer by the module's own contract ("a missing
+    decision model returns unknown and nothing nudges"), so this changes no
+    behaviour under test. A test that wants a real judgement monkeypatches
+    `decision._ask` itself, which wins over this fixture.
+    """
+    from assistant.backend.pipeline import decision
+
+    async def unknown(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(decision, "_ask", unknown)
+
+
 @pytest_asyncio.fixture
 async def store(tmp_path: Path) -> MemoryStore:
     # Not closed here: `_release_db_connections` above ends the connections after

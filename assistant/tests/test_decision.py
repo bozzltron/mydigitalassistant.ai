@@ -14,6 +14,7 @@ change something is not performed by a lookup.
 from __future__ import annotations
 
 import logging
+import time
 
 from assistant.backend.pipeline import decision
 
@@ -81,6 +82,24 @@ async def test_needs_action_is_unknown_when_the_model_is_silent(monkeypatch):
 
     # An empty request never reaches the model.
     assert await decision.needs_action("   ") is None
+
+
+async def test_no_test_reaches_the_live_decision_model():
+    """The suite must not depend on a reachable Ollama, and must not pay to find out.
+
+    `needs_action` posts to the decision endpoint on every orchestrator turn with a
+    10 s timeout, so an endpoint that accepts the connection and never answers costs
+    two timeouts per turn -- 20.16 s measured 2026-10-31, against the suite's 20 s
+    per-test ceiling. Five orchestrator tests failed and read as a code hang; with
+    the timeout unable to bite, the same two files are `41 passed in 6.74s`.
+    `conftest._silence_the_decision_model` is the fix, and this is what fails if it
+    is removed: a reachable Ollama returns a kind rather than None, and a silent one
+    blows the elapsed-time bound.
+    """
+    start = time.monotonic()
+    assert await decision.needs_action("Create a file called x.md") is None
+    assert await decision.needs_action("Look up the latest Ollama release notes") is None
+    assert time.monotonic() - start < 1.0
 
 
 def test_the_action_threshold_is_biased_toward_firing():
