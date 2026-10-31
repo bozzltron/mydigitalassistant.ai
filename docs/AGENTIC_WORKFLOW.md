@@ -174,6 +174,23 @@ plan.md → implementation.md → test-report.md → ledger.md → verification.
 `PARTIAL` or `FAIL` sends the gaps back to the implementor up to twice; then a human
 takes over with `verification.md`.
 
+### Splitting — a plan that covers more than one change is not a plan
+
+A spec that covers more than one independently mergeable change, more than ~5 criteria, or more
+than a day of work is a **`split.md`**, not a `plan.md`. The planner writes the tickets, their
+`blocked-by` order, and stops; work does not proceed until a human turns a ticket into its own
+run.
+
+Each ticket then gets **its own run** — its own run ID, ledger and verifier score, verified in
+`scope: ticket`. When the **last** ticket merges, the verifier runs **once more in
+`scope: project`**: it re-reads every ticket's verification against the *original* spec rather
+than against the split, and writes `project-verification.md`. That second pass is the only
+thing that catches a requirement lost between the smaller tickets, because each ticket's
+verification was, correctly, only ever about its own ticket.
+
+A split is therefore two things at once: the mechanism that keeps a run small, and the step
+that makes the last run look back at the whole.
+
 ### self-improve
 
 ```

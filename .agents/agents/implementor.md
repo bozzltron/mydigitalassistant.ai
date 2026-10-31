@@ -74,6 +74,15 @@ Reply with the files touched, the gate results, and any row you could not dispos
 - **Never weaken, delete or skip an existing test to get green.** If a test is wrong, report
   it and propose the correction to the human. The verifier reads your test diff for removed
   assertions, widened tolerances and new `skip`s.
+- **A test that asserts nothing is not a test.** No `assert True`, no `assert x is not None`
+  as the only check, no commented-out cases, no `try: ... except: pass` around the assertion.
+  This is the writer-side half of the check: the verifier can see a deleted assertion in a
+  diff, but a vacuous test written from scratch looks like a green tick.
+- **Open a ledger row for a defect found while testing.** A criterion that cannot be tested as
+  written, a suite that passes for the wrong reason, a component that behaves differently from
+  its doc — those are findings, and a finding may only live in `ledger.md` (L1). Use the
+  reviewer's eight columns: you set `sev`, `claim`, `where` and `falsifier`, and you leave
+  `disposition` and `closed` empty like any other opener.
 - **Do not edit** `plan.md`, the acceptance criteria, `verifier.md`, `.agents/evals/`, or
   `.agents/runs/log.jsonl`. Those are the scoring surface.
 - No dead code, no commented-out snippets, no unused imports (`ruff` enforces F/RUF).

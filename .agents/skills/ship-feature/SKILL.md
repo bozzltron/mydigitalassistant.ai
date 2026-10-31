@@ -34,8 +34,10 @@ dispatches — `docs/AGENTIC_WORKFLOW.md` §Audits that are not runbook steps.
    human: a third attempt is a guess with a plan attached.
 6. **disposition pass** — **implementor** fills in every open `disposition` and completes
    `implementation.md` as the ledger projection. This is the **only** disposition pass, and it
-   runs after the last gate that can open a row. No code changes unless a row demands one (then
-   fix it and cite the fix); no deferral of S1 or S2 — those escalate.
+   runs after the last **reviewing** gate (the reviewer, step 4) — the verifier in step 7 opens
+   its own `v-` rows *after* this pass by design, and closes them itself, so a `v-` row is never
+   something the implementor dispositions. No code changes unless a row demands one (then fix it
+   and cite the fix); no deferral of S1 or S2 — those escalate.
 7. **verifier** → `verification.md` + one line in `.agents/runs/log.jsonl`. It re-derives the
    requirements from the spec, audits every ledger row, walks the seven **design principles**
    (`AGENTS.md`; a principle with no test or lint enforcing it is a reported gap), checks
@@ -54,10 +56,14 @@ dispatches — `docs/AGENTIC_WORKFLOW.md` §Audits that are not runbook steps.
 ## Splitting
 
 A plan that covers more than one independently mergeable change is a `split.md`, not a plan.
-Each ticket then gets **its own run** — its own run ID, ledger and verifier score — and the
-verifier runs once more in `scope: project` after the last ticket merges, against the original
-ticket, so nothing is lost in the split. Work does not proceed on a split until a human turns
-it into tickets.
+Work does not proceed on a split until a human turns it into tickets.
+
+Each ticket then gets **its own run** — its own run ID, ledger and verifier score, verified in
+`scope: ticket`. When the **last** ticket merges, dispatch the **verifier once more with
+`scope: project`**: it re-reads every ticket's verification against the *original* spec and
+writes `project-verification.md`. That pass is the only thing that catches a requirement lost
+between the smaller tickets, because each ticket's own verification was — correctly — only
+about that ticket. Do not skip it because every ticket passed.
 
 ## Gates (from RUNBOOK.md — non-negotiable)
 

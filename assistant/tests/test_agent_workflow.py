@@ -23,14 +23,17 @@ RUNS_DIR = ROOT / ".agents" / "runs"
 MODEL_RE = re.compile(r"^[a-z0-9][a-z0-9-]*/[A-Za-z0-9._:-]+$")
 
 # Agents that must not edit project files; they write their handoff file only.
-READ_ONLY = {
-    "planner", "reviewer", "verifier",
-    "design-guardian", "doc-gardener", "memory-architect",
-}
+# Derived, not restated: the only writer is the implementor, so every other agent is
+# read-only by construction. Two hand-maintained sets drifted before; one cannot.
+PATH = ("planner", "implementor", "reviewer", "verifier")
 
 # The run path. Everything else is an audit outside it (AGENTIC_WORKFLOW.md
 # §Audits that are not runbook steps) — the distinction the harness exists to keep.
-PATH = ("planner", "implementor", "reviewer", "verifier")
+AUDITS = ("design-guardian", "doc-gardener", "memory-architect")
+
+WRITERS = {"implementor"}
+
+READ_ONLY = (set(PATH) | set(AUDITS)) - WRITERS
 
 REQUIRED = {"name", "description", "model", "mode"}
 
@@ -68,11 +71,25 @@ def test_the_run_path_stays_small():
     contribution accumulates (docs/AGENTIC_WORKFLOW.md §The ratchet). If this fails, the
     change is adding a gate: register it and say what it contributes, or make it an audit
     with its own trigger instead.
+
+    **The roster is derived from disk, not restated.** An earlier version asserted
+    `len(PATH) == 4` against a hardcoded tuple and a blocklist of four deleted names —
+    so adding a fifth agent file passed the whole suite (reviewer row `r-02`,
+    2026-10-31-evidence: 15/15 green with `zz-probe-agent.md` present). A test that cannot
+    fail on the drift it exists to stop is decoration.
     """
-    assert len(PATH) == 4, f"the run path is {len(PATH)} agents: {PATH}"
     found = agents()
-    # Nothing on the path may also be an out-of-path audit, and nothing deleted stays
-    # half-referenced (an agent file whose name no runbook uses is the old drift).
+    declared = set(PATH) | set(AUDITS)
+    assert set(found) == declared, (
+        "the agent roster drifted from the declared sets: "
+        f"on disk but undeclared = {sorted(set(found) - declared)}; "
+        f"declared but missing = {sorted(declared - set(found))}. "
+        "A new agent must be added to PATH (a dispatch every run) or AUDITS (own trigger, "
+        "own run ID) — the declaration is the decision the ratchet needs."
+    )
+    assert len(PATH) == 4, f"the run path is {len(PATH)} agents: {PATH}"
+    # Nothing deleted may come back half-referenced: an agent file whose name no runbook
+    # uses is the old drift.
     for gone in ("implementer", "spec-verifier", "tester", "observer"):
         assert gone not in found, (
             f"{gone}.md is back. The roster is {sorted(found)} — {gone} was merged into "

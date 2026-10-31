@@ -33,7 +33,11 @@ a file. The design-principles and scoped-docs checks are verifier rubric rows.
    other. Docker discards a container's log when the container is recreated, so the window may
    be shorter than you asked for — say so rather than reporting a truncated window as the whole
    truth.
-3. **Turn the logs into evidence** → `findings.md`. Extract the per-turn facts, not impressions:
+3. **Turn the logs into evidence** → `findings.md`. **Record the Window first** — the
+   `--since` range you actually got and the run counts the numbers are drawn from. Docker
+   discards a container's log when it is recreated, so the window is often shorter than the
+   one you asked for; a truncated window reported as the whole truth is how a finding gets
+   made out of missing data. Extract the per-turn facts, not impressions:
    `turn_pregen`/`turn_timings` (where the dead time goes, `ttft_ms`), `tool_loop_round`,
    `tool_loop_exit`, `context_fixed`/`context_usage`, `tool call:` failures and
    `duplicate (#N)`, and `Task '…' completed|failed`. Rank by **frequency × user-visible cost**,
