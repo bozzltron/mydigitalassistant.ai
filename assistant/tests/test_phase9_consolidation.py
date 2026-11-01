@@ -6,9 +6,12 @@ redirect the graph, record aliases, and tombstone losers — without touching
 frames owned by other users.
 """
 
+from unittest.mock import patch
+
 import pytest
 
 from assistant.backend.memory.consolidate import run_consolidation
+from assistant.backend.memory.store import MemoryStore
 from assistant.backend.pipeline.extractor import (
     normalize_frame_name,
     resolve_or_create_frame,
@@ -245,6 +248,41 @@ async def test_consolidation_dry_run_writes_nothing(store):
     ]
     assert all(f is not None for f in both)
     assert not (await store.list_frames()) == []
+
+
+@pytest.mark.parametrize("dry_run", [True, False], ids=["dry_run", "execute"])
+async def test_run_consolidation_awaits_close_of_its_own_store(store, dry_run):
+    """`run_consolidation` must await the close of the store it builds itself.
+
+    The CLI calls this and then exits its event loop, so a pooled connection left
+    for the finalizer closes on a dead loop and prints `Event loop is closed` at
+    exit (dsp01 r-04). Both exits close -- the dry-run return and the end of the
+    execute path -- so one parametrized test pins both, and deleting either one
+    line reddens its own param.
+
+    The spy is the observable on purpose, not `_live_conns`: that WeakSet empties
+    by refcount once the inner store goes out of scope, so a liveness assertion
+    would pass even with the close deleted. Capturing after `await real_close`
+    also proves the close was awaited before this call returned, not merely that
+    a coroutine was created.
+    """
+    await _seed_fragmented_album(store)
+
+    captured: list[MemoryStore] = []
+    real_close = MemoryStore.close
+
+    async def spy(self):
+        await real_close(self)
+        captured.append(self)
+
+    with patch.object(MemoryStore, "close", spy):
+        report = await run_consolidation(str(store.db_path), dry_run=dry_run)
+
+    assert len(captured) == 1, f"expected exactly one close, saw {len(captured)}"
+    closed = captured[0]
+    assert closed is not store, "the fixture store must not stand in for the inner one"
+    assert closed.db_path == str(store.db_path)
+    assert report.planned_merges, "the planning path must have run before the call returned"
 
 
 async def test_consolidation_respects_owner_isolation(store):
