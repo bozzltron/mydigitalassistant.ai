@@ -1,3 +1,10 @@
+# A Compose project of its own, on purpose. Without `name:` this file joins the
+# default project (`mydigitalassistantai`) — the same project as docker-compose.prod.yml
+# — so the `down --remove-orphans` that run_ci.sh runs between stages removes the
+# *production* containers. Measured 2026-10-27 (backlog B-15); it is why a gate run
+# could take the site down and nobody noticed until :8444 was dead.
+name: mydigitalassistantai-test
+
 services:
   # Frontend tests (Node/Vitest)
   test-frontend:
@@ -41,7 +48,13 @@ services:
     environment:
       - DATABASE_PATH=/app/data/assistant-test-critical.db
       - DB_KEY=
-    command: pip install -e ".[dev]" && pytest assistant/tests/test_daily_schedule.py assistant/tests/test_review_fixes.py assistant/tests/test_extractor.py -q --tb=short
+    # `sh -c`, not a bare string. Compose parses a string `command:` as a list and
+    # **drops everything after `&&`**: `pip install … && pytest …` resolved to
+    # `[pip, install]`, so this service, test-plain and test-encrypted each ran pip and
+    # exited 0. `run_ci.sh` then printed "All CI checks passed" having executed zero
+    # backend tests. Measured 2026-11-01 (backlog B-08, t-7). A shell is the only way to
+    # express a sequence here; keep the `&&` inside the quoted string.
+    command: ["sh", "-c", 'pip install -e ".[dev]" && pytest assistant/tests/test_daily_schedule.py assistant/tests/test_review_fixes.py assistant/tests/test_extractor.py -q --tb=short']
     user: root
 
   # Runs the full test suite in plain (unencrypted) SQLite mode.
@@ -57,7 +70,7 @@ services:
     environment:
       - DATABASE_PATH=/app/data/assistant-test.db
       - DB_KEY=
-    command: pip install -e ".[dev]" && pytest assistant/tests/ -q --tb=short
+    command: ["sh", "-c", 'pip install -e ".[dev]" && pytest assistant/tests/ -q --tb=short']
     user: root
 
   # Runs the full test suite in encrypted SQLCipher mode.
@@ -75,7 +88,7 @@ services:
       - .env
     environment:
       - DATABASE_PATH=/app/data/assistant-test-encrypted.db
-    command: pip install -e ".[dev]" && pytest assistant/tests/ -q --tb=short
+    command: ["sh", "-c", 'pip install -e ".[dev]" && pytest assistant/tests/ -q --tb=short']
     user: root
 
   dev:
