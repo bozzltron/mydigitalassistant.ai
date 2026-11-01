@@ -11,7 +11,29 @@ from collections.abc import AsyncGenerator
 from dataclasses import asdict, is_dataclass
 from enum import Enum
 
+import httpx
+
 logger = logging.getLogger(__name__)
+
+# The qwen renderer's 500 for a transcript whose user turn is not in the prompt.
+# Two causes are live — Ollama truncating an over-window prompt from the front, or
+# a request that genuinely carried no user turn — and the diagnostic below is the
+# only place that can tell them apart after the fact.
+_NO_USER_QUERY_MARKER = "no user query found in messages"
+
+
+def _is_no_user_query_error(exc: BaseException) -> bool:
+    """True only for that specific Ollama 500, never for another failure."""
+    if not isinstance(exc, httpx.HTTPStatusError):
+        return False
+    response = exc.response
+    if response is None or response.status_code != 500:
+        return False
+    try:
+        body = response.text
+    except Exception:  # an unread (streamed) response body explains nothing
+        return False
+    return _NO_USER_QUERY_MARKER in body.lower()
 
 # When the loop's content allowance is spent, an older tool result is replaced by
 # this marker rather than dropped from the message list -- the tool_call it answers
@@ -413,6 +435,10 @@ async def stream_tool_loop(
     # than before the next request. The pre-call guard below uses these.
     last_prompt_tokens = 0
     chars_since_call = 0
+    # Whether the pre-call guard has had to collapse a result at any point in this
+    # turn. Latched only where it actually collapses (see `_collapse_for_the_next_call`),
+    # so the failure diagnostic can distinguish "the guard acted" from "it never fired".
+    precall_collapsed = False
     # One grant of grace rounds per turn, spent by whichever site reaches the ceiling with
     # an unperformed action. This variable *is* the loop's termination argument, and it is
     # deliberately local: `while True` above is bounded because the ceiling breaks unless
@@ -447,7 +473,7 @@ async def stream_tool_loop(
         a failed turn.
         """
         nonlocal last_prompt_tokens, chars_since_call, tool_result_chars
-        nonlocal tool_results_dropped
+        nonlocal tool_results_dropped, precall_collapsed
         if not last_prompt_tokens or not context_window:
             return
 
@@ -473,6 +499,7 @@ async def stream_tool_loop(
             freed += delta
 
         if collapsed:
+            precall_collapsed = True
             logger.info(
                 "tool_loop_precall_collapse: projected=%d window=%d collapsed=%d "
                 "chars_freed=%d",
@@ -496,6 +523,70 @@ async def stream_tool_loop(
             tool_result_chars = 0
             chars_since_call = 0
             last_prompt_tokens = 0
+
+    def _project_outgoing(outgoing: list[ChatMessage]) -> tuple[int, str]:
+        """The prompt size this call is expected to send, and how it was obtained.
+
+        After a measured call this is exactly the pre-call guard's projection. When
+        nothing measured describes the outgoing list — the turn's first call, or one
+        whose history was just compacted — it is estimated from what is about to be
+        sent and labelled ``initial_chars``: reporting an unmeasured prompt as 0
+        would look like evidence that it was empty, and reusing the displaced
+        measurement would describe a request that is not being made.
+        """
+        if last_prompt_tokens:
+            return (
+                last_prompt_tokens + -(-chars_since_call // PROJECTION_CHARS_PER_TOKEN),
+                "measured",
+            )
+        chars = sum(len(m.content or "") for m in outgoing)
+        if tools:
+            chars += len(json.dumps(tools, default=str))
+        return -(-chars // PROJECTION_CHARS_PER_TOKEN), "initial_chars"
+
+    def _log_no_user_query_diagnostic(outgoing: list[ChatMessage]) -> None:
+        """Say what the request carried and what we expected it to cost.
+
+        Identifiers, enums, counts and lengths only: the message text, tool
+        arguments and the response body are the user's data and never reach here.
+        """
+        from assistant.backend.pipeline.tools import SCHEDULED_SESSION_PREFIX
+
+        user_turn_chars = [len(m.content or "") for m in outgoing if m.role == "user"]
+        projected_tokens, projection_basis = _project_outgoing(outgoing)
+        logger.error(
+            "ollama_no_user_query_diagnostic: model=%s turn_kind=%s session=%s "
+            "user_turns=%d user_turn_chars=%s last_prompt_tokens=%d "
+            "chars_since_call=%d projected_tokens=%d projection_basis=%s "
+            "window=%d reserve_tokens=%d precall_collapse_fired=%s",
+            loop_model,
+            "scheduled" if session_id.startswith(SCHEDULED_SESSION_PREFIX) else "user",
+            session_id,
+            len(user_turn_chars),
+            user_turn_chars,
+            last_prompt_tokens,
+            chars_since_call,
+            projected_tokens,
+            projection_basis,
+            context_window,
+            MIN_GENERATION_TOKENS,
+            precall_collapsed,
+        )
+
+    async def _chat_or_diagnose(**kwargs):
+        """``llm_client.chat``, plus the diagnostic for the no-user-turn 500.
+
+        Every call site routes through here so the line cannot be added to one
+        path and forgotten on another. Nothing else changes: the arguments are the
+        caller's, a success is returned unchanged, and every failure — target or
+        not — is re-raised as the same exception object.
+        """
+        try:
+            return await llm_client.chat(**kwargs)
+        except Exception as exc:
+            if _is_no_user_query_error(exc):
+                _log_no_user_query_diagnostic(kwargs["messages"])
+            raise
 
     while True:
         if turn >= max_turns:
@@ -527,7 +618,7 @@ async def stream_tool_loop(
         # Make room before the request, not after it. See the helper's note.
         _collapse_for_the_next_call()
 
-        response = await llm_client.chat(
+        response = await _chat_or_diagnose(
             messages=chat_messages,
             tools=tools,
             tool_choice="auto",
@@ -563,7 +654,14 @@ async def stream_tool_loop(
                 len(chat_messages),
             )
             chat_messages = compacted
-            response = await llm_client.chat(
+            # Re-base *before* the call, the way the guard's own compact branch
+            # does: the retry sends a different, compacted list, so the last
+            # measurement describes a prompt that is no longer being sent. A
+            # failure here must report this call's request — an estimate labelled
+            # `initial_chars` — not the pre-compaction prompt it replaced.
+            last_prompt_tokens = 0
+            chars_since_call = 0
+            response = await _chat_or_diagnose(
                 messages=chat_messages,
                 tools=tools,
                 tool_choice="auto",
@@ -573,8 +671,7 @@ async def stream_tool_loop(
                 num_predict=num_predict,
             )
             max_prompt_tokens = max(max_prompt_tokens, response.prompt_eval_count)
-            # The retry sent a different (compacted) list, so the previous
-            # measurement no longer describes what we hold.
+            # The retry's own measurement replaces the one it displaced.
             last_prompt_tokens = response.prompt_eval_count or 0
             chars_since_call = 0
 
@@ -844,7 +941,7 @@ async def stream_tool_loop(
         chat_messages.append(wrap_prompt)
         chars_since_call += len(wrap_prompt.content)
         _collapse_for_the_next_call()
-        wrap_up = await llm_client.chat(
+        wrap_up = await _chat_or_diagnose(
             messages=chat_messages,
             tools=tools,
             tool_choice="none",

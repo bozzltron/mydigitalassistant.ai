@@ -8,6 +8,10 @@ Covers the two pieces added to fix "stream shows a status but no response":
 
 import asyncio
 import json
+import re
+
+import httpx
+import pytest
 
 from assistant.backend.pipeline.streaming import (
     ErrorEvent,
@@ -1445,3 +1449,610 @@ async def test_precall_guard_compacts_when_collapsing_is_not_enough(
     assert any(
         "tool_loop_precall_compact" in r.getMessage() for r in caplog.records
     ), [r.getMessage() for r in caplog.records]
+
+
+# --- the `no user query found in messages` failure path ----------------------
+#
+# Two candidate causes are live for this 500 (measured 2026-10-24/25: 3 in 23
+# attempts): an over-window prompt whose leading user turn Ollama truncated away,
+# and an absent/empty user turn in the request we sent. From assistant logs alone
+# the failure was indistinguishable, so the next occurrence has to explain itself.
+# The line carries identifiers, counts and lengths only: the request text is the
+# user's, and a diagnostic is not a place to copy it.
+
+_NO_USER_QUERY_CANARY = "CANARY-private-payload-do-not-log-8842"
+
+
+def _no_user_query_error(*, body: str = "") -> httpx.HTTPStatusError:
+    """The exact shape Ollama's 500 arrives in: an HTTPStatusError, body attached."""
+    request = httpx.Request("POST", "http://127.0.0.1:11434/api/chat")
+    response = httpx.Response(
+        500,
+        request=request,
+        json={"error": body or "no user query found in messages"},
+    )
+    return httpx.HTTPStatusError(
+        "Server error '500 Internal Server Error'", request=request, response=response
+    )
+
+
+def _diagnostic_lines(caplog) -> list:
+    return [
+        r for r in caplog.records if "ollama_no_user_query_diagnostic" in r.getMessage()
+    ]
+
+
+def _diagnostic_fields(message: str) -> dict[str, str]:
+    """Parse the ``key=value`` pairs a reader (human or verifier) sees on the line."""
+    return dict(re.findall(r"(\w+)=(\[[^\]]*\]|\S+)", message))
+
+
+def _assert_no_content_leaked(record, canary: str) -> None:
+    """Neither the rendered line nor the log record's args may carry message text."""
+    assert canary not in record.getMessage(), record.getMessage()
+    assert canary not in repr(record.args), record.args
+
+
+class _FailingStubLLM:
+    """Calls are recorded and answered from a list; an exception can be scripted."""
+
+    def __init__(self, responses):
+        self.tools_model = "test-model"
+        self.responses = list(responses)
+        self.calls: list[dict] = []
+
+    async def chat(self, messages, **kwargs):
+        self.calls.append({"messages": messages, **kwargs})
+        response = self.responses.pop(0)
+        if isinstance(response, BaseException):
+            raise response
+        return response
+
+    def context_window(self, model=None):
+        return 32768
+
+
+async def test_no_user_query_diagnostic_names_an_absent_user_turn(tmp_path, caplog):
+    """No user turn at all is one of the two live causes; the line must say so."""
+    import logging
+
+    from assistant.backend.pipeline.context_budget import (
+        MIN_GENERATION_TOKENS,
+        PROJECTION_CHARS_PER_TOKEN,
+    )
+    from assistant.backend.pipeline.streaming import stream_tool_loop
+    from assistant.backend.pipeline.tool_executor import init_store
+
+    caplog.set_level(logging.INFO, logger="assistant.backend.pipeline.streaming")
+    init_store(str(tmp_path / "absent.db"))
+
+    boom = _no_user_query_error()
+    llm = _FailingStubLLM([boom])
+
+    messages = [
+        {"role": "system", "content": "you are a test system prompt"},
+        {"role": "assistant", "content": "an earlier answer with no user turn"},
+    ]
+    with pytest.raises(httpx.HTTPStatusError) as excinfo:
+        async for _ in stream_tool_loop(
+            llm,
+            messages=messages,
+            tools=[],
+            model="test-model",
+            user_id="1",
+            session_id="s-1",
+        ):
+            pass
+
+    # One failure line, one call, and the *same* exception object re-raised.
+    assert excinfo.value is boom
+    assert len(llm.calls) == 1
+    lines = _diagnostic_lines(caplog)
+    assert len(lines) == 1, [r.getMessage() for r in caplog.records]
+    record = lines[0]
+    assert record.levelname == "ERROR"
+
+    fields = _diagnostic_fields(record.getMessage())
+    assert fields["model"] == "test-model"
+    assert fields["turn_kind"] == "user"
+    assert fields["session"] == "s-1"
+    # Zero user turns is the proof of "absent", without exposing any text.
+    assert int(fields["user_turns"]) == 0
+    assert json.loads(fields["user_turn_chars"]) == []
+    # No measured prompt yet: an estimate, explicitly labelled — never a bare 0.
+    assert int(fields["last_prompt_tokens"]) == 0
+    assert int(fields["chars_since_call"]) == 0
+    assert fields["projection_basis"] == "initial_chars"
+    outgoing_chars = sum(len(m["content"]) for m in messages)
+    assert int(fields["projected_tokens"]) == -(-outgoing_chars // PROJECTION_CHARS_PER_TOKEN)
+    assert int(fields["projected_tokens"]) > 0
+    assert int(fields["window"]) == 32768
+    assert int(fields["reserve_tokens"]) == MIN_GENERATION_TOKENS
+    assert fields["precall_collapse_fired"] == "False"
+
+
+async def test_no_user_query_diagnostic_shows_an_empty_latest_user_turn(
+    tmp_path, caplog
+):
+    """An empty *latest* user turn is the other absent/empty shape — and no text."""
+    import logging
+
+    from assistant.backend.pipeline.context_budget import PROJECTION_CHARS_PER_TOKEN
+    from assistant.backend.pipeline.streaming import stream_tool_loop
+    from assistant.backend.pipeline.tool_executor import init_store
+
+    caplog.set_level(logging.INFO, logger="assistant.backend.pipeline.streaming")
+    init_store(str(tmp_path / "empty.sqlite.db"))
+
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "read_file",
+                "description": f"description carrying {_NO_USER_QUERY_CANARY}",
+                "parameters": {"type": "object", "properties": {}},
+            },
+        }
+    ]
+    messages = [
+        {"role": "system", "content": f"system prompt {_NO_USER_QUERY_CANARY}"},
+        {"role": "user", "content": f"first user turn {_NO_USER_QUERY_CANARY}"},
+        {"role": "assistant", "content": f"an answer {_NO_USER_QUERY_CANARY}"},
+        {"role": "user", "content": ""},
+    ]
+    llm = _FailingStubLLM([_no_user_query_error()])
+
+    with pytest.raises(httpx.HTTPStatusError):
+        async for _ in stream_tool_loop(
+            llm,
+            messages=messages,
+            tools=tools,
+            model="test-model",
+            user_id="1",
+            session_id="s-2",
+        ):
+            pass
+
+    lines = _diagnostic_lines(caplog)
+    assert len(lines) == 1, [r.getMessage() for r in caplog.records]
+    fields = _diagnostic_fields(lines[0].getMessage())
+
+    # Both user turns, in order, by length: the zero-length last one is the evidence.
+    assert int(fields["user_turns"]) == 2
+    assert json.loads(fields["user_turn_chars"]) == [
+        len(messages[1]["content"]),
+        0,
+    ]
+    # The estimate counts the tool schemas the request carries as well.
+    the_chars = sum(len(m["content"]) for m in messages) + len(json.dumps(tools))
+    assert int(fields["projected_tokens"]) == -(-the_chars // PROJECTION_CHARS_PER_TOKEN)
+
+    _assert_no_content_leaked(lines[0], _NO_USER_QUERY_CANARY)
+    assert _NO_USER_QUERY_CANARY not in caplog.text
+
+
+async def test_no_user_query_diagnostic_marks_a_scheduled_turn(tmp_path, caplog):
+    """The `scheduled-` session contract is how a task run is told from a chat turn."""
+    import logging
+
+    from assistant.backend.pipeline.streaming import stream_tool_loop
+    from assistant.backend.pipeline.tool_executor import init_store
+
+    caplog.set_level(logging.INFO, logger="assistant.backend.pipeline.streaming")
+    init_store(str(tmp_path / "scheduled.db"))
+
+    llm = _FailingStubLLM([_no_user_query_error()])
+    with pytest.raises(httpx.HTTPStatusError):
+        async for _ in stream_tool_loop(
+            llm,
+            messages=[{"role": "user", "content": "monitor the release notes"}],
+            tools=[],
+            model="test-model",
+            user_id="1",
+            session_id="scheduled-morning_briefing-2026_10_30",
+        ):
+            pass
+
+    fields = _diagnostic_fields(_diagnostic_lines(caplog)[0].getMessage())
+    assert fields["turn_kind"] == "scheduled"
+    assert fields["session"] == "scheduled-morning_briefing-2026_10_30"
+
+
+async def test_no_user_query_diagnostic_reports_the_measured_projection(
+    tmp_path, monkeypatch, caplog
+):
+    """After a measured call the projection is the guard's own arithmetic.
+
+    Replays the over-window guard scenario: round 1 measures 30,000 prompt tokens,
+    a 30k-char result lands, the pre-call guard collapses it — and then the next
+    call fails. The line must show the measured prompt, the chars still pending,
+    the projection they add up to, the window, the reserve, and that the collapse
+    fired. That is the whole difference between "we predicted over-window" and "we
+    sent something else".
+    """
+    import logging
+
+    from assistant.backend.pipeline.context_budget import (
+        MIN_GENERATION_TOKENS,
+        PROJECTION_CHARS_PER_TOKEN,
+    )
+    from assistant.backend.pipeline.llm_client import ChatResponse, ToolCall
+    from assistant.backend.pipeline.streaming import stream_tool_loop
+    from assistant.backend.pipeline.tool_executor import ToolResult, init_store
+
+    caplog.set_level(logging.INFO, logger="assistant.backend.pipeline.streaming")
+    init_store(str(tmp_path / "measured.db"))
+
+    async def fake_execute(name, args, user_id=None, session_id=""):
+        return ToolResult(success=True, data={"blob": "x" * 30_000})
+
+    monkeypatch.setattr(
+        "assistant.backend.pipeline.tool_executor.execute_tool", fake_execute
+    )
+
+    first = ChatResponse(
+        content="",
+        model="m",
+        done=True,
+        prompt_eval_count=30_000,
+        tool_calls=[
+            ToolCall(
+                name="read_file",
+                arguments={"path": f"{_NO_USER_QUERY_CANARY}.txt"},
+            )
+        ],
+    )
+    llm = _FailingStubLLM([first, _no_user_query_error()])
+
+    with pytest.raises(httpx.HTTPStatusError):
+        async for _ in stream_tool_loop(
+            llm,
+            messages=[{"role": "user", "content": "read it"}],
+            tools=[],
+            model="test-model",
+            user_id="1",
+            session_id="s-3",
+        ):
+            pass
+
+    # The failing call was the loop's second and last one: no retry, no new call.
+    assert len(llm.calls) == 2
+    line = _diagnostic_lines(caplog)[0]
+    fields = _diagnostic_fields(line.getMessage())
+
+    assert int(fields["user_turns"]) == 1
+    assert json.loads(fields["user_turn_chars"]) == [len("read it")]
+    assert int(fields["last_prompt_tokens"]) == 30_000
+    assert fields["projection_basis"] == "measured"
+    assert int(fields["window"]) == 32768
+    assert int(fields["reserve_tokens"]) == MIN_GENERATION_TOKENS
+    assert fields["precall_collapse_fired"] == "True"
+
+    # The projection is exactly `_collapse_for_the_next_call`'s arithmetic.
+    chars_since_call = int(fields["chars_since_call"])
+    assert chars_since_call > 0
+    assert int(fields["projected_tokens"]) == (
+        30_000 + -(-chars_since_call // PROJECTION_CHARS_PER_TOKEN)
+    )
+    # And after the collapse the guard judged the call to fit.
+    assert int(fields["projected_tokens"]) + MIN_GENERATION_TOKENS <= 32768
+    # Collapsing fired meta-lines too, so the drop is traceable independently.
+    assert any(
+        "tool_loop_precall_collapse" in r.getMessage() for r in caplog.records
+    ), [r.getMessage() for r in caplog.records]
+
+    _assert_no_content_leaked(line, _NO_USER_QUERY_CANARY)
+
+
+async def test_no_user_query_diagnostic_covers_the_empty_generation_retry(
+    tmp_path, caplog
+):
+    """The compacted retry is a second call site; a failure there must explain itself.
+
+    The retry replaces the message list, so the prompt measured just before it
+    describes a request that is no longer being sent. The line must re-base to the
+    compacted request — an estimate, labelled as one — or the next diagnosis starts
+    from a size for something we did not ask.
+    """
+    import logging
+
+    from assistant.backend.pipeline.context_budget import PROJECTION_CHARS_PER_TOKEN
+    from assistant.backend.pipeline.llm_client import ChatResponse
+    from assistant.backend.pipeline.streaming import stream_tool_loop
+    from assistant.backend.pipeline.tool_executor import init_store
+
+    caplog.set_level(logging.INFO, logger="assistant.backend.pipeline.streaming")
+    init_store(str(tmp_path / "retry.db"))
+
+    empty = ChatResponse(
+        content="", model="m", done=True, done_reason="length", prompt_eval_count=5000
+    )
+    llm = _FailingStubLLM([empty, _no_user_query_error()])
+
+    messages = [
+        {"role": "system", "content": "sys"},
+        {"role": "user", "content": "an earlier question"},
+        {"role": "assistant", "content": "an earlier answer"},
+        {"role": "user", "content": "the real question"},
+    ]
+    with pytest.raises(httpx.HTTPStatusError):
+        async for _ in stream_tool_loop(
+            llm,
+            messages=messages,
+            tools=[],
+            model="test-model",
+            user_id="1",
+            session_id="s-4",
+        ):
+            pass
+
+    assert len(llm.calls) == 2
+    # The line describes the messages the retry actually sent (compacted: 1 user turn).
+    line = _diagnostic_lines(caplog)[0]
+    fields = _diagnostic_fields(line.getMessage())
+    assert int(fields["user_turns"]) == 1
+    assert json.loads(fields["user_turn_chars"]) == [len("the real question")]
+    # The 5,000-token measurement was taken on the *pre-compaction* prompt, which
+    # this call does not send: it is discarded, not reported as this call's size.
+    assert int(fields["last_prompt_tokens"]) == 0
+    assert int(fields["chars_since_call"]) == 0
+    assert fields["projection_basis"] == "initial_chars"
+    # The projection is the estimate for the request that went out, not for the
+    # prompt it replaced.
+    sent = llm.calls[1]["messages"]
+    assert [m.role for m in sent] == ["system", "user"]
+    sent_chars = sum(len(m.content or "") for m in sent)
+    assert int(fields["projected_tokens"]) == -(-sent_chars // PROJECTION_CHARS_PER_TOKEN)
+    assert int(fields["projected_tokens"]) < 5000
+    assert fields["precall_collapse_fired"] == "False"
+
+
+async def test_no_user_query_diagnostic_covers_the_wrap_up_call(tmp_path, caplog):
+    """A failing wrap-up is swallowed into the fallback — the line must survive it."""
+    import logging
+
+    from assistant.backend.pipeline.llm_client import ChatResponse, ToolCall
+    from assistant.backend.pipeline.streaming import stream_tool_loop
+    from assistant.backend.pipeline.tool_executor import init_store
+
+    caplog.set_level(logging.INFO, logger="assistant.backend.pipeline.streaming")
+    init_store(str(tmp_path / "wrapup.db"))
+
+    tool_round = ChatResponse(
+        content="",
+        model="m",
+        done=True,
+        prompt_eval_count=1234,
+        tool_calls=[ToolCall(name="read_file", arguments={"path": "absent.csv"})],
+    )
+    llm = _FailingStubLLM([tool_round, _no_user_query_error()])
+
+    events = []
+    async for ev in stream_tool_loop(
+        llm,
+        messages=[{"role": "user", "content": "read absent.csv"}],
+        tools=[],
+        model="test-model",
+        user_id="1",
+        session_id="s-5",
+        max_turns=1,
+    ):
+        events.append(ev)
+
+    # The wrap-up call went out with tools disabled, as before.
+    assert llm.calls[-1]["tool_choice"] == "none"
+    line = _diagnostic_lines(caplog)[0]
+    fields = _diagnostic_fields(line.getMessage())
+    # The wrap prompt is the second user turn in the request it sent.
+    assert int(fields["user_turns"]) == 2
+    assert json.loads(fields["user_turn_chars"])[0] == len("read absent.csv")
+    assert fields["projection_basis"] == "measured"
+    assert int(fields["last_prompt_tokens"]) == 1234
+
+    # Behaviour unchanged: the swallow still yields the graceful fallback.
+    finalize = [ev for ev in events if '"type": "finalize"' in ev]
+    assert finalize
+    assert "I wasn't able to complete that within my allowed steps." in finalize[-1]
+
+
+async def test_success_and_unrelated_errors_emit_no_diagnostic(tmp_path, caplog):
+    """The line is for one failure only: success and other errors stay silent."""
+    import logging
+
+    from assistant.backend.pipeline.llm_client import ChatResponse
+    from assistant.backend.pipeline.streaming import stream_tool_loop
+    from assistant.backend.pipeline.tool_executor import init_store
+
+    caplog.set_level(logging.INFO, logger="assistant.backend.pipeline.streaming")
+    init_store(str(tmp_path / "silent.db"))
+
+    # 1. A successful turn logs nothing new, and the request is untouched.
+    ok = _FailingStubLLM([ChatResponse(content="An answer.", model="m", done=True)])
+    events = [
+        ev
+        async for ev in stream_tool_loop(
+            ok,
+            messages=[{"role": "user", "content": "hello"}],
+            tools=[],
+            model="test-model",
+            user_id="1",
+            session_id="s-6",
+            num_predict=64,
+        )
+    ]
+    assert any('"type": "finalize"' in ev for ev in events)
+    assert _diagnostic_lines(caplog) == []
+    sent = ok.calls[0]
+    assert sent["tool_choice"] == "auto"
+    assert sent["temperature"] == 0.3
+    assert sent["model"] == "test-model"
+    assert sent["think"] is False
+    assert sent["num_predict"] == 64
+    # The outgoing messages are the caller's, unmodified.
+    assert [m.role for m in sent["messages"]] == ["user"]
+    assert sent["messages"][0].content == "hello"
+
+    # 2. A different 500 is not the target: it propagates, silently.
+    other = _no_user_query_error(body="model 'nope' not found")
+    llm = _FailingStubLLM([other])
+    with pytest.raises(httpx.HTTPStatusError) as excinfo:
+        async for _ in stream_tool_loop(
+            llm,
+            messages=[{"role": "user", "content": "hello"}],
+            tools=[],
+            model="test-model",
+            user_id="1",
+            session_id="s-6",
+        ):
+            pass
+    assert excinfo.value is other
+    assert _diagnostic_lines(caplog) == []
+
+    # 3. A non-HTTP failure is not the target either.
+    class BoomError(RuntimeError):
+        pass
+
+    boom = BoomError("not an HTTP error")
+    llm = _FailingStubLLM([boom])
+    with pytest.raises(BoomError) as excinfo:
+        async for _ in stream_tool_loop(
+            llm,
+            messages=[{"role": "user", "content": "hello"}],
+            tools=[],
+            model="test-model",
+            user_id="1",
+            session_id="s-6",
+        ):
+            pass
+    assert excinfo.value is boom
+    assert _diagnostic_lines(caplog) == []
+
+
+@pytest.mark.parametrize("status", [400, 503])
+async def test_a_non_500_carrying_the_marker_is_not_the_target(tmp_path, caplog, status):
+    """The marker alone is not the failure: only a 500 is the Ollama case we diagnose."""
+    import logging
+
+    from assistant.backend.pipeline.streaming import stream_tool_loop
+    from assistant.backend.pipeline.tool_executor import init_store
+
+    caplog.set_level(logging.INFO, logger="assistant.backend.pipeline.streaming")
+    init_store(str(tmp_path / f"status-{status}.db"))
+
+    request = httpx.Request("POST", "http://127.0.0.1:11434/api/chat")
+    response = httpx.Response(
+        status,
+        request=request,
+        json={"error": "no user query found in messages"},
+    )
+    other = httpx.HTTPStatusError("boom", request=request, response=response)
+    llm = _FailingStubLLM([other])
+
+    with pytest.raises(httpx.HTTPStatusError) as excinfo:
+        async for _ in stream_tool_loop(
+            llm,
+            messages=[{"role": "user", "content": "hello"}],
+            tools=[],
+            model="test-model",
+            user_id="1",
+            session_id="s-status",
+        ):
+            pass
+    assert excinfo.value is other
+    assert len(llm.calls) == 1
+    assert _diagnostic_lines(caplog) == []
+
+
+async def test_an_unread_body_cannot_mask_the_original_error(tmp_path, caplog):
+    """A streamed 500 whose body was never read must not turn into ResponseNotRead.
+
+    `response.text` raises on an unread stream. The matcher has to treat that as
+    "not explained" and let the original HTTPStatusError propagate, same object.
+    """
+    import logging
+
+    from assistant.backend.pipeline.streaming import stream_tool_loop
+    from assistant.backend.pipeline.tool_executor import init_store
+
+    caplog.set_level(logging.INFO, logger="assistant.backend.pipeline.streaming")
+    init_store(str(tmp_path / "unread.db"))
+
+    request = httpx.Request("POST", "http://127.0.0.1:11434/api/chat")
+    response = httpx.Response(
+        500,
+        request=request,
+        stream=httpx.ByteStream(b"no user query found in messages"),
+    )
+    original = httpx.HTTPStatusError("boom", request=request, response=response)
+    llm = _FailingStubLLM([original])
+
+    with pytest.raises(httpx.HTTPStatusError) as excinfo:
+        async for _ in stream_tool_loop(
+            llm,
+            messages=[{"role": "user", "content": "hello"}],
+            tools=[],
+            model="test-model",
+            user_id="1",
+            session_id="s-unread",
+        ):
+            pass
+    assert excinfo.value is original
+    assert len(llm.calls) == 1
+    assert _diagnostic_lines(caplog) == []
+
+
+async def test_canary_in_the_latest_user_turn_and_tool_arguments_stays_out(
+    tmp_path, caplog
+):
+    """Privacy with a non-empty latest turn, tool-call arguments and a tool result.
+
+    The earlier canary sat in turns that were not the latest one, and the latest
+    was empty, so a diagnostic that logged the last user body would have passed.
+    Here every place a body or argument could leak carries the canary.
+    """
+    import logging
+
+    from assistant.backend.pipeline.streaming import stream_tool_loop
+    from assistant.backend.pipeline.tool_executor import init_store
+
+    caplog.set_level(logging.DEBUG)
+    init_store(str(tmp_path / "leak.db"))
+
+    messages = [
+        {"role": "system", "content": f"system {_NO_USER_QUERY_CANARY}"},
+        {"role": "user", "content": f"latest question {_NO_USER_QUERY_CANARY}"},
+        {
+            "role": "assistant",
+            "content": f"calling a tool {_NO_USER_QUERY_CANARY}",
+            "tool_calls": [
+                {
+                    "function": {
+                        "name": "read_file",
+                        "arguments": {"path": f"{_NO_USER_QUERY_CANARY}.txt"},
+                    }
+                }
+            ],
+        },
+        {"role": "tool", "content": f"result {_NO_USER_QUERY_CANARY}", "name": "read_file"},
+    ]
+    llm = _FailingStubLLM([_no_user_query_error()])
+
+    with pytest.raises(httpx.HTTPStatusError):
+        async for _ in stream_tool_loop(
+            llm,
+            messages=messages,
+            tools=[],
+            model="test-model",
+            user_id="1",
+            session_id="s-leak",
+        ):
+            pass
+
+    lines = _diagnostic_lines(caplog)
+    assert len(lines) == 1, [r.getMessage() for r in caplog.records]
+    fields = _diagnostic_fields(lines[0].getMessage())
+    assert json.loads(fields["user_turn_chars"]) == [
+        len(f"latest question {_NO_USER_QUERY_CANARY}")
+    ]
+    _assert_no_content_leaked(lines[0], _NO_USER_QUERY_CANARY)
+    assert _NO_USER_QUERY_CANARY not in caplog.text
