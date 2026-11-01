@@ -151,3 +151,65 @@ def test_run_id_selects_that_run_and_never_guesses(env, tmp_path):
     build(row())
     assert ledger_audit.main(["--run", "2026-01-01-abcd", "--root", str(tmp_path)]) == 0
     assert ledger_audit.main(["--run", "does-not-exist", "--root", str(tmp_path)]) == 2
+
+
+AMEND_HEADER = "\n## Amendments\n\n| id | date | by | ruling |\n|---|---|---|---|\n"
+
+
+def amendment(rid="r-01", date="2026-11-01", by="human", ruling="sev: S3 → S2"):
+    return f"| {rid} | {date} | {by} | {ruling} |\n"
+
+
+def test_a_deferral_of_an_s2_finding_fails(env):
+    """S2 is fix or escalate. A deferral of a stability finding is the run not looking."""
+    build, run = env
+    problems, _ = run(build(row(sev="S2", disposition="defer → B-01")))
+    assert any("defer" in p and "S2" in p for p in problems), problems
+
+
+def test_an_s3_deferral_is_legal(env):
+    build, run = env
+    problems, _ = run(build(row(sev="S3", disposition="defer → B-01")))
+    assert problems == [], problems
+
+
+def test_an_amendment_raises_severity_and_makes_the_deferral_illegal(env):
+    """The 2026-10-31 case: the reviewer read it as S3, the verifier ruled S2."""
+    build, run = env
+    problems, _ = run(build(row(sev="S3", disposition="defer → B-01") + AMEND_HEADER
+                            + amendment(ruling="sev: S3 → S2")))
+    assert any("defer" in p and "S2" in p for p in problems), problems
+
+
+def test_an_amendment_can_supply_the_disposition_nobody_was_allowed_to_write(env):
+    """A `v-` row is born after the only disposition pass; the ruling repairs it.
+
+    Without this the run is PARTIAL forever with every requirement met — which is
+    exactly what happened to 2026-10-31-b03 before amendments existed.
+    """
+    build, run = env
+    problems, _ = run(build(
+        row(rid="v-01", src="verifier", sev="S2", disposition="") + AMEND_HEADER
+        + amendment(rid="v-01", ruling="disposition: escalate → B-01 the row is a ruling, "
+                                        "not work for this run")))
+    assert problems == [], problems
+
+
+def test_an_amendment_naming_a_row_that_does_not_exist_fails(env):
+    """A typo in the id would otherwise leave the real row silently unresolved."""
+    build, run = env
+    problems, _ = run(build(row() + AMEND_HEADER + amendment(rid="r-99")))
+    assert any("not in this ledger" in p for p in problems), problems
+
+
+def test_an_amendment_needs_a_date_and_who_ruled(env):
+    build, run = env
+    problems, _ = run(build(row() + AMEND_HEADER + amendment(date="", by="")))
+    assert any("needs a date" in p for p in problems), problems
+
+
+def test_an_amendment_that_rules_on_nothing_fails(env):
+    build, run = env
+    problems, _ = run(build(row() + AMEND_HEADER + amendment(ruling="looks fine to me")))
+    assert any("neither `sev:` nor `disposition:`" in p for p in problems), problems
+

@@ -28,6 +28,27 @@ Usage:
     scripts/ledger-audit.py                     # newest run (interactive use only)
 
 Exit: 0 clean · 1 problems · 2 nothing to audit.
+
+**Amendments — the resolution path.** A ledger row may not be edited (append-only), and two
+rules meant such a row could never be resolved: the verifier opens its ``v-`` rows *after*
+the only disposition pass, and ``L4`` forbids the writer changing a severity. On 2026-10-31
+that deadlocked run ``2026-10-31-b03``: ``v-01`` was born undispositioned and no agent could
+lawfully give it one, so the run was permanently ``PARTIAL`` with every requirement met.
+
+The repair is a second, append-only table — never an edit to a written row:
+
+    ## Amendments
+
+    | id | date | by | ruling |
+    |---|---|---|---|
+    | r-01 | 2026-11-01 | human | sev: S3 → S2; disposition: escalate → B-23 |
+
+A ruling is ``key: value`` pairs separated by ``;``. Two keys are understood:
+
+- ``sev`` — one value, or ``Sx → Sy``; the **last** value is the effective one.
+- ``disposition`` — the effective disposition, in the normal grammar.
+
+An amendment that names a row which does not exist is a typo, and is reported as one.
 """
 
 from __future__ import annotations
@@ -50,6 +71,10 @@ SOURCES = {"reviewer", "implementor", "design-guardian", "doc-gardener", "verifi
            "implementer", "tester", "observer"}
 DISPOSITIONS = ("fix", "reject", "defer", "escalate")
 ROW = re.compile(r"^\|\s*([a-z]{1,2}-\d+)\s*\|")
+AMENDMENT_HEADING = re.compile(r"^#{2,3}\s+amendment", re.IGNORECASE)
+ANY_HEADING = re.compile(r"^#{1,6}\s+\S")
+# S1 and S2 may not be deferred: "S1 — no, human only" and "S2 — no, fix or escalate".
+NO_DEFER = {"S1", "S2"}
 
 
 def cells(line: str) -> list[str]:
@@ -90,6 +115,56 @@ def _dispatch_record(log_path: Path, run_id: str) -> dict[str, dict] | None:
     return None
 
 
+def _amendments(text: str) -> tuple[dict[str, dict], list[str]]:
+    """Read every ``## Amendments`` table, keyed by the row id it rules on.
+
+    The section exists so a written row is never edited: a human ruling, a severity
+    correction, or a disposition the writer was forbidden to set lands as a new line
+    here and the audit applies it. Without it, a row the verifier opens after the
+    disposition pass has no lawful repair — which is how a run with every requirement
+    met stayed ``PARTIAL`` forever on 2026-10-31.
+    """
+    amendments: dict[str, dict] = {}
+    problems: list[str] = []
+    in_section = False
+    for line in text.splitlines():
+        if ANY_HEADING.match(line):
+            in_section = bool(AMENDMENT_HEADING.match(line))
+            continue
+        if not in_section or not ROW.match(line):
+            continue
+        cells_ = cells(line)
+        if len(cells_) < 4:
+            problems.append(
+                f"amendment row has {len(cells_)} columns, expected 4 "
+                "(id, date, by, ruling)"
+            )
+            continue
+        rid, date, by, ruling = cells_[:4]
+        entry = {"date": date, "by": by, "raw": ruling, "sev": None, "disposition": None}
+        for part in ruling.split(";"):
+            key, _, value = part.partition(":")
+            key, value = key.strip().lower(), value.strip()
+            if key == "sev":
+                found = re.findall(r"\bS[1-4]\b", value)
+                if found:
+                    entry["sev"] = found[-1]
+            elif key == "disposition":
+                entry["disposition"] = value
+        if not date.strip() or not by.strip():
+            problems.append(f"amendment {rid}: needs a date and a `by` (who ruled)")
+        if entry["sev"] is None and entry["disposition"] is None:
+            problems.append(
+                f"amendment {rid}: ruling sets neither `sev:` nor `disposition:`"
+            )
+        if rid in amendments:
+            problems.append(
+                f"amendment {rid}: amended twice — the later ruling wins, say which you meant"
+            )
+        amendments[rid] = entry
+    return amendments, problems
+
+
 def audit(
     ledger_path: Path,
     *,
@@ -100,11 +175,19 @@ def audit(
     """Audit one ledger. Returns (problems, row_count)."""
     problems: list[str] = []
     backlog_text = backlog.read_text(encoding="utf-8") if backlog.exists() else ""
+    ledger_text = ledger_path.read_text(encoding="utf-8")
+    amendments, amendment_problems = _amendments(ledger_text)
+    problems.extend(amendment_problems)
+    applied: list[str] = []
     seen: set[str] = set()
     rows = 0
+    in_amendments = False
 
-    for lineno, line in enumerate(ledger_path.read_text(encoding="utf-8").splitlines(), 1):
-        if not ROW.match(line):
+    for lineno, line in enumerate(ledger_text.splitlines(), 1):
+        if ANY_HEADING.match(line):
+            in_amendments = bool(AMENDMENT_HEADING.match(line))
+            continue
+        if in_amendments or not ROW.match(line):
             continue
         rows += 1
         cells_ = cells(line)
@@ -116,6 +199,14 @@ def audit(
             continue
         rid, src, sev, claim, where, falsifier, disposition = cells_[:7]
         tag = f"{rid} (line {lineno})"
+        amendment = amendments.get(rid)
+        if amendment is not None:
+            if amendment["sev"]:
+                sev = amendment["sev"]
+                applied.append(f"{rid}: sev {amendment['sev']} per {amendment['by']}")
+            if amendment["disposition"]:
+                disposition = amendment["disposition"]
+                applied.append(f"{rid}: disposition per {amendment['by']}")
 
         if rid in seen:
             problems.append(f"{tag}: duplicate row id")
@@ -137,26 +228,47 @@ def audit(
         word = disposition.split()[0].strip("*`").lower()
         if word not in DISPOSITIONS:
             problems.append(f"{tag}: disposition {word!r} is not one of {', '.join(DISPOSITIONS)}")
-        elif word == "fix":
-            cites = re.findall(r"`([^`]+)`", disposition + " " + falsifier)
-            real = [c for c in cites if (root / c.split(":")[0]).exists()]
-            if not cites:
-                problems.append(f"{tag}: `fix` cites nothing (want a commit, test or file)")
-            elif not real:
-                problems.append(f"{tag}: `fix` cites {cites} — none of those exist in the tree")
-        elif word == "defer":
-            ids = re.findall(r"B-\d+", disposition) or re.findall(r"B-\d+", falsifier)
-            if not ids:
-                problems.append(f"{tag}: `defer` names no register row (B-<n>)")
-            for register_id in set(ids):
-                if f"| {register_id} |" not in backlog_text:
-                    problems.append(f"{tag}: defers to {register_id}, absent from the register")
-        elif word == "escalate":
-            if len(disposition.split()) < 4:
-                problems.append(f"{tag}: `escalate` with no reason — say who and why")
-        elif word == "reject":
-            if not re.search(r"`[^`]+`|\btest\b|\.py:|\.md:|log", falsifier + disposition):
-                problems.append(f"{tag}: `reject` cites no check — name the test, log line or doc")
+        else:
+            if word == "defer" and sev in NO_DEFER:
+                problems.append(
+                    f"{tag}: `defer` on {sev} — {sev} is fix or escalate; a deferral of a "
+                    "correctness or stability finding is the run deciding not to look"
+                )
+            if word == "fix":
+                cites = re.findall(r"`([^`]+)`", disposition + " " + falsifier)
+                real = [c for c in cites if (root / c.split(":")[0]).exists()]
+                if not cites:
+                    problems.append(f"{tag}: `fix` cites nothing (want a commit, test or file)")
+                elif not real:
+                    problems.append(
+                        f"{tag}: `fix` cites {cites} — none of those exist in the tree"
+                    )
+            elif word == "defer":
+                ids = re.findall(r"B-\d+", disposition) or re.findall(r"B-\d+", falsifier)
+                if not ids:
+                    problems.append(f"{tag}: `defer` names no register row (B-<n>)")
+                for register_id in set(ids):
+                    if f"| {register_id} |" not in backlog_text:
+                        problems.append(
+                            f"{tag}: defers to {register_id}, absent from the register"
+                        )
+            elif word == "escalate":
+                if len(disposition.split()) < 4:
+                    problems.append(f"{tag}: `escalate` with no reason — say who and why")
+            elif word == "reject":
+                if not re.search(r"`[^`]+`|\btest\b|\.py:|\.md:|log", falsifier + disposition):
+                    problems.append(
+                        f"{tag}: `reject` cites no check — name the test, log line or doc"
+                    )
+
+
+    for rid in sorted(set(amendments) - seen):
+        problems.append(
+            f"amendment {rid}: rules on a row that is not in this ledger — a typo here "
+            "would silently leave the real row unresolved"
+        )
+    if applied:
+        print("ledger-audit: amendments applied — " + "; ".join(applied))
 
     if rows == 0:
         run_id = ledger_path.parent.name
