@@ -23,6 +23,16 @@ dispatches — `docs/AGENTIC_WORKFLOW.md` §Audits that are not runbook steps.
    stop there. **STOP.** Put the plan's **weakest link** to the human as a question — the
    assumption that, if wrong, makes the plan wrong — then ask them to approve the plan, the
    risk tier, or the split. "Looks good" is not an answer to the weakest-link question.
+
+   **Small-change lane — skip the planner.** A change that is **one file, under ~50 lines,
+   and adds no new behaviour** (a regression test, a typo, a doc fix, a one-line guard) does
+   not get a planner dispatch. Write `plan.md` yourself in the run directory: the goal in one
+   sentence, the acceptance criteria, the falsifier, and the risk tier. Then go straight to
+   step 3. The reviewer and the verifier still run — they are the gates that matter, and this
+   lane removes fixed process cost, not judgement. If the change turns out to touch a second
+   file or a memory path, stop and take the full path. Basis: an evaluator is worth its cost
+   *when the task is beyond what the model does reliably alone*; a 38-line test is not, and a
+   full four-gate pass on one measured $0.29.
 3. **implementor** → code + tests + `implementation.md` + `test-report.md`. **For a bug the
    failing test comes first** and is watched going red before the fix. It drains the reviewer's
    rows in **S1 → S4** order and may not defer an S1 or S2 — those escalate to you. It does not

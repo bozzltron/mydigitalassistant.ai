@@ -53,6 +53,12 @@ a file. The design-principles and scoped-docs checks are verifier rubric rows.
 5. **planner** → `plan.md`, including the pre-registered bar, the falsification condition, a
    risk tier and its **weakest link**. **STOP** again — put that weakest link to the human as a
    question before asking for approval. "Looks good" answers a different question.
+
+   **Small-change lane — skip the planner** when the finding is one file, under ~50 lines, and
+   adds no new behaviour. Write `plan.md` yourself: the goal in one sentence, the metric, the
+   bar, the falsifier, the risk tier. Go straight to step 6. The reviewer and verifier still
+   run; this removes fixed process cost, not judgement. If the change grows a second file or
+   touches a memory path, stop and take the full path.
 6. **implementor** → code + tests + `implementation.md` + `test-report.md`. For a bug the
    failing test comes first and is watched going red before the fix. It drains rows **S1 → S4**
    and may not defer an S1 or S2 — those escalate. Dispositions are filled once, at step 10.

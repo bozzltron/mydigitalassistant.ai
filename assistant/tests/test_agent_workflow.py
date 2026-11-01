@@ -29,7 +29,7 @@ PATH = ("planner", "implementor", "reviewer", "verifier")
 
 # The run path. Everything else is an audit outside it (AGENTIC_WORKFLOW.md
 # §Audits that are not runbook steps) — the distinction the harness exists to keep.
-AUDITS = ("design-guardian", "doc-gardener", "memory-architect")
+AUDITS = ("design-guardian", "doc-gardener", "memory-architect", "analyzer")
 
 WRITERS = {"implementor"}
 
@@ -355,6 +355,75 @@ def test_the_gates_record_carries_what_the_ratchet_needs():
     for line in log.read_text(encoding="utf-8").splitlines():
         if line.strip():
             assert check_gates(json.loads(line)) == []
+
+
+def test_the_small_change_lane_exists_and_keeps_the_gates():
+    """A one-file fix must not pay for a planner dispatch; it must still be reviewed.
+
+    Measured on `2026-10-31-b03`: a 38-line regression test cost $0.29 and six
+    dispatch passes, with the planner at 50% of the bill for an 8.4 KB plan. The
+    lane exists because an evaluator is worth its cost only when the task is beyond
+    what the model does reliably alone — so the lane may drop the *planner*, never
+    the reviewer or the verifier, and it needs a threshold a reader can apply.
+    """
+    for name in ("ship-feature", "self-improve"):
+        text = (SKILLS_DIR / name / "SKILL.md").read_text(encoding="utf-8")
+        assert "Small-change lane" in text, (
+            f"{name} has no small-change lane: every one-file fix pays for a planner"
+        )
+        assert "under ~50 lines" in text, f"{name}: the lane states no size threshold"
+        assert "one file" in text, f"{name}: the lane does not bound the file count"
+        # The lane removes process cost, not judgement.
+        assert "**reviewer**" in text and "**verifier**" in text
+
+
+def test_the_planner_plans_outcomes_not_implementations():
+    """The altitude rule is the fix for the most expensive gate in the run.
+
+    Anthropic's harness post: a planner that specifies granular technical detail
+    makes the implementor follow a spec that may be wrong, and the error cascades.
+    Ours did exactly that (line-level instructions, named tests), and wrote 12,253
+    output tokens for a 38-line change. This pins the correction so it cannot drift
+    back into a file-level design document.
+    """
+    text = (AGENTS_DIR / "planner.md").read_text(encoding="utf-8")
+    assert "Altitude" in text, "the planner's altitude rule is gone"
+    assert "leave the path to the implementor" in text.lower(), (
+        "the planner no longer forbids prescribing the implementation"
+    )
+    assert "Budget:" in text, (
+        "the planner has no length budget, which is how a 38-line change got an "
+        "8.4 KB plan"
+    )
+    for kept in ("falsifier", "Risk tier", "Weakest link"):
+        assert kept in text, f"the planner dropped {kept}, which the runbooks rely on"
+
+
+def test_the_analyzer_is_an_audit_over_the_log_only():
+    """The OAV gap: nothing read `log.jsonl` back and asked what the flow cost.
+
+    The Observer reads behaviour and the Verifier reads conformance; the Analyzer
+    reads the instrument. It must stay an audit with a trigger (a per-run gate that
+    finds nothing cannot lose its slot) and it must not read the code, or it becomes
+    a second, worse verifier — and it runs on a free model because it is arithmetic
+    over a table, not judgement.
+    """
+    assert "analyzer" in AUDITS and "analyzer" not in PATH
+    text = (AGENTS_DIR / "analyzer.md").read_text(encoding="utf-8")
+    for required in ("## When you run", "Trigger:", "run ID"):
+        assert required in text, f"the analyzer has no {required!r}: 'periodic' would mean 'never'"
+    assert ".agents/runs/log.jsonl" in text, "the analyzer does not read the log"
+    assert "Not the code" in text or "not the code" in text, (
+        "the analyzer may read the code, which makes it a second verifier"
+    )
+    assert "you propose" in text.lower() or "You propose" in text, (
+        "the analyzer is not told that it proposes and a human disposes"
+    )
+    meta = frontmatter(AGENTS_DIR / "analyzer.md")
+    assert meta["model"].startswith("opencode/"), (
+        "the analyzer is not on a free model; it is arithmetic, and it is the one "
+        "audit whose cost must never be the reason it does not run"
+    )
 
 
 def test_gate_scripts_are_executable():
