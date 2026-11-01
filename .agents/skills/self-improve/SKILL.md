@@ -84,6 +84,22 @@ a file. The design-principles and scoped-docs checks are verifier rubric rows.
     Risk: <tier>
     ```
 
+## How to report to the human
+
+Every reply leads with the four-part signal — progress, core issue, core solution,
+generalisation (`docs/AGENTIC_WORKFLOW.md` §Reporting back) — and then carries five things.
+The human is deciding whether to trust and merge, not reading for interest:
+
+1. **Intent** — what the change is *for*, in one sentence, before what it does.
+2. **Files** — how many change, which ones, and the diff size. A count alone hides which
+   surface moved; a file list with no count hides the size.
+3. **Coverage** — what proves it: the named test, whether it was *shown* to fail, and the
+   suite count before and after. "Tests pass" with no delta is not evidence.
+4. **Confidence** — high/medium/low and the one thing that would change it. An unhedged
+   claim is not confidence, and a caveat with no bound is not either.
+5. **Proof** — the command and its output, or an artifact a reader can re-run. An executed
+   falsifier always beats an argument that the thing would pass.
+
 ## What this runbook may not do
 
 - **Lead every reply with the four-part signal** — progress, core issue, core solution,

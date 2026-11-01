@@ -43,6 +43,14 @@ dispatches — `docs/AGENTIC_WORKFLOW.md` §Audits that are not runbook steps.
    (`AGENTS.md`; a principle with no test or lint enforcing it is a reported gap), checks
    whether this diff made any doc claim false, and reads your test diff for weakened
    assertions. **An open row is `PARTIAL`.** It never fixes anything.
+
+   **It dispositions and closes its own `v-` rows.** They are opened *after* the only
+   disposition pass, so nobody else may write them; leaving them open makes every run that
+   finds anything permanently `PARTIAL` with all requirements met — measured on
+   `2026-10-31-b03`, where `v-01` was born undispositioned and no agent could lawfully give
+   it one. A severity it disputes is still a human ruling: it lands in the ledger's
+   `## Amendments` table, never as an edit to the row.
+
 8. **PARTIAL or FAIL** → the listed gaps go to the implementor, then re-run 3–7. **Maximum two
    retries**, then stop and hand `verification.md` to the human.
 9. **PASS** → run the full gates, then commit with the trailers:
@@ -80,6 +88,22 @@ Rebuild **both** environments before claiming a live change works — dev on 844
 (`docker compose up -d --build`), prod on 8444
 (`docker compose -f docker-compose.prod.yml up -d --build`). Neither reloads Python, and a
 source change does not reach a running container until it is rebuilt.
+
+## How to report to the human
+
+Every reply leads with the four-part signal — progress, core issue, core solution,
+generalisation (`docs/AGENTIC_WORKFLOW.md` §Reporting back) — and then carries five things.
+The human is deciding whether to trust and merge, not reading for interest:
+
+1. **Intent** — what the change is *for*, in one sentence, before what it does.
+2. **Files** — how many change, which ones, and the diff size. A count alone hides which
+   surface moved; a file list with no count hides the size.
+3. **Coverage** — what proves it: the named test, whether it was *shown* to fail, and the
+   suite count before and after. "Tests pass" with no delta is not evidence.
+4. **Confidence** — high/medium/low and the one thing that would change it. An unhedged
+   claim is not confidence, and a caveat with no bound is not either.
+5. **Proof** — the command and its output, or an artifact a reader can re-run. An executed
+   falsifier always beats an argument that the thing would pass.
 
 ## Rules
 
