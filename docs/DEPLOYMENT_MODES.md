@@ -5,10 +5,10 @@
 **Command:** `docker compose up`
 
 **Architecture:**
-- `assistant-backend` - Python FastAPI server (port 8000 internal)
-- `solid-dev-server` - Vite dev server (port 5173, hot reloading)
+- `assistant-backend` - Python FastAPI server (port 8000 internal, publishes nothing)
+- `solid-dev-server` - Vite dev server (port 5173 internal, published to 127.0.0.1:5174)
 - `caddy` - TLS reverse proxy (port 8443 published to 127.0.0.1:8443)
-- `searxng` - Local search engine
+- `searxng` - Local search engine (port 8080 internal, published to 127.0.0.1:8080)
 
 **Frontend Serving:**
 - Caddy routes API requests (`/chat*`, `/users*`, `/memory*`, etc.) → `assistant-backend:8000`
@@ -25,9 +25,10 @@
 **Command:** `docker compose -f docker-compose.prod.yml up`
 
 **Architecture:**
-- `assistant-backend` - Python FastAPI server + **built frontend assets**
+- `assistant-backend` - Python FastAPI server + **built frontend assets** (port 8000
+  internal, publishes nothing)
 - `caddy` - TLS reverse proxy (port 8444 published to 127.0.0.1:8444)
-- `searxng` - Local search engine
+- `searxng` - Local search engine (port 8080 internal, published to 127.0.0.1:8081)
 - **No solid-dev-server**
 
 **Frontend Serving:**
@@ -116,8 +117,14 @@ curl -sk https://localhost:8443/tasks | head -c 40
 | Compose file | `docker-compose.yml` | `docker-compose.prod.yml` |
 | Frontend server | Vite dev server (separate container) | FastAPI static files (same container) |
 | Hot reload | ✅ Yes | ❌ No |
-| Port published | 8443 (Caddy) | 8444 (Caddy) |
+| Frontend edits | Instant | Requires rebuild |
+| Ports published | 8443 Caddy · 8080 SearXNG · 5174 Vite (all `127.0.0.1` only) | 8444 Caddy · 8081 SearXNG (both `127.0.0.1` only) |
 | API endpoint | `https://localhost:8443` | `https://localhost:8444` |
+
+Every published port is bound to `127.0.0.1`; nothing is reachable from the network.
+`assistant/tests/test_published_ports.py` fails the gate if a compose file declares a
+port without a loopback host IP, so this table has a check behind it. The backend itself
+publishes no port in either mode.
 
 **The endpoint is `localhost`, and the IP will not work.** The site address in `Caddyfile` is
 `https://localhost` and the certificate is `CN=localhost`, so a request to
@@ -125,7 +132,6 @@ curl -sk https://localhost:8443/tasks | head -c 40
 dropped. `curl` reports `000` and no error — indistinguishable from a container that is down,
 while `docker compose ps` says healthy. Only the *published bind* is `127.0.0.1` (and it must
 stay loopback-only); the address to open and to curl is `localhost`.
-| Frontend edits | Instant | Requires rebuild |
 
 ---
 

@@ -4,8 +4,8 @@ A privacy-first cognitive digital assistant that remembers, learns, and
 error-corrects. All inference runs locally through Ollama; nothing leaves your
 machine unless you explicitly opt into an external search backend.
 
-**Current release: [`v0.1.1-alpha`](docs/RELEASE_NOTES.md)** — the second alpha.
-Alpha software, built for a single household, not hardened for untrusted
+**Current release: [`v0.11.22-alpha`](docs/RELEASE_NOTES.md)** — the head of the release
+notes. Alpha software, built for a single household, not hardened for untrusted
 multi-user input or exposure beyond localhost.
 
 ## What it is
@@ -185,7 +185,7 @@ Model selection rationale lives in [`docs/MODEL_SELECTION.md`](docs/MODEL_SELECT
 
 ```bash
 docker run -it --rm -v $(pwd):/app -w /app assistant ruff check .
-docker run -it --rm -v $(pwd):/app -v assistant-test-data:/app/data -w /app -e DATABASE_PATH=/app/data/assistant-test.db assistant pytest assistant/tests/ --timeout=120
+docker run -it --rm -v $(pwd):/app -v assistant-test-data:/app/data -w /app -e DATABASE_PATH=/app/data/assistant-test.db assistant pytest assistant/tests/ --timeout=20
 ```
 
 **Frontend** — the SolidJS dev server hot-reloads on `http://localhost:5174` (the
@@ -195,14 +195,20 @@ container listens on 5173 and is published on 5174):
 cd frontend && npm run lint && npm run test
 ```
 
-**Full gate** — dead-code check, frontend lint/test/build, critical-path tests,
-then the full backend suite in both plain and encrypted DB modes:
+**Full gate** — the one gate that runs before a commit. The steps live in the script, not
+in this file:
 
 ```bash
-./run_ci.sh
+scripts/agent-gates.sh --full
 ```
 
-**Security verification:**
+It runs evidence hygiene (`pii-guard.sh`), the ledger audit, `run_ci.sh` (dead-code check,
+frontend lint/test/build, critical-path tests, then the full backend suite in **plain and
+encrypted** DB modes), the security check, and finally stamps the tree it certified — the
+stamp `.githooks/pre-push` requires. That list is a reading aid: the script is the gate, so
+change it rather than a copy of it.
+
+**Security verification** on its own:
 
 ```bash
 docker compose exec assistant python -m assistant.scripts.verify_security

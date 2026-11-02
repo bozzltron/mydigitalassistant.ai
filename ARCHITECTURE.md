@@ -110,8 +110,11 @@ Implemented in `assistant/backend/memory/`.
   - `utility_model` — cheap classification/routing/extraction (default `qwen3.5:4b`)
   - `tools_model` — tool loop (same brain as chat by default, `qwen3.5:9b`)
   - `embedding_model` — frame/query vectors (default `qwen3-embedding:0.6b`, 1024-dim)
-  - `max_model` — on-demand escalation tier (`qwen3.8:27b`; think on, `keep_alive=10m`)
-  - `math_model` — on-demand `compute` tool (shares the max model by default)
+  - `max_model` — on-demand escalation tier (empty by default; set it, e.g. to
+    `qwen3.8:27b`, to add one; think on, `keep_alive=10m`. Empty means escalation falls
+    back to thinking-mode on the chat model)
+  - `math_model` — on-demand `compute` tool (defaults to the utility model,
+    `qwen3.5:4b`, which is already warm; empty disables the tool)
 
 ### 3.6 Reasoner and task router
 
@@ -122,7 +125,8 @@ Implemented in `assistant/backend/memory/`.
 
 A SolidJS single-page app, built with Vite. In development Caddy routes to the
 Vite dev server; in production the built bundle in `assistant/backend/static/`
-is served by Caddy (`/assets/*`) with the SPA shell for other paths.
+is served by the **backend**, with Caddy reverse-proxying everything to it and
+setting a long-lived cache header on `/assets/*`.
 
 - **`frontend/src/`** — the SPA source (chat, Brain Observatory, files, alerts).
 - **`frontend/src/services/api.ts`** — typed API client (Zod-validated responses).
@@ -297,9 +301,12 @@ History is scoped to the current `session_id`.
 See [root AGENTS.md](./AGENTS.md) for hard rules. In short:
 
 - Ollama: `127.0.0.1:11434`
-- FastAPI: `127.0.0.1`
+- FastAPI: `127.0.0.1` bare-metal; inside Docker it publishes no port at all
 - SearXNG: `127.0.0.1`
-- No cloud LLM APIs, no telemetry, no analytics.
+- Every published Docker port is loopback-bound (dev `8443`/`8080`/`5174`, prod
+  `8444`/`8081`); `assistant/tests/test_published_ports.py` enforces it
+- No cloud LLM APIs, no telemetry, no analytics. The one opt-in external call is the
+  Brave Search API (`BRAVE_ENABLED` + key), off by default.
 - Secrets live in `.env` (gitignored); `.env.example` is committed.
 
 ---
@@ -316,8 +323,8 @@ Environment variables (via Pydantic Settings / `.env`):
 | `UTILITY_MODEL` | Routing / cheap extraction | `qwen3.5:4b` |
 | `TOOLS_MODEL` | Tool loop (default = chat model) | `qwen3.5:9b` |
 | `EMBEDDING_MODEL` | Embedding model (1024-dim) | `qwen3-embedding:0.6b` |
-| `MAX_MODEL` | On-demand escalation tier | `qwen3.8:27b` |
-| `MATH_MODEL` | On-demand `compute` tool | `qwen3.8:27b` |
+| `MAX_MODEL` | On-demand escalation tier (empty = thinking-mode on the chat model) | `""` |
+| `MATH_MODEL` | On-demand `compute` tool (empty disables the tool) | `qwen3.5:4b` (the utility model) |
 | `BACKEND_HOST` | FastAPI bind host | `127.0.0.1` |
 | `BACKEND_PORT` | FastAPI port | `8000` |
 | `DATABASE_PATH` | SQLite path | `./assistant.db` |
@@ -347,7 +354,7 @@ Detailed in [`docs/TESTING.md`](./docs/TESTING.md). Summary:
 Run tests with:
 
 ```bash
-docker run --rm -v $(pwd):/app -v assistant-test-data:/app/data -w /app -e DATABASE_PATH=/app/data/assistant-test.db assistant pytest assistant/tests/ --timeout=120
+docker run --rm -v $(pwd):/app -v assistant-test-data:/app/data -w /app -e DATABASE_PATH=/app/data/assistant-test.db assistant pytest assistant/tests/ --timeout=20
 ```
 
 Lint with:

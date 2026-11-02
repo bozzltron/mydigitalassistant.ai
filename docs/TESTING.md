@@ -97,8 +97,15 @@ Bad:
 ## 6. Running tests
 ### In Docker (recommended for consistency)
 ```bash
-docker compose -f docker-compose.test.yml run --rm test
+docker compose -f docker-compose.test.yml run --rm test-plain       # plain SQLite
+docker compose -f docker-compose.test.yml run --rm test-encrypted   # SQLCipher (DB_KEY from .env)
+docker compose -f docker-compose.test.yml run --rm test-critical    # critical paths only
+docker compose -f docker-compose.test.yml run --rm test-frontend    # the frontend suite
 ```
+
+There is no service named `test`; the file defines the four above plus `dev` and `exam`.
+The inner loop is `scripts/agent-gates.sh --scoped <paths>`, and `--full` is the
+pre-commit gate — see `scripts/agent-gates.sh` for what each runs.
 
 ### Locally
 ```bash

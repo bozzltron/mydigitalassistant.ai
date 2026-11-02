@@ -15,9 +15,9 @@ handles untrusted multi-user input.
 
 ## Open
 
-- **Tasks page, narrow width (from the 2026-10-15 plan)**: the top-bar page
-  menu was verified on dev at a narrow width but not re-checked on prod (8444)
-  after the SPA rebuilds. One manual look; delete this line when done.
+- **Tasks page, narrow width**: the top-bar page menu was verified on dev at a
+  narrow width but not re-checked on prod (8444) after the SPA rebuilds. One
+  manual look; delete this line when done.
 
 ### Bugs
 
