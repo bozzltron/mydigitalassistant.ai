@@ -43,6 +43,11 @@ done
 if [ "$MODE" = "full" ]; then
   echo "== full gates: evidence hygiene =="
   ./scripts/pii-guard.sh
+  # The agent roster's models are one table (`.agents/agent-models.json`) and one set of
+  # frontmatter files. Two homes drift; `--check` is the only thing that notices. Without
+  # this line a hand-edited `model:` ships a judge nobody chose (run 2026-11-02-oll3, i-03).
+  echo "== full gates: agent model table =="
+  ./scripts/agents-mode.py --check
   # The ledger's mechanical rules are a script, not a prompt instruction: a gate that
   # cannot be skipped is the difference between a rule and a preference.
   #

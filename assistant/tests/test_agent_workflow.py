@@ -480,7 +480,8 @@ def test_the_verifier_does_not_write_its_own_hits():
 
 
 def test_gate_scripts_are_executable():
-    for name in ("agent-gates.sh", "agents-link.sh", "log-snapshot.sh", "ollama-dev-models.sh"):
+    for name in ("agent-gates.sh", "agents-link.sh", "log-snapshot.sh",
+                 "ollama-dev-models.sh", "agents-mode.py"):
         path = ROOT / "scripts" / name
         assert path.is_file(), f"scripts/{name} is missing"
         assert os.access(path, os.X_OK), f"scripts/{name} is not executable"

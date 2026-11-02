@@ -1,0 +1,37 @@
+{
+  "note": "The one table. `cloud` is the harness roster on opencode-go; `local` is the Ollama roster on 127.0.0.1:11434. `null` means the harness model evaluation (Ticket 1) has not admitted a local model for that role, so `--mode local` refuses to write anything. scripts/agents-mode.py renders this into each agent's frontmatter `model:` line and verifies the running harness holds it; `--check` fails on any drift between this table and the frontmatter.",
+  "roles": {
+    "analyzer": {
+      "cloud": "opencode/flint-40b-free",
+      "local": null
+    },
+    "design-guardian": {
+      "cloud": "opencode-go/gemini-4-argon",
+      "local": null
+    },
+    "doc-gardener": {
+      "cloud": "opencode-go/glm-5.3",
+      "local": null
+    },
+    "implementor": {
+      "cloud": "opencode-go/deepseek-v4.1-flash",
+      "local": null
+    },
+    "memory-architect": {
+      "cloud": "opencode-go/kimi-k3.1-pro",
+      "local": null
+    },
+    "planner": {
+      "cloud": "opencode-go/qwen3.8-max",
+      "local": null
+    },
+    "reviewer": {
+      "cloud": "opencode-go/glm-5.3-flash",
+      "local": null
+    },
+    "verifier": {
+      "cloud": "opencode-go/qwen3.8-max",
+      "local": null
+    }
+  }
+}
