@@ -179,8 +179,14 @@ services:
       context: .
       dockerfile: Dockerfile.dev
     container_name: solid-dev-server
+    # 127.0.0.1, not all interfaces: the Vite dev server proxies /api, /memory and
+    # /files/ to the backend, and the app has no auth layer (a request carries the
+    # user id it claims). Published bare as "5174:5173" it was reachable from the
+    # LAN with the whole API behind it — found by doc-gardener run 2026-11-02-dg1
+    # (g-06), fixed here, and now mechanically checked by
+    # assistant/tests/test_published_ports.py.
     ports:
-      - "5174:5173"
+      - "127.0.0.1:5174:5173"
     volumes:
       # Mount the whole frontend directory rather than individual files. A file
       # bind mount pins an inode, so any `git checkout`/`stash`/branch switch that
