@@ -304,6 +304,39 @@ def _resolve(args: argparse.Namespace) -> tuple[Path, Path, Path, Path] | None:
     return ledger, backlog, log, root
 
 
+def _count(ledger_path: Path) -> tuple[int, int]:
+    """(rows, hits) derived from the ledger, not from anyone's self-report.
+
+    `hits` is the number of rows that were **closed** and not rejected: a row only
+    counts when someone other than its opener confirmed it (or the verifier closed
+    it after the work landed). The verifier used to write this figure itself at
+    logging time, which made every run look like precision 1.0 — `B-19`. The
+    dispatcher now fills `gates.<gate>.hits` from here, at commit, so the number
+    comes from ledger state the counting session did not author.
+    """
+    text = ledger_path.read_text(encoding="utf-8")
+    amendments, _ = _amendments(text)
+    rows = hits = 0
+    in_amendments = False
+    for line in text.splitlines():
+        if ANY_HEADING.match(line):
+            in_amendments = bool(AMENDMENT_HEADING.match(line))
+            continue
+        if in_amendments or not ROW.match(line):
+            continue
+        cells_ = cells(line)
+        if len(cells_) != 8:
+            continue
+        rows += 1
+        rid, disposition = cells_[0], cells_[6]
+        amendment = amendments.get(rid) or {}
+        disposition = amendment.get("disposition") or disposition
+        closed = cells_[7].strip()
+        if closed and not disposition.strip("*` ").lower().startswith("reject"):
+            hits += 1
+    return rows, hits
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description="Audit a run's ledger.")
     parser.add_argument("--run", help="run ID, e.g. 2026-10-29-si03")
@@ -311,6 +344,12 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--root", help="repo root (tests/fixtures)")
     parser.add_argument("--backlog", help="path to the register")
     parser.add_argument("--log", help="path to log.jsonl")
+    parser.add_argument(
+        "--hits",
+        action="store_true",
+        help="print `rows=N hits=M` derived from the ledger's closed cells (for the "
+             "log line, which the dispatcher fills at commit)",
+    )
     args = parser.parse_args(argv)
 
     resolved = _resolve(args)
@@ -320,6 +359,10 @@ def main(argv: list[str]) -> int:
     ledger, backlog, log, root = resolved
 
     problems, rows = audit(ledger, backlog=backlog, log=log, root=root)
+    if args.hits:
+        derived_rows, derived_hits = _count(ledger)
+        print(f"rows={derived_rows} hits={derived_hits}")
+        return 0 if not problems else 1
     try:
         shown = ledger.relative_to(root)
     except ValueError:

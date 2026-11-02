@@ -146,6 +146,27 @@ def test_every_problem_is_reported_not_just_the_first(env):
     assert len(problems) >= 4, problems
 
 
+def test_hits_are_derived_from_closed_cells_not_self_reported(env, tmp_path, capsys):
+    """B-19: the verifier wrote its own `hits`, so every run looked like precision 1.0.
+
+    The number now comes from ledger state the counting session did not author: a
+    row counts only when it is **closed** and not rejected. The dispatcher fills
+    `gates.<gate>.hits` from `--hits` at commit.
+    """
+    build, _ = env
+    closed = ("| r-01 | reviewer | S2 | a defect | `README.md` | wrong if | "
+              "fix `README.md` | verifier |\n")
+    open_row = row(rid="r-02")
+    rejected = ("| r-03 | reviewer | S3 | not real | `README.md` | wrong if it passes | "
+                "reject `pytest x` | |\n")
+    build(closed + open_row + rejected)
+
+    assert ledger_audit.main(["--run", "2026-01-01-abcd", "--root", str(tmp_path), "--hits"]) == 0
+    out = capsys.readouterr().out
+    assert "rows=3" in out, out
+    assert "hits=1" in out, f"only the closed, non-rejected row is a hit — got {out!r}"
+
+
 def test_run_id_selects_that_run_and_never_guesses(env, tmp_path):
     build, _ = env
     build(row())

@@ -453,6 +453,32 @@ def test_only_the_commit_gate_runs_the_full_suite():
     )
 
 
+def test_gates_check_the_ledger_before_they_reply():
+    """Twice on 2026-11-01 an agent replied with rows `ledger-audit` rejects.
+
+    A wrong `src` cell, an unescaped pipe, or a `fix` citing a test name instead
+    of a path made the register red, and a human had to repair bookkeeping before
+    the run could close. The audit is one command; run it before replying.
+    """
+    for name in ("reviewer", "verifier"):
+        text = (AGENTS_DIR / f"{name}.md").read_text(encoding="utf-8")
+        assert "scripts/ledger-audit.py" in text, (
+            f"{name} is not told to run the ledger audit before replying"
+        )
+
+
+def test_the_verifier_does_not_write_its_own_hits():
+    """B-19: a judge that fills its own score column looks like precision 1.0 forever."""
+    text = (AGENTS_DIR / "verifier.md").read_text(encoding="utf-8")
+    assert "hits: null" in text, (
+        "the verifier no longer defers `hits` to the dispatcher; a self-written hits "
+        "column cannot be checked by anyone"
+    )
+    # And the derivation exists, rather than being a promise in prose.
+    script = (ROOT / "scripts" / "ledger-audit.py").read_text(encoding="utf-8")
+    assert "--hits" in script and "def _count(" in script
+
+
 def test_gate_scripts_are_executable():
     for name in ("agent-gates.sh", "agents-link.sh", "log-snapshot.sh"):
         path = ROOT / "scripts" / name

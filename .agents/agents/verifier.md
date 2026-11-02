@@ -140,6 +140,9 @@ worth naming rather than silently absorbing.
   vendor part of the model id); do not treat a matching family as a pass.
 - **Do not fix anything.** A verifier that fixes what it finds cannot report it.
 - **You do not adjudicate your own score.** Your `v-` rows are yours; whether they were *real*
-  is a human's call at merge (`B-19`). Do not count your own rows as confirmed hits.
+  is a human's call at merge (`B-19`). **Write `hits: null` in the log line** — the dispatcher
+  derives `gates.<gate>.hits` from the ledger's closed cells at commit
+  (`scripts/ledger-audit.py --run <id> --hits`), so the figure comes from ledger state your
+  session did not author. Count `rows` only.
 - Judge the spec, not the effort. Five well-tested requirements met is a better run than eight
   claimed.

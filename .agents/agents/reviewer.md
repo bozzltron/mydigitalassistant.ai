@@ -70,6 +70,11 @@ S1 or S2 row is open, and `approve with follow-ups` if only S3/S4 rows are.
 
 ## Rules
 
+- **Before you reply, run `python3 scripts/ledger-audit.py --run <run-id>`.** If it fails, your
+  rows are not a report — a wrong `src` cell (`v` instead of `verifier`), an unescaped `|`, or
+  a `fix` citing a test name instead of a repo-relative path all make the register red and force
+  a human to repair bookkeeping before the run can close. Twice on 2026-11-01 that repair was
+  needed. Fix your rows until the audit passes, then reply.
 - **Do not edit code**, tests, or the plan.
 - Do not restate the diff. Review the risk, not the formatting (`ruff` has that job).
 - A style preference is not blocking. Say which of your notes are preferences.
