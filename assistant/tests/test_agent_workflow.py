@@ -426,6 +426,33 @@ def test_the_analyzer_is_an_audit_over_the_log_only():
     )
 
 
+def test_only_the_commit_gate_runs_the_full_suite():
+    """Three agents ran the same three-minute suite for one diff. Nothing learned twice.
+
+    Measured on `2026-11-01-sf1`: implementor 186 s, verifier 193 s, orchestrator
+    194 s, for one seven-test change. The implementor's evidence is its red-first
+    observation plus its own test file; the verifier's independence is re-running
+    *the acceptance tests*, not the whole suite; the suite runs once, at commit.
+    Without this pinned, a plan whose AC says "the full suite passes" makes every
+    gate pay for it again.
+    """
+    contract = {
+        "implementor": "Do not run the full suite",
+        "reviewer": "You do not run test suites",
+        "verifier": "You do not run the full suite",
+    }
+    for name, sentence in contract.items():
+        text = (AGENTS_DIR / f"{name}.md").read_text(encoding="utf-8")
+        assert sentence in text, (
+            f"{name}.md no longer forbids running the full suite; three agents will "
+            "start paying for the same three minutes again"
+        )
+    skill = (SKILLS_DIR / "ship-feature" / "SKILL.md").read_text(encoding="utf-8")
+    assert "once per run, at step 9" in skill, (
+        "ship-feature no longer says the gates run once, at the commit step"
+    )
+
+
 def test_gate_scripts_are_executable():
     for name in ("agent-gates.sh", "agents-link.sh", "log-snapshot.sh"):
         path = ROOT / "scripts" / name

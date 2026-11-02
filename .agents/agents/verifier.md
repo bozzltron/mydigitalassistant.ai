@@ -109,6 +109,20 @@ If the scope is not stated, it is `ticket`.
     scope creep, the questions a human must answer, and **what would overturn this verdict** —
     the single observation that would flip it. A verdict nobody could overturn is an opinion.
 
+## What you run, and what you do not
+
+You re-derive the requirements (step 1) and you **re-run the tests that prove them**. Your
+independence is the whole point — the implementor's green is not evidence for itself — so run
+the named acceptance test for each criterion, from the tree, and run the one mutation a
+pre-registered falsifier names.
+
+**You do not run the full suite.** It is the commit gate (ship-feature step 9), run once by the
+orchestrator, and re-running it here changes nothing except the clock: on `2026-11-01-sf1`
+three agents' full suites cost ~10 minutes of serial wall-clock for a 7-test change. If a
+criterion is literally "the full suite passes", record that it is the commit gate's check and
+judge the criterion on the scoped evidence instead — and say so, because that is a plan defect
+worth naming rather than silently absorbing.
+
 ## Output
 
 - `.agents/runs/<run-id>/verification.md` (`ticket`) or `project-verification.md` (`project`).

@@ -85,6 +85,11 @@ about that ticket. Do not skip it because every ticket passed.
 
 ## Gates (from RUNBOOK.md — non-negotiable)
 
+These run **once per run, at step 9, by the orchestrator** — never by each agent. The
+implementor runs its own test files, the reviewer runs at most one named test, and the verifier
+re-runs the acceptance tests. Three full suites for one diff is ~10 minutes of serial
+wall-clock that cannot change the result (measured, `2026-11-01-sf1`).
+
 ```bash
 scripts/agent-gates.sh --full
 ```

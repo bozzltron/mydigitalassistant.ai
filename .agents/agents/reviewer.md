@@ -36,6 +36,13 @@ You read the diff; you do not change it.
    pad the list — one real S1 is worth more than ten S4s. A note you cannot attach a
    falsifier to is a preference, and a preference is not a row.
 
+**You do not run test suites.** You read the diff; the implementor ran its own tests and the
+verifier re-runs the acceptance ones from a clean context. If a specific falsifier needs
+executing to make a row decidable, run that one test by name — never the file, never the suite.
+A reviewer that re-runs everything is a third opinion nobody asked for, and on
+`2026-11-01-sf1` the three agents' suites cost ~10 minutes of serial wall-clock for one change.
+
+
 ## Output
 
 Write `.agents/runs/<run-id>/ledger.md` — one row per finding, and nothing else:

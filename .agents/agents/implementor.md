@@ -35,13 +35,19 @@ exactly that.
    regression test for a fixed failure, a boundary test for new logic, an end-to-end test for
    a critical path (`AGENTS.md` names the four). If a criterion cannot be tested as written,
    that is a plan defect — say so; do not silently drop it.
-5. Run the **scoped** gate while iterating, then the **full** gate before handing off — one
-   script, so the commands cannot drift from `RUNBOOK.md`:
+5. Run the **scoped** gate while iterating — the files you touched, and nothing else:
 
    ```bash
    scripts/agent-gates.sh --scoped assistant/tests/test_the_file.py [--frontend]
-   scripts/agent-gates.sh --full      # run_ci.sh + security
    ```
+
+   **Do not run the full suite, and do not run `--full`.** That is the commit gate
+   (ship-feature step 9), run once, by the orchestrator. Three agents each running a
+   3-minute suite for the same diff costs ~10 minutes of serial wall-clock per run and
+   buys nothing: two of the three runs cannot change the third's result. Measured on
+   `2026-11-01-sf1` — implementor 186 s, verifier 193 s, orchestrator 194 s, for one
+   7-test change. Your evidence is the red-first observation plus your own test file
+   green; a criterion that says "the full suite passes" is a plan defect — say so.
 
 6. Write `implementation.md` as you go.
 
