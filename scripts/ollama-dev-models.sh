@@ -22,16 +22,55 @@ set -uo pipefail
 HOST="${OLLAMA_HOST:-http://127.0.0.1:11434}"
 MODE="check"
 ALL=0
+SETTINGS=0
 for arg in "$@"; do
   case "$arg" in
     --check) MODE="check" ;;
     --pull)  MODE="pull" ;;
     --all)   ALL=1 ;;
+    --settings) SETTINGS=1 ;;
     -h|--help) sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown argument: $arg" >&2; exit 64 ;;
   esac
 done
 [ "$ALL" -eq 1 ] && MODE="pull-all"
+
+# --- the daemon's settings, which are not models but are just as easy to lose ----
+#
+# These live in the launchd GUI session, set with `launchctl setenv` and owned by no
+# file, so they survive quitting Ollama and logging out but NOT a reboot — after which
+# the daemon silently reverts to its defaults. A LaunchAgent re-applies them at login.
+apply_settings() {
+  local plist="$HOME/Library/LaunchAgents/local.ollama.env.plist"
+  mkdir -p "$(dirname "$plist")"
+  cat > "$plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>local.ollama.env</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/sh</string>
+    <string>-c</string>
+    <string>/bin/launchctl setenv OLLAMA_MAX_LOADED_MODELS 4; /bin/launchctl setenv OLLAMA_KEEP_ALIVE -1; /bin/launchctl setenv OLLAMA_CONTEXT_LENGTH 8192; /bin/launchctl setenv OLLAMA_NO_CLOUD 1</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+</dict>
+</plist>
+PLIST
+  launchctl bootout "gui/$(id -u)/local.ollama.env" 2>/dev/null
+  launchctl bootstrap "gui/$(id -u)" "$plist" || {
+    echo "could not load $plist" >&2; return 1; }
+  echo "settings agent installed: $plist"
+  echo "  MAX_LOADED_MODELS=4  KEEP_ALIVE=-1  CONTEXT_LENGTH=8192  NO_CLOUD=1"
+  echo "  Ollama reads these at start: quit and reopen the app for them to take effect."
+}
+
+if [ "$SETTINGS" -eq 1 ]; then
+  apply_settings || exit 1
+  exit 0
+fi
 
 # name|set|required|approx size|role it serves
 MODELS=(
@@ -78,6 +117,17 @@ for entry in "${MODELS[@]}"; do
     printf '%-26s %-8s %-8s %-9s %-8s %s\n' "$name" "$set" "$required" "$size" "$state" "$role"
   fi
 done
+
+# The settings are not models, but they are the same kind of thing: easy to lose and
+# silent when they change. Report them on every run so "is this machine configured?"
+# has one place to look.
+if [ -f "$HOME/Library/LaunchAgents/local.ollama.env.plist" ]; then
+  echo
+  echo "daemon settings: pinned by ~/Library/LaunchAgents/local.ollama.env"
+else
+  echo
+  echo "daemon settings: NOT pinned — install with --settings, or they revert at reboot"
+fi
 
 if [ "${#missing_list[@]}" -eq 0 ]; then
   echo
