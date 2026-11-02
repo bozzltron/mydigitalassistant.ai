@@ -104,6 +104,14 @@ class FinalizeEvent(ToolLoopEvent):
     known to the caller) so `context_usage` can show where the window actually
     went. ``tool_results_dropped`` counts older results collapsed to make room for
     a newer one once the turn's content allowance was spent.
+
+    ``no_answer`` is the turn's outcome, not its text: True when the model
+    produced no content at all and ``answer`` is the substituted
+    `EMPTY_GENERATION_FALLBACK` sentence. Live chat still shows the sentence (the
+    user is present); a consumer that *records* the turn — the scheduler — must
+    treat it as a failure rather than file the sentence as output. Carried as a
+    flag on purpose: comparing `answer` to the sentence would be a phrasing
+    detector, which AGENTS.md forbids.
     """
 
     def __init__(
@@ -114,6 +122,7 @@ class FinalizeEvent(ToolLoopEvent):
         context_window: int = 0,
         tool_result_chars: int = 0,
         tool_results_dropped: int = 0,
+        no_answer: bool = False,
     ):
         self.type = "finalize"
         self.answer = answer
@@ -122,6 +131,7 @@ class FinalizeEvent(ToolLoopEvent):
         self.context_window = context_window
         self.tool_result_chars = tool_result_chars
         self.tool_results_dropped = tool_results_dropped
+        self.no_answer = no_answer
 
 
 class ErrorEvent(ToolLoopEvent):
@@ -163,6 +173,7 @@ class MetaEvent(ToolLoopEvent):
         prompt_tokens: int = 0,
         context_window: int = 0,
         conversation_summary: str = "",
+        generation_failed: bool = False,
     ):
         self.type = "meta"
         self.session_id = session_id
@@ -184,6 +195,14 @@ class MetaEvent(ToolLoopEvent):
         # user can see what the agent compressed about the thread. It rides the
         # meta, not the prompt, so it costs no context.
         self.conversation_summary = conversation_summary
+        # Which terminal branch the turn ended in. Live chat degrades to a
+        # readable sentence on a generation failure, which is right for a user
+        # who is present -- but a *consumer* (the scheduler) needs to know the
+        # turn produced no answer, and it must learn that structurally rather
+        # than by matching the sentence's wording (AGENTS.md forbids phrasing
+        # detectors). False on every other branch, including a turn that
+        # survived a tool error and produced its answer.
+        self.generation_failed = generation_failed
 
 
 def _event_json_default(obj: object) -> object:
@@ -221,6 +240,7 @@ def serialize_event(event: ToolLoopEvent) -> str:
             'context_window': event.context_window,
             'tool_result_chars': event.tool_result_chars,
             'tool_results_dropped': event.tool_results_dropped,
+            'no_answer': event.no_answer,
         }
         return f"data: {json.dumps(data, default=_event_json_default)}\n\n"
     elif isinstance(event, ErrorEvent):
@@ -244,6 +264,7 @@ def serialize_event(event: ToolLoopEvent) -> str:
             'prompt_tokens': event.prompt_tokens,
             'context_window': event.context_window,
             'conversation_summary': event.conversation_summary,
+            'generation_failed': event.generation_failed,
         }
         return f"data: {json.dumps(data, default=_event_json_default)}\n\n"
     else:
@@ -903,7 +924,13 @@ async def stream_tool_loop(
                 turn,
                 len(tool_calls_made),
             )
-            answer = (response.content or "").strip() or EMPTY_GENERATION_FALLBACK
+            # The model produced no text. Substituting the sentence is right for a
+            # user who is present and wrong for a run that is recorded: the
+            # answer is not the model's words. The fact travels structurally —
+            # `not content`, never `answer == EMPTY_GENERATION_FALLBACK`, which
+            # would make this a phrasing detector.
+            content = (response.content or "").strip()
+            answer = content or EMPTY_GENERATION_FALLBACK
             event = FinalizeEvent(
                 answer,
                 "\n\n".join(reasoning_trace) if reasoning_trace else None,
@@ -911,6 +938,7 @@ async def stream_tool_loop(
                 context_window=context_window,
                 tool_result_chars=peak_tool_result_chars,
                 tool_results_dropped=tool_results_dropped,
+                no_answer=not content,
             )
             yield serialize_event(event)
             return

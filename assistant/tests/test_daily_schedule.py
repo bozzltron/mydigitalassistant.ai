@@ -607,9 +607,12 @@ async def test_run_scheduled_task_can_use_max(env):
     seen: dict = {}
 
     class _Reply:
-        """The non-streaming adapter's shape; `run_scheduled_task` reads `.response`."""
+        """The non-streaming adapter's shape; `run_scheduled_task` reads `.response`
+        and the structural `generation_failed` flag that decides whether the run
+        is an answer or a failure (run 2026-11-01-sf1)."""
 
         response = "ok"
+        generation_failed = False
 
     async def fake_chat(request: ChatRequest) -> _Reply:
         seen["request"] = request

@@ -233,6 +233,7 @@ def _meta_event_from_response(session_id: str | None, response: "ChatResponse"):
         prompt_tokens=response.prompt_tokens,
         context_window=response.context_window,
         conversation_summary=response.conversation_summary,
+        generation_failed=response.generation_failed,
     )
 
 
@@ -296,6 +297,26 @@ class ChatResponse(BaseModel):
     # UI can show what the agent compressed about the thread. Not part of the
     # prompt.
     conversation_summary: str = ""
+    # Which terminal branch the turn ended in — more precisely: did the turn
+    # produce an answer at all? True when the generation call raised, and True
+    # when it returned no content (the loop then substitutes the "my working
+    # context filled up" sentence). Live chat shows the sentence and stops there
+    # (the user is present); a caller that *records* a run -- the scheduler --
+    # must treat it as a failure rather than filing the sentence as output.
+    # Structural on purpose: matching the sentence's words would be a phrasing
+    # detector, which AGENTS.md forbids.
+    generation_failed: bool = False
+
+
+class ScheduledTaskGenerationError(RuntimeError):
+    """A scheduled task's turn produced no answer.
+
+    Raised by `run_scheduled_task` instead of returning the live-chat sentence, so
+    the scheduler's existing failure branch records `failed: …` and raises the
+    `task_failure` alert. The trigger is `ChatResponse.generation_failed` — the
+    loop's own outcome, set when the generation call raised *or* when the model
+    returned no content — never the answer's wording.
+    """
 
 
 def compute_answer_confidence(
@@ -1035,6 +1056,12 @@ class Orchestrator:
         frontend actually uses, and it never grew either footer: search answers
         arrived with no citations and introspective answers without the memory
         provenance the non-streaming path had shown all along.
+
+        The empty-answer substitution below is the other place the fallback
+        sentence is written. `_run_turn` records the emptiness *before* calling
+        this (it is that turn's no-answer outcome), so the sentence never reaches
+        a scheduled run as output — and this helper stays a pure string
+        transform.
         """
         response_text = answer
         if not response_text:
@@ -1139,6 +1166,7 @@ class Orchestrator:
             prompt_tokens=meta.get("prompt_tokens") or 0,
             context_window=meta.get("context_window") or 0,
             conversation_summary=meta.get("conversation_summary") or "",
+            generation_failed=bool(meta.get("generation_failed")),
         )
 
     async def _handle_scheduled_task(
@@ -1171,14 +1199,25 @@ class Orchestrator:
                 )
                 for t in tasks:
                     if t["name"] == task_name:
-                        result = await self.run_scheduled_task(
-                            t["prompt"],
-                            request.user_id,
-                            t["name"],
-                            use_max=bool(t.get("use_max", 0)),
-                        )
+                        # A generation failure ends the run, not the conversation:
+                        # the user is here asking for it, so they get the same
+                        # sentence live chat shows and no alert. It is recorded as
+                        # failed, though — storing the sentence as the output is
+                        # the incident, and leaving the previous summary would show
+                        # an older successful run for one that just failed.
+                        failure: str | None = None
+                        try:
+                            result = await self.run_scheduled_task(
+                                t["prompt"],
+                                request.user_id,
+                                t["name"],
+                                use_max=bool(t.get("use_max", 0)),
+                            )
+                        except ScheduledTaskGenerationError as exc:
+                            failure = f"failed: {exc}"
+                            result = _GENERATION_FAILURE_MESSAGE
                         now_str = datetime.now(UTC).isoformat()
-                        summary = result[:2000] if result else ""
+                        summary = failure or (result[:2000] if result else "")
                         await self.store.update_scheduled_task_run(
                             frame_id=t["id"],
                             last_run=now_str,
@@ -1396,6 +1435,15 @@ class Orchestrator:
 
         Returns the assistant's answer. The scheduler parses any `ALERT:` footer
         and records the run (episode, daily-run frame, associations, alerts).
+
+        Raises `ScheduledTaskGenerationError` when the loop produced no answer:
+        the generation call raised, or the model returned no content and the loop
+        substituted `EMPTY_GENERATION_FALLBACK`. Live chat shows that sentence to
+        a user who is present, but a run is *recorded* — returning the sentence
+        made the scheduler file it as the task's output and log the run as a
+        success (the 2026-11-01 incident, and its empty-content sibling). The
+        scheduler's existing failure branch then does the rest: `failed: …` and
+        the `task_failure` alert.
         """
         date_str = datetime.now(UTC).strftime("%Y_%m_%d")
         request = ChatRequest(
@@ -1415,6 +1463,12 @@ class Orchestrator:
             max_intelligence=use_max,
         )
         response = await self.chat(request)
+        if response.generation_failed:
+            raise ScheduledTaskGenerationError(
+                "generation failed — the language model returned no answer "
+                "(the call raised, or it produced no content; see the "
+                "'Streaming generation failed' and 'Empty generation' log lines)"
+            )
         return response.response
 
     async def chat_stream(
@@ -2032,6 +2086,14 @@ class Orchestrator:
         final_context_window = 0
         final_tool_result_chars = 0
         final_tool_results_dropped = 0
+        # Set by either of the loop's two "the turn produced no answer" outcomes:
+        # the generation call raised, or it returned no content at all (the loop
+        # substitutes `EMPTY_GENERATION_FALLBACK` for the user and reports
+        # `no_answer` on its finalize). It rides the terminal `meta` event so a
+        # recording consumer (the scheduler) can tell "no answer was produced" from
+        # "the model said this" without reading the sentence — see
+        # `MetaEvent.generation_failed`.
+        generation_failed = False
 
         # Check if tools enabled
         if settings.tools_enabled:
@@ -2096,6 +2158,7 @@ class Orchestrator:
                 nonlocal final_answer, final_reasoning, ttft_s
                 nonlocal final_prompt_tokens, final_context_window
                 nonlocal final_tool_result_chars, final_tool_results_dropped
+                nonlocal generation_failed
                 async for event in stream_tool_loop(
                     self.llm_client,
                     messages_dict,
@@ -2126,6 +2189,13 @@ class Orchestrator:
                             final_tool_results_dropped = (
                                 event_data.get("tool_results_dropped") or 0
                             )
+                            # The loop ended on its normal branch but produced
+                            # nothing: the answer is the substituted sentence, so
+                            # this turn has no answer either. Folded into the
+                            # same flag the raised branch sets, so every
+                            # consumer has one outcome to read.
+                            if event_data.get("no_answer"):
+                                generation_failed = True
                         # TTFT is the first moment the user can see any of the
                         # answer. `finalize` counts, and on the tool path it is
                         # currently the ONLY one that arrives: stream_tool_loop
@@ -2152,6 +2222,7 @@ class Orchestrator:
                 logger.error(
                     "Streaming generation failed: %r (session=%s)", e, session_id
                 )
+                generation_failed = True
                 final_answer = _GENERATION_FAILURE_MESSAGE
                 yield _finalize_event(final_answer)
             finally:
@@ -2219,8 +2290,24 @@ class Orchestrator:
                 logger.error(
                     "Streaming generation failed: %r (session=%s)", e, session_id
                 )
+                generation_failed = True
                 final_answer = _GENERATION_FAILURE_MESSAGE
                 yield _finalize_event(final_answer)
+
+        # The no-tools branch (above) turns the stream's deltas into the answer,
+        # and a model that returned nothing leaves it empty; the footer helper
+        # further down substitutes `EMPTY_GENERATION_FALLBACK` for whoever is
+        # watching. Record the emptiness *before* that substitution: a scheduled
+        # run must fail on it rather than file the sentence as its output. This
+        # also covers any path that ended without a finalize at all.
+        #
+        # `final_answer` can be `None`: the `finalize` tool's answer is the
+        # model's raw argument (`streaming.py`), and a present-but-null key
+        # yields `None` — out of `FinalizeArgs`' schema, but tolerated before
+        # this check existed. The guard must stay falsy-safe so that input
+        # reaches the normal no-answer outcome instead of `.strip()` crashing.
+        if not (final_answer or "").strip():
+            generation_failed = True
 
         # Persist assistant episode to database
         if final_answer and session_id:
@@ -2345,6 +2432,7 @@ class Orchestrator:
                 conversation_summary=await self._conversation_summary(
                     session_id, request.user_id
                 ),
+                generation_failed=generation_failed,
             )
         )
 
